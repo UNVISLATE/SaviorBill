@@ -1,17 +1,32 @@
-from sqlalchemy import Column, Integer, String, JSON, DateTime
+"""Лог обращений к API (самоочищающаяся таблица)."""
 
-from src.utils.datetime_utils import utc_now
-from . import Base
+from __future__ import annotations
 
-class ApiLogModel(Base):
+from datetime import datetime
+
+from sqlalchemy import JSON, DateTime, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column
+
+from models import Base
+from orm.mixins import LimitMixin
+from utils.datetime_utils import utc_now
+
+
+class ApiLog(LimitMixin, Base):
+    """Запись лога API. Старые строки подрезаются ``ApiLog.trim()``."""
+
     __tablename__ = "api_logs"
+    __row_limit__ = 1_000_000
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    tenant_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    profile_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    tenant_id = Column(Integer, nullable=True)
-    profile_id = Column(Integer, nullable=True)
+    action: Mapped[str] = mapped_column(String(100), nullable=False)
+    meta: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
-    action = Column(String(100), nullable=False)
-    meta = Column(JSON, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
 
-    created_at = Column(DateTime(timezone=True), default=utc_now, nullable=False)
+
+__all__ = ["ApiLog"]

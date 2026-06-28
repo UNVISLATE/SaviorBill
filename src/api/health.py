@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 
-from src.utils.config import AppConfig
+from utils.config import AppConfig
 
 router = APIRouter(tags=["health"])
 

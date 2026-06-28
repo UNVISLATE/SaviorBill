@@ -5,7 +5,36 @@ from utils.config import AppConfig
 
 settings = AppConfig()
 
-app = FastAPI(title=settings.APP_NAME, version=settings.APP_VERSION, lifespan=lifespan)
+DESCRIPTION = """
+**SaviorBill** — событийная биллинг-система. Python отвечает за деньги и логику,
+Lua — за изолированные интеграции с внешним миром.
+"""
+
+TAGS_META = [
+    {"name": "auth", "description": "Регистрация, вход, JWT-токены, выход."},
+    {"name": "oauth", "description": "Вход через внешних OIDC-провайдеров."},
+    {"name": "catalog", "description": "Публичный каталог услуг и дерево каталогов."},
+    {"name": "user", "description": "Профиль, услуги, платежи и привязки пользователя."},
+    {"name": "promocodes", "description": "Активация промокодов (бонус/скидка/услуга)."},
+    {"name": "callback", "description": "Колбэки платёжных систем и OAuth."},
+    {"name": "admin: me", "description": "Профиль текущего администратора."},
+    {"name": "admin: users", "description": "Список и редактирование пользователей."},
+    {"name": "admin: roles", "description": "Роли и каталог прав (RBAC)."},
+    {"name": "admin: services", "description": "Управление услугами каталога."},
+    {"name": "admin: catalogs", "description": "Управление каталогами услуг."},
+    {"name": "admin: orders", "description": "Выданные услуги и ручная выдача."},
+    {"name": "admin: purchases", "description": "Платежи и платёжные провайдеры."},
+    {"name": "admin: oauth", "description": "Управление OAuth-провайдерами."},
+    {"name": "admin: lua", "description": "Загрузка/редактирование Lua-скриптов."},
+]
+
+app = FastAPI(
+    title=settings.APP_NAME,
+    version=settings.APP_VERSION,
+    description=DESCRIPTION,
+    openapi_tags=TAGS_META,
+    lifespan=lifespan,
+)
 
 if __name__ == "__main__":
     import uvicorn

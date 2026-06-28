@@ -52,9 +52,11 @@ docker-compose.override.yml
 *.log
 *.pid
 
-# Lua: пользовательские скрипты монтируются в рантайме, примеры — храним.
-lua/**
-!lua/services/
-!lua/services/demo_service.lua
-!lua/payments/
-!lua/payments/demo_pay.lua
+# Монтируемая папка данных: рантайм-артефакты не коммитим, примеры lua — храним.
+data/keys/
+data/uploads/
+data/lua/**
+!data/lua/services/
+!data/lua/services/demo_service.lua
+!data/lua/payments/
+!data/lua/payments/demo_pay.lua

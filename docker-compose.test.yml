@@ -1,0 +1,46 @@
+# Прогон тестов.
+#
+# Запуск:
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml up \
+#       --build --abort-on-container-exit --exit-code-from tests
+#
+# Что происходит:
+#   1. Поднимается полный стек (db, valkey, luaworker, billing) из основного compose.
+#      При сборке billing-образа уже прогоняются ЮНИТ-тесты (см. Dockerfile).
+#   2. billing прогоняет alembic-миграции и стартует API; healthcheck ждёт /health.
+#   3. Сервис `tests` дожидается healthy-billing и гоняет ИНТЕГРАЦИОННЫЕ тесты
+#      по HTTP (BASE_URL=billing) с сидингом данных напрямую в Postgres.
+#   4. Код выхода контейнера `tests` становится кодом выхода всей команды
+#      (--exit-code-from tests) => CI падает, если упал любой интеграционный тест.
+
+services:
+  billing:
+    environment:
+      DATA_DIR: /app/data
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+
+  tests:
+    build:
+      context: .
+      target: tests
+    depends_on:
+      billing:
+        condition: service_healthy
+      db:
+        condition: service_healthy
+    environment:
+      BASE_URL: http://billing:8000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-aiosupport}
+      DB_PASS: ${DB_PASS:-test123}
+      DB_NAME: ${DB_NAME:-aiosupport}
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-prod-32bytes-min-secret}
+    # Полный прогон: юнит + интеграция (юнит уже прошли на сборке, но повторим для отчёта).
+    command: ["pytest", "-m", "unit or integration", "--maxfail=1"]
