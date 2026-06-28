@@ -1,0 +1,60 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Test / coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Docker
+docker-compose.override.yml
+
+# Локальные заметки/доки разработчика (не коммитим)
+*.local.md
+/docs/local/
+
+# Logs / runtime
+*.log
+*.pid
+
+# Lua: пользовательские скрипты монтируются в рантайме, примеры — храним.
+lua/**
+!lua/services/
+!lua/services/demo_service.lua
+!lua/payments/
+!lua/payments/demo_pay.lua

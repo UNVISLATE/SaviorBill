@@ -1,0 +1,4 @@
+# Зависимости только для тестов/CI (в прод-образ не попадают).
+-r requirements.txt
+pytest==8.4.2
+pytest-asyncio==1.2.0
