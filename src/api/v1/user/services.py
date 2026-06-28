@@ -25,9 +25,7 @@ async def my_services(
 ) -> list[UserSvc]:
     """Список выданных пользователю услуг."""
     rows = await session.scalars(
-        select(UserSvc)
-        .where(UserSvc.account_id == acc.id)
-        .order_by(UserSvc.id.desc())
+        select(UserSvc).where(UserSvc.account_id == acc.id).order_by(UserSvc.id.desc())
     )
     return list(rows)
 

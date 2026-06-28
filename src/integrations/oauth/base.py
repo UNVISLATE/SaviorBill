@@ -54,7 +54,9 @@ class OIDCBase:
         resp = await client.get(url)
         resp.raise_for_status()
         doc = resp.json()
-        self.rt.authorize_url = self.rt.authorize_url or doc.get("authorization_endpoint")
+        self.rt.authorize_url = self.rt.authorize_url or doc.get(
+            "authorization_endpoint"
+        )
         self.rt.token_url = self.rt.token_url or doc.get("token_endpoint")
         self.rt.userinfo_url = self.rt.userinfo_url or doc.get("userinfo_endpoint")
         self.rt.jwks_uri = self.rt.jwks_uri or doc.get("jwks_uri")

@@ -70,9 +70,7 @@ class SettingsMngr:
     async def set(self, key: str, value: str | None, is_secret: bool = False) -> None:
         """Записать настройку в БД и синхронизировать кэш Valkey."""
         row = await self.s.get(Setting, key)
-        stored = (
-            self.box.seal(value) if (is_secret and value is not None) else value
-        )
+        stored = self.box.seal(value) if (is_secret and value is not None) else value
         if row is None:
             row = Setting(key=key, value=stored, is_secret=is_secret)
             self.s.add(row)

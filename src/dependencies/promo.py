@@ -35,7 +35,9 @@ class PromoSvc:
         if promo.valid_to and now > promo.valid_to:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "срок промокода истёк")
         if promo.max_uses is not None and promo.used_count >= promo.max_uses:
-            raise HTTPException(status.HTTP_409_CONFLICT, "лимит использований исчерпан")
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "лимит использований исчерпан"
+            )
 
         used_by_user = await self.s.scalar(
             select(func.count())
@@ -50,16 +52,22 @@ class PromoSvc:
         self, promo: Promocode, acc: Account, order_id: int | None = None
     ) -> None:
         """Зафиксировать применение промокода и увеличить счётчик."""
-        self.s.add(PromoUse(promocode_id=promo.id, account_id=acc.id, order_id=order_id))
+        self.s.add(
+            PromoUse(promocode_id=promo.id, account_id=acc.id, order_id=order_id)
+        )
         promo.used_count += 1
         await self.s.flush()
 
     def discount_for(self, promo: Promocode, service: Service) -> Decimal:
         """Рассчитать скидку промокода для услуги."""
         if promo.kind != PromoKind.DISCOUNT:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "промокод не является скидочным")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "промокод не является скидочным"
+            )
         if promo.discount_type == DiscountType.PERCENT:
-            disc = (service.price * promo.value / Decimal("100")).quantize(Decimal("0.01"))
+            disc = (service.price * promo.value / Decimal("100")).quantize(
+                Decimal("0.01")
+            )
         else:
             disc = promo.value
         return max(Decimal("0"), min(disc, service.price))

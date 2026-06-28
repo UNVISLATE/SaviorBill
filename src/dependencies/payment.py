@@ -55,7 +55,9 @@ class PayMngr:
             stmt = stmt.where(PayProvider.enabled.is_(True))
         prov = await self.s.scalar(stmt)
         if prov is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "платёжный провайдер не найден")
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, "платёжный провайдер не найден"
+            )
         return prov
 
     def _secrets(self, prov: PayProvider) -> dict:
@@ -129,7 +131,9 @@ class PayMngr:
             "user": {"id": acc.id, "login": acc.login, "email": acc.email},
         }
         try:
-            res = await self.bus.call("run_script", {"script": script.filename, "ctx": ctx})
+            res = await self.bus.call(
+                "run_script", {"script": script.filename, "ctx": ctx}
+            )
             payment.public_data = res.get("public") or {}
             payment.private_data = res.get("private") or {}
             payment.external_id = (res.get("private") or {}).get("external_id")
@@ -156,7 +160,9 @@ class PayMngr:
         priv = res.get("private") or {}
 
         if not priv.get("ok"):
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "колбэк не прошёл проверку")
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED, "колбэк не прошёл проверку"
+            )
 
         payment = await self._locate(priv, provider_slug)
         if payment is None:

@@ -16,7 +16,6 @@ def require_perm(path: str) -> Callable:
 
     Побочно регистрирует право в реестре (для ``GET /admin/perms``).
     Использование::
-
         @router.get("/users", dependencies=[Depends(require_perm("users.read"))])
     """
     reg_perm(path)

@@ -14,7 +14,6 @@ RUN apk add --no-cache \
 WORKDIR /app
 COPY src/ /app/
 
-# Шина и адрес биллинга задаются через окружение (см. docker-compose.yml).
 ENV VALKEY_HOST=valkey \
     VALKEY_PORT=6379 \
     VALKEY_DB=0 \

@@ -20,10 +20,14 @@ class DigiKey(PkMixin, TsMixin, Base):
         ForeignKey("services.id", ondelete="CASCADE"), index=True, nullable=False
     )
     value: Mapped[str] = mapped_column(String(512), nullable=False)
-    is_used: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
+    is_used: Mapped[bool] = mapped_column(
+        Boolean, default=False, nullable=False, index=True
+    )
     # Выдача (user_svc), которой выдан ключ (без FK — избегаем циклической связи).
     order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 __all__ = ["DigiKey"]

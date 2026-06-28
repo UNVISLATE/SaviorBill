@@ -12,33 +12,32 @@ from api import api_router
 
 
 def _prepare_storage(config: AppConfig) -> None:
-	"""Создать монтируемые папки и разрешить ключ шифрования секретов."""
-	config.keys_dir.mkdir(parents=True, exist_ok=True)
-	if config.STORAGE_BACKEND == "fs":
-		config.uploads_dir.mkdir(parents=True, exist_ok=True)
-	# Если ключ не передан окружением — берём/создаём его в файле данных.
-	if not config.SECRETS_KEY:
-		config.SECRETS_KEY = SecBox.load_or_create(config.secret_key_file)
+    """Создать монтируемые папки и разрешить ключ шифрования секретов."""
+    config.keys_dir.mkdir(parents=True, exist_ok=True)
+    if config.STORAGE_BACKEND == "fs":
+        config.uploads_dir.mkdir(parents=True, exist_ok=True)
+    # Если ключ не передан окружением — берём/создаём его в файле данных.
+    if not config.SECRETS_KEY:
+        config.SECRETS_KEY = SecBox.load_or_create(config.secret_key_file)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-	config = AppConfig()
-	_prepare_storage(config)
-	app.state.settings = config
+    config = AppConfig()
+    _prepare_storage(config)
+    app.state.settings = config
 
-	app.state.db_engine = create_db_engine(config.db_url)
-	app.state.db_sessionmaker = create_db_sessionmaker(app.state.db_engine)
-	app.state.valkey = create_valkey_client(config.valkey_url)
+    app.state.db_engine = create_db_engine(config.db_url)
+    app.state.db_sessionmaker = create_db_sessionmaker(app.state.db_engine)
+    app.state.valkey = create_valkey_client(config.valkey_url)
 
-	# Первичная инициализация: owner-роль/пользователь, сид настроек SMTP.
-	await bootstrap(config, app.state.db_sessionmaker, app.state.valkey)
+    # Первичная инициализация: owner-роль/пользователь, сид настроек SMTP.
+    await bootstrap(config, app.state.db_sessionmaker, app.state.valkey)
 
-	app.include_router(api_router)
+    app.include_router(api_router)
 
-	try:
-		yield
-	finally:
-		await app.state.valkey.aclose()
-		await app.state.db_engine.dispose()
-
+    try:
+        yield
+    finally:
+        await app.state.valkey.aclose()
+        await app.state.db_engine.dispose()

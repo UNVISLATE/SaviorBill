@@ -78,11 +78,15 @@ class CatalogMngr:
         return await self.s.get(SvcCatalog, catalog_id)
 
     async def create(self, data: dict) -> SvcCatalog:
-        if await self.s.scalar(select(SvcCatalog).where(SvcCatalog.slug == data["slug"])):
+        if await self.s.scalar(
+            select(SvcCatalog).where(SvcCatalog.slug == data["slug"])
+        ):
             raise HTTPException(status.HTTP_409_CONFLICT, "slug каталога занят")
         parent_id = data.get("parent_id")
         if parent_id is not None and await self.by_id(parent_id) is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "родительский каталог не найден")
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, "родительский каталог не найден"
+            )
         cat = SvcCatalog(**data)
         self.s.add(cat)
         await self.s.flush()
@@ -93,7 +97,9 @@ class CatalogMngr:
         if cat is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "каталог не найден")
         if data.get("parent_id") == catalog_id:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "каталог не может быть сам себе родителем")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "каталог не может быть сам себе родителем"
+            )
         for field, value in data.items():
             setattr(cat, field, value)
         await self.s.flush()

@@ -52,14 +52,16 @@ class SecBox:
     def open(self, stored: str) -> str:
         """Расшифровать значение из БД."""
         if stored.startswith(_PLAIN):
-            return stored[len(_PLAIN):]
+            return stored[len(_PLAIN) :]
         if stored.startswith(_ENC):
             if self._f is None:
                 raise RuntimeError("SECRETS_KEY не задан, секрет нельзя расшифровать")
             try:
-                return self._f.decrypt(stored[len(_ENC):].encode()).decode()
+                return self._f.decrypt(stored[len(_ENC) :].encode()).decode()
             except InvalidToken as exc:
-                raise RuntimeError("Неверный SECRETS_KEY или повреждённый секрет") from exc
+                raise RuntimeError(
+                    "Неверный SECRETS_KEY или повреждённый секрет"
+                ) from exc
         # Легаси / сырое значение без префикса.
         return stored
 

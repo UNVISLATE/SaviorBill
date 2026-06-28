@@ -26,9 +26,7 @@ async def my_purchases(
 ) -> list[Payment]:
     """Список платежей текущего пользователя."""
     rows = await session.scalars(
-        select(Payment)
-        .where(Payment.account_id == acc.id)
-        .order_by(Payment.id.desc())
+        select(Payment).where(Payment.account_id == acc.id).order_by(Payment.id.desc())
     )
     return list(rows)
 

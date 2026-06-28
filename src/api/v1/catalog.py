@@ -15,9 +15,7 @@ from schemas.catalog import CatalogOut, ServiceOut
 router = APIRouter(prefix="/api/v1/catalog", tags=["catalog"])
 
 
-@router.get(
-    "/catalogs", response_model=list[CatalogOut], summary="Дерево каталогов"
-)
+@router.get("/catalogs", response_model=list[CatalogOut], summary="Дерево каталогов")
 async def list_catalogs(
     mngr: CatalogMngr = Depends(get_catalog_mngr),
 ) -> list[CatalogOut]:

@@ -73,7 +73,9 @@ class VerifySvc:
         """Подтвердить email по токену."""
         raw = await self.vk.get(_VERIFY + token)
         if raw is None:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "неверный или истёкший токен")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "неверный или истёкший токен"
+            )
         await self.vk.delete(_VERIFY + token)
 
         acc = await self.s.get(Account, int(raw))

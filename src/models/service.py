@@ -34,7 +34,9 @@ class Service(PkMixin, TsMixin, Base):
 
     __tablename__ = "services"
 
-    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    slug: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, nullable=False
+    )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -49,7 +51,9 @@ class Service(PkMixin, TsMixin, Base):
     currency: Mapped[str] = mapped_column(String(8), default="RUB", nullable=False)
 
     # key | lua (см. Delivery).
-    delivery: Mapped[str] = mapped_column(String(8), default=Delivery.KEY, nullable=False)
+    delivery: Mapped[str] = mapped_column(
+        String(8), default=Delivery.KEY, nullable=False
+    )
     lua_script_id: Mapped[int | None] = mapped_column(
         ForeignKey("lua_scripts.id", ondelete="SET NULL"), nullable=True, index=True
     )

@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, status
 
 from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.rbac import require_perm
-from schemas.catalog import ServiceAdminOut, ServiceIn, ServicePatch
+from schemas.catalog import ServiceAdminOut, ServiceCreate, ServicePatch
 
 router = APIRouter()
 
@@ -31,7 +31,7 @@ async def list_services(
     summary="Создать услугу",
 )
 async def create_service(
-    body: ServiceIn, mngr: ServiceMngr = Depends(get_service_mngr)
+    body: ServiceCreate, mngr: ServiceMngr = Depends(get_service_mngr)
 ) -> ServiceAdminOut:
     svc = await mngr.create(body.model_dump())
     await mngr.s.commit()

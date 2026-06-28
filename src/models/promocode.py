@@ -30,7 +30,9 @@ class Promocode(PkMixin, TsMixin, Base):
 
     __tablename__ = "promocodes"
 
-    code: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    code: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, nullable=False
+    )
     kind: Mapped[str] = mapped_column(String(16), nullable=False)
 
     # bonus: сумма; discount: размер скидки; service: не используется.
@@ -48,11 +50,19 @@ class Promocode(PkMixin, TsMixin, Base):
 
     # Лимиты использования.
     max_uses: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    used_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
-    per_user: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
+    used_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    per_user: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
 
-    valid_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    valid_to: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    valid_from: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    valid_to: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 

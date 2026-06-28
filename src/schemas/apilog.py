@@ -1,5 +1,6 @@
 from pydantic import BaseModel, ConfigDict
 
+
 class APIMeta(BaseModel):
     method: str
     path: str
@@ -8,6 +9,7 @@ class APIMeta(BaseModel):
     ip: str
     duration: float
     user_agent: str | None = None
+
 
 class APILog(BaseModel):
     model_config = ConfigDict(from_attributes=True)

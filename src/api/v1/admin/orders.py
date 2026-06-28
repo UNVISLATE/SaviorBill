@@ -70,9 +70,7 @@ async def grant(
     if acc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "пользователь не найден")
     service = await svc_mngr.get_active(body.service_id)
-    usvc = await usvc_mngr.create(
-        acc, service, params=body.params, charge=body.charge
-    )
+    usvc = await usvc_mngr.create(acc, service, params=body.params, charge=body.charge)
     await usvc_mngr.s.commit()
     return usvc
 

@@ -20,10 +20,14 @@ class LuaScript(PkMixin, TsMixin, Base):
 
     __tablename__ = "lua_scripts"
 
-    slug: Mapped[str] = mapped_column(String(64), unique=True, index=True, nullable=False)
+    slug: Mapped[str] = mapped_column(
+        String(64), unique=True, index=True, nullable=False
+    )
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # service | payment | generic (см. ScriptKind).
-    kind: Mapped[str] = mapped_column(String(16), default=ScriptKind.SERVICE, nullable=False)
+    kind: Mapped[str] = mapped_column(
+        String(16), default=ScriptKind.SERVICE, nullable=False
+    )
     # Имя файла относительно LUA_SCRIPTS_DIR (например "services/demo.lua").
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)

@@ -32,7 +32,7 @@ class ServiceAdminOut(ServiceOut):
     settings: dict
 
 
-class ServiceIn(BaseModel):
+class ServiceCreate(BaseModel):
     """Создание услуги (админ)."""
 
     slug: str = Field(min_length=2, max_length=64)
@@ -138,7 +138,7 @@ class ScriptPatch(BaseModel):
 __all__ = [
     "ServiceOut",
     "ServiceAdminOut",
-    "ServiceIn",
+    "ServiceCreate",
     "ServicePatch",
     "CatalogOut",
     "CatalogIn",

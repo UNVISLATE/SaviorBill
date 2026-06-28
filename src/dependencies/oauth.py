@@ -54,7 +54,9 @@ class OAuthSvc:
             select(OAuthCfg).where(OAuthCfg.slug == slug, OAuthCfg.enabled.is_(True))
         )
         if row is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, f"провайдер {slug} недоступен")
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, f"провайдер {slug} недоступен"
+            )
         return row
 
     def _runtime(self, cfg: OAuthCfg) -> OAuthRT:
@@ -89,7 +91,9 @@ class OAuthSvc:
         """Проверить state, обменять код и вернуть нормализованный профиль."""
         saved = await self.vk.get(_STATE + state)
         if saved != slug:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "неверный или истёкший state")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "неверный или истёкший state"
+            )
         await self.vk.delete(_STATE + state)
 
         cfg = await self._cfg(slug)

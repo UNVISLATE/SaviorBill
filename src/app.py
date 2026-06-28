@@ -5,17 +5,20 @@ from utils.config import AppConfig
 
 settings = AppConfig()
 
-DESCRIPTION = """
-**SaviorBill** — событийная биллинг-система. Python отвечает за деньги и логику,
-Lua — за изолированные интеграции с внешним миром.
-"""
+DESCRIPTION = "**SaviorBill** — событийная биллинг-система."
 
 TAGS_META = [
     {"name": "auth", "description": "Регистрация, вход, JWT-токены, выход."},
     {"name": "oauth", "description": "Вход через внешних OIDC-провайдеров."},
     {"name": "catalog", "description": "Публичный каталог услуг и дерево каталогов."},
-    {"name": "user", "description": "Профиль, услуги, платежи и привязки пользователя."},
-    {"name": "promocodes", "description": "Активация промокодов (бонус/скидка/услуга)."},
+    {
+        "name": "user",
+        "description": "Профиль, услуги, платежи и привязки пользователя.",
+    },
+    {
+        "name": "promocodes",
+        "description": "Активация промокодов (бонус/скидка/услуга).",
+    },
     {"name": "callback", "description": "Колбэки платёжных систем и OAuth."},
     {"name": "admin: me", "description": "Профиль текущего администратора."},
     {"name": "admin: users", "description": "Список и редактирование пользователей."},

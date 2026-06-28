@@ -26,7 +26,9 @@ class StorageSvc:
         suffix = PurePosixPath(filename).suffix
         return f"{folder.strip('/')}/{uuid.uuid4().hex}{suffix}"
 
-    async def save(self, folder: str, filename: str, data: bytes, content_type: str | None = None) -> str:
+    async def save(
+        self, folder: str, filename: str, data: bytes, content_type: str | None = None
+    ) -> str:
         """Сохранить файл и вернуть его публичный URL/относительный путь."""
         key = self._key(folder, filename)
         if self.backend == "s3":

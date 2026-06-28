@@ -20,7 +20,9 @@ class OAuthCfg(PkMixin, TsMixin, Base):
 
     __tablename__ = "oauth_cfg"
 
-    slug: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
+    slug: Mapped[str] = mapped_column(
+        String(32), unique=True, index=True, nullable=False
+    )
     title: Mapped[str | None] = mapped_column(String(128), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 

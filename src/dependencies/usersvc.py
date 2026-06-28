@@ -34,7 +34,9 @@ class UserSvcMngr:
         if amount <= 0:
             return
         if acc.bonus_balance + acc.balance < amount:
-            raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "недостаточно средств")
+            raise HTTPException(
+                status.HTTP_402_PAYMENT_REQUIRED, "недостаточно средств"
+            )
         from_bonus = min(acc.bonus_balance, amount)
         acc.bonus_balance -= from_bonus
         acc.balance -= amount - from_bonus
@@ -85,7 +87,9 @@ class UserSvcMngr:
         await self.s.flush()
 
         if deliver:
-            await self.deliver(usvc, service, acc, refund_on_fail=price if charge else Decimal("0"))
+            await self.deliver(
+                usvc, service, acc, refund_on_fail=price if charge else Decimal("0")
+            )
 
         return usvc
 

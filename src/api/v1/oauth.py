@@ -35,9 +35,7 @@ async def providers(
     summary="Старт OAuth-авторизации",
     description="Готовит state и возвращает authorize_url для редиректа на провайдера.",
 )
-async def start(
-    provider: str, svc: OAuthSvc = Depends(get_oauth_svc)
-) -> OAuthStartOut:
+async def start(provider: str, svc: OAuthSvc = Depends(get_oauth_svc)) -> OAuthStartOut:
     return await svc.start(provider)
 
 

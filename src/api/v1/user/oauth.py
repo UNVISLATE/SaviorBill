@@ -22,9 +22,7 @@ async def my_connections(
 ) -> list[OAuthConn]:
     """Список внешних учёток, привязанных к текущему аккаунту."""
     rows = await session.scalars(
-        select(OAuthConn)
-        .where(OAuthConn.account_id == acc.id)
-        .order_by(OAuthConn.id)
+        select(OAuthConn).where(OAuthConn.account_id == acc.id).order_by(OAuthConn.id)
     )
     return list(rows)
 

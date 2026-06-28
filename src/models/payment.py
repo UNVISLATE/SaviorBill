@@ -47,8 +47,12 @@ class Payment(PkMixin, TsMixin, JsonDataMixin, Base):
     user_svc_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     # Идентификатор платежа на стороне провайдера.
-    external_id: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    external_id: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, index=True
+    )
+    paid_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 __all__ = ["Payment"]

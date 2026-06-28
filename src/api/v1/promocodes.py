@@ -42,7 +42,9 @@ async def redeem(
 
     if promo.kind == PromoKind.SERVICE:
         if not promo.service_id:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "у промокода не задана услуга")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "у промокода не задана услуга"
+            )
         service = await svc_mngr.get_active(promo.service_id)
         order = await usvc_mngr.create(acc, service, discount=service.price)
         if order.status != OrderStatus.DELIVERED:

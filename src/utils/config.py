@@ -127,7 +127,7 @@ class AppConfig(BaseSettings):
             password=self.DB_PASS,
             host=self.DB_HOST,
             port=self.DB_PORT,
-            database=self.DB_NAME
+            database=self.DB_NAME,
         )
 
     @property
