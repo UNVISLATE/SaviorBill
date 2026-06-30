@@ -15,6 +15,7 @@ from dependencies.payment import (
     get_pay_mngr,
     get_pay_providers_mngr,
 )
+from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
 from enums import PayTarget
 from models.user import UserModel
@@ -67,6 +68,7 @@ async def my_purchases(
         "обычно лежит ссылка для редиректа на оплату. При `target=service` "
         "услуга будет выдана автоматически по успешному колбэку."
     ),
+    dependencies=[Depends(rate_limit("purchases.create", LimitKind.SENSITIVE))],
 )
 async def create_purchase(
     body: PaymentCreate,

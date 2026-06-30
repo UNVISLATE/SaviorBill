@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from dependencies.auth import get_current_acc
 from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.promo import PromoCodesMngr, get_promo_mngr
+from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
 from enums import OrderStatus, PromoKind
 from models.user import UserModel
@@ -24,6 +25,7 @@ router = APIRouter(prefix="/api/v1/promocodes", tags=["promocodes"])
         "баланс; `service` — бесплатная выдача услуги. Скидочный код (`discount`) "
         "так не активируется — его передают в поле `promocode` при заказе услуги."
     ),
+    dependencies=[Depends(rate_limit("promocodes.redeem", LimitKind.SENSITIVE))],
 )
 async def redeem(
     body: PromoRedeem,

@@ -20,6 +20,7 @@ class LimitKind(str, Enum):
     DEFAULT = "default"
     AUTH = "auth"
     MAIL = "mail"
+    SENSITIVE = "sensitive"
 
 
 def _rule_for(cfg: AppConfig, kind: LimitKind) -> LimitRule:
@@ -28,6 +29,8 @@ def _rule_for(cfg: AppConfig, kind: LimitKind) -> LimitRule:
         return LimitRule(cfg.RATE_LIMIT_AUTH_MAX, cfg.RATE_LIMIT_AUTH_WINDOW)
     if kind is LimitKind.MAIL:
         return LimitRule(cfg.RATE_LIMIT_MAIL_MAX, cfg.RATE_LIMIT_MAIL_WINDOW)
+    if kind is LimitKind.SENSITIVE:
+        return LimitRule(cfg.RATE_LIMIT_SENSITIVE_MAX, cfg.RATE_LIMIT_SENSITIVE_WINDOW)
     return LimitRule(cfg.RATE_LIMIT_DEFAULT_MAX, cfg.RATE_LIMIT_DEFAULT_WINDOW)
 
 
