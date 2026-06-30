@@ -7,7 +7,7 @@ import pytest
 from utils.sec.jwt import (
     ACCESS,
     REFRESH,
-    BadToken,
+    InvalidJWT,
     decode_jwt,
     make_access,
     make_refresh,
@@ -38,18 +38,18 @@ def test_refresh_has_no_extra():
 
 def test_wrong_secret_rejected():
     tok = make_access("1", SECRET, ALG, ttl=60, iss=ISS)
-    with pytest.raises(BadToken):
+    with pytest.raises(InvalidJWT):
         decode_jwt(tok, "other-secret", ALG, ISS)
 
 
 def test_wrong_issuer_rejected():
     tok = make_access("1", SECRET, ALG, ttl=60, iss=ISS)
-    with pytest.raises(BadToken):
+    with pytest.raises(InvalidJWT):
         decode_jwt(tok, SECRET, ALG, "someone-else")
 
 
 def test_expired_token_rejected():
     tok = make_access("1", SECRET, ALG, ttl=-1, iss=ISS)
     time.sleep(0.01)
-    with pytest.raises(BadToken):
+    with pytest.raises(InvalidJWT):
         decode_jwt(tok, SECRET, ALG, ISS)

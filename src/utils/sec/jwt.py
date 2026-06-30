@@ -1,5 +1,3 @@
-"""Выпуск и валидация JWT (access/refresh) на PyJWT."""
-
 from __future__ import annotations
 
 import uuid
@@ -14,9 +12,7 @@ REFRESH = "refresh"
 
 
 @dataclass(slots=True)
-class Claims:
-    """Распакованная полезная нагрузка токена."""
-
+class JWTToken:
     sub: str
     typ: str
     jti: str
@@ -26,7 +22,7 @@ class Claims:
     extra: dict
 
 
-class BadToken(Exception):
+class InvalidJWT(Exception):
     """Токен невалиден, просрочен или подделан."""
 
 
@@ -65,8 +61,8 @@ def make_refresh(sub: str, secret: str, alg: str, ttl: int, iss: str) -> str:
     return _encode(sub, REFRESH, secret, alg, ttl, iss)
 
 
-def decode_jwt(token: str, secret: str, alg: str, iss: str) -> Claims:
-    """Декодировать и провалидировать токен. Бросает ``BadToken`` при ошибке."""
+def decode_jwt(token: str, secret: str, alg: str, iss: str) -> JWTToken:
+    """Декодировать и провалидировать токен. Бросает ``InvalidJWT`` при ошибке."""
     try:
         data = jwt.decode(
             token,
@@ -75,11 +71,11 @@ def decode_jwt(token: str, secret: str, alg: str, iss: str) -> Claims:
             issuer=iss,
             options={"require": ["exp", "iat", "sub", "jti"]},
         )
-    except jwt.PyJWTError as exc:  # noqa: BLE001 — нормализуем в свой тип
-        raise BadToken(str(exc)) from exc
+    except jwt.PyJWTError as exc:
+        raise InvalidJWT(str(exc)) from exc
 
     reserved = {"sub", "typ", "jti", "exp", "iat", "iss"}
-    return Claims(
+    return JWTToken(
         sub=data["sub"],
         typ=data.get("typ", ACCESS),
         jti=data["jti"],
@@ -93,8 +89,8 @@ def decode_jwt(token: str, secret: str, alg: str, iss: str) -> Claims:
 __all__ = [
     "ACCESS",
     "REFRESH",
-    "Claims",
-    "BadToken",
+    "JWTToken",
+    "InvalidJWT",
     "make_access",
     "make_refresh",
     "decode_jwt",

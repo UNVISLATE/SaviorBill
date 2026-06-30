@@ -7,7 +7,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class RegIn(BaseModel):
+class Reg(BaseModel):
     """Регистрация локального аккаунта."""
 
     login: str = Field(min_length=3, max_length=64)
@@ -15,14 +15,14 @@ class RegIn(BaseModel):
     email: str | None = Field(default=None, max_length=255)
 
 
-class LoginIn(BaseModel):
+class Login(BaseModel):
     """Вход по логину и паролю."""
 
     login: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=1, max_length=128)
 
 
-class RefreshIn(BaseModel):
+class Refresh(BaseModel):
     """Обновление пары токенов по refresh-токену."""
 
     refresh_token: str
@@ -37,7 +37,20 @@ class TokenPair(BaseModel):
     expires_in: int  # TTL access-токена, секунды
 
 
-class AccOut(BaseModel):
+class PassResetRequest(BaseModel):
+    """Запрос сброса пароля (по email)."""
+
+    email: str = Field(max_length=255)
+
+
+class PassResetConfirm(BaseModel):
+    """Подтверждение сброса пароля новым значением."""
+
+    token: str
+    password: str = Field(min_length=8, max_length=128)
+
+
+class Account(BaseModel):
     """Публичное представление аккаунта."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -51,7 +64,7 @@ class AccOut(BaseModel):
     created_at: datetime
 
     @classmethod
-    def from_account(cls, acc) -> "AccOut":  # noqa: ANN001 — models.Account
+    def from_account(cls, acc) -> "Account":  # noqa: ANN001 — models.UserModel
         """Собрать DTO из ORM-аккаунта (роль — по имени)."""
         return cls(
             id=acc.id,
@@ -64,4 +77,34 @@ class AccOut(BaseModel):
         )
 
 
-__all__ = ["RegIn", "LoginIn", "RefreshIn", "TokenPair", "AccOut"]
+class AdminMe(BaseModel):
+    """Профиль текущего администратора с правами (для админ-панели)."""
+
+    id: int
+    login: str
+    email: str | None = None
+    role: str | None = None
+    perms: dict
+
+    @classmethod
+    def from_account(cls, acc) -> "AdminMe":  # noqa: ANN001 — models.UserModel
+        """Собрать DTO из ORM-аккаунта с деревом прав его роли."""
+        return cls(
+            id=acc.id,
+            login=acc.login,
+            email=acc.email,
+            role=acc.role.name if acc.role else None,
+            perms=(acc.role.perms if acc.role else {}) or {},
+        )
+
+
+__all__ = [
+    "Reg",
+    "Login",
+    "Refresh",
+    "TokenPair",
+    "PassResetRequest",
+    "PassResetConfirm",
+    "Account",
+    "AdminMe",
+]

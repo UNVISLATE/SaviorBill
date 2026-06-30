@@ -7,8 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
 from dependencies.valkey import get_valkey_client
-from models.user import Account
-from services.auth import AccMngr, TokenSvc
+from models.user import UserModel, UserMngr
+from services.auth import TokenSvc
 from utils.config import AppConfig
 from utils.sec import jwt as jwtu
 
@@ -19,8 +19,8 @@ def _cfg(request: Request) -> AppConfig:
     return request.app.state.settings
 
 
-def get_acc_mngr(session: AsyncSession = Depends(get_db_session)) -> AccMngr:
-    return AccMngr(session)
+def get_acc_mngr(session: AsyncSession = Depends(get_db_session)) -> UserMngr:
+    return UserMngr(session)
 
 
 def get_token_svc(
@@ -32,8 +32,8 @@ def get_token_svc(
 async def get_current_acc(
     request: Request,
     cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
-    mngr: AccMngr = Depends(get_acc_mngr),
-) -> Account:
+    mngr: UserMngr = Depends(get_acc_mngr),
+) -> UserModel:
     """Достать аккаунт из access-токена (Authorization: Bearer ...)."""
     if cred is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bearer required")
@@ -42,7 +42,7 @@ async def get_current_acc(
         claims = jwtu.decode_jwt(
             cred.credentials, cfg.JWT_SECRET, cfg.JWT_ALG, cfg.JWT_ISS
         )
-    except jwtu.BadToken as exc:
+    except jwtu.InvalidJWT as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
 
     if claims.typ != jwtu.ACCESS:
@@ -55,7 +55,8 @@ async def get_current_acc(
 
 
 __all__ = [
-    "AccMngr",
+    "UserModel",
+    "UserMngr",
     "TokenSvc",
     "get_acc_mngr",
     "get_token_svc",
