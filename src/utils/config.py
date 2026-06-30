@@ -23,7 +23,10 @@ class AppConfig(BaseSettings):
     # --- БД ---
     DB_DRIVER: str = Field(default="postgresql+asyncpg")
     DB_USER: str = Field(default="aiosupport")
-    DB_PASS: str
+    # Пароль БД — предоставляемый секрет: прямое значение ENV либо файл DB_PASS_FILE
+    # (или облачный менеджер секретов). Разрешается на старте.
+    DB_PASS: str | None = Field(default=None)
+    DB_PASS_FILE: str | None = Field(default=None)
     DB_HOST: str = Field(default="localhost")
     DB_PORT: int = Field(default=5432)
     DB_NAME: str = Field(default="aiosupport")
@@ -34,17 +37,32 @@ class AppConfig(BaseSettings):
     VALKEY_DB: int = Field(default=0)
 
     # --- Auth / JWT ---
-    JWT_SECRET: str
+    # JWT_SECRET — генерируемый секрет: если не задан в ENV, создаётся/читается
+    # через выбранный бэкенд секретов (по умолчанию файл JWT_SECRET_FILE).
+    JWT_SECRET: str | None = Field(default=None)
+    JWT_SECRET_FILE: str | None = Field(default=None)
     JWT_ALG: str = Field(default="HS256")
     ACCESS_TOKEN_TTL: int = Field(default=15 * 60)
     REFRESH_TOKEN_TTL: int = Field(default=30 * 24 * 60 * 60)
     JWT_ISS: str = Field(default="saviorbill")
 
     # --- Шифрование секретов (SecBox / Fernet) ---
-    # SECRETS_KEY — сам ключ. Если не задан, при старте читается/создаётся в
-    # файле SECRETS_KEY_PATH (см. lifespan + utils/init/secret.py).
+    # SECRETS_KEY — сам ключ. Если не задан, создаётся/читается через бэкенд
+    # секретов (по умолчанию файл SECRETS_KEY_PATH).
     SECRETS_KEY: str | None = Field(default=None)
     SECRETS_KEY_PATH: str | None = Field(default=None)
+
+    # --- Бэкенд секретов (file|aws|gcp|azure|vault) ---
+    # Все секреты — внешние ресурсы. ENV хранит путь/координаты, не значения.
+    SECRETS_BACKEND: str = Field(default="file")
+    SECRETS_PREFIX: str = Field(default="saviorbill/")
+    # Облачные координаты (нужны только для соответствующего бэкенда).
+    SECRETS_AWS_REGION: str | None = Field(default=None)
+    SECRETS_GCP_PROJECT: str | None = Field(default=None)
+    SECRETS_AZURE_VAULT_URL: str | None = Field(default=None)
+    SECRETS_VAULT_ADDR: str | None = Field(default=None)
+    SECRETS_VAULT_TOKEN: str | None = Field(default=None)
+    SECRETS_VAULT_MOUNT: str = Field(default="secret")
 
     # --- Публичный URL (редиректы OAuth, ссылки в письмах) ---
     PUBLIC_URL: str = Field(default="http://localhost:8000")
@@ -61,7 +79,10 @@ class AppConfig(BaseSettings):
     LUA_RESP_STREAM: str = Field(default="lua:results")
     LUA_GROUP: str = Field(default="luaworkers")
     LUA_CALL_TIMEOUT: int = Field(default=30)
+    # Сервисный токен LuaWorker — генерируемый секрет (файл LUA_SERVICE_TOKEN_FILE
+    # по умолчанию либо облачный менеджер).
     LUA_SERVICE_TOKEN: str | None = Field(default=None)
+    LUA_SERVICE_TOKEN_FILE: str | None = Field(default=None)
 
     # --- Хранилище файлов (медиа товаров, аватарки, иконки) ---
     STORAGE_BACKEND: str = Field(default="fs")
@@ -70,6 +91,7 @@ class AppConfig(BaseSettings):
     S3_REGION: str | None = Field(default=None)
     S3_KEY: str | None = Field(default=None)
     S3_SECRET: str | None = Field(default=None)
+    S3_SECRET_FILE: str | None = Field(default=None)
     S3_PUBLIC_URL: str | None = Field(default=None)
 
     # --- Кэш / TTL / лимиты (дехардкод) ---
@@ -105,6 +127,7 @@ class AppConfig(BaseSettings):
     SMTP_PORT: int = Field(default=587)
     SMTP_USER: str | None = Field(default=None)
     SMTP_PASS: str | None = Field(default=None)
+    SMTP_PASS_FILE: str | None = Field(default=None)
     SMTP_FROM: str | None = Field(default=None)
     SMTP_TLS: bool = Field(default=True)
 
@@ -138,6 +161,12 @@ class AppConfig(BaseSettings):
             self.EMAIL_TEMPLATES_DIR = str(Path(self.DATA_DIR) / "email")
         if not self.SECRETS_KEY_PATH:
             self.SECRETS_KEY_PATH = str(Path(self.DATA_DIR) / "keys" / "secret.key")
+        if not self.JWT_SECRET_FILE:
+            self.JWT_SECRET_FILE = str(Path(self.DATA_DIR) / "keys" / "jwt.key")
+        if not self.LUA_SERVICE_TOKEN_FILE:
+            self.LUA_SERVICE_TOKEN_FILE = str(
+                Path(self.DATA_DIR) / "keys" / "lua_service.token"
+            )
         return self
 
     @property

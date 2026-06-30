@@ -7,19 +7,18 @@ from dependencies.valkey import create_valkey_client
 from utils.config import AppConfig
 from utils.bootstrap import bootstrap
 from utils.openapi import document_perms
-from utils.sec.box import SecBox
+from utils.sec.secrets.resolve import resolve_secrets
 
 from api import api_router
 
 
 def _prepare_storage(config: AppConfig) -> None:
-    """Создать монтируемые папки и разрешить ключ шифрования секретов."""
+    """Создать монтируемые папки и разрешить секреты через выбранный бэкенд."""
     config.keys_dir.mkdir(parents=True, exist_ok=True)
     if config.STORAGE_BACKEND == "fs":
         config.uploads_dir.mkdir(parents=True, exist_ok=True)
-    # Если ключ не передан окружением — берём/создаём его в файле данных.
-    if not config.SECRETS_KEY:
-        config.SECRETS_KEY = SecBox.load_or_create(config.secret_key_file)
+    # Все секреты — внешние ресурсы (файлы/менеджер). Создаём при отсутствии.
+    resolve_secrets(config)
 
 
 @asynccontextmanager

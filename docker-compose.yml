@@ -37,7 +37,8 @@ services:
       DB_NAME: ${DB_NAME:-aiosupport}
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-prod-32bytes-min-secret}
+      JWT_SECRET: ${JWT_SECRET:-}
+      SECRETS_BACKEND: ${SECRETS_BACKEND:-file}
       SECRETS_KEY: ${SECRETS_KEY:-}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8000}
       LUA_SERVICE_TOKEN: ${LUA_SERVICE_TOKEN:-dev-service-token}

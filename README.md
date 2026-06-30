@@ -30,11 +30,27 @@ email-уведомления и загрузка медиа. Внешние ин
 ## Быстрый старт
 
 ```bash
-cp .env.example .env        # заполнить секреты (DB_PASS, JWT_SECRET, OWNER_*)
+cp .env.example .env        # DB_PASS, OWNER_*; секреты сгенерируются сами
 docker compose up --build   # БД, Valkey, миграции, API, luaworker
 ```
 
 API: `http://localhost:8000` · Swagger: `/docs` · здоровье: `/health`.
+
+## Секреты
+
+Политика: секреты — внешние ресурсы. В ENV указывается лишь путь/координаты,
+сами значения хранятся в файлах или менеджере секретов. Генерируемые секреты
+(`JWT_SECRET`, ключ шифрования `SECRETS_KEY`, `LUA_SERVICE_TOKEN`) создаются
+один раз при отсутствии и далее переиспользуются.
+
+Бэкенд выбирается через `SECRETS_BACKEND`:
+
+- `file` (по умолчанию) — каждый секрет в своём файле под `DATA_DIR/keys`;
+- `aws` — AWS Secrets Manager; `gcp` — Google Secret Manager;
+- `azure` — Azure Key Vault; `vault` — HashiCorp Vault (KV v2).
+
+Предоставляемые секреты (`DB_PASS`, `SMTP_PASS`, `S3_SECRET`) можно задать
+напрямую, через файл `*_FILE` (Docker secret) или из менеджера секретов.
 
 ## Локальная разработка
 
@@ -50,5 +66,4 @@ python -m black src tests migrations
 ## Документация
 
 - **`OVERVIEW.md`** — полный обзор: структура, подсистемы, карта API.
-- **`DEV.md`** — стандарты кода и принципы (RBAC, события, Lua, настройки).
 - **`.env.example`** — все переменные окружения с пояснениями.
