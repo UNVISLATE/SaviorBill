@@ -10,22 +10,30 @@ from pydantic import BaseModel, ConfigDict, Field
 class Reg(BaseModel):
     """Регистрация локального аккаунта."""
 
-    login: str = Field(min_length=3, max_length=64)
-    password: str = Field(min_length=8, max_length=128)
-    email: str | None = Field(default=None, max_length=255)
+    login: str = Field(
+        min_length=3, max_length=64, description="Логин (обязательно), 3–64 символа"
+    )
+    password: str = Field(
+        min_length=8, max_length=128, description="Пароль (обязательно), 8–128 символов"
+    )
+    email: str | None = Field(
+        default=None, max_length=255, description="Email (опционально)"
+    )
 
 
 class Login(BaseModel):
     """Вход по логину и паролю."""
 
-    login: str = Field(min_length=3, max_length=64)
-    password: str = Field(min_length=1, max_length=128)
+    login: str = Field(min_length=3, max_length=64, description="Логин (обязательно)")
+    password: str = Field(
+        min_length=1, max_length=128, description="Пароль (обязательно)"
+    )
 
 
 class Refresh(BaseModel):
     """Обновление пары токенов по refresh-токену."""
 
-    refresh_token: str
+    refresh_token: str = Field(description="Refresh-токен (обязательно)")
 
 
 class TokenPair(BaseModel):
@@ -40,14 +48,29 @@ class TokenPair(BaseModel):
 class PassResetRequest(BaseModel):
     """Запрос сброса пароля (по email)."""
 
-    email: str = Field(max_length=255)
+    email: str = Field(max_length=255, description="Email аккаунта (обязательно)")
 
 
 class PassResetConfirm(BaseModel):
-    """Подтверждение сброса пароля новым значением."""
+    """Подтверждение сброса пароля кодом из письма."""
 
-    token: str
-    password: str = Field(min_length=8, max_length=128)
+    email: str = Field(max_length=255, description="Email аккаунта (обязательно)")
+    code: str = Field(
+        min_length=6, max_length=6, description="6-значный код из письма (обязательно)"
+    )
+    password: str = Field(
+        min_length=8,
+        max_length=128,
+        description="Новый пароль (обязательно), 8–128 символов",
+    )
+
+
+class EmailVerifyConfirm(BaseModel):
+    """Подтверждение email 4-значным кодом из письма."""
+
+    code: str = Field(
+        min_length=4, max_length=4, description="4-значный код из письма (обязательно)"
+    )
 
 
 class Account(BaseModel):
@@ -105,6 +128,7 @@ __all__ = [
     "TokenPair",
     "PassResetRequest",
     "PassResetConfirm",
+    "EmailVerifyConfirm",
     "Account",
     "AdminMe",
 ]

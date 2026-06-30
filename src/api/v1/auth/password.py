@@ -1,4 +1,4 @@
-"""Сброс пароля по email (/api/v1/auth/password)."""
+"""Сброс пароля по email-коду (/api/v1/auth/password)."""
 
 from __future__ import annotations
 
@@ -16,8 +16,9 @@ router = APIRouter()
     status_code=status.HTTP_202_ACCEPTED,
     summary="Запросить сброс пароля",
     description=(
-        "Отправляет письмо со ссылкой сброса, если аккаунт с таким email "
-        "существует. Ответ всегда 202 (не раскрывает наличие аккаунта)."
+        "Отправляет на email 6-значный код сброса, если аккаунт существует. "
+        "Ответ всегда 202 (не раскрывает наличие аккаунта). Если SMTP не "
+        "настроен — возвращает 404."
     ),
     dependencies=[Depends(rate_limit("password.reset.request", LimitKind.MAIL))],
 )
@@ -25,6 +26,11 @@ async def request_reset(
     body: PassResetRequest,
     svc: ResetSvc = Depends(get_reset_svc),
 ) -> dict:
+    """Запросить код сброса пароля.
+
+    :arg body: тело с полем ``email`` (обязательно).
+    :return: статус отправки.
+    """
     await svc.request(body.email)
     await svc.s.commit()
     return {"status": "sent"}
@@ -34,14 +40,18 @@ async def request_reset(
     "/password/reset/confirm",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Подтвердить сброс пароля",
-    description="Устанавливает новый пароль по одноразовому токену из письма.",
+    description="Устанавливает новый пароль по email + 6-значному коду из письма.",
     dependencies=[Depends(rate_limit("password.reset.confirm", LimitKind.MAIL))],
 )
 async def confirm_reset(
     body: PassResetConfirm,
     svc: ResetSvc = Depends(get_reset_svc),
 ) -> None:
-    await svc.confirm(body.token, body.password)
+    """Подтвердить сброс пароля кодом.
+
+    :arg body: ``email``, ``code`` (6 цифр) и новый ``password`` — все обязательны.
+    """
+    await svc.confirm(body.email, body.code, body.password)
     await svc.s.commit()
 
 

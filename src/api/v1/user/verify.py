@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, status
 
 from dependencies.auth import get_current_acc
 from dependencies.mail import VerifySvc, get_verify_svc
 from dependencies.ratelimit import LimitKind, rate_limit
 from models.user import UserModel
-from schemas.auth import Account
+from schemas.auth import Account, EmailVerifyConfirm
 
 router = APIRouter()
 
@@ -17,30 +17,44 @@ router = APIRouter()
     "/me/verify/email/request",
     status_code=status.HTTP_202_ACCEPTED,
     summary="Запросить подтверждение email",
-    description="Отправляет письмо со ссылкой подтверждения на email аккаунта.",
+    description=(
+        "Отправляет на email аккаунта 4-значный код подтверждения с ограниченным "
+        "временем жизни. Если SMTP не настроен — возвращает 404."
+    ),
     dependencies=[Depends(rate_limit("mail.verify.request", LimitKind.MAIL))],
 )
 async def request_email(
     acc: UserModel = Depends(get_current_acc),
     svc: VerifySvc = Depends(get_verify_svc),
 ) -> dict:
+    """Запросить код подтверждения email.
+
+    :arg acc: текущий аутентифицированный аккаунт.
+    :return: статус отправки.
+    """
     await svc.request_email(acc)
     return {"status": "sent"}
 
 
-@router.get(
+@router.post(
     "/me/verify/email/confirm",
     response_model=Account,
     summary="Подтвердить email",
-    description="Подтверждает email по одноразовому токену из письма.",
+    description="Подтверждает email по 4-значному коду из письма (код в теле).",
     dependencies=[Depends(rate_limit("mail.verify.confirm", LimitKind.MAIL))],
 )
 async def confirm_email(
-    token: str = Query(...),
+    body: EmailVerifyConfirm,
+    acc: UserModel = Depends(get_current_acc),
     svc: VerifySvc = Depends(get_verify_svc),
 ) -> Account:
-    # TODO: явно обрабатывать ошибки токена; перевести на POST с кодом в теле.
-    acc = await svc.confirm_email(token)
+    """Подтвердить email текущего пользователя по коду.
+
+    :arg body: тело с полем ``code`` (4 цифры, обязательно).
+    :arg acc: текущий аутентифицированный аккаунт.
+    :return: обновлённый профиль аккаунта.
+    """
+    acc = await svc.confirm_email(acc, body.code)
     await svc.s.commit()
     return Account.from_account(acc)
 

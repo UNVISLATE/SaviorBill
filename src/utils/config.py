@@ -96,9 +96,10 @@ class AppConfig(BaseSettings):
 
     # --- Кэш / TTL / лимиты (дехардкод) ---
     SETTINGS_CACHE_TTL: int = Field(default=300)
+    # TTL кода подтверждения email и сброса пароля (сидится в settings как
+    # mail.code_ttl, далее берётся из БД).
     VERIFY_TOKEN_TTL: int = Field(default=3600)
     OAUTH_STATE_TTL: int = Field(default=600)
-    RESET_TOKEN_TTL: int = Field(default=3600)
     # Лимит строк в самоочищающихся таблицах (логи).
     LOG_ROW_LIMIT: int = Field(default=1_000_000)
 
@@ -119,6 +120,9 @@ class AppConfig(BaseSettings):
     # Запрос писем верификации/сброса (анти-спам).
     RATE_LIMIT_MAIL_MAX: int = Field(default=3)
     RATE_LIMIT_MAIL_WINDOW: int = Field(default=3600)
+    # Чувствительные действия (покупки, активация промокодов, выдачи).
+    RATE_LIMIT_SENSITIVE_MAX: int = Field(default=20)
+    RATE_LIMIT_SENSITIVE_WINDOW: int = Field(default=60)
 
     # ===================== РАЗОВЫЕ ENV (seed → settings) ==================
 

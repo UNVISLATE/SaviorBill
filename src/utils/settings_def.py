@@ -57,6 +57,14 @@ SETTINGS: tuple[SettingDef, ...] = (
     SettingDef(
         "smtp.tls", "SMTP_TLS", type="bool", group="smtp", desc="Использовать TLS"
     ),
+    # Почтовые коды (подтверждение email / сброс пароля)
+    SettingDef(
+        "mail.code_ttl",
+        "VERIFY_TOKEN_TTL",
+        type="int",
+        group="mail",
+        desc="TTL кода подтверждения email и сброса пароля, секунды",
+    ),
     # Имена базовых ролей
     SettingDef("role.owner", "ROLE_OWNER", group="role", desc="Имя роли владельца"),
     SettingDef(

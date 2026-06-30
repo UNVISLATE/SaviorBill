@@ -1,6 +1,8 @@
-"""DI и сервис верификации email (через одноразовый токен в Valkey + SMTP)."""
+"""DI и сервис верификации email (4-значный код в Valkey + SMTP)."""
 
 from __future__ import annotations
+
+import hmac
 
 import valkey.asyncio as valkey
 from fastapi import Depends, HTTPException, Request, status
@@ -14,15 +16,31 @@ from models.email_templates import EmailMngr
 from models.user import UserModel
 from utils.config import AppConfig
 from utils.mail import MailSvc
-from utils.sec.crypt import generate_base_token
+from utils.sec.crypt import generate_numeric_code
 
-# Префикс и TTL токена верификации email.
+# Ключи Valkey: код привязан к аккаунту (verify) + счётчик неверных попыток.
 _VERIFY = "verify:email:"
-_VERIFY_TTL = 3600
+_VERIFY_FAIL = "verify:email:fail:"
+# Длина кода подтверждения email и потолок неверных попыток на код.
+_CODE_DIGITS = 4
+_MAX_FAILS = 5
+
+
+def _const_eq(a: str, b: str) -> bool:
+    """Сравнить строки за постоянное время (анти-тайминг).
+
+    :arg a: первая строка; :arg b: вторая строка.
+    :return: ``True`` если строки равны.
+    """
+    return hmac.compare_digest(a, b)
 
 
 async def build_mail_svc(settings: SystemSettingsMngr) -> MailSvc:
-    """Собрать :class:`MailSvc` из настроек SMTP в БД."""
+    """Собрать транспорт писем из настроек SMTP в БД.
+
+    :arg settings: менеджер системных настроек.
+    :return: транспорт отправки писем (может быть не сконфигурирован).
+    """
     grp = await settings.get_group("smtp.")
     return MailSvc(
         host=grp.get("smtp.host"),
@@ -35,68 +53,83 @@ async def build_mail_svc(settings: SystemSettingsMngr) -> MailSvc:
 
 
 class VerifySvc:
-    """Верификация email пользователя одноразовым токеном."""
+    """Верификация email пользователя одноразовым числовым кодом."""
 
     def __init__(
         self,
         session: AsyncSession,
         vk: valkey.Valkey,
         settings: SystemSettingsMngr,
-        public_url: str,
         sender: EmailSender,
+        default_ttl: int,
     ) -> None:
         self.s = session
         self.vk = vk
         self.settings = settings
-        self.public_url = public_url.rstrip("/")
         self.sender = sender
+        self.default_ttl = default_ttl
+
+    async def _ttl(self) -> int:
+        """TTL кода: настройка ``mail.code_ttl`` из БД, иначе значение ENV."""
+        return await self.settings.get_int("mail.code_ttl", self.default_ttl)
 
     async def request_email(self, acc: UserModel) -> None:
-        """Сгенерировать токен и отправить письмо со ссылкой подтверждения.
+        """Сгенерировать код и отправить письмо с кодом подтверждения email.
 
-        Используется шаблон события ``email.verify`` (если заведён в БД); иначе
-        отправляется простой текстовый fallback.
+        :arg acc: аккаунт, запросивший подтверждение email.
         """
         if not acc.email:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "email не задан")
         if acc.is_verified:
             raise HTTPException(status.HTTP_409_CONFLICT, "email уже подтверждён")
-
         if not self.sender.configured:
+            # По требованию: отсутствие настроенного SMTP — 404 с пояснением.
             raise HTTPException(
-                status.HTTP_503_SERVICE_UNAVAILABLE, "отправка почты не настроена"
+                status.HTTP_404_NOT_FOUND, "отправка почты не настроена"
             )
 
-        token = generate_base_token()
-        await self.vk.set(_VERIFY + token, str(acc.id), ex=_VERIFY_TTL)
+        code = generate_numeric_code(_CODE_DIGITS)
+        ttl = await self._ttl()
+        await self.vk.set(_VERIFY + str(acc.id), code, ex=ttl)
+        await self.vk.delete(_VERIFY_FAIL + str(acc.id))
 
-        link = f"{self.public_url}/api/v1/user/me/verify/email/confirm?token={token}"
         ctx = {
             "user": {"id": acc.id, "login": acc.login, "email": acc.email},
-            "verify_url": link,
-            "token": token,
+            "code": code,
+            "ttl_minutes": max(1, ttl // 60),
         }
         sent = await self.sender.send_template(EmailEvent.EMAIL_VERIFY, acc.email, ctx)
         if not sent:
-            # Шаблон не заведён — простой текстовый fallback.
             await self.sender.mail.send(
                 acc.email,
                 "Подтверждение email",
-                f"Для подтверждения email перейдите по ссылке:\n{link}",
+                f"Код подтверждения email: {code}",
             )
 
-    async def confirm_email(self, token: str) -> UserModel:
-        """Подтвердить email по токену."""
-        raw = await self.vk.get(_VERIFY + token)
-        if raw is None:
+    async def confirm_email(self, acc: UserModel, code: str) -> UserModel:
+        """Подтвердить email по числовому коду.
+
+        :arg acc: текущий аутентифицированный аккаунт.
+        :arg code: код из письма (4 цифры).
+        :return: обновлённый аккаунт (``is_verified=True``).
+        """
+        if acc.is_verified:
+            raise HTTPException(status.HTTP_409_CONFLICT, "email уже подтверждён")
+
+        key = _VERIFY + str(acc.id)
+        stored = await self.vk.get(key)
+        if stored is None:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "неверный или истёкший токен"
+                status.HTTP_400_BAD_REQUEST, "код не запрошен или истёк"
             )
-        await self.vk.delete(_VERIFY + token)
+        if not _const_eq(stored, code):
+            fails = await self.vk.incr(_VERIFY_FAIL + str(acc.id))
+            if fails >= _MAX_FAILS:
+                await self.vk.delete(key)
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "неверный код")
 
-        acc = await self.s.get(UserModel, int(raw))
-        if acc is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "аккаунт не найден")
+        await self.vk.delete(key)
+        await self.vk.delete(_VERIFY_FAIL + str(acc.id))
         acc.is_verified = True
         await self.s.flush()
         return acc
@@ -111,7 +144,7 @@ async def get_verify_svc(
     cfg: AppConfig = request.app.state.settings
     mail = await build_mail_svc(settings)
     sender = EmailSender(mail, EmailMngr(session, cfg.EMAIL_TEMPLATES_DIR))
-    return VerifySvc(session, vk, settings, cfg.PUBLIC_URL, sender)
+    return VerifySvc(session, vk, settings, sender, cfg.VERIFY_TOKEN_TTL)
 
 
 __all__ = ["VerifySvc", "MailSvc", "build_mail_svc", "get_verify_svc"]
