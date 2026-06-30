@@ -43,10 +43,17 @@ services:
       LUA_SERVICE_TOKEN: ${LUA_SERVICE_TOKEN:-dev-service-token}
       DATA_DIR: /app/data
       LUA_SCRIPTS_DIR: /app/data/lua
+      EMAIL_TEMPLATES_DIR: /app/data/email
       STORAGE_BACKEND: ${STORAGE_BACKEND:-fs}
       OWNER_LOGIN: ${OWNER_LOGIN:-owner}
       OWNER_PASS: ${OWNER_PASS:-owner-change-me}
       OWNER_EMAIL: ${OWNER_EMAIL:-owner@example.test}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_TLS: ${SMTP_TLS:-true}
     volumes:
       - ./data:/app/data:rw
     command: >
