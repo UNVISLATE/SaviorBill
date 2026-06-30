@@ -6,6 +6,7 @@ from .admin import router as admin_router
 from .auth import router as auth_router
 from .callback import router as callback_router
 from .catalog import router as catalog_router
+from .media import router as media_router
 from .oauth import router as oauth_router
 from .promocodes import router as promocodes_router
 from .user import router as user_router
@@ -18,6 +19,7 @@ for _r in (
     user_router,
     promocodes_router,
     callback_router,
+    media_router,
     admin_router,
 ):
     router.include_router(_r)

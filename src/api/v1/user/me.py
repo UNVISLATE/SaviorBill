@@ -5,16 +5,16 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 
 from dependencies.auth import get_current_acc
-from models.user import Account
-from schemas.auth import AccOut
+from models.user import UserModel
+from schemas.auth import Account
 
 router = APIRouter()
 
 
-@router.get("/me", response_model=AccOut, summary="Профиль текущего пользователя")
-async def me(acc: Account = Depends(get_current_acc)) -> AccOut:
+@router.get("/me", response_model=Account, summary="Профиль текущего пользователя")
+async def me(acc: UserModel = Depends(get_current_acc)) -> Account:
     """Вернуть данные текущего аккаунта по access-токену."""
-    return AccOut.from_account(acc)
+    return Account.from_account(acc)
 
 
 __all__ = ["router"]

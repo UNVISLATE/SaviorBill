@@ -5,23 +5,32 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from dependencies.auth import (
-    AccMngr,
+    UserMngr,
     TokenSvc,
     get_acc_mngr,
     get_token_svc,
 )
-from schemas.auth import LoginIn, RefreshIn, RegIn, TokenPair
+from dependencies.ratelimit import LimitKind, rate_limit
+from dependencies.triggers import get_dispatcher
+from integrations.triggers import TriggerDispatcher, TriggerEvent
+from schemas.auth import Login, Refresh, Reg, TokenPair
 from utils.sec import jwt as jwtu
 from utils.sec.pwd import hash_pass, needs_rehash, verify_pass
 
 router = APIRouter()
 
 
-@router.post("/register", response_model=TokenPair, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/register",
+    response_model=TokenPair,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(rate_limit("auth.register", LimitKind.AUTH))],
+)
 async def register(
-    body: RegIn,
-    mngr: AccMngr = Depends(get_acc_mngr),
+    body: Reg,
+    mngr: UserMngr = Depends(get_acc_mngr),
     tokens: TokenSvc = Depends(get_token_svc),
+    triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> TokenPair:
     """Создать локальный аккаунт и сразу выдать токены."""
     if await mngr.by_login(body.login):
@@ -31,13 +40,23 @@ async def register(
 
     acc = await mngr.create(body.login, hash_pass(body.password), body.email)
     await mngr.s.commit()
+
+    # Триггеры регистрации (best-effort, не ломают регистрацию).
+    await triggers.fire(
+        TriggerEvent.USER_REGISTERED,
+        {"user": {"id": acc.id, "login": acc.login, "email": acc.email}},
+    )
     return tokens.issue(acc)
 
 
-@router.post("/login", response_model=TokenPair)
+@router.post(
+    "/login",
+    response_model=TokenPair,
+    dependencies=[Depends(rate_limit("auth.login", LimitKind.AUTH))],
+)
 async def login(
-    body: LoginIn,
-    mngr: AccMngr = Depends(get_acc_mngr),
+    body: Login,
+    mngr: UserMngr = Depends(get_acc_mngr),
     tokens: TokenSvc = Depends(get_token_svc),
 ) -> TokenPair:
     """Вход по логину/паролю."""
@@ -54,10 +73,14 @@ async def login(
     return tokens.issue(acc)
 
 
-@router.post("/refresh", response_model=TokenPair)
+@router.post(
+    "/refresh",
+    response_model=TokenPair,
+    dependencies=[Depends(rate_limit("auth.refresh", LimitKind.AUTH))],
+)
 async def refresh(
-    body: RefreshIn,
-    mngr: AccMngr = Depends(get_acc_mngr),
+    body: Refresh,
+    mngr: UserMngr = Depends(get_acc_mngr),
     tokens: TokenSvc = Depends(get_token_svc),
 ) -> TokenPair:
     """Ротация пары токенов по refresh-токену."""
@@ -67,10 +90,10 @@ async def refresh(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout(
-    body: RefreshIn,
+    body: Refresh,
     tokens: TokenSvc = Depends(get_token_svc),
 ) -> None:
-    """Отозвать refresh-токен (добавить в денлист)."""
+    """Отозвать refresh-токен"""
     try:
         claims = jwtu.decode_jwt(
             body.refresh_token,
@@ -78,8 +101,8 @@ async def logout(
             tokens.cfg.JWT_ALG,
             tokens.cfg.JWT_ISS,
         )
-    except jwtu.BadToken:
-        return  # просроченный/битый токен отзывать не нужно
+    except jwtu.InvalidJWT:
+        return
     if claims.typ == jwtu.REFRESH:
         await tokens.revoke(claims)
 

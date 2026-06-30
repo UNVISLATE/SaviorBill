@@ -8,17 +8,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
 from dependencies.rbac import require_perm
-from models.user import Account
-from models.user_svc import UserSvc
-from schemas.admin import UserOut, UserPatch
-from schemas.orders import OrderAdminOut
+from models.user import UserModel
+from models.user_services import UserServicesModel
+from schemas.user import User, UserPatch
+from schemas.orders import OrderAdmin
 
 router = APIRouter()
 
 
 @router.get(
     "/users",
-    response_model=list[UserOut],
+    response_model=list[User],
     dependencies=[Depends(require_perm("users.read"))],
     summary="Список пользователей",
 )
@@ -26,16 +26,16 @@ async def list_users(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_db_session),
-) -> list[Account]:
+) -> list[User]:
     rows = await session.scalars(
-        select(Account).order_by(Account.id).limit(limit).offset(offset)
+        select(UserModel).order_by(UserModel.id).limit(limit).offset(offset)
     )
-    return list(rows)
+    return [User.from_model(r) for r in rows]
 
 
 @router.patch(
     "/users/{user_id}",
-    response_model=UserOut,
+    response_model=User,
     dependencies=[Depends(require_perm("users.edit"))],
     summary="Редактировать пользователя",
     description="Меняет только переданные поля (email, активность, роль, балансы).",
@@ -44,30 +44,32 @@ async def edit_user(
     user_id: int,
     body: UserPatch,
     session: AsyncSession = Depends(get_db_session),
-) -> Account:
-    acc = await session.get(Account, user_id)
+) -> User:
+    acc = await session.get(UserModel, user_id)
     if acc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "пользователь не найден")
     for field, value in body.model_dump(exclude_unset=True).items():
         setattr(acc, field, value)
     await session.commit()
-    return acc
+    return User.from_model(acc)
 
 
 @router.get(
     "/users/{user_id}/orders",
-    response_model=list[OrderAdminOut],
+    response_model=list[OrderAdmin],
     dependencies=[Depends(require_perm("orders.read"))],
     summary="Товары пользователя",
     description="Заказы пользователя с приватными данными (для поддержки).",
 )
 async def user_orders(
     user_id: int, session: AsyncSession = Depends(get_db_session)
-) -> list[UserSvc]:
+) -> list[OrderAdmin]:
     rows = await session.scalars(
-        select(UserSvc).where(UserSvc.account_id == user_id).order_by(UserSvc.id.desc())
+        select(UserServicesModel)
+        .where(UserServicesModel.account_id == user_id)
+        .order_by(UserServicesModel.id.desc())
     )
-    return list(rows)
+    return [OrderAdmin.from_model(r) for r in rows]
 
 
 __all__ = ["router"]
