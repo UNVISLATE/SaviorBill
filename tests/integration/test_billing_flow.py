@@ -80,7 +80,11 @@ async def test_topup_and_signed_callback(http, new_user, seed):
 
     r = await http.post(
         "/api/v1/topups",
-        json={"amount": "40.00", "provider": provider, "return_url": "https://x.test/d"},
+        json={
+            "amount": "40.00",
+            "provider": provider,
+            "return_url": "https://x.test/d",
+        },
         headers=hdr,
     )
     assert r.status_code in (200, 201), r.text

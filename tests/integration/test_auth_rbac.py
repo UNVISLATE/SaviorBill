@@ -21,7 +21,7 @@ async def test_register_login_me_refresh_logout(http, new_user):
     refresh = r.json()["refresh_token"]
 
     # me
-    r = await http.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {access}"})
+    r = await http.get("/api/v1/user/me", headers={"Authorization": f"Bearer {access}"})
     assert r.status_code == 200
     assert r.json()["login"] == login
 
@@ -49,15 +49,13 @@ async def test_duplicate_register_conflict(http, new_user):
 
 
 async def test_me_requires_auth(http):
-    r = await http.get("/api/v1/auth/me")
+    r = await http.get("/api/v1/user/me")
     assert r.status_code in (401, 403)
 
 
 async def test_wrong_password_rejected(http, new_user):
     login, _, _ = await new_user()
-    r = await http.post(
-        "/api/v1/auth/login", json={"login": login, "password": "nope"}
-    )
+    r = await http.post("/api/v1/auth/login", json={"login": login, "password": "nope"})
     assert r.status_code == 401
 
 

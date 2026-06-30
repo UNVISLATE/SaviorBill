@@ -137,7 +137,8 @@ async def seed(engine: AsyncEngine):
         async def topup_external_id(self, topup_id: int) -> str:
             async with engine.connect() as c:
                 return await c.scalar(
-                    text("SELECT external_id FROM topups WHERE id=:id"), {"id": topup_id}
+                    text("SELECT external_id FROM topups WHERE id=:id"),
+                    {"id": topup_id},
                 )
 
     return Seeder()
