@@ -4,39 +4,61 @@ from sqlalchemy.orm import DeclarativeBase
 class Base(DeclarativeBase): ...
 
 
-# Импорт моделей после объявления Base (порядок важен для регистрации в metadata).
 from .roles import Role
-from .user import Account
-from .oauth_cfg import OAuthCfg
-from .oauth_conn import OAuthConn
-from .luadb import LuaScript
-from .svc_catalog import SvcCatalog
-from .service import Service
-from .digikey import DigiKey
-from .user_svc import UserSvc
-from .pay_provider import PayProvider
-from .payment import Payment
-from .promocode import Promocode
-from .promo_use import PromoUse
-from .setting import Setting
-from .log import ApiLog
+from .user import UserModel, UserMngr
+from .oauth_providers import OAuthProvidersModel, OAuthProvidersMngr
+from .user_oauth import UserOauthModel, UserOauthMngr
+from .system_scripts import SystemScriptsModel, SystemScriptsMngr
+from .service_catalogs import ServiceCatalogsModel, ServiceCatalogsMngr
+from .service import ServiceModel, ServiceMngr
+from .service_keys import ServiceKeysModel, ServiceKeysMngr
+from .user_services import UserServicesModel, UserServicesMngr
+from .payment_providers import PaymentProvidersModel, PaymentProvidersMngr
+from .user_payments import UserPaymentsModel, UserPaymentsMngr
+from .promo_codes import PromoCodesModel, PromoCodesMngr
+from .promo_catalogs import PromoCatalogsModel, PromoCatalogsMngr
+from .promo_use import PromoUseModel
+from .system_settings import SystemSettingsModel, SystemSettingsMngr
+from .system_media import SystemMediaModel, SystemMediaMngr
+from .email_templates import EmailModel, EmailMngr
+from .triggers import TriggerModel, TriggerMngr
+from .log import LogModel
 
-# Для Alembic и импортов приложения
 __all__ = [
     "Base",
     "Role",
-    "Account",
-    "OAuthCfg",
-    "OAuthConn",
-    "LuaScript",
-    "SvcCatalog",
-    "Service",
-    "DigiKey",
-    "UserSvc",
-    "PayProvider",
-    "Payment",
-    "Promocode",
-    "PromoUse",
-    "Setting",
-    "ApiLog",
+    "UserModel",
+    "UserMngr",
+    "OAuthProvidersModel",
+    "OAuthProvidersMngr",
+    "UserOauthModel",
+    "UserOauthMngr",
+    "SystemScriptsModel",
+    "SystemScriptsMngr",
+    "ServiceCatalogsModel",
+    "ServiceCatalogsMngr",
+    "ServiceModel",
+    "ServiceMngr",
+    "ServiceKeysModel",
+    "ServiceKeysMngr",
+    "UserServicesModel",
+    "UserServicesMngr",
+    "PaymentProvidersModel",
+    "PaymentProvidersMngr",
+    "UserPaymentsModel",
+    "UserPaymentsMngr",
+    "PromoCodesModel",
+    "PromoCodesMngr",
+    "PromoCatalogsModel",
+    "PromoCatalogsMngr",
+    "PromoUseModel",
+    "SystemSettingsModel",
+    "SystemSettingsMngr",
+    "SystemMediaModel",
+    "SystemMediaMngr",
+    "EmailModel",
+    "EmailMngr",
+    "TriggerModel",
+    "TriggerMngr",
+    "LogModel",
 ]

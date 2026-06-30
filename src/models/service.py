@@ -1,29 +1,37 @@
-"""Эталонная услуга каталога."""
+"""Эталонная услуга каталога (ServiceModel) + менеджер (ServiceMngr)."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 
+from fastapi import HTTPException, status
 from sqlalchemy import (
-    JSON,
     Boolean,
+    DateTime,
     ForeignKey,
+    Integer,
+    JSON,
     Numeric,
     String,
     Text,
+    select,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from models import Base
 from enums import Delivery
-from orm.mixins import PkMixin, TsMixin
+from utils.datetime_utils import utc_now
 
 
-class Service(PkMixin, TsMixin, Base):
+class ServiceModel(
+    Base
+):  # TODO: теперь создать service_provider, в integrations/service/* будет реестр провайдеров, каждый модуль - свой провайдер. Сделать по принципу базового класса и остальные наследуют его. lua.py - запускает lua скрипт. digikey.py - для выдачи цифровых ключей. далее простое добавление своего провайдера. Это только для удобства написания кода и дальнейшего расширения, так как большинство из дальнейших готовых интеграций будет через lua точно-также осуществимо. Это для более навивных интеграций в дальнейшем.
     """Услуга-объект каталога (эталон).
 
     ``delivery`` определяет способ выдачи:
-      * ``key`` — из пула :class:`DigiKey`, привязанных к этой услуге;
+      * ``key`` — из пула :class:`ServiceKeysModel`, привязанных к этой услуге;
       * ``lua`` — исполнением скрипта ``lua_script_id`` с передачей данных
         пользователя и ``settings`` услуги.
 
@@ -34,13 +42,24 @@ class Service(PkMixin, TsMixin, Base):
 
     __tablename__ = "services"
 
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
     slug: Mapped[str] = mapped_column(
         String(64), unique=True, index=True, nullable=False
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    # Каталог (NULL — корневой товар, см. SvcCatalog).
+    # Каталог (NULL — корневой товар, см. ServiceCatalogsModel).
     catalog_id: Mapped[int | None] = mapped_column(
         ForeignKey("svc_catalogs.id", ondelete="SET NULL"), nullable=True, index=True
     )
@@ -68,4 +87,50 @@ class Service(PkMixin, TsMixin, Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
-__all__ = ["Service"]
+class ServiceMngr:
+    """Доступ к каталогу услуг и их администрирование."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self.s = session
+
+    async def list_active(self, catalog_id: int | None = None) -> list[ServiceModel]:
+        stmt = select(ServiceModel).where(ServiceModel.is_active.is_(True))
+        if catalog_id is not None:
+            stmt = stmt.where(ServiceModel.catalog_id == catalog_id)
+        rows = await self.s.scalars(stmt.order_by(ServiceModel.id))
+        return list(rows)
+
+    async def list_all(self) -> list[ServiceModel]:
+        rows = await self.s.scalars(select(ServiceModel).order_by(ServiceModel.id))
+        return list(rows)
+
+    async def by_id(self, service_id: int) -> ServiceModel | None:
+        return await self.s.get(ServiceModel, service_id)
+
+    async def get_active(self, service_id: int) -> ServiceModel:
+        svc = await self.by_id(service_id)
+        if svc is None or not svc.is_active:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "услуга не найдена")
+        return svc
+
+    async def create(self, data: dict) -> ServiceModel:
+        if await self.s.scalar(
+            select(ServiceModel).where(ServiceModel.slug == data["slug"])
+        ):
+            raise HTTPException(status.HTTP_409_CONFLICT, "slug услуги занят")
+        svc = ServiceModel(**data)
+        self.s.add(svc)
+        await self.s.flush()
+        return svc
+
+    async def update(self, service_id: int, data: dict) -> ServiceModel:
+        svc = await self.by_id(service_id)
+        if svc is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "услуга не найдена")
+        for field, value in data.items():
+            setattr(svc, field, value)
+        await self.s.flush()
+        return svc
+
+
+__all__ = ["ServiceModel", "ServiceMngr"]

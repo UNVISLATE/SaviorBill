@@ -2,19 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import JSON, Boolean, String
+from sqlalchemy import Boolean, DateTime, Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
-from orm.mixins import PkMixin, TsMixin
+from utils.datetime_utils import utc_now
 
 if TYPE_CHECKING:
-    from models.user import Account
+    from models.user import UserModel
 
 
-class Role(PkMixin, TsMixin, Base):
+class Role(Base):
     """Роль с древовидными правами.
 
     ``perms`` — вложенный словарь вида ``{"payment": {"refund": true}}``.
@@ -23,13 +24,24 @@ class Role(PkMixin, TsMixin, Base):
 
     __tablename__ = "roles"
 
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     title: Mapped[str | None] = mapped_column(String(128), nullable=True)
     # Системные роли нельзя удалять из админки.
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     perms: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
-    accounts: Mapped[list["Account"]] = relationship(back_populates="role")
+    accounts: Mapped[list["UserModel"]] = relationship(back_populates="role")
 
 
 __all__ = ["Role"]

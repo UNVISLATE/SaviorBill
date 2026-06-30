@@ -1,22 +1,24 @@
-"""Лог обращений к API (самоочищающаяся таблица)."""
+"""Лог обращений к API (LogModel) — самоочищающаяся таблица."""
 
 from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Integer, String
+from sqlalchemy import BigInteger, DateTime, Integer, JSON, String, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from models import Base
-from orm.mixins import LimitMixin
 from utils.datetime_utils import utc_now
 
 
-class ApiLog(LimitMixin, Base):
-    """Запись лога API. Старые строки подрезаются ``ApiLog.trim()``."""
+class LogModel(Base):
+    """Запись лога API. Старые строки подрезаются ``LogModel.trim()``."""
 
     __tablename__ = "api_logs"
-    __row_limit__ = 1_000_000
+    __row_limit__: int = 1_000_000  # TODO: вынести в env
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
 
     tenant_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     profile_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -28,5 +30,17 @@ class ApiLog(LimitMixin, Base):
         DateTime(timezone=True), default=utc_now, nullable=False
     )
 
+    @classmethod
+    async def trim(cls, session: AsyncSession, limit: int | None = None) -> int:
+        """Удалить строки за пределами лимита (по возрастанию id). Возвращает кол-во удалённых."""
+        cap = limit if limit is not None else cls.__row_limit__
+        cutoff = await session.scalar(
+            select(cls.id).order_by(cls.id.desc()).offset(cap).limit(1)
+        )
+        if cutoff is None:
+            return 0
+        res = await session.execute(cls.__table__.delete().where(cls.id <= cutoff))
+        return res.rowcount or 0
 
-__all__ = ["ApiLog"]
+
+__all__ = ["LogModel"]

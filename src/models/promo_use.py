@@ -1,18 +1,31 @@
-"""Факт применения промокода (аудит и лимиты per-user)."""
+"""Факт применения промокода (PromoUseModel)."""
 
 from __future__ import annotations
 
-from sqlalchemy import ForeignKey, Integer
+from datetime import datetime
+
+from sqlalchemy import DateTime, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from models import Base
-from orm.mixins import PkMixin, TsMixin
+from utils.datetime_utils import utc_now
 
 
-class PromoUse(PkMixin, TsMixin, Base):
+class PromoUseModel(Base):
     """Факт применения промокода (аудит и лимиты per-user)."""
 
     __tablename__ = "promo_uses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
 
     promocode_id: Mapped[int] = mapped_column(
         ForeignKey("promocodes.id", ondelete="CASCADE"), index=True, nullable=False
@@ -23,4 +36,4 @@ class PromoUse(PkMixin, TsMixin, Base):
     order_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
-__all__ = ["PromoUse"]
+__all__ = ["PromoUseModel"]
