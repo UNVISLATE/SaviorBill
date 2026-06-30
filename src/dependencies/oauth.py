@@ -1,5 +1,3 @@
-"""DI и сервис OAuth/OIDC: загрузка конфигов провайдеров, state, обмен кода."""
-
 from __future__ import annotations
 
 import httpx
@@ -9,12 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
+from dependencies.sec import get_secbox
 from dependencies.valkey import get_valkey_client
 from integrations.oauth import OAuthRT, get_provider
-from models.oauth_cfg import OAuthCfg
-from models.oauth_conn import OAuthConn
-from models.user import Account
-from schemas.oauth import OAuthStartOut, OIDCUser
+from models.oauth_providers import OAuthProvidersModel
+from models.user import UserModel
+from models.user_oauth import UserOauthModel
+from schemas.oauth import OAuthStart, OIDCUser
 from utils.config import AppConfig
 from utils.sec.box import SecBox
 from utils.sec.crypt import generate_base_token
@@ -24,14 +23,8 @@ _STATE = "oauth:state:"
 _STATE_TTL = 600
 
 
-def get_secbox(request: Request) -> SecBox:
-    """SecBox для расшифровки секретов провайдеров."""
-    cfg: AppConfig = request.app.state.settings
-    return SecBox(cfg.SECRETS_KEY)
-
-
-class OAuthSvc:
-    """Высокоуровневые операции OAuth-флоу поверх таблицы ``oauth_cfg``."""
+class OAuthSvc:  # TODO: вынести в /services/oauth.py
+    """Высокоуровневые операции OAuth-флоу поверх таблицы ``oauth_providers``."""
 
     def __init__(
         self,
@@ -49,9 +42,12 @@ class OAuthSvc:
         base = self.cfg.PUBLIC_URL.rstrip("/")
         return f"{base}/api/v1/callback/oauth/{slug}"
 
-    async def _cfg(self, slug: str) -> OAuthCfg:
+    async def _cfg(self, slug: str) -> OAuthProvidersModel:
         row = await self.s.scalar(
-            select(OAuthCfg).where(OAuthCfg.slug == slug, OAuthCfg.enabled.is_(True))
+            select(OAuthProvidersModel).where(
+                OAuthProvidersModel.slug == slug,
+                OAuthProvidersModel.enabled.is_(True),
+            )
         )
         if row is None:
             raise HTTPException(
@@ -59,7 +55,7 @@ class OAuthSvc:
             )
         return row
 
-    def _runtime(self, cfg: OAuthCfg) -> OAuthRT:
+    def _runtime(self, cfg: OAuthProvidersModel) -> OAuthRT:
         return OAuthRT(
             slug=cfg.slug,
             client_id=cfg.client_id,
@@ -73,7 +69,7 @@ class OAuthSvc:
             extra=cfg.extra or {},
         )
 
-    async def start(self, slug: str) -> OAuthStartOut:
+    async def start(self, slug: str) -> OAuthStart:
         """Подготовить редирект на провайдера: discovery + state."""
         cfg = await self._cfg(slug)
         prov = get_provider(slug)(self._runtime(cfg))
@@ -82,7 +78,7 @@ class OAuthSvc:
 
         state = generate_base_token()
         await self.vk.set(_STATE + state, slug, ex=_STATE_TTL)
-        return OAuthStartOut(
+        return OAuthStart(
             authorize_url=prov.auth_url(state, self.redirect_uri(slug)),
             state=state,
         )
@@ -103,17 +99,17 @@ class OAuthSvc:
             tokens = await prov.exchange(client, code, self.redirect_uri(slug))
             return await prov.userinfo(client, tokens)
 
-    async def link_account(self, slug: str, user: OIDCUser) -> Account:
+    async def link_account(self, slug: str, user: OIDCUser) -> UserModel:
         """Найти/создать аккаунт по внешней учётке и обновить привязку."""
         conn = await self.s.scalar(
-            select(OAuthConn).where(
-                OAuthConn.provider == slug, OAuthConn.subject == user.sub
+            select(UserOauthModel).where(
+                UserOauthModel.provider == slug, UserOauthModel.subject == user.sub
             )
         )
         if conn is not None:
             conn.email = user.email
             conn.raw = user.raw
-            acc = await self.s.get(Account, conn.account_id)
+            acc = await self.s.get(UserModel, conn.account_id)
             if acc is None:  # осиротевшая привязка — пересоздадим аккаунт ниже
                 conn = None
 
@@ -122,10 +118,10 @@ class OAuthSvc:
             # Связываем с существующим аккаунтом только при подтверждённом email.
             if user.email and user.email_verified:
                 acc = await self.s.scalar(
-                    select(Account).where(Account.email == user.email)
+                    select(UserModel).where(UserModel.email == user.email)
                 )
             if acc is None:
-                acc = Account(
+                acc = UserModel(
                     login=f"{slug}:{user.sub}"[:64],
                     email=user.email,
                     is_verified=user.email_verified,
@@ -133,7 +129,7 @@ class OAuthSvc:
                 self.s.add(acc)
                 await self.s.flush()
             self.s.add(
-                OAuthConn(
+                UserOauthModel(
                     account_id=acc.id,
                     provider=slug,
                     subject=user.sub,

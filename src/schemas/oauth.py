@@ -5,14 +5,14 @@ from __future__ import annotations
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class ProviderOut(BaseModel):
+class Provider(BaseModel):
     """Краткая инфа о включённом провайдере для фронта."""
 
     slug: str
     title: str | None = None
 
 
-class OAuthStartOut(BaseModel):
+class OAuthStart(BaseModel):
     """Ответ на старт авторизации: куда редиректить пользователя."""
 
     authorize_url: str
@@ -49,7 +49,7 @@ class TokenSet(BaseModel):
     scope: str | None = None
 
 
-class ConnOut(BaseModel):
+class Conn(BaseModel):
     """Привязка внешней учётки к аккаунту (для /user/oauth)."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -59,5 +59,14 @@ class ConnOut(BaseModel):
     subject: str
     email: str | None = None
 
+    @classmethod
+    def from_model(cls, m) -> "Conn":  # noqa: ANN001 — UserOauthModel
+        """Явное преобразование ORM-привязки в схему.
 
-__all__ = ["ProviderOut", "OAuthStartOut", "OIDCUser", "TokenSet", "ConnOut"]
+        :arg m: модель привязки.
+        :return: схема ответа.
+        """
+        return cls.model_validate(m)
+
+
+__all__ = ["Provider", "OAuthStart", "OIDCUser", "TokenSet", "Conn"]

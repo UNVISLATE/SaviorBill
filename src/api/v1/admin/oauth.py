@@ -9,8 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.db import get_db_session
 from dependencies.oauth import get_secbox
 from dependencies.rbac import require_perm
-from models.oauth_cfg import OAuthCfg
-from schemas.admin import OAuthCfgIn, OAuthCfgOut, OAuthCfgPatch
+from models.oauth_providers import OAuthProvidersModel
+from schemas.oauth_provider import (
+    OAuthProviderCreate,
+    OAuthProvider,
+    OAuthProviderPatch,
+)
 from utils.sec.box import SecBox
 
 router = APIRouter()
@@ -18,32 +22,36 @@ router = APIRouter()
 
 @router.get(
     "/oauth",
-    response_model=list[OAuthCfgOut],
+    response_model=list[OAuthProvider],
     dependencies=[Depends(require_perm("oauth.read"))],
     summary="Список OAuth-провайдеров (вкл. отключённые)",
 )
 async def list_providers(
     session: AsyncSession = Depends(get_db_session),
-) -> list[OAuthCfg]:
-    rows = await session.scalars(select(OAuthCfg).order_by(OAuthCfg.id))
-    return list(rows)
+) -> list[OAuthProvider]:
+    rows = await session.scalars(
+        select(OAuthProvidersModel).order_by(OAuthProvidersModel.id)
+    )
+    return [OAuthProvider.from_model(r) for r in rows]
 
 
 @router.post(
     "/oauth",
-    response_model=OAuthCfgOut,
+    response_model=OAuthProvider,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("oauth.edit"))],
     summary="Добавить OAuth-провайдера",
 )
 async def create_provider(
-    body: OAuthCfgIn,
+    body: OAuthProviderCreate,
     session: AsyncSession = Depends(get_db_session),
     box: SecBox = Depends(get_secbox),
-) -> OAuthCfg:
-    if await session.scalar(select(OAuthCfg).where(OAuthCfg.slug == body.slug)):
+) -> OAuthProvider:
+    if await session.scalar(
+        select(OAuthProvidersModel).where(OAuthProvidersModel.slug == body.slug)
+    ):
         raise HTTPException(status.HTTP_409_CONFLICT, "slug провайдера занят")
-    cfg = OAuthCfg(
+    cfg = OAuthProvidersModel(
         slug=body.slug,
         title=body.title,
         enabled=body.enabled,
@@ -59,22 +67,22 @@ async def create_provider(
     )
     session.add(cfg)
     await session.commit()
-    return cfg
+    return OAuthProvider.from_model(cfg)
 
 
 @router.patch(
     "/oauth/{provider_id}",
-    response_model=OAuthCfgOut,
+    response_model=OAuthProvider,
     dependencies=[Depends(require_perm("oauth.edit"))],
     summary="Изменить OAuth-провайдера",
 )
 async def update_provider(
     provider_id: int,
-    body: OAuthCfgPatch,
+    body: OAuthProviderPatch,
     session: AsyncSession = Depends(get_db_session),
     box: SecBox = Depends(get_secbox),
-) -> OAuthCfg:
-    cfg = await session.get(OAuthCfg, provider_id)
+) -> OAuthProvider:
+    cfg = await session.get(OAuthProvidersModel, provider_id)
     if cfg is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "провайдер не найден")
     data = body.model_dump(exclude_unset=True)
@@ -83,7 +91,7 @@ async def update_provider(
     for field, value in data.items():
         setattr(cfg, field, value)
     await session.commit()
-    return cfg
+    return OAuthProvider.from_model(cfg)
 
 
 __all__ = ["router"]

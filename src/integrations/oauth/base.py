@@ -1,10 +1,4 @@
-"""Базовый OIDC-провайдер и рантайм-конфиг.
-
-Каждая платформа — отдельный скрипт в ``integrations/oauth/providers/``,
-наследующий :class:`OIDCBase`. По умолчанию реализован «чистый» OIDC
-(Authorization Code Flow + discovery + userinfo). Платформенные особенности
-(GitHub, VK и т.п.) переопределяют нужные методы.
-"""
+"""Базовый OIDC-провайдер и рантайм-конфиг."""
 
 from __future__ import annotations
 

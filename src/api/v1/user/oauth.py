@@ -8,23 +8,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.auth import get_current_acc
 from dependencies.db import get_db_session
-from models.oauth_conn import OAuthConn
-from models.user import Account
-from schemas.oauth import ConnOut
+from models.user import UserModel
+from models.user_oauth import UserOauthModel
+from schemas.oauth import Conn
 
 router = APIRouter()
 
 
-@router.get("/oauth", response_model=list[ConnOut], summary="Мои OAuth-привязки")
+@router.get("/oauth", response_model=list[Conn], summary="Мои OAuth-привязки")
 async def my_connections(
-    acc: Account = Depends(get_current_acc),
+    acc: UserModel = Depends(get_current_acc),
     session: AsyncSession = Depends(get_db_session),
-) -> list[OAuthConn]:
+) -> list[Conn]:
     """Список внешних учёток, привязанных к текущему аккаунту."""
     rows = await session.scalars(
-        select(OAuthConn).where(OAuthConn.account_id == acc.id).order_by(OAuthConn.id)
+        select(UserOauthModel)
+        .where(UserOauthModel.account_id == acc.id)
+        .order_by(UserOauthModel.id)
     )
-    return list(rows)
+    return [Conn.from_model(r) for r in rows]
 
 
 @router.delete(
@@ -34,13 +36,13 @@ async def my_connections(
 )
 async def unlink(
     provider: str,
-    acc: Account = Depends(get_current_acc),
+    acc: UserModel = Depends(get_current_acc),
     session: AsyncSession = Depends(get_db_session),
 ) -> None:
     """Удалить привязку внешней учётки у текущего аккаунта."""
     conn = await session.scalar(
-        select(OAuthConn).where(
-            OAuthConn.account_id == acc.id, OAuthConn.provider == provider
+        select(UserOauthModel).where(
+            UserOauthModel.account_id == acc.id, UserOauthModel.provider == provider
         )
     )
     if conn is None:
