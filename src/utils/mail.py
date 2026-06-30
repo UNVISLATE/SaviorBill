@@ -31,8 +31,10 @@ class MailSvc:
         """Готов ли сервис к отправке (есть хост и отправитель)."""
         return bool(self.host and self.sender)
 
-    async def send(self, to: str, subject: str, body: str) -> None:
-        """Отправить простое текстовое письмо."""
+    async def send(
+        self, to: str, subject: str, body: str, *, is_html: bool = False
+    ) -> None:
+        """Отправить письмо (текст или HTML)."""
         if not self.configured:
             raise RuntimeError("SMTP не настроен")
 
@@ -40,7 +42,11 @@ class MailSvc:
         msg["From"] = self.sender
         msg["To"] = to
         msg["Subject"] = subject
-        msg.set_content(body)
+        if is_html:
+            msg.set_content("Для просмотра письма используйте HTML-совместимый клиент.")
+            msg.add_alternative(body, subtype="html")
+        else:
+            msg.set_content(body)
 
         # STARTTLS на 587, неявный TLS на 465.
         await aiosmtplib.send(
