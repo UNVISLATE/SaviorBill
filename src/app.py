@@ -20,6 +20,7 @@ TAGS_META = [
         "description": "Активация промокодов (бонус/скидка/услуга).",
     },
     {"name": "callback", "description": "Колбэки платёжных систем и OAuth."},
+    {"name": "media", "description": "Загрузка медиа-файлов (изображения, аватарки)."},
     {"name": "admin: me", "description": "Профиль текущего администратора."},
     {"name": "admin: users", "description": "Список и редактирование пользователей."},
     {"name": "admin: roles", "description": "Роли и каталог прав (RBAC)."},
@@ -27,8 +28,14 @@ TAGS_META = [
     {"name": "admin: catalogs", "description": "Управление каталогами услуг."},
     {"name": "admin: orders", "description": "Выданные услуги и ручная выдача."},
     {"name": "admin: purchases", "description": "Платежи и платёжные провайдеры."},
+    {"name": "admin: promo", "description": "Каталоги промокодов и выпуск кодов."},
     {"name": "admin: oauth", "description": "Управление OAuth-провайдерами."},
     {"name": "admin: lua", "description": "Загрузка/редактирование Lua-скриптов."},
+    {"name": "admin: email", "description": "Email-шаблоны рассылок."},
+    {
+        "name": "admin: triggers",
+        "description": "Триггеры: событие → действие (email/lua).",
+    },
 ]
 
 app = FastAPI(

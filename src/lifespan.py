@@ -5,7 +5,8 @@ from fastapi import FastAPI
 from dependencies.db import create_db_engine, create_db_sessionmaker
 from dependencies.valkey import create_valkey_client
 from utils.config import AppConfig
-from utils.init.bootstrap import bootstrap
+from utils.bootstrap import bootstrap
+from utils.openapi import document_perms
 from utils.sec.box import SecBox
 
 from api import api_router
@@ -35,6 +36,8 @@ async def lifespan(app: FastAPI):
     await bootstrap(config, app.state.db_sessionmaker, app.state.valkey)
 
     app.include_router(api_router)
+    # Роуты добавлены — задокументировать требуемые права в OpenAPI.
+    document_perms(app)
 
     try:
         yield
