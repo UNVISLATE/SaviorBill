@@ -1,20 +1,4 @@
-"""Платежи через провайдеров: инициализация и обработка колбэка (2 Lua-скрипта).
-
-Каждый провайдер (:class:`models.pay_provider.PayProvider`) хранит зашифрованный
-JSON секретов и ссылается на два Lua-скрипта:
-
-* ``init``     — инициализация платежа, возвращает ссылку оплаты;
-* ``callback`` — обработка колбэка/возврата платёжки (проверка подписи).
-
-Секреты расшифровываются на стороне Python (SecBox) и прокидываются в скрипт как
-``provider.settings`` — Lua не имеет доступа к секретам окружения. Скрипты
-возвращают ``{public, private}``; управляющие поля лежат в ``private`` (так как
-LuaWorker.run_script отдаёт только эти две таблицы):
-
-* init.private:     ``external_id``;
-* callback.private: ``ok`` (подпись верна), ``paid`` (платёж успешен),
-  ``payment_id`` и/или ``external_id`` (идентификация платежа).
-"""
+"""Платежи через провайдеров: инициализация и обработка колбэка."""
 
 from __future__ import annotations
 
@@ -27,14 +11,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
 from dependencies.lua import get_lua_bus
-from dependencies.usersvc import UserSvcMngr
+from dependencies.sec import make_secbox
+from dependencies.usersvc import UserServicesMngr
 from enums import PayStatus, PayTarget
-from models.luadb import LuaScript
-from models.pay_provider import PayProvider
-from models.payment import Payment
-from models.service import Service
-from models.user import Account
-from models.user_svc import UserSvc
+from models.payment_providers import PaymentProvidersModel, PaymentProvidersMngr
+from models.service import ServiceModel
+from models.system_scripts import SystemScriptsModel
+from models.user import UserModel
+from models.user_payments import UserPaymentsModel
+from models.user_services import UserServicesModel
 from utils.datetime_utils import utc_now
 from utils.luabus import LuaBus
 from utils.sec.box import SecBox
@@ -49,10 +34,12 @@ class PayMngr:
         self.box = box
 
     # --- доступ к провайдеру/секретам ------------------------------------
-    async def _provider(self, slug: str, *, enabled: bool = True) -> PayProvider:
-        stmt = select(PayProvider).where(PayProvider.slug == slug)
+    async def _provider(
+        self, slug: str, *, enabled: bool = True
+    ) -> PaymentProvidersModel:
+        stmt = select(PaymentProvidersModel).where(PaymentProvidersModel.slug == slug)
         if enabled:
-            stmt = stmt.where(PayProvider.enabled.is_(True))
+            stmt = stmt.where(PaymentProvidersModel.enabled.is_(True))
         prov = await self.s.scalar(stmt)
         if prov is None:
             raise HTTPException(
@@ -60,7 +47,7 @@ class PayMngr:
             )
         return prov
 
-    def _secrets(self, prov: PayProvider) -> dict:
+    def _secrets(self, prov: PaymentProvidersModel) -> dict:
         """Расшифровать и распарсить JSON секретов провайдера."""
         if not prov.secrets_enc:
             return {}
@@ -71,19 +58,19 @@ class PayMngr:
             data = {}
         return data if isinstance(data, dict) else {}
 
-    async def _script(self, script_id: int | None, role: str) -> LuaScript:
+    async def _script(self, script_id: int | None, role: str) -> SystemScriptsModel:
         if not script_id:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, f"у провайдера не задан {role}-скрипт"
             )
-        script = await self.s.get(LuaScript, script_id)
+        script = await self.s.get(SystemScriptsModel, script_id)
         if script is None or not script.is_active:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, f"{role}-скрипт провайдера недоступен"
             )
         return script
 
-    def _prov_ctx(self, prov: PayProvider) -> dict:
+    def _prov_ctx(self, prov: PaymentProvidersModel) -> dict:
         return {
             "slug": prov.slug,
             "settings": self._secrets(prov),
@@ -93,7 +80,7 @@ class PayMngr:
     # --- инициализация платежа -------------------------------------------
     async def create(
         self,
-        acc: Account,
+        acc: UserModel,
         amount: Decimal,
         provider_slug: str,
         *,
@@ -101,12 +88,12 @@ class PayMngr:
         user_svc_id: int | None = None,
         currency: str | None = None,
         return_url: str | None = None,
-    ) -> Payment:
+    ) -> UserPaymentsModel:
         """Создать платёж и запустить init-скрипт провайдера за ссылкой оплаты."""
         prov = await self._provider(provider_slug)
         script = await self._script(prov.init_script_id, "init")
 
-        payment = Payment(
+        payment = UserPaymentsModel(
             account_id=acc.id,
             provider=prov.slug,
             amount=amount,
@@ -145,7 +132,9 @@ class PayMngr:
         return payment
 
     # --- обработка колбэка -------------------------------------------------
-    async def callback(self, provider_slug: str, request_data: dict) -> Payment:
+    async def callback(
+        self, provider_slug: str, request_data: dict
+    ) -> UserPaymentsModel:
         """Обработать колбэк/возврат провайдера через callback-скрипт.
 
         ``request_data`` — произвольные данные платёжки (тело вебхука и/или
@@ -183,38 +172,39 @@ class PayMngr:
         await self.s.flush()
         return payment
 
-    async def _locate(self, priv: dict, provider_slug: str) -> Payment | None:
+    async def _locate(self, priv: dict, provider_slug: str) -> UserPaymentsModel | None:
         """Найти платёж по payment_id или external_id из ответа скрипта."""
         pid = priv.get("payment_id")
         if pid is not None:
             try:
-                return await self.s.get(Payment, int(pid))
+                return await self.s.get(UserPaymentsModel, int(pid))
             except (TypeError, ValueError):
                 return None
         ext = priv.get("external_id")
         if ext:
             return await self.s.scalar(
-                select(Payment).where(
-                    Payment.provider == provider_slug, Payment.external_id == str(ext)
+                select(UserPaymentsModel).where(
+                    UserPaymentsModel.provider == provider_slug,
+                    UserPaymentsModel.external_id == str(ext),
                 )
             )
         return None
 
-    async def _settle(self, payment: Payment, priv: dict) -> None:
+    async def _settle(self, payment: UserPaymentsModel, priv: dict) -> None:
         """Провести успешный платёж: баланс или выдача оплаченной услуги."""
         payment.status = PayStatus.PAID
         payment.paid_at = utc_now()
         if priv.get("external_id"):
             payment.external_id = str(priv["external_id"])
 
-        acc = await self.s.get(Account, payment.account_id)
+        acc = await self.s.get(UserModel, payment.account_id)
 
         if payment.target == PayTarget.SERVICE and payment.user_svc_id:
-            usvc = await self.s.get(UserSvc, payment.user_svc_id)
+            usvc = await self.s.get(UserServicesModel, payment.user_svc_id)
             if usvc is not None:
-                service = await self.s.get(Service, usvc.service_id)
+                service = await self.s.get(ServiceModel, usvc.service_id)
                 usvc.payment_id = payment.id
-                await UserSvcMngr(self.s, self.bus).deliver(usvc, service, acc)
+                await UserServicesMngr(self.s, self.bus).deliver(usvc, service, acc)
         else:  # пополнение баланса
             acc.balance += payment.amount
 
@@ -223,7 +213,13 @@ def get_pay_mngr(
     request: Request, session: AsyncSession = Depends(get_db_session)
 ) -> PayMngr:
     cfg = request.app.state.settings
-    return PayMngr(session, get_lua_bus(request), SecBox(cfg.SECRETS_KEY))
+    return PayMngr(session, get_lua_bus(request), make_secbox(cfg))
 
 
-__all__ = ["PayMngr", "get_pay_mngr"]
+def get_pay_providers_mngr(
+    session: AsyncSession = Depends(get_db_session),
+) -> PaymentProvidersMngr:
+    return PaymentProvidersMngr(session)
+
+
+__all__ = ["PayMngr", "get_pay_mngr", "get_pay_providers_mngr"]

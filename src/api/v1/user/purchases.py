@@ -9,31 +9,57 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.auth import get_current_acc
 from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.db import get_db_session
-from dependencies.payment import PayMngr, get_pay_mngr
-from dependencies.usersvc import UserSvcMngr, get_usersvc_mngr
+from dependencies.payment import (
+    PayMngr,
+    PaymentProvidersMngr,
+    get_pay_mngr,
+    get_pay_providers_mngr,
+)
+from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
 from enums import PayTarget
-from models.payment import Payment
-from models.user import Account
-from schemas.payments import PaymentCreate, PaymentOut
+from models.user import UserModel
+from models.user_payments import UserPaymentsModel
+from schemas.payment_provider import PayProviderPublic
+from schemas.payments import PaymentCreate, Payment
 
 router = APIRouter()
 
 
-@router.get("/purchases", response_model=list[PaymentOut], summary="Мои платежи")
+@router.get(
+    "/purchases/providers",
+    response_model=list[PayProviderPublic],
+    summary="Доступные платёжные провайдеры",
+    description=(
+        "Список включённых платёжных провайдеров для выбора при создании "
+        "платежа. Требует аутентификации (Bearer)."
+    ),
+)
+async def list_pay_providers(
+    acc: UserModel = Depends(get_current_acc),
+    mngr: PaymentProvidersMngr = Depends(get_pay_providers_mngr),
+) -> list[PayProviderPublic]:
+    """Включённые провайдеры (без секретов и служебных полей)."""
+    rows = await mngr.list_enabled()
+    return [PayProviderPublic.from_model(p) for p in rows]
+
+
+@router.get("/purchases", response_model=list[Payment], summary="Мои платежи")
 async def my_purchases(
-    acc: Account = Depends(get_current_acc),
+    acc: UserModel = Depends(get_current_acc),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[Payment]:
     """Список платежей текущего пользователя."""
     rows = await session.scalars(
-        select(Payment).where(Payment.account_id == acc.id).order_by(Payment.id.desc())
+        select(UserPaymentsModel)
+        .where(UserPaymentsModel.account_id == acc.id)
+        .order_by(UserPaymentsModel.id.desc())
     )
-    return list(rows)
+    return [Payment.from_model(p) for p in rows]
 
 
 @router.post(
     "/purchases/create",
-    response_model=PaymentOut,
+    response_model=Payment,
     status_code=status.HTTP_201_CREATED,
     summary="Создать платёж",
     description=(
@@ -44,10 +70,10 @@ async def my_purchases(
 )
 async def create_purchase(
     body: PaymentCreate,
-    acc: Account = Depends(get_current_acc),
+    acc: UserModel = Depends(get_current_acc),
     pay_mngr: PayMngr = Depends(get_pay_mngr),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
-    usvc_mngr: UserSvcMngr = Depends(get_usersvc_mngr),
+    usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
 ) -> Payment:
     user_svc_id: int | None = None
 
@@ -72,7 +98,7 @@ async def create_purchase(
         return_url=body.return_url,
     )
     await pay_mngr.s.commit()
-    return payment
+    return Payment.from_model(payment)
 
 
 __all__ = ["router"]

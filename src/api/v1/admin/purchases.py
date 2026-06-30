@@ -11,10 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.db import get_db_session
 from dependencies.oauth import get_secbox
 from dependencies.rbac import require_perm
-from models.pay_provider import PayProvider
-from models.payment import Payment
-from schemas.admin import PayProviderIn, PayProviderOut, PayProviderPatch
-from schemas.payments import PaymentAdminOut
+from models.payment_providers import PaymentProvidersModel
+from models.user_payments import UserPaymentsModel
+from schemas.payment_provider import PayProviderCreate, PayProvider, PayProviderPatch
+from schemas.payments import PaymentAdmin
 from utils.sec.box import SecBox
 
 router = APIRouter()
@@ -23,7 +23,7 @@ router = APIRouter()
 # --- платежи -------------------------------------------------------------
 @router.get(
     "/purchases",
-    response_model=list[PaymentAdminOut],
+    response_model=list[PaymentAdmin],
     dependencies=[Depends(require_perm("purchases.read"))],
     summary="Список платежей",
 )
@@ -31,42 +31,49 @@ async def list_payments(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     session: AsyncSession = Depends(get_db_session),
-) -> list[Payment]:
+) -> list[PaymentAdmin]:
     rows = await session.scalars(
-        select(Payment).order_by(Payment.id.desc()).limit(limit).offset(offset)
+        select(UserPaymentsModel)
+        .order_by(UserPaymentsModel.id.desc())
+        .limit(limit)
+        .offset(offset)
     )
-    return list(rows)
+    return [PaymentAdmin.from_model(r) for r in rows]
 
 
 @router.get(
     "/purchases/providers",
-    response_model=list[PayProviderOut],
+    response_model=list[PayProvider],
     dependencies=[Depends(require_perm("purchases.providers"))],
     summary="Список платёжных провайдеров",
 )
 async def list_providers(
     session: AsyncSession = Depends(get_db_session),
 ) -> list[PayProvider]:
-    rows = await session.scalars(select(PayProvider).order_by(PayProvider.id))
-    return list(rows)
+    rows = await session.scalars(
+        select(PaymentProvidersModel).order_by(PaymentProvidersModel.id)
+    )
+    return [PayProvider.from_model(r) for r in rows]
 
 
 # --- провайдеры ----------------------------------------------------------
 @router.post(
     "/purchases/providers",
-    response_model=PayProviderOut,
+    response_model=PayProvider,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("purchases.providers"))],
     summary="Создать платёжного провайдера",
 )
 async def create_provider(
-    body: PayProviderIn,
+    body: PayProviderCreate,
     session: AsyncSession = Depends(get_db_session),
     box: SecBox = Depends(get_secbox),
 ) -> PayProvider:
-    if await session.scalar(select(PayProvider).where(PayProvider.slug == body.slug)):
+    if await session.scalar(
+        select(PaymentProvidersModel).where(PaymentProvidersModel.slug == body.slug)
+    ):
         raise HTTPException(status.HTTP_409_CONFLICT, "slug провайдера занят")
-    prov = PayProvider(
+    prov = PaymentProvidersModel(
         slug=body.slug,
         title=body.title,
         enabled=body.enabled,
@@ -78,12 +85,12 @@ async def create_provider(
     )
     session.add(prov)
     await session.commit()
-    return prov
+    return PayProvider.from_model(prov)
 
 
 @router.patch(
     "/purchases/providers/{provider_id}",
-    response_model=PayProviderOut,
+    response_model=PayProvider,
     dependencies=[Depends(require_perm("purchases.providers"))],
     summary="Изменить платёжного провайдера",
 )
@@ -93,7 +100,7 @@ async def update_provider(
     session: AsyncSession = Depends(get_db_session),
     box: SecBox = Depends(get_secbox),
 ) -> PayProvider:
-    prov = await session.get(PayProvider, provider_id)
+    prov = await session.get(PaymentProvidersModel, provider_id)
     if prov is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "провайдер не найден")
     data = body.model_dump(exclude_unset=True)
@@ -102,24 +109,24 @@ async def update_provider(
     for field, value in data.items():
         setattr(prov, field, value)
     await session.commit()
-    return prov
+    return PayProvider.from_model(prov)
 
 
 # Карточка платежа объявлена после /purchases/providers, чтобы "providers"
 # не перехватывался как {payment_id}.
 @router.get(
     "/purchases/{payment_id}",
-    response_model=PaymentAdminOut,
+    response_model=PaymentAdmin,
     dependencies=[Depends(require_perm("purchases.read"))],
     summary="Карточка платежа",
 )
 async def get_payment(
     payment_id: int, session: AsyncSession = Depends(get_db_session)
-) -> Payment:
-    pay = await session.get(Payment, payment_id)
+) -> PaymentAdmin:
+    pay = await session.get(UserPaymentsModel, payment_id)
     if pay is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "платёж не найден")
-    return pay
+    return PaymentAdmin.from_model(pay)
 
 
 __all__ = ["router"]

@@ -25,7 +25,7 @@ class PaymentCreate(BaseModel):
     return_url: str | None = None
 
 
-class PaymentOut(BaseModel):
+class Payment(BaseModel):
     """Платёж (публичная часть, в т.ч. ссылка на оплату в public_data)."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -40,8 +40,17 @@ class PaymentOut(BaseModel):
     public_data: dict
     created_at: datetime
 
+    @classmethod
+    def from_model(cls, m) -> "Payment":  # noqa: ANN001 — UserPaymentsModel
+        """Явное преобразование ORM-платежа в публичную схему.
 
-class PaymentAdminOut(PaymentOut):
+        :arg m: модель платежа.
+        :return: схема ответа.
+        """
+        return cls.model_validate(m)
+
+
+class PaymentAdmin(Payment):
     """Платёж с приватными данными (для администраторов)."""
 
     account_id: int
@@ -49,7 +58,7 @@ class PaymentAdminOut(PaymentOut):
     private_data: dict
 
 
-class BalanceOut(BaseModel):
+class Balance(BaseModel):
     """Текущий баланс аккаунта."""
 
     balance: Decimal
@@ -57,4 +66,4 @@ class BalanceOut(BaseModel):
     currency: str = "RUB"
 
 
-__all__ = ["PaymentCreate", "PaymentOut", "PaymentAdminOut", "BalanceOut"]
+__all__ = ["PaymentCreate", "Payment", "PaymentAdmin", "Balance"]

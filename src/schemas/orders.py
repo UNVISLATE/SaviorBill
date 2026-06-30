@@ -17,7 +17,7 @@ class OrderCreate(BaseModel):
     params: dict | None = None
 
 
-class OrderOut(BaseModel):
+class Order(BaseModel):
     """Публичное представление заказа (без приватных данных)."""
 
     model_config = ConfigDict(from_attributes=True)
@@ -33,8 +33,17 @@ class OrderOut(BaseModel):
     created_at: datetime
     delivered_at: datetime | None = None
 
+    @classmethod
+    def from_model(cls, m) -> "Order":  # noqa: ANN001 — UserServicesModel
+        """Явное преобразование ORM-заказа в публичную схему.
 
-class OrderAdminOut(OrderOut):
+        :arg m: модель выданной услуги.
+        :return: схема ответа.
+        """
+        return cls.model_validate(m)
+
+
+class OrderAdmin(Order):
     """Заказ с приватными данными (для администраторов)."""
 
     account_id: int
@@ -51,4 +60,4 @@ class OrderGrant(BaseModel):
     charge: bool = False
 
 
-__all__ = ["OrderCreate", "OrderOut", "OrderAdminOut", "OrderGrant"]
+__all__ = ["OrderCreate", "Order", "OrderAdmin", "OrderGrant"]
