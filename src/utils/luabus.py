@@ -1,10 +1,4 @@
-"""Шина Python <-> LuaWorker поверх Redis Streams (Valkey).
-
-Python публикует задачу в ``task_stream`` (XADD), LuaWorker исполняет её и
-кладёт результат в ``resp_stream``. Ответ сопоставляется с задачей по ``cid``.
-Чтение ответного стрима неблокирующее для других ожидающих: используется
-обычный XREAD (без consumer-групп), поэтому waiter'ы не «воруют» чужие записи.
-"""
+"""Шина Python ↔ LuaWorker поверх Redis Streams (Valkey)."""
 
 from __future__ import annotations
 
@@ -49,8 +43,8 @@ class LuaBus:
     ) -> dict:
         """Отправить задачу и дождаться результата.
 
-        :param kind: тип задачи для воркера (``http`` / ``billing`` / ``eval`` / ...).
-        :param payload: произвольная структура данных, прокидывается в Lua.
+        :arg kind: тип задачи для воркера.
+        :arg payload: произвольная структура данных, прокидывается в Lua.
         :raises LuaError: при ошибке исполнения или таймауте.
         """
         cid = uuid.uuid4().hex
