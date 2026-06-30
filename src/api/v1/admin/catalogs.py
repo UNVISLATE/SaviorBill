@@ -4,54 +4,55 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
-from dependencies.catalog import CatalogMngr, get_catalog_mngr
+from dependencies.catalog import ServiceCatalogsMngr, get_catalog_mngr
 from dependencies.rbac import require_perm
-from schemas.catalog import CatalogIn, CatalogOut, CatalogPatch
+from schemas.catalog import CatalogRequest, CatalogResponse, CatalogPatch
 
 router = APIRouter()
 
 
 @router.get(
     "/catalogs",
-    response_model=list[CatalogOut],
+    response_model=list[CatalogResponse],
     dependencies=[Depends(require_perm("catalogs.read"))],
     summary="Список каталогов",
 )
 async def list_catalogs(
-    mngr: CatalogMngr = Depends(get_catalog_mngr),
-) -> list[CatalogOut]:
-    return await mngr.list_all()
+    mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr),
+) -> list[CatalogResponse]:
+    rows = await mngr.list_all()
+    return [CatalogResponse.from_model(r) for r in rows]
 
 
 @router.post(
     "/catalogs",
-    response_model=CatalogOut,
+    response_model=CatalogResponse,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("catalogs.edit"))],
     summary="Создать каталог",
 )
 async def create_catalog(
-    body: CatalogIn, mngr: CatalogMngr = Depends(get_catalog_mngr)
-) -> CatalogOut:
+    body: CatalogRequest, mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr)
+) -> CatalogResponse:
     cat = await mngr.create(body.model_dump())
     await mngr.s.commit()
-    return cat
+    return CatalogResponse.from_model(cat)
 
 
 @router.patch(
     "/catalogs/{catalog_id}",
-    response_model=CatalogOut,
+    response_model=CatalogResponse,
     dependencies=[Depends(require_perm("catalogs.edit"))],
     summary="Изменить каталог",
 )
 async def update_catalog(
     catalog_id: int,
     body: CatalogPatch,
-    mngr: CatalogMngr = Depends(get_catalog_mngr),
-) -> CatalogOut:
+    mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr),
+) -> CatalogResponse:
     cat = await mngr.update(catalog_id, body.model_dump(exclude_unset=True))
     await mngr.s.commit()
-    return cat
+    return CatalogResponse.from_model(cat)
 
 
 @router.delete(
@@ -61,7 +62,7 @@ async def update_catalog(
     summary="Удалить каталог",
 )
 async def delete_catalog(
-    catalog_id: int, mngr: CatalogMngr = Depends(get_catalog_mngr)
+    catalog_id: int, mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr)
 ) -> None:
     await mngr.delete(catalog_id)
     await mngr.s.commit()
