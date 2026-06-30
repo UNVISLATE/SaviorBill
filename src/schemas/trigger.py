@@ -35,23 +35,41 @@ class TriggerCreate(BaseModel):
     (email: ``template_id``/``to_field``; lua: ``script_id``).
     """
 
-    name: str | None = Field(default=None, max_length=128)
-    event: str = Field(min_length=2, max_length=64)
-    action: str = Field(min_length=2, max_length=32)
-    config: dict = Field(default_factory=dict)
-    cond: dict = Field(default_factory=dict)
-    is_active: bool = True
+    name: str | None = Field(
+        default=None, max_length=128, description="Имя триггера (опционально)"
+    )
+    event: str = Field(
+        min_length=2, max_length=64, description="Событие-условие (обязательно)"
+    )
+    action: str = Field(
+        min_length=2,
+        max_length=32,
+        description="Ключ действия: email | lua (обязательно)",
+    )
+    config: dict = Field(
+        default_factory=dict, description="Параметры действия (опционально)"
+    )
+    cond: dict = Field(
+        default_factory=dict, description="Доп-условия срабатывания (опционально)"
+    )
+    is_active: bool = Field(
+        default=True, description="Активен ли триггер (опционально)"
+    )
 
 
 class TriggerPatch(BaseModel):
     """Изменение триггера (только переданные поля)."""
 
-    name: str | None = None
-    event: str | None = Field(default=None, min_length=2, max_length=64)
-    action: str | None = Field(default=None, min_length=2, max_length=32)
-    config: dict | None = None
-    cond: dict | None = None
-    is_active: bool | None = None
+    name: str | None = Field(default=None, description="Имя триггера")
+    event: str | None = Field(
+        default=None, min_length=2, max_length=64, description="Событие-условие"
+    )
+    action: str | None = Field(
+        default=None, min_length=2, max_length=32, description="Ключ действия"
+    )
+    config: dict | None = Field(default=None, description="Параметры действия")
+    cond: dict | None = Field(default=None, description="Доп-условия срабатывания")
+    is_active: bool | None = Field(default=None, description="Активен ли триггер")
 
 
 class TriggerMeta(BaseModel):

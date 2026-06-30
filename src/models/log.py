@@ -16,7 +16,8 @@ class LogModel(Base):
     """Запись лога API. Старые строки подрезаются ``LogModel.trim()``."""
 
     __tablename__ = "api_logs"
-    __row_limit__: int = 1_000_000  # TODO: вынести в env
+    # Потолок по умолчанию; вызывающий передаёт limit из cfg.LOG_ROW_LIMIT.
+    __row_limit__: int = 1_000_000
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
 

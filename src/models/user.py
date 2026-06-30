@@ -42,12 +42,8 @@ class UserModel(Base):
     )
     pass_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, default=True, nullable=False
-    )  # TODO: забаненные/неактивные юзеры - создать базовую системную роль banned с правом только посмотреть провилть свой и только услуги (по умолчанию). (src/utils/init/bootstrap_roles.py) - название роли которая является для заблокированных юзеров задается в ENV.
-    is_verified: Mapped[bool] = mapped_column(
-        Boolean, default=False, nullable=False
-    )  # TODO: вынести как роль user базовую системную так-же. Параметры какая роль является верефицированным юзером задается в ENV.
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     balance: Mapped[Decimal] = mapped_column(
         Numeric(18, 2), default=Decimal("0"), server_default="0", nullable=False

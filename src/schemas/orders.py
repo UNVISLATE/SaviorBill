@@ -11,10 +11,14 @@ from pydantic import BaseModel, ConfigDict, Field
 class OrderCreate(BaseModel):
     """Заказ услуги. ``promocode`` — опциональная скидка (kind=discount)."""
 
-    service_id: int
-    promocode: str | None = Field(default=None, max_length=64)
-    # Доп. параметры от клиента, мёрджатся поверх Service.params.
-    params: dict | None = None
+    service_id: int = Field(description="ID заказываемой услуги (обязательно)")
+    promocode: str | None = Field(
+        default=None, max_length=64, description="Промокод-скидка (опционально)"
+    )
+    params: dict | None = Field(
+        default=None,
+        description="Доп. параметры от клиента, мёрджатся поверх Service.params (опционально)",
+    )
 
 
 class Order(BaseModel):
@@ -53,11 +57,15 @@ class OrderAdmin(Order):
 class OrderGrant(BaseModel):
     """Ручная выдача услуги пользователю админом (без оплаты)."""
 
-    account_id: int
-    service_id: int
-    params: dict | None = None
-    # Списать стоимость с баланса пользователя (по умолчанию — нет, дарим).
-    charge: bool = False
+    account_id: int = Field(description="ID аккаунта-получателя (обязательно)")
+    service_id: int = Field(description="ID выдаваемой услуги (обязательно)")
+    params: dict | None = Field(
+        default=None, description="Доп. параметры услуги (опционально)"
+    )
+    charge: bool = Field(
+        default=False,
+        description="Списать стоимость с баланса пользователя; по умолчанию — дарим (опционально)",
+    )
 
 
 __all__ = ["OrderCreate", "Order", "OrderAdmin", "OrderGrant"]

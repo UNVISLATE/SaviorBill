@@ -17,12 +17,22 @@ class PaymentCreate(BaseModel):
     конкретную услугу ``service_id`` (она будет выдана по успешной оплате).
     """
 
-    amount: Decimal = Field(gt=0)
-    provider: str = Field(description="slug платёжного провайдера")
-    target: str = Field(default=PayTarget.BALANCE, description="balance | service")
-    service_id: int | None = Field(default=None, description="для target=service")
-    params: dict | None = Field(default=None, description="доп. параметры услуги")
-    return_url: str | None = None
+    amount: Decimal = Field(gt=0, description="Сумма платежа > 0 (обязательно)")
+    provider: str = Field(description="slug платёжного провайдера (обязательно)")
+    target: str = Field(
+        default=PayTarget.BALANCE,
+        description="Назначение: balance (пополнение) | service (оплата услуги). Опционально",
+    )
+    service_id: int | None = Field(
+        default=None, description="ID услуги, обязателен при target=service"
+    )
+    params: dict | None = Field(
+        default=None, description="Доп. параметры услуги (опционально)"
+    )
+    return_url: str | None = Field(
+        default=None,
+        description="URL возврата после оплаты, если провайдер его поддерживает (опционально)",
+    )
 
 
 class Payment(BaseModel):

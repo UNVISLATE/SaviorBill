@@ -25,16 +25,22 @@ class Role(BaseModel):
 class RoleCreate(BaseModel):
     """Создание роли."""
 
-    name: str = Field(min_length=2, max_length=64)
-    title: str | None = None
-    perms: dict = Field(default_factory=dict)
+    name: str = Field(
+        min_length=2, max_length=64, description="Уникальное имя роли (обязательно)"
+    )
+    title: str | None = Field(
+        default=None, description="Отображаемое название (опционально)"
+    )
+    perms: dict = Field(
+        default_factory=dict, description="Дерево прав роли (опционально)"
+    )
 
 
 class RolePatch(BaseModel):
     """Изменение роли (только переданные поля)."""
 
-    title: str | None = None
-    perms: dict | None = None
+    title: str | None = Field(default=None, description="Отображаемое название")
+    perms: dict | None = Field(default=None, description="Дерево прав роли")
 
 
 class PermsCatalog(BaseModel):

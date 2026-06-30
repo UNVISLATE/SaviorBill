@@ -7,11 +7,10 @@ from utils.sec.box import SecBox
 pytestmark = pytest.mark.unit
 
 
-def test_plain_mode_roundtrip_without_key():
-    box = SecBox(None)
-    sealed = box.seal("my-secret")
-    assert sealed.startswith("plain:")
-    assert box.open(sealed) == "my-secret"
+def test_seal_without_key_raises():
+    # Шифрование обязательно: без ключа seal запрещён (нет plaintext-секретов).
+    with pytest.raises(RuntimeError):
+        SecBox(None).seal("my-secret")
 
 
 def test_encrypted_roundtrip_with_key():

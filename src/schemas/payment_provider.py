@@ -28,27 +28,49 @@ class PayProvider(BaseModel):
 class PayProviderCreate(BaseModel):
     """Создание платёжного провайдера."""
 
-    slug: str = Field(min_length=2, max_length=64)
-    title: str | None = None
-    enabled: bool = False
-    currency: str = Field(default="RUB", max_length=8)
-    # JSON секретов/доп-данных платёжки (шифруется при сохранении).
-    secrets: dict = Field(default_factory=dict)
-    init_script_id: int | None = None
-    cb_script_id: int | None = None
-    extra: dict = Field(default_factory=dict)
+    slug: str = Field(
+        min_length=2,
+        max_length=64,
+        description="Уникальный slug провайдера (обязательно)",
+    )
+    title: str | None = Field(
+        default=None, description="Отображаемое имя (опционально)"
+    )
+    enabled: bool = Field(
+        default=False, description="Включён ли провайдер (опционально)"
+    )
+    currency: str = Field(
+        default="RUB", max_length=8, description="Валюта по умолчанию (опционально)"
+    )
+    secrets: dict = Field(
+        default_factory=dict,
+        description="JSON секретов/доп-данных платёжки, шифруется при сохранении (опционально)",
+    )
+    init_script_id: int | None = Field(
+        default=None, description="ID lua-скрипта инициализации платежа (опционально)"
+    )
+    cb_script_id: int | None = Field(
+        default=None, description="ID lua-скрипта обработки колбэка (опционально)"
+    )
+    extra: dict = Field(
+        default_factory=dict, description="Несекретные доп-параметры (опционально)"
+    )
 
 
 class PayProviderPatch(BaseModel):
     """Изменение платёжного провайдера (только переданные поля)."""
 
-    title: str | None = None
-    enabled: bool | None = None
-    currency: str | None = None
-    secrets: dict | None = None
-    init_script_id: int | None = None
-    cb_script_id: int | None = None
-    extra: dict | None = None
+    title: str | None = Field(default=None, description="Отображаемое имя")
+    enabled: bool | None = Field(default=None, description="Включён ли провайдер")
+    currency: str | None = Field(default=None, description="Валюта по умолчанию")
+    secrets: dict | None = Field(
+        default=None, description="Новый JSON секретов (перешифровывается)"
+    )
+    init_script_id: int | None = Field(
+        default=None, description="ID lua-скрипта инициализации"
+    )
+    cb_script_id: int | None = Field(default=None, description="ID lua-скрипта колбэка")
+    extra: dict | None = Field(default=None, description="Несекретные доп-параметры")
 
 
 class PayProviderPublic(BaseModel):

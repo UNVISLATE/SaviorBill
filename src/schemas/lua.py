@@ -30,17 +30,31 @@ class LuaScriptUpload(BaseModel):
     только для отображения в админке.
     """
 
-    slug: str = Field(min_length=2, max_length=64)
-    name: str | None = Field(default=None, max_length=128)
+    slug: str = Field(
+        min_length=2, max_length=64, description="Уникальный slug скрипта (обязательно)"
+    )
+    name: str | None = Field(
+        default=None, max_length=128, description="Отображаемое имя (опционально)"
+    )
     kind: str = Field(default="service", description="service | payment | generic")
-    code: str = Field(description="Тело Lua-скрипта (модуль с функцией handle(ctx))")
-    description: str | None = Field(default=None, max_length=2048)
+    code: str = Field(
+        min_length=1,
+        max_length=100_000,
+        description="Тело Lua-скрипта (модуль с функцией handle(ctx)), обязательно",
+    )
+    description: str | None = Field(
+        default=None, max_length=2048, description="Описание (опционально)"
+    )
 
 
 class LuaScriptPatch(BaseModel):
     """Замена тела существующего Lua-скрипта."""
 
-    code: str = Field(description="Новое тело Lua-скрипта")
+    code: str = Field(
+        min_length=1,
+        max_length=100_000,
+        description="Новое тело Lua-скрипта (обязательно)",
+    )
 
 
 __all__ = [

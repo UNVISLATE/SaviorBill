@@ -51,9 +51,7 @@ class SystemScriptsModel(Base):
     # "services/3f9c1a....lua"). Клиент имя файла не задаёт.
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    description: Mapped[str | None] = mapped_column(
-        Text, nullable=True
-    )  # TODO: ограничить размер
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 

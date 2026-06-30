@@ -30,22 +30,34 @@ class EmailTemplateUpload(BaseModel):
     Имя файла тела генерируется системой. ``subject`` и ``body`` — jinja2.
     """
 
-    slug: str = Field(min_length=2, max_length=64)
-    name: str | None = Field(default=None, max_length=128)
-    subject: str = Field(max_length=255, description="Тема (jinja2-строка)")
-    body: str = Field(description="Тело письма (jinja2-шаблон)")
-    is_html: bool = Field(default=True)
-    description: str | None = Field(default=None, max_length=2048)
+    slug: str = Field(
+        min_length=2, max_length=64, description="Уникальный slug шаблона (обязательно)"
+    )
+    name: str | None = Field(
+        default=None, max_length=128, description="Отображаемое имя (опционально)"
+    )
+    subject: str = Field(
+        max_length=255, description="Тема, jinja2-строка (обязательно)"
+    )
+    body: str = Field(description="Тело письма, jinja2-шаблон (обязательно)")
+    is_html: bool = Field(default=True, description="HTML или plain-text (опционально)")
+    description: str | None = Field(
+        default=None, max_length=2048, description="Описание (опционально)"
+    )
 
 
 class EmailTemplatePatch(BaseModel):
     """Изменение визуальных полей шаблона (без тела)."""
 
-    name: str | None = None
-    subject: str | None = Field(default=None, max_length=255)
-    is_html: bool | None = None
-    description: str | None = Field(default=None, max_length=2048)
-    is_active: bool | None = None
+    name: str | None = Field(default=None, description="Отображаемое имя")
+    subject: str | None = Field(
+        default=None, max_length=255, description="Тема (jinja2)"
+    )
+    is_html: bool | None = Field(default=None, description="HTML или plain-text")
+    description: str | None = Field(
+        default=None, max_length=2048, description="Описание"
+    )
+    is_active: bool | None = Field(default=None, description="Активен ли шаблон")
 
 
 class EmailBodyPatch(BaseModel):

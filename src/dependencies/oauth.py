@@ -23,7 +23,7 @@ _STATE = "oauth:state:"
 _STATE_TTL = 600
 
 
-class OAuthSvc:  # TODO: вынести в /services/oauth.py
+class OAuthSvc:
     """Высокоуровневые операции OAuth-флоу поверх таблицы ``oauth_providers``."""
 
     def __init__(
