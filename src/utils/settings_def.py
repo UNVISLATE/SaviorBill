@@ -75,6 +75,14 @@ SETTINGS: tuple[SettingDef, ...] = (
     SettingDef("role.user", "ROLE_USER", group="role", desc="Имя роли пользователя"),
     SettingDef("role.guest", "ROLE_GUEST", group="role", desc="Имя роли гостя"),
     SettingDef("role.banned", "ROLE_BANNED", group="role", desc="Имя роли блокировки"),
+    # Реферальная программа
+    SettingDef(
+        "referral.percent",
+        "REFERRAL_PERCENT",
+        type="int",
+        group="referral",
+        desc="Глобальный процент отчислений рефереру (бонусный баланс), %",
+    ),
     # Флаги состояния системы (выставляются bootstrap-проверками, без сидинга)
     SettingDef(
         "system.fs_insecure",

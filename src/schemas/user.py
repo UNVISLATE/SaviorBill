@@ -21,6 +21,8 @@ class User(BaseModel):
     role_id: int | None = None
     balance: Decimal
     bonus_balance: Decimal
+    ref_code: str | None = None
+    referred_by: int | None = None
     created_at: datetime
     last_login: datetime | None = None
 
@@ -72,6 +74,8 @@ class UserDetail(BaseModel):
     role: str | None = None
     balance: Decimal
     bonus_balance: Decimal
+    ref_code: str | None = None
+    referred_by: int | None = None
     created_at: datetime
     last_login: datetime | None = None
     has_pass: bool
@@ -105,6 +109,8 @@ class UserDetail(BaseModel):
             role=m.role.name if m.role else None,
             balance=m.balance,
             bonus_balance=m.bonus_balance,
+            ref_code=m.ref_code,
+            referred_by=m.referred_by,
             created_at=m.created_at,
             last_login=m.last_login,
             has_pass=m.has_pass,

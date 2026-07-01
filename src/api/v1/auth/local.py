@@ -38,7 +38,9 @@ async def register(
     if body.email and await mngr.by_email(body.email):
         raise HTTPException(status.HTTP_409_CONFLICT, "email занят")
 
-    acc = await mngr.create(body.login, hash_pass(body.password), body.email)
+    acc = await mngr.create(
+        body.login, hash_pass(body.password), body.email, ref_by=body.ref_code
+    )
     await mngr.s.commit()
 
     # Триггеры регистрации (best-effort, не ломают регистрацию).

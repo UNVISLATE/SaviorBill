@@ -98,6 +98,9 @@ class AppConfig(BaseSettings):
     # TTL лока планировщика (сек); обновляется на каждой итерации.
     BILLING_LOCK_TTL: int = Field(default=30)
 
+    # Реферальная программа: глобальный процент отчислений рефереру (%).
+    REFERRAL_PERCENT: int = Field(default=0)
+
     # Хранилище файлов (медиа товаров, аватарки, иконки)
     STORAGE_BACKEND: str = Field(default="fs")
     S3_ENDPOINT: str | None = Field(default=None)

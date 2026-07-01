@@ -19,6 +19,11 @@ class Reg(BaseModel):
     email: str | None = Field(
         default=None, max_length=255, description="Email (опционально)"
     )
+    ref_code: str | None = Field(
+        default=None,
+        max_length=16,
+        description="Реферальный код пригласившего (опционально)",
+    )
 
 
 class Login(BaseModel):
@@ -84,6 +89,7 @@ class Account(BaseModel):
     is_active: bool
     is_verified: bool
     role: str | None = None
+    ref_code: str | None = None
     created_at: datetime
 
     @classmethod
@@ -96,6 +102,7 @@ class Account(BaseModel):
             is_active=acc.is_active,
             is_verified=acc.is_verified,
             role=acc.role.name if acc.role else None,
+            ref_code=acc.ref_code,
             created_at=acc.created_at,
         )
 

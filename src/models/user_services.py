@@ -217,6 +217,7 @@ class UserServicesMngr:
             usvc.status = UsvcStatus.ACTIVE
             usvc.delivered_at = utc_now()
             usvc.error = None
+            await self._credit_referral(acc, service, usvc.price)
         except Exception as exc:  # noqa: BLE001 — любая ошибка доставки -> возврат
             usvc.status = UsvcStatus.FAILED
             usvc.error = str(exc)[:512]
@@ -224,6 +225,17 @@ class UserServicesMngr:
                 self._refund(acc, refund_on_fail)
         await self.s.flush()
         return usvc
+
+    async def _credit_referral(
+        self, acc, service: ServiceModel, amount: Decimal
+    ) -> None:
+        """Начислить реферальный бонус пригласившему (best-effort)."""
+        from services.referral import ReferralMngr
+
+        try:
+            await ReferralMngr(self.s).credit(acc, service, amount)
+        except Exception:  # noqa: BLE001 — реферальный бонус не влияет на выдачу
+            pass
 
     async def run_action(
         self,

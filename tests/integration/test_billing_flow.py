@@ -144,3 +144,60 @@ async def test_callback_bad_signature_rejected(http, new_user, seed):
         json={"payment_id": pid, "success": True, "sign": "deadbeef"},
     )
     assert r.status_code == 401
+
+
+async def test_referral_bonus_credited_on_service_purchase(
+    http, new_user, seed, engine
+):
+    # Реферер регистрируется и получает свой ref_code.
+    _, _, ref_tokens = await new_user()
+    ref_hdr = {"Authorization": f"Bearer {ref_tokens['access_token']}"}
+    me = await http.get("/api/v1/user/me", headers=ref_hdr)
+    me.raise_for_status()
+    ref_code = me.json()["ref_code"]
+    assert ref_code
+
+    # Глобальный процент отчислений реферреру = 10%.
+    async with engine.begin() as c:
+        await c.execute(
+            text(
+                "INSERT INTO settings (key,value,is_secret) VALUES "
+                "('referral.percent','10',false) "
+                "ON CONFLICT (key) DO UPDATE SET value='10'"
+            )
+        )
+
+    # Приглашённый пользователь регистрируется по коду и покупает услугу.
+    sid = await seed.key_service(price="10.00", keys=1)
+    login, _, _ = await new_user(ref_code)
+    async with engine.begin() as c:
+        await c.execute(
+            text("UPDATE accounts SET balance=100 WHERE login=:l"), {"l": login}
+        )
+        referrer_id = await c.scalar(
+            text("SELECT id FROM accounts WHERE ref_code=:c"), {"c": ref_code}
+        )
+        invited_ref = await c.scalar(
+            text("SELECT referred_by FROM accounts WHERE login=:l"), {"l": login}
+        )
+    assert invited_ref == referrer_id
+
+    r = await http.post(
+        "/api/v1/auth/login", json={"login": login, "password": "secret123"}
+    )
+    r.raise_for_status()
+    inv_hdr = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    r = await http.post(
+        "/api/v1/user/services/create", json={"service_id": sid}, headers=inv_hdr
+    )
+    assert r.status_code in (200, 201), r.text
+    assert r.json()["status"] == "active"
+
+    # Рефереру начислено 10% от 10.00 = 1.00 на бонусный баланс.
+    async with engine.begin() as c:
+        bonus = await c.scalar(
+            text("SELECT bonus_balance FROM accounts WHERE id=:i"),
+            {"i": referrer_id},
+        )
+    assert str(bonus) == "1.00"

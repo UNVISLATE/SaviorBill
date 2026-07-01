@@ -122,13 +122,13 @@ def uniq(prefix: str) -> str:
 async def new_user(http: httpx.AsyncClient):
     """Зарегистрировать нового пользователя, вернуть (login, password, tokens)."""
 
-    async def _make():
+    async def _make(ref_code: str | None = None):
         login = uniq("user")
         pwd = "secret123"
-        r = await http.post(
-            "/api/v1/auth/register",
-            json={"login": login, "email": f"{login}@test.io", "password": pwd},
-        )
+        payload = {"login": login, "email": f"{login}@test.io", "password": pwd}
+        if ref_code:
+            payload["ref_code"] = ref_code
+        r = await http.post("/api/v1/auth/register", json=payload)
         r.raise_for_status()
         return login, pwd, r.json()
 
