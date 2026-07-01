@@ -105,5 +105,5 @@ body } -> { ok, status, headers, body }`, `string`, `table`, `math`,
 - [`yookassa.md`](./yookassa.md)
 - [`platega.md`](./platega.md)
 
-Готовые тела скриптов лежат в `data/lua/payments/`:
+Готовые тела скриптов лежат в `examples/lua/payments/`:
 `yookassa_payment.lua`, `platega_payment.lua` (и `demo_payment.lua` для тестов).

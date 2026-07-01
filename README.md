@@ -65,8 +65,8 @@ python -m black src tests migrations
 
 ## Документация
 
-- **`docs/lua_scripts.md`** — контракты Lua-скриптов (услуги и платежи) и
-  пример-шаблоны в `data/lua/`.
+- **`docs/lua_scripts.md`** — контракты Lua-скриптов (услуги, платежи, триггеры)
+  и справочные примеры в `examples/lua/` (в т.ч. выдача VPN через Marzban).
 - **`docs/payments_methods/`** — подключение платёжных провайдеров
   (ЮKassa, Platega) и что заполнять в `secrets`/`extra`.
 - **`.env.example`** — все переменные окружения с пояснениями.

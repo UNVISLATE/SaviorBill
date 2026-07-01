@@ -3,7 +3,7 @@
 Официальная документация: <https://yookassa.ru/developers>. Сценарий —
 **Redirect** (одностадийный платёж, `capture=true`).
 
-Скрипт: `data/lua/payments/yookassa_payment.lua` (единый, action-driven:
+Скрипт: `examples/lua/payments/yookassa_payment.lua` (единый, action-driven:
 create/callback/check/refund).
 
 ## Что заполнить

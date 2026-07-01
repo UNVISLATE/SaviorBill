@@ -52,15 +52,16 @@ docker-compose.override.yml
 *.log
 *.pid
 
-# Монтируемая папка данных: рантайм-артефакты не коммитим, примеры lua — храним.
+# Монтируемая папка данных: рантайм-артефакты не коммитим, рабочие lua — храним
+# (нужны для docker-стека и тестов). Справочные примеры — в examples/lua/.
 data/keys/
 data/uploads/
 data/lua/**
-!data/lua/base/
-!data/lua/base/service_lua.lua
 !data/lua/services/
 !data/lua/services/demo_service.lua
+!data/lua/services/service_lua.lua
+!data/lua/services/marzban_vpn.lua
 !data/lua/payments/
 !data/lua/payments/demo_payment.lua
-!data/lua/payments/yookassa_payment.lua
-!data/lua/payments/platega_payment.lua
+!data/lua/triggers/
+!data/lua/triggers/notify.lua

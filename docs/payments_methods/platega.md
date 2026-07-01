@@ -3,7 +3,7 @@
 Официальная документация: <https://docs.platega.io/>. Базовый URL API —
 `https://app.platega.io/`. Авторизация — заголовки `X-MerchantId` и `X-Secret`.
 
-Скрипт: `data/lua/payments/platega_payment.lua` (единый, action-driven:
+Скрипт: `examples/lua/payments/platega_payment.lua` (единый, action-driven:
 create/callback/check/refund).
 
 ## Что заполнить

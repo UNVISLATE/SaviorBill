@@ -16,7 +16,6 @@ from dependencies.sec import make_secbox
 from dependencies.settings import SystemSettingsMngr
 from utils.config import AppConfig
 from utils.init.email_templates import seed_email_templates
-from utils.init.lua_scripts import seed_lua_scripts
 from utils.init.owner import create_owner
 from utils.init.role import create_base_roles
 from utils.init.secret import harden_secret
@@ -54,7 +53,6 @@ async def run_init(
     log.info("первичная инициализация системы…")
     await seed_settings(mngr, cfg)
     await seed_email_templates(session, cfg)
-    await seed_lua_scripts(session, cfg)
     names = await _role_names(mngr, cfg)
     roles = await create_base_roles(session, names)
     await create_owner(session, cfg, roles["owner"])

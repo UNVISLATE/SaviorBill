@@ -196,7 +196,7 @@ async def seed(engine: AsyncEngine):
                 script_id = await c.scalar(
                     text(
                         "INSERT INTO lua_scripts (slug,name,kind,filename,is_active) "
-                        "VALUES (:slug,'base','service','base/service_lua.lua',true) "
+                        "VALUES (:slug,'base','service','services/service_lua.lua',true) "
                         "RETURNING id"
                     ),
                     {"slug": uniq("script")},
