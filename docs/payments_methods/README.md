@@ -12,18 +12,26 @@
 | Этап | Скрипт | Что делает |
 |------|--------|------------|
 | Инициализация | `init` | Создаёт платёж у провайдера, возвращает ссылку оплаты (`public.pay_url`) и `external_id` транзакции |
-| Колбэк/возврат | `callback` | Принимает вебхук или success/fail-редирект, **перепроверяет** статус у провайдера и сообщает результат |
+| Колбэк (webhook) | `callback` | Принимает серверный вебхук провайдера, **перепроверяет** статус у провайдера и сообщает результат |
 
 Поток данных:
 
 1. `POST /api/v1/user/purchases/create` → ядро создаёт `UserPayment` (статус
    `pending`) и запускает **init**-скрипт. Клиент получает `public_data.pay_url`.
 2. Пользователь оплачивает на стороне провайдера.
-3. Провайдер дёргает `POST|GET /api/v1/callback/payment/{slug}` → ядро запускает
+3. Провайдер дёргает `POST /api/v1/callback/payment/{slug}` (только server-to-server
+   webhook; страниц success/fail ядро не обслуживает) → ядро запускает
    **callback**-скрипт. Тот возвращает `private = { ok, paid, payment_id,
    external_id, status }`.
 4. Если `ok=false` → ядро отвечает `401`. Если `paid=true` → платёж проводится
    (баланс/выдача услуги) идемпотентно.
+
+> **Директива `recheck`.** Долгие `pending`-платежи планировщик (billing-loop)
+> сам ставит на перепроверку: callback-скрипт вызывается с
+> `ctx.request.directive = "recheck"` и обращается к API провайдера. После
+> `BILLING_PAY_RECHECK_MAX` безрезультатных попыток платёж переводится в статус
+> `wait` (авто-перепроверки прекращаются). Ручной повтор —
+> `POST /api/v1/admin/purchases/{id}/recheck` (право `purchases.recheck`).
 
 ### Контракт скриптов
 
@@ -40,8 +48,9 @@ ctx.user     = { id, login, email }
 `callback` получает `ctx`:
 
 ```
-ctx.provider = { slug, settings = {<секреты>}, extra = {...} }
-ctx.request  = { <тело вебхука и query как есть> }
+ctx.provider  = { slug, settings = {<секреты>}, extra = {...} }
+ctx.request   = { <тело вебхука и query как есть> }
+ctx.directive = "webhook" | "recheck"
 ```
 
 и обязан вернуть `{ private = { ok, paid, payment_id, external_id, status } }`.

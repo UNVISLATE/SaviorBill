@@ -55,6 +55,7 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       SMTP_FROM: ${SMTP_FROM:-}
       SMTP_TLS: ${SMTP_TLS:-true}
+      BILLING_LOOP_ENABLED: ${BILLING_LOOP_ENABLED:-true}
     volumes:
       - ./data:/app/data:rw
     command: >
