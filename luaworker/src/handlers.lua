@@ -144,7 +144,13 @@ function M.run_script(payload)
   if type(res) ~= "table" then
     error("run_script: handle должен вернуть таблицу { public, private }")
   end
-  return { public = res.public or {}, private = res.private or {} }
+  return {
+    public = res.public or {},
+    private = res.private or {},
+    state = res.state,
+    expires_at = res.expires_at,
+    next_run = res.next_run,
+  }
 end
 
 --- Диспетчер по типу задачи.

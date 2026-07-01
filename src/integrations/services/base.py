@@ -22,5 +22,15 @@ class BaseIssuer:
         """
         raise NotImplementedError
 
+    async def run_action(self, usvc, service, acc, action) -> None:  # noqa: ANN001
+        """Выполнить действие ЖЦ над услугой (create/renew/stop/delete/freeze).
+
+        :arg usvc: выданная услуга (ORM).
+        :arg service: эталонная услуга (ORM).
+        :arg acc: аккаунт-владелец (ORM).
+        :arg action: действие из :class:`enums.ServiceAction`.
+        """
+        raise NotImplementedError("этот способ выдачи не поддерживает действия ЖЦ")
+
 
 __all__ = ["BaseIssuer"]

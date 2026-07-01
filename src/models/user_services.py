@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException, status
@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
-from enums import OrderStatus, UsvcState
+from enums import OrderStatus, ServiceAction, UsvcState
 from integrations.services import get_issuer
 from utils.datetime_utils import utc_now
 from utils.luabus import LuaBus
@@ -168,9 +168,12 @@ class UserServicesMngr:
             service_id=service.id,
             payment_id=payment_id,
             status=OrderStatus.INITIATED,
+            state=UsvcState.ACTIVE,
             price=price,
             discount=discount,
             params=merged,
+            duration=service.duration,
+            actions=list(service.actions or []),
         )
         self.s.add(usvc)
         await self.s.flush()
@@ -179,8 +182,19 @@ class UserServicesMngr:
             await self.deliver(
                 usvc, service, acc, refund_on_fail=price if charge else Decimal("0")
             )
+            self._apply_default_expiry(usvc)
 
         return usvc
+
+    @staticmethod
+    def _apply_default_expiry(usvc: UserServicesModel) -> None:
+        """Проставить expires_at из duration, если lua-скрипт его не задал."""
+        if (
+            usvc.status == OrderStatus.DELIVERED
+            and usvc.expires_at is None
+            and usvc.duration
+        ):
+            usvc.expires_at = utc_now() + timedelta(seconds=usvc.duration)
 
     async def deliver(
         self,
@@ -211,5 +225,46 @@ class UserServicesMngr:
         await self.s.flush()
         return usvc
 
+    async def run_action(
+        self,
+        usvc: UserServicesModel,
+        service: ServiceModel,
+        acc,
+        action: str,
+    ) -> UserServicesModel:
+        """Выполнить действие ЖЦ над выданной услугой.
 
-__all__ = ["UserServicesModel", "UserServicesMngr"]
+        Для lua-услуг зовёт скрипт с ``ctx.action``; для нативных (ключ) — только
+        меняет состояние (stop/delete/freeze), т.к. внешней интеграции нет.
+
+        :arg usvc: выданная услуга.
+        :arg service: эталонная услуга.
+        :arg acc: аккаунт-владелец.
+        :arg action: действие из :class:`enums.ServiceAction`.
+        """
+        issuer = get_issuer(service.delivery, self.s, self.bus)
+        try:
+            await issuer.run_action(usvc, service, acc, action)
+        except NotImplementedError:
+            if action in (ServiceAction.STOP, ServiceAction.DELETE):
+                usvc.state = UsvcState.STOPPED
+            elif action == ServiceAction.FREEZE:
+                usvc.state = UsvcState.FROZEN
+            elif action == ServiceAction.RENEW and usvc.duration:
+                base = usvc.expires_at or utc_now()
+                usvc.expires_at = base + timedelta(seconds=usvc.duration)
+                usvc.state = UsvcState.ACTIVE
+        await self.s.flush()
+        return usvc
+
+    async def expire(
+        self, usvc: UserServicesModel, service: ServiceModel, acc
+    ) -> UserServicesModel:
+        """Обработать истечение услуги: остановить интеграцию и пометить EXPIRED."""
+        try:
+            await self.run_action(usvc, service, acc, ServiceAction.STOP)
+        except Exception:  # noqa: BLE001 — истечение помечаем даже при сбое stop
+            pass
+        usvc.state = UsvcState.EXPIRED
+        await self.s.flush()
+        return usvc

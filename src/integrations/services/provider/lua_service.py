@@ -1,15 +1,34 @@
-"""Выдача услуги через Lua-скрипт в LuaWorker."""
+"""Выдача и обслуживание услуги через Lua-скрипт в LuaWorker (action-driven)."""
 
 from __future__ import annotations
 
-from enums import ScriptKind
+from datetime import datetime, timezone
+
+from enums import ScriptKind, ServiceAction, UsvcState
 from integrations.services.base import BaseIssuer
 
 
 class LuaService(BaseIssuer):
-    """Доставляет услугу, исполняя привязанный к ней Lua-скрипт."""
+    """Исполняет привязанный к услуге Lua-скрипт для действий её ЖЦ.
+
+    Скрипт получает ``ctx.action`` и сам решает, что делать (create/renew/stop/
+    delete/freeze). Помимо ``public``/``private`` он может вернуть ``state``
+    (новое состояние услуги) и ``expires_at`` (unix-время истечения) — их
+    подхватывает billing-loop для планирования.
+    """
 
     async def issue(self, usvc, service, acc) -> None:  # noqa: ANN001 — ORM-объекты
+        """Первичная выдача услуги (действие ``create``)."""
+        await self.run_action(usvc, service, acc, ServiceAction.CREATE)
+
+    async def run_action(self, usvc, service, acc, action) -> None:  # noqa: ANN001
+        """Выполнить действие ЖЦ услуги через lua-скрипт.
+
+        :arg usvc: выданная услуга (ORM).
+        :arg service: эталонная услуга (ORM).
+        :arg acc: аккаунт-владелец (ORM).
+        :arg action: действие из :class:`enums.ServiceAction`.
+        """
         from models.system_scripts import SystemScriptsModel
 
         if self.bus is None:
@@ -22,6 +41,7 @@ class LuaService(BaseIssuer):
             raise RuntimeError("Lua-скрипт услуги недоступен")
 
         ctx = {
+            "action": action,
             "user": {
                 "id": acc.id,
                 "login": acc.login,
@@ -29,6 +49,7 @@ class LuaService(BaseIssuer):
                 "service": {
                     "id": usvc.id,
                     "status": usvc.status,
+                    "state": usvc.state,
                     "price": str(usvc.price),
                     "params": usvc.params,
                 },
@@ -41,11 +62,24 @@ class LuaService(BaseIssuer):
                 "price": str(service.price),
                 "params": service.params,
                 "settings": service.settings,
+                "actions": service.actions,
             },
         }
         res = await self.bus.call("run_script", {"script": script.filename, "ctx": ctx})
         usvc.public_data = res.get("public") or {}
         usvc.private_data = res.get("private") or {}
+
+        state = res.get("state")
+        if state:
+            usvc.state = state
+        elif action in (ServiceAction.STOP, ServiceAction.DELETE):
+            usvc.state = UsvcState.STOPPED
+        elif action == ServiceAction.FREEZE:
+            usvc.state = UsvcState.FROZEN
+
+        expires_at = res.get("expires_at")
+        if expires_at is not None:
+            usvc.expires_at = datetime.fromtimestamp(int(expires_at), tz=timezone.utc)
 
 
 __all__ = ["LuaService"]
