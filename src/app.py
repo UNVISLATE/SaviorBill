@@ -1,9 +1,17 @@
+import logging
+
 from fastapi import FastAPI
 
 from lifespan import lifespan
 from utils.config import AppConfig
 
 settings = AppConfig()
+
+
+logging.basicConfig(
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    level=logging.DEBUG if settings.DEBUG else logging.INFO,
+)
 
 DESCRIPTION = "**SaviorBill** — событийная биллинг-система."
 
