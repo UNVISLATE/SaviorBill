@@ -1,12 +1,13 @@
--- YooKassa: callback-скрипт (вебхук payment.succeeded / возврат).
+-- YooKassa: callback-скрипт (server-to-server webhook payment.succeeded).
 --
 -- Секреты провайдера (provider.settings): shop_id, secret_key.
 -- Контекст: ctx.request — тело вебхука ЮKassa { event, object = { id, status,
---   metadata } } и/или query success/fail url.
+--   metadata } }; ctx.directive = "webhook" | "recheck" (recheck — перепроверку
+--   начало само ядро: billing-loop или ручной вызов админа).
 --
 -- БЕЗОПАСНОСТЬ: тело вебхука НЕ доверяется напрямую. Статус платежа
 -- перепроверяется отдельным запросом к API ЮKassa (server-to-server). Это
--- надёжнее проверки подписи и защищает от подделки уведомления.
+-- надёжнее проверки подписи и одинаково работает для webhook и recheck.
 -- Возврат private: ok (запрос валиден), paid (succeeded), payment_id (наш id из
 -- metadata), external_id (id платежа в ЮKassa), status.
 

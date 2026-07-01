@@ -1,4 +1,4 @@
--- Platega: callback-скрипт (вебхук статуса транзакции).
+-- Platega: callback-скрипт (server-to-server webhook статуса транзакции).
 --
 -- Секреты провайдера (provider.settings): merchant_id, secret.
 -- Доп. параметры (provider.extra):
@@ -7,10 +7,11 @@
 --   paid_statuses  — список «успешных» статусов через запятую
 --                    (по умолчанию "CONFIRMED,SUCCESS,PAID,COMPLETED").
 -- Контекст: ctx.request — тело вебхука Platega (ожидаются transactionId/id,
---   status и payload — наш id платежа из init-скрипта).
+--   status и payload — наш id платежа из init-скрипта); ctx.directive =
+--   "webhook" | "recheck" (recheck — перепроверку начало само ядро).
 --
 -- БЕЗОПАСНОСТЬ: статус из вебхука не доверяется напрямую — он перепроверяется
--- запросом к API Platega с merchant-секретами (server-to-server).
+-- запросом к API Platega с merchant-секретами (одинаково для webhook и recheck).
 -- Возврат private: ok, paid, payment_id (наш id из payload), external_id, status.
 
 local M = {}
