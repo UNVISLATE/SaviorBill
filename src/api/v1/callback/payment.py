@@ -91,23 +91,4 @@ async def payment_callback(
     return payment
 
 
-@router.get(
-    "/{provider}",
-    response_model=Payment,
-    summary="Колбэк оплаты (возврат success/fail)",
-    description="GET-вариант для платёжек, возвращающих пользователя на URL.",
-)
-async def payment_return(
-    provider: str,
-    request: Request,
-    svc: PayMngr = Depends(get_pay_mngr),
-    triggers: TriggerDispatcher = Depends(get_dispatcher),
-) -> Payment:
-    data = await _request_data(request)
-    payment = await svc.callback(provider, data)
-    await svc.s.commit()
-    await _notify(svc, triggers, payment)
-    return payment
-
-
 __all__ = ["router"]

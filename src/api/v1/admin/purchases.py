@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
 from dependencies.oauth import get_secbox
+from dependencies.payment import PayMngr, get_pay_mngr
 from dependencies.rbac import require_perm
+from enums import PayStatus
 from models.payment_providers import PaymentProvidersModel
 from models.user_payments import UserPaymentsModel
 from schemas.payment_provider import PayProviderCreate, PayProvider, PayProviderPatch
@@ -126,6 +128,33 @@ async def get_payment(
     pay = await session.get(UserPaymentsModel, payment_id)
     if pay is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "платёж не найден")
+    return PaymentAdmin.from_model(pay)
+
+
+@router.post(
+    "/purchases/{payment_id}/recheck",
+    response_model=PaymentAdmin,
+    dependencies=[Depends(require_perm("purchases.recheck"))],
+    summary="Ручная перепроверка платежа",
+    description=(
+        "Инициировать сверку статуса платежа с провайдером (директива recheck). "
+        "Применимо к платежам в статусах pending/wait; callback-скрипт обращается "
+        "к API провайдера и обновляет статус. Идемпотентно для paid/failed."
+    ),
+)
+async def recheck_payment(
+    payment_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    svc: PayMngr = Depends(get_pay_mngr),
+) -> PaymentAdmin:
+    pay = await session.get(UserPaymentsModel, payment_id)
+    if pay is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "платёж не найден")
+    # Ручной recheck сбрасывает "тупиковый" wait обратно в pending для сверки.
+    if pay.status == PayStatus.WAIT:
+        pay.status = PayStatus.PENDING
+    pay = await svc.recheck(pay)
+    await session.commit()
     return PaymentAdmin.from_model(pay)
 
 
