@@ -1,4 +1,8 @@
-"""Схемы Lua-скриптов (Request/Response)."""
+"""Схемы Lua-скриптов для админ-CRUD (Request/Response).
+
+Отличаются от схем контекста (user/service/payment/…): здесь — регистрация,
+замена и выдача метаданных зарегистрированных скриптов.
+"""
 
 from __future__ import annotations
 
@@ -15,6 +19,10 @@ class LuaScript(BaseModel):
     name: str | None = None
     kind: str
     filename: str
+    actions: list = Field(
+        default_factory=list,
+        description="Поддерживаемые действия скрипта (для payment: create/callback/…)",
+    )
     is_active: bool
 
     @classmethod
@@ -37,6 +45,13 @@ class LuaScriptUpload(BaseModel):
         default=None, max_length=128, description="Отображаемое имя (опционально)"
     )
     kind: str = Field(default="service", description="service | payment | generic")
+    actions: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Поддерживаемые действия скрипта. Для payment обязательны "
+            "create и callback; для service — минимум create (опционально)"
+        ),
+    )
     code: str = Field(
         min_length=1,
         max_length=100_000,

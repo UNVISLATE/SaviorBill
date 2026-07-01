@@ -17,9 +17,10 @@ class EmailAction(BaseAction):
         self.sender = sender
         self.templates = templates
 
-    async def run(self, ctx: dict, config: dict) -> bool:
+    async def run(self, event: str, ctx: dict, config: dict) -> bool:
         """Отправить письмо адресату из контекста.
 
+        :arg event: идентификатор доменного события (для шаблона/логики).
         :arg ctx: контекст события.
         :arg config: ``{template_id, to_field}``.
         :return: ``True`` если письмо отправлено.

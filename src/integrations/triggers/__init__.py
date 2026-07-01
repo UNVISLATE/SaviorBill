@@ -62,7 +62,7 @@ class TriggerDispatcher:
                 )
                 continue
             try:
-                if await action.run(ctx, trig.config or {}):
+                if await action.run(event, ctx, trig.config or {}):
                     done += 1
             except Exception:  # noqa: BLE001 — триггер не должен ломать операцию
                 log.exception(

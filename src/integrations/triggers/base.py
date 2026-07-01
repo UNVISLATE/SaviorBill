@@ -23,9 +23,10 @@ class BaseAction:
 
     key: str = ""
 
-    async def run(self, ctx: dict, config: dict) -> bool:
+    async def run(self, event: str, ctx: dict, config: dict) -> bool:
         """Выполнить действие для события.
 
+        :arg event: идентификатор доменного события.
         :arg ctx: контекст события (данные пользователя/платежа/услуги …).
         :arg config: параметры действия из триггера.
         :return: ``True`` если действие выполнено.

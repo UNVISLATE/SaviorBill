@@ -48,8 +48,8 @@ class _RecAction(BaseAction):
         self.ok = ok
         self.calls = []
 
-    async def run(self, ctx, config):
-        self.calls.append((ctx, config))
+    async def run(self, event, ctx, config):
+        self.calls.append((event, ctx, config))
         return self.ok
 
 
@@ -69,7 +69,7 @@ async def test_fire_runs_matching():
 
     n = await disp.fire(TriggerEvent.USER_REGISTERED, {"user": {"email": "x@y.z"}})
     assert n == 1
-    assert action.calls[0][0]["user"]["email"] == "x@y.z"
+    assert action.calls[0][1]["user"]["email"] == "x@y.z"
 
 
 @pytest.mark.asyncio
@@ -96,7 +96,7 @@ async def test_fire_best_effort_on_action_error():
     class _Boom(BaseAction):
         key = "rec"
 
-        async def run(self, ctx, config):
+        async def run(self, event, ctx, config):
             raise RuntimeError("boom")
 
     trigs = [_trig(id=1, event="e"), _trig(id=2, event="e")]

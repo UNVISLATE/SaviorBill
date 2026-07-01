@@ -6,15 +6,16 @@ from datetime import datetime, timezone
 
 from enums import ScriptKind, ServiceAction, UsvcStatus
 from integrations.services.base import BaseIssuer
+from services.lua_ctx import LuaRunner
 
 
 class LuaService(BaseIssuer):
     """Исполняет привязанный к услуге Lua-скрипт для действий её ЖЦ.
 
     Скрипт получает ``ctx.action`` и сам решает, что делать (create/renew/stop/
-    delete/freeze). Помимо ``public``/``private`` он может вернуть ``state``
-    (новое состояние услуги) и ``expires_at`` (unix-время истечения) — их
-    подхватывает billing-loop для планирования.
+    delete/freeze). Помимо ``public``/``private`` он может вернуть ``state``/
+    ``status`` (новый статус услуги) и ``expires_at`` (unix-время истечения) —
+    их подхватывает billing-loop для планирования.
     """
 
     async def issue(self, usvc, service, acc) -> None:  # noqa: ANN001 — ORM-объекты
@@ -40,33 +41,15 @@ class LuaService(BaseIssuer):
         if script is None or not script.is_active or script.kind != ScriptKind.SERVICE:
             raise RuntimeError("Lua-скрипт услуги недоступен")
 
-        ctx = {
-            "action": action,
-            "user": {
-                "id": acc.id,
-                "login": acc.login,
-                "email": acc.email,
-                "service": {
-                    "id": usvc.id,
-                    "status": usvc.status,
-                    "price": str(usvc.price),
-                    "duration": usvc.duration,
-                    "params": getattr(usvc, "order_params", {}) or {},
-                },
-                "payment": usvc.payment_id,
-            },
-            "service": {
-                "id": service.id,
-                "slug": service.slug,
-                "name": service.name,
-                "price": str(service.price),
-                "duration": service.duration,
-                "params": service.params,
-                "settings": service.settings,
-                "actions": service.actions,
-            },
-        }
-        res = await self.bus.call("run_script", {"script": script.filename, "ctx": ctx})
+        payment = None
+        if usvc.payment_id:
+            from models.user_payments import UserPaymentsModel
+
+            payment = await self.s.get(UserPaymentsModel, usvc.payment_id)
+
+        res = await LuaRunner(self.bus).run_service(
+            script.filename, action, acc, usvc, service, payment
+        )
         usvc.public_data = res.get("public") or {}
         usvc.private_data = res.get("private") or {}
 
