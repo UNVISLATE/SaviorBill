@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
-from enums import OrderStatus
+from enums import OrderStatus, UsvcState
 from integrations.services import get_issuer
 from utils.datetime_utils import utc_now
 from utils.luabus import LuaBus
@@ -67,6 +67,24 @@ class UserServicesModel(Base):
 
     status: Mapped[str] = mapped_column(
         String(16), default=OrderStatus.INITIATED, index=True, nullable=False
+    )
+    # Состояние ЖЦ выданной услуги (active/frozen/stopped/expired), см. UsvcState.
+    state: Mapped[str] = mapped_column(
+        String(16),
+        default=UsvcState.ACTIVE,
+        server_default=UsvcState.ACTIVE,
+        index=True,
+        nullable=False,
+    )
+    # Момент истечения услуги (для billing-loop). NULL — бессрочная.
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
+    # Длительность в секундах на момент выдачи (снимок service.duration).
+    duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Снимок поддерживаемых действий услуги (для фронтенда).
+    actions: Mapped[list] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
     )
     price: Mapped[Decimal] = mapped_column(
         Numeric(18, 2), default=Decimal("0"), server_default="0", nullable=False

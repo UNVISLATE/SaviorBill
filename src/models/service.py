@@ -84,6 +84,15 @@ class ServiceModel(Base):
     # JSON-настройки эталонной услуги (ctx.service.settings).
     settings: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
+    # Поддерживаемые действия ЖЦ (наследуются выданной услугой и отдаются фронту):
+    # ["create","renew","stop","delete","freeze"] — см. ServiceAction.
+    actions: Mapped[list] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
+    )
+    # Срок действия услуги в секундах (NULL — бессрочная). Используется billing-loop
+    # для планирования истечения, если lua-шаблон сам не вернул expires_at.
+    duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
     # Путь к изображению/иконке услуги в хранилище.
     image: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
