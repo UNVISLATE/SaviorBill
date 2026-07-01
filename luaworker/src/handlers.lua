@@ -4,6 +4,7 @@
 
 local cjson = require("cjson")
 local httpc = require("httpc")
+local sbox = require("sbox")
 
 local M = {}
 
@@ -110,13 +111,19 @@ function M.run_script(payload)
   local code = source:read("*a")
   source:close()
 
-  -- Песочница: даём json, http и команды биллинга, но не os/io.
+  -- Логгер выполнения, криптография и кэш для скрипта.
+  local logger, log_entries = sbox.make_logger()
+
+  -- Песочница: даём json, http, crypto, cache, log и команды биллинга (не os/io).
   local sandbox = {
     json = cjson,
     http = function(p)
       return httpc.request(p)
     end,
     billing = make_billing(),
+    crypto = sbox.make_crypto(),
+    cache = sbox.make_cache(),
+    log = logger,
     tostring = tostring,
     tonumber = tonumber,
     pairs = pairs,
@@ -150,6 +157,7 @@ function M.run_script(payload)
     state = res.state,
     expires_at = res.expires_at,
     next_run = res.next_run,
+    logs = log_entries,
   }
 end
 

@@ -26,6 +26,8 @@ local TASK = env("LUA_TASK_STREAM", "lua:tasks")
 local RESP = env("LUA_RESP_STREAM", "lua:results")
 local GROUP = env("LUA_GROUP", "luaworkers")
 local CONSUMER = env("LUA_CONSUMER", "worker-1")
+local LOG_TTL = tonumber(env("LUA_LOG_TTL", "3600"))
+local LOG_PREFIX = env("LUA_LOG_PREFIX", "lua:log:")
 
 -- redis-lua не знает stream-команды из коробки — регистрируем их.
 for _, cmd in ipairs({ "xadd", "xack", "xgroup", "xreadgroup" }) do
@@ -65,6 +67,13 @@ local function handle(client, entry_id, map)
   local data, flag
   if ok then
     flag, data = "1", cjson.encode(result)
+    -- Лог выполнения скрипта сохраняем в Valkey на ограниченное время.
+    if cid ~= "" and type(result) == "table" and result.logs
+      and #result.logs > 0 and LOG_TTL and LOG_TTL > 0 then
+      pcall(function()
+        client:set(LOG_PREFIX .. cid, cjson.encode(result.logs), "EX", LOG_TTL)
+      end)
+    end
   else
     flag, data = "0", cjson.encode(tostring(result))
   end

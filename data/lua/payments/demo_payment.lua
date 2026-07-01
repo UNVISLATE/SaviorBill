@@ -23,6 +23,10 @@
 -- ВАЖНО: callback (вебхук) — доверенный канал: скрипт сам проверяет подпись,
 -- ядро полагается на его ответ. check инициируется ядром и должен
 -- перепроверять статус запросом к API провайдера.
+--
+-- В песочнице доступны наборы: log(...)/log.info/warn/error (лог выполнения,
+-- сохраняется в Valkey на время), crypto (sha256/md5/hmac_sha256/base64_*),
+-- cache (get/set/del/incr поверх Valkey).
 
 local M = {}
 
@@ -39,9 +43,14 @@ local function do_create(ctx)
   local pay = ctx.payment or {}
   local prov = provider(ctx)
   local settings = prov.secrets or {}
+  log("create payment", pay.id, "provider", prov.slug)
   -- Боевая интеграция: POST в API провайдера с ключами из settings.
   local ext = string.format("pay_%s_%d", tostring(pay.id or 0), os.time())
   local base = pay.return_url or (settings.pay_base or "https://example.test/pay")
+  -- Демонстрация кэша: помним external_id по нашему payment.id (TTL 1 час).
+  if pay.id then
+    pcall(function() cache.set("ext:" .. tostring(pay.id), ext, 3600) end)
+  end
   return {
     public = {
       pay_url = base .. "?txn=" .. ext,
@@ -57,9 +66,15 @@ local function do_callback(ctx)
   local settings = prov.secrets or {}
   local req = ctx.request or {}
   local body = req.body or {}
+  log("callback", "provider", prov.slug, "method", req.method)
 
+  -- Проверка подписи: HMAC-SHA256 при наличии hmac_key, иначе общий секрет.
   local ok = false
-  if settings.secret ~= nil and body.sign ~= nil then
+  if settings.hmac_key ~= nil and body.hmac ~= nil then
+    local expected = crypto.hmac_sha256(tostring(settings.hmac_key),
+      tostring(body.payment_id or ""))
+    ok = (tostring(body.hmac) == expected)
+  elseif settings.secret ~= nil and body.sign ~= nil then
     ok = (tostring(body.sign) == tostring(settings.secret))
   end
   return {

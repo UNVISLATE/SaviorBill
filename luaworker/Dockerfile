@@ -9,7 +9,8 @@ RUN apk add --no-cache \
     && luarocks-5.4 install lua-cjson \
     && luarocks-5.4 install luasocket \
     && luarocks-5.4 install luasec \
-    && luarocks-5.4 install redis-lua
+    && luarocks-5.4 install redis-lua \
+    && luarocks-5.4 install luaossl
 
 WORKDIR /app
 COPY src/ /app/

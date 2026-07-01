@@ -29,13 +29,25 @@ Python (LuaBus.call)                    LuaWorker
 | `eval`    | `{ code, data }`                          | исполнить Lua-код в песочнице        |
 | `http`    | `{ url, method?, headers?, body? }`       | внешний HTTP-запрос (интеграции)     |
 | `billing` | `{ cmd, args }`                           | команда ядру биллинга (внутр. API)   |
+| `run_script` | `{ script, kind?, ctx }`               | загрузить и выполнить `handle(ctx)`  |
 
 Новый вид задачи — это новая функция в `src/handlers.lua`.
+
+### Песочница `run_script`
+Скриптам (service/payment/trigger) доступны, помимо `json`/`http`/`billing`:
+
+- `log(...)`, `log.info/warn/error(...)` — лог выполнения; записи возвращаются в
+  результате (`logs`) и сохраняются в Valkey ключом `LUA_LOG_PREFIX..cid` с TTL
+  `LUA_LOG_TTL` (по умолчанию 3600 с);
+- `crypto` — `sha1/sha256/sha512/md5`, `hmac_sha256/hmac_sha512`,
+  `base64_encode/base64_decode`, `hex` (поверх OpenSSL/luaossl);
+- `cache` — `get/set(key,val,ttl?)/del/incr` поверх Valkey (префикс
+  `LUA_CACHE_PREFIX`).
 
 ## Переменные окружения
 `VALKEY_HOST/PORT/DB`, `LUA_TASK_STREAM`, `LUA_RESP_STREAM`, `LUA_GROUP`,
 `LUA_CONSUMER`, `BILLING_URL`, `LUA_SERVICE_TOKEN` (сервисный токен для команд
-биллинга).
+биллинга), `LUA_LOG_TTL`, `LUA_LOG_PREFIX`, `LUA_CACHE_PREFIX`.
 
 ## Локально
 ```bash
