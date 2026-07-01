@@ -17,6 +17,8 @@ from models.payment_providers import PaymentProvidersModel
 from models.user_payments import UserPaymentsModel
 from schemas.payment_provider import PayProviderCreate, PayProvider, PayProviderPatch
 from schemas.payments import PaymentAdmin
+from schemas.page import Page
+from utils.pagination import paginate
 from utils.sec.box import SecBox
 
 router = APIRouter()
@@ -25,22 +27,20 @@ router = APIRouter()
 # --- платежи -------------------------------------------------------------
 @router.get(
     "/purchases",
-    response_model=list[PaymentAdmin],
+    response_model=Page[PaymentAdmin],
     dependencies=[Depends(require_perm("purchases.read"))],
     summary="Список платежей",
 )
 async def list_payments(
-    limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
+    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
     session: AsyncSession = Depends(get_db_session),
-) -> list[PaymentAdmin]:
-    rows = await session.scalars(
-        select(UserPaymentsModel)
-        .order_by(UserPaymentsModel.id.desc())
-        .limit(limit)
-        .offset(offset)
+) -> Page[PaymentAdmin]:
+    stmt = select(UserPaymentsModel).order_by(UserPaymentsModel.id.desc())
+    items, total = await paginate(
+        session, stmt, PaymentAdmin.from_model, limit=limit, offset=offset
     )
-    return [PaymentAdmin.from_model(r) for r in rows]
+    return Page(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get(

@@ -7,11 +7,11 @@ from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import (
-    func,
     Boolean,
     DateTime,
     ForeignKey,
     Integer,
+    Select,
     String,
     func,
     select,
@@ -79,12 +79,20 @@ class PromoCodesMngr:
         :arg catalog_id: идентификатор каталога.
         :return: список промокодов каталога.
         """
-        rows = await self.s.scalars(
+        rows = await self.s.scalars(self.stmt_for(catalog_id))
+        return list(rows)
+
+    def stmt_for(self, catalog_id: int) -> Select:
+        """Базовый select кодов каталога (для пагинации).
+
+        :arg catalog_id: идентификатор каталога.
+        :return: select без limit/offset.
+        """
+        return (
             select(PromoCodesModel)
             .where(PromoCodesModel.catalog_id == catalog_id)
             .order_by(PromoCodesModel.id)
         )
-        return list(rows)
 
     async def create_batch(
         self,

@@ -14,6 +14,7 @@ from sqlalchemy import (
     Integer,
     JSON,
     Numeric,
+    Select,
     String,
     Text,
     select,
@@ -106,15 +107,27 @@ class ServiceMngr:
         self.s = session
 
     async def list_active(self, catalog_id: int | None = None) -> list[ServiceModel]:
+        rows = await self.s.scalars(self.stmt_active(catalog_id))
+        return list(rows)
+
+    def stmt_active(self, catalog_id: int | None = None) -> Select:
+        """Базовый select активных услуг (для пагинации).
+
+        :arg catalog_id: опциональный фильтр по каталогу.
+        :return: select без limit/offset, упорядоченный по id.
+        """
         stmt = select(ServiceModel).where(ServiceModel.is_active.is_(True))
         if catalog_id is not None:
             stmt = stmt.where(ServiceModel.catalog_id == catalog_id)
-        rows = await self.s.scalars(stmt.order_by(ServiceModel.id))
-        return list(rows)
+        return stmt.order_by(ServiceModel.id)
 
     async def list_all(self) -> list[ServiceModel]:
-        rows = await self.s.scalars(select(ServiceModel).order_by(ServiceModel.id))
+        rows = await self.s.scalars(self.stmt_all())
         return list(rows)
+
+    def stmt_all(self) -> Select:
+        """Базовый select всех услуг (для пагинации)."""
+        return select(ServiceModel).order_by(ServiceModel.id)
 
     async def by_id(self, service_id: int) -> ServiceModel | None:
         return await self.s.get(ServiceModel, service_id)

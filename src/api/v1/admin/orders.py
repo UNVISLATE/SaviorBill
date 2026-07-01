@@ -13,28 +13,28 @@ from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
 from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderAdmin, OrderGrant
+from schemas.page import Page
+from utils.pagination import paginate
 
 router = APIRouter()
 
 
 @router.get(
     "/orders",
-    response_model=list[OrderAdmin],
+    response_model=Page[OrderAdmin],
     dependencies=[Depends(require_perm("orders.read"))],
     summary="Список выдач",
 )
 async def list_orders(
-    limit: int = Query(50, ge=1, le=200),
-    offset: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
+    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
     session: AsyncSession = Depends(get_db_session),
-) -> list[OrderAdmin]:
-    rows = await session.scalars(
-        select(UserServicesModel)
-        .order_by(UserServicesModel.id.desc())
-        .limit(limit)
-        .offset(offset)
+) -> Page[OrderAdmin]:
+    stmt = select(UserServicesModel).order_by(UserServicesModel.id.desc())
+    items, total = await paginate(
+        session, stmt, OrderAdmin.from_model, limit=limit, offset=offset
     )
-    return [OrderAdmin.from_model(r) for r in rows]
+    return Page(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get(

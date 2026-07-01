@@ -13,8 +13,10 @@ from models.user_oauth import UserOauthModel, UserOauthMngr
 from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderAdmin
+from schemas.page import Page
 from schemas.payments import PaymentAdmin
 from schemas.user import OAuthConnAdmin, User, UserDetail, UserPatch
+from utils.pagination import paginate
 
 router = APIRouter()
 
@@ -33,7 +35,7 @@ async def _get_user(session: AsyncSession, user_id: int) -> UserModel:
 
 @router.get(
     "/users",
-    response_model=list[User],
+    response_model=Page[User],
     dependencies=[Depends(require_perm("users.read"))],
     summary="Список пользователей",
     description="Постранично. Требует право users.read.",
@@ -42,12 +44,13 @@ async def list_users(
     limit: int = Query(50, ge=1, le=200, description="Размер страницы (1–200)"),
     offset: int = Query(0, ge=0, description="Смещение"),
     session: AsyncSession = Depends(get_db_session),
-) -> list[User]:
+) -> Page[User]:
     """Постраничный список аккаунтов."""
-    rows = await session.scalars(
-        select(UserModel).order_by(UserModel.id).limit(limit).offset(offset)
+    stmt = select(UserModel).order_by(UserModel.id)
+    items, total = await paginate(
+        session, stmt, User.from_model, limit=limit, offset=offset
     )
-    return [User.from_model(r) for r in rows]
+    return Page(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get(
@@ -107,56 +110,71 @@ async def edit_user(
 
 @router.get(
     "/users/{user_id}/services",
-    response_model=list[OrderAdmin],
+    response_model=Page[OrderAdmin],
     dependencies=[Depends(require_perm("orders.read"))],
     summary="Услуги пользователя",
     description="Выданные услуги пользователя с приватными данными. Право orders.read.",
 )
 async def user_services(
-    user_id: int, session: AsyncSession = Depends(get_db_session)
-) -> list[OrderAdmin]:
-    """Список услуг (заказов) пользователя."""
+    user_id: int,
+    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
+    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
+    session: AsyncSession = Depends(get_db_session),
+) -> Page[OrderAdmin]:
+    """Список услуг (заказов) пользователя (постранично)."""
     await _get_user(session, user_id)
-    rows = await session.scalars(
+    stmt = (
         select(UserServicesModel)
         .where(UserServicesModel.account_id == user_id)
         .order_by(UserServicesModel.id.desc())
     )
-    return [OrderAdmin.from_model(r) for r in rows]
+    items, total = await paginate(
+        session, stmt, OrderAdmin.from_model, limit=limit, offset=offset
+    )
+    return Page(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get(
     "/users/{user_id}/orders",
-    response_model=list[OrderAdmin],
+    response_model=Page[OrderAdmin],
     dependencies=[Depends(require_perm("orders.read"))],
     summary="Заказы пользователя",
     description="Алиас услуг пользователя (для поддержки). Право orders.read.",
 )
 async def user_orders(
-    user_id: int, session: AsyncSession = Depends(get_db_session)
-) -> list[OrderAdmin]:
+    user_id: int,
+    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
+    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
+    session: AsyncSession = Depends(get_db_session),
+) -> Page[OrderAdmin]:
     """Список заказов пользователя (совпадает с услугами)."""
-    return await user_services(user_id, session)
+    return await user_services(user_id, limit, offset, session)
 
 
 @router.get(
     "/users/{user_id}/payments",
-    response_model=list[PaymentAdmin],
+    response_model=Page[PaymentAdmin],
     dependencies=[Depends(require_perm("purchases.read"))],
     summary="Платежи пользователя",
     description="Все платежи пользователя с приватными данными. Право purchases.read.",
 )
 async def user_payments(
-    user_id: int, session: AsyncSession = Depends(get_db_session)
-) -> list[PaymentAdmin]:
-    """Список платежей пользователя."""
+    user_id: int,
+    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
+    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
+    session: AsyncSession = Depends(get_db_session),
+) -> Page[PaymentAdmin]:
+    """Список платежей пользователя (постранично)."""
     await _get_user(session, user_id)
-    rows = await session.scalars(
+    stmt = (
         select(UserPaymentsModel)
         .where(UserPaymentsModel.account_id == user_id)
         .order_by(UserPaymentsModel.id.desc())
     )
-    return [PaymentAdmin.from_model(r) for r in rows]
+    items, total = await paginate(
+        session, stmt, PaymentAdmin.from_model, limit=limit, offset=offset
+    )
+    return Page(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get(

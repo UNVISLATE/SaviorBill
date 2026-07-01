@@ -2,26 +2,32 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.rbac import require_perm
+from schemas.page import Page
 from schemas.service import ServiceAdmin, ServiceCreate, ServicePatch
+from utils.pagination import paginate
 
 router = APIRouter()
 
 
 @router.get(
     "/services",
-    response_model=list[ServiceAdmin],
+    response_model=Page[ServiceAdmin],
     dependencies=[Depends(require_perm("services.read"))],
     summary="Список услуг (все)",
 )
 async def list_services(
+    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
+    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
     mngr: ServiceMngr = Depends(get_service_mngr),
-) -> list[ServiceAdmin]:
-    rows = await mngr.list_all()
-    return [ServiceAdmin.from_model(r) for r in rows]
+) -> Page[ServiceAdmin]:
+    items, total = await paginate(
+        mngr.s, mngr.stmt_all(), ServiceAdmin.from_model, limit=limit, offset=offset
+    )
+    return Page(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.post(

@@ -79,7 +79,7 @@ async def test_admin_route_allowed_after_role_grant(http, new_user, seed):
         "/api/v1/admin/users", headers={"Authorization": f"Bearer {access}"}
     )
     assert r.status_code == 200
-    assert isinstance(r.json(), list)
+    assert isinstance(r.json()["items"], list)
 
     # каталог прав доступен админу
     r = await http.get(

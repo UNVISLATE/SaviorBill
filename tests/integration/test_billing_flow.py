@@ -19,7 +19,7 @@ async def test_catalog_lists_seeded_service(http, seed):
     sid = await seed.key_service()
     r = await http.get("/api/v1/catalog/services")
     assert r.status_code == 200, r.text
-    assert any(s["id"] == sid for s in r.json())
+    assert any(s["id"] == sid for s in r.json()["items"])
 
 
 async def test_order_key_delivery(http, new_user, seed, engine):
@@ -124,7 +124,7 @@ async def test_payment_topup_and_callback(http, new_user, seed):
     async def _fetch_status():
         resp = await http.get("/api/v1/user/purchases", headers=hdr)
         resp.raise_for_status()
-        row = next((p for p in resp.json() if p["id"] == pid), None)
+        row = next((p for p in resp.json()["items"] if p["id"] == pid), None)
         return row and row["status"]
 
     status_val = await wait_until(_fetch_status, lambda s: s == "paid", timeout=30)

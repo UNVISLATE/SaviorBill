@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,8 +20,10 @@ from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
 from enums import PayTarget
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
+from schemas.page import Page
 from schemas.payment_provider import PayProviderPublic
 from schemas.payments import PaymentCreate, Payment
+from utils.pagination import paginate
 
 router = APIRouter()
 
@@ -44,18 +46,23 @@ async def list_pay_providers(
     return [PayProviderPublic.from_model(p) for p in rows]
 
 
-@router.get("/purchases", response_model=list[Payment], summary="Мои платежи")
+@router.get("/purchases", response_model=Page[Payment], summary="Мои платежи")
 async def my_purchases(
+    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
+    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
     acc: UserModel = Depends(get_current_acc),
     session: AsyncSession = Depends(get_db_session),
-) -> list[Payment]:
-    """Список платежей текущего пользователя."""
-    rows = await session.scalars(
+) -> Page[Payment]:
+    """Список платежей текущего пользователя (постранично)."""
+    stmt = (
         select(UserPaymentsModel)
         .where(UserPaymentsModel.account_id == acc.id)
         .order_by(UserPaymentsModel.id.desc())
     )
-    return [Payment.from_model(p) for p in rows]
+    items, total = await paginate(
+        session, stmt, Payment.from_model, limit=limit, offset=offset
+    )
+    return Page(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.post(
