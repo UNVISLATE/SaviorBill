@@ -4,6 +4,7 @@ from fastapi import FastAPI
 
 from dependencies.db import create_db_engine, create_db_sessionmaker
 from dependencies.valkey import create_valkey_client
+from services.billing_loop import BillingLoop
 from utils.config import AppConfig
 from utils.bootstrap import bootstrap
 from utils.openapi import document_perms
@@ -34,6 +35,15 @@ async def lifespan(app: FastAPI):
     # Первичная инициализация: owner-роль/пользователь, сид настроек SMTP.
     await bootstrap(config, app.state.db_sessionmaker, app.state.valkey)
 
+    # Планировщик истечений услуг и перепроверок платежей (in-process).
+    app.state.billing_loop = BillingLoop(
+        app.state.db_engine,
+        app.state.db_sessionmaker,
+        app.state.valkey,
+        config,
+    )
+    await app.state.billing_loop.start()
+
     app.include_router(api_router)
     # Роуты добавлены — задокументировать требуемые права в OpenAPI.
     document_perms(app)
@@ -41,5 +51,6 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await app.state.billing_loop.stop()
         await app.state.valkey.aclose()
         await app.state.db_engine.dispose()

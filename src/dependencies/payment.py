@@ -13,7 +13,7 @@ from dependencies.db import get_db_session
 from dependencies.lua import get_lua_bus
 from dependencies.sec import make_secbox
 from dependencies.usersvc import UserServicesMngr
-from enums import PayStatus, PayTarget
+from enums import PayDirective, PayStatus, PayTarget
 from models.payment_providers import PaymentProvidersModel, PaymentProvidersMngr
 from models.service import ServiceModel
 from models.system_scripts import SystemScriptsModel
@@ -132,21 +132,38 @@ class PayMngr:
         return payment
 
     # --- обработка колбэка -------------------------------------------------
+    async def _run_cb(
+        self, prov: PaymentProvidersModel, request_data: dict, directive: str
+    ) -> tuple[dict, dict]:
+        """Запустить callback-скрипт провайдера. Возвращает (result, private).
+
+        :arg prov: провайдер.
+        :arg request_data: данные запроса (вебхук) или сверки (recheck).
+        :arg directive: PayDirective.WEBHOOK | RECHECK — режим для скрипта.
+        """
+        script = await self._script(prov.cb_script_id, "callback")
+        ctx = {
+            "provider": self._prov_ctx(prov),
+            "request": request_data,
+            "directive": directive,
+        }
+        res = await self.bus.call("run_script", {"script": script.filename, "ctx": ctx})
+        return res, (res.get("private") or {})
+
     async def callback(
         self, provider_slug: str, request_data: dict
     ) -> UserPaymentsModel:
-        """Обработать колбэк/возврат провайдера через callback-скрипт.
+        """Обработать входящий вебхук провайдера (доверенный сервер-сервер).
 
-        ``request_data`` — произвольные данные платёжки (тело вебхука и/или
-        query success/fail url). Скрипт сам проверяет подпись и возвращает
-        результат в ``private``.
+        Скрипт сам проверяет подпись/ключ и возвращает результат в ``private``;
+        мы полагаемся на его ответ без самостоятельной перепроверки.
+
+        :arg provider_slug: slug провайдера из пути колбэка.
+        :arg request_data: данные вебхука (тело + query).
+        :return: обновлённый платёж.
         """
         prov = await self._provider(provider_slug)
-        script = await self._script(prov.cb_script_id, "callback")
-
-        ctx = {"provider": self._prov_ctx(prov), "request": request_data}
-        res = await self.bus.call("run_script", {"script": script.filename, "ctx": ctx})
-        priv = res.get("private") or {}
+        res, priv = await self._run_cb(prov, request_data, PayDirective.WEBHOOK)
 
         if not priv.get("ok"):
             raise HTTPException(
@@ -169,6 +186,37 @@ class PayMngr:
             payment.public_data = {**(payment.public_data or {}), **res["public"]}
         payment.private_data = {**(payment.private_data or {}), **priv}
 
+        await self.s.flush()
+        return payment
+
+    async def recheck(self, payment: UserPaymentsModel) -> UserPaymentsModel:
+        """Перепроверить статус платежа у провайдера (директива ``recheck``).
+
+        В отличие от вебхука, инициируем сверку сами: callback-скрипт по
+        ``directive=recheck`` обращается к API провайдера. Успех → ``_settle``;
+        отказ провайдера → ``failed``; неопределённость → платёж остаётся
+        ``pending`` (планировщик решит, когда переводить в ``wait``).
+
+        :arg payment: платёж для перепроверки.
+        :return: обновлённый платёж.
+        """
+        if payment.status in (PayStatus.PAID, PayStatus.FAILED):
+            return payment
+        prov = await self._provider(payment.provider, enabled=False)
+        request_data = {
+            "payment_id": payment.id,
+            "external_id": payment.external_id,
+        }
+        res, priv = await self._run_cb(prov, request_data, PayDirective.RECHECK)
+
+        if priv.get("ok") and priv.get("paid"):
+            await self._settle(payment, priv)
+        elif priv.get("ok") and priv.get("failed"):
+            payment.status = PayStatus.FAILED
+
+        if res.get("public"):
+            payment.public_data = {**(payment.public_data or {}), **res["public"]}
+        payment.private_data = {**(payment.private_data or {}), **priv}
         await self.s.flush()
         return payment
 

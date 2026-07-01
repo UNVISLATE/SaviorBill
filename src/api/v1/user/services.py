@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -44,6 +44,7 @@ async def my_services(
 )
 async def create_service(
     body: OrderCreate,
+    request: Request,
     acc: UserModel = Depends(get_current_acc),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
     usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
@@ -56,6 +57,10 @@ async def create_service(
             status.HTTP_502_BAD_GATEWAY, f"не удалось выдать услугу: {usvc.error}"
         )
     await usvc_mngr.s.commit()
+    # Запланировать истечение (если срочная услуга) — планировщик подхватит и сам.
+    loop = getattr(request.app.state, "billing_loop", None)
+    if loop is not None and usvc.expires_at is not None:
+        await loop.enqueue_service(usvc.id, usvc.expires_at)
     return Order.from_model(usvc)
 
 

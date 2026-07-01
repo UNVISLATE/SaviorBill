@@ -84,6 +84,18 @@ class AppConfig(BaseSettings):
     LUA_SERVICE_TOKEN: str | None = Field(default=None)
     LUA_SERVICE_TOKEN_FILE: str | None = Field(default=None)
 
+    # --- Billing-loop (планировщик истечений услуг и перепроверок платежей) ---
+    BILLING_LOOP_ENABLED: bool = Field(default=True)
+    # Размер «окна» очереди: сколько ближайших задач держать наготове.
+    BILLING_QUEUE_WINDOW: int = Field(default=100)
+    # Максимальная пауза сна планировщика (сек), даже если ближайшая задача далеко.
+    BILLING_IDLE_SECONDS: int = Field(default=30)
+    # Через сколько секунд «висящего» pending-платежа ставить перепроверку.
+    BILLING_PAY_RECHECK_AFTER: int = Field(default=900)
+    # Интервал авто-перепроверок платежа (сек) и их предел до статуса wait.
+    BILLING_PAY_RECHECK_INTERVAL: int = Field(default=300)
+    BILLING_PAY_RECHECK_MAX: int = Field(default=5)
+
     # --- Хранилище файлов (медиа товаров, аватарки, иконки) ---
     STORAGE_BACKEND: str = Field(default="fs")
     S3_ENDPOINT: str | None = Field(default=None)

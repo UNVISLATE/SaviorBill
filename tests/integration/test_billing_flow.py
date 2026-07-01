@@ -57,7 +57,33 @@ async def test_order_lua_delivery_runs_script(http, new_user, seed, engine):
     assert body["public_data"].get("message") == "hi"
 
 
-async def test_insufficient_balance_rejected(http, new_user, seed):
+async def test_service_expiry_via_billing_loop(http, new_user, seed, engine):
+    sid = await seed.lua_service_timed(price="5.00", duration=2)
+    login, hdr = await _auth(http, new_user)
+    async with engine.begin() as c:
+        await c.execute(
+            text("UPDATE accounts SET balance=100 WHERE login=:l"), {"l": login}
+        )
+
+    r = await http.post(
+        "/api/v1/user/services/create", json={"service_id": sid}, headers=hdr
+    )
+    assert r.status_code in (200, 201), r.text
+    body = r.json()
+    assert body["status"] == "delivered"
+    assert body["state"] == "active"
+    assert body["expires_at"] is not None
+    usvc_id = body["id"]
+
+    async def _state():
+        async with engine.begin() as c:
+            return await c.scalar(
+                text("SELECT state FROM user_services WHERE id=:i"), {"i": usvc_id}
+            )
+
+    # billing-loop должен пометить услугу истёкшей после наступления expires_at.
+    await wait_until(_state, lambda s: s == "expired", timeout=30, interval=1)
+
     sid = await seed.key_service(price="10.00", keys=1)
     _, hdr = await _auth(http, new_user)
     r = await http.post(

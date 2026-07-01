@@ -181,6 +181,44 @@ async def seed(engine: AsyncEngine):
                 )
             return sid
 
+        async def lua_service_timed(
+            self, price: str = "5.00", duration: int = 2
+        ) -> int:
+            """Срочная lua-услуга на базовом action-шаблоне (для теста истечения).
+
+            :arg price: цена услуги.
+            :arg duration: срок действия в секундах (в settings.duration).
+            :return: id созданной услуги.
+            """
+            slug = uniq("timed_svc")
+            settings = json.dumps({"duration": duration})
+            async with engine.begin() as c:
+                script_id = await c.scalar(
+                    text(
+                        "INSERT INTO lua_scripts (slug,name,kind,filename,is_active) "
+                        "VALUES (:slug,'base','service','base/service_lua.lua',true) "
+                        "RETURNING id"
+                    ),
+                    {"slug": uniq("script")},
+                )
+                sid = await c.scalar(
+                    text(
+                        "INSERT INTO services "
+                        "(slug,name,price,currency,delivery,lua_script_id,params,settings,duration,actions,is_active) "
+                        "VALUES (:slug,'Timed svc',:price,'RUB','lua',:script,'{}',:settings,:dur,"
+                        '\'["create","renew","stop","freeze","delete"]\',true) '
+                        "RETURNING id"
+                    ),
+                    {
+                        "slug": slug,
+                        "price": price,
+                        "script": script_id,
+                        "settings": settings,
+                        "dur": duration,
+                    },
+                )
+            return sid
+
         async def pay_provider(self, secret: str = "test-callback-secret") -> str:
             """Создать платёжного провайдера на демо-скриптах (init + callback).
 
