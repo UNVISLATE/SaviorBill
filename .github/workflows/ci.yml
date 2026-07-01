@@ -8,7 +8,6 @@ on:
     types: [published]
 
 jobs:
-  # Быстрые юнит-тесты без внешних сервисов. Это первый барьер.
   unit:
     runs-on: ubuntu-latest
     steps:
@@ -24,7 +23,6 @@ jobs:
           JWT_SECRET: ci-secret-ci-secret-ci-secret-32
         run: pytest -m unit
 
-  # Полный интеграционный прогон против реально поднятого стека в Docker.
   integration:
     runs-on: ubuntu-latest
     needs: unit
@@ -81,6 +79,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
+            type=raw,value=${{ github.event.release.tag_name }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
