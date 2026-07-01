@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class User(BaseModel):
@@ -39,10 +39,22 @@ class UserPatch(BaseModel):
     верифицировать), а не отдельными флагами.
     """
 
-    email: str | None = None
-    role_id: int | None = None
-    balance: Decimal | None = None
-    bonus_balance: Decimal | None = None
+    email: str | None = Field(
+        default=None, max_length=255, description="Новый email (опционально)"
+    )
+    role_id: int | None = Field(
+        default=None,
+        description=(
+            "ID роли (опционально). Управляет активностью/верификацией: "
+            "роль banned = блокировка, user = верификация."
+        ),
+    )
+    balance: Decimal | None = Field(
+        default=None, description="Новый основной баланс (опционально)"
+    )
+    bonus_balance: Decimal | None = Field(
+        default=None, description="Новый бонусный баланс (опционально)"
+    )
 
 
 class OAuthConnAdmin(BaseModel):

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.auth import get_current_acc
 from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.db import get_db_session
+from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
 from enums import UsvcStatus
 from models.user import UserModel
@@ -48,6 +49,7 @@ async def my_services(
         "Списывает стоимость услуги с баланса (сначала бонусы) и сразу её "
         "выдаёт. Для оплаты через платёжку используйте /user/purchases/create."
     ),
+    dependencies=[Depends(rate_limit("services.create", LimitKind.SENSITIVE))],
 )
 async def create_service(
     body: OrderCreate,
