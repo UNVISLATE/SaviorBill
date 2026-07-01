@@ -21,41 +21,30 @@ from utils.config import AppConfig
 
 log = logging.getLogger("saviorbill.init")
 
-# Базовые шаблоны: slug -> (имя, вид, относительный путь, описание).
-_BASE: tuple[tuple[str, str, str, str, str], ...] = (
+# Базовые шаблоны: slug -> (имя, вид, относительный путь, действия, описание).
+_BASE: tuple[tuple[str, str, str, str, tuple[str, ...], str], ...] = (
     (
-        "base_yookassa_init",
-        "ЮKassa · инициализация платежа",
+        "base_yookassa_payment",
+        "ЮKassa · платёж (единый скрипт)",
         ScriptKind.PAYMENT,
-        "payments/yookassa_init.lua",
-        "Эталонный init-скрипт ЮKassa (создание платежа, ссылка на оплату).",
+        "payments/yookassa_payment.lua",
+        ("create", "callback", "check", "refund"),
+        "Эталонный action-driven скрипт ЮKassa (create/callback/check/refund).",
     ),
     (
-        "base_yookassa_callback",
-        "ЮKassa · колбэк",
+        "base_platega_payment",
+        "Platega · платёж (единый скрипт)",
         ScriptKind.PAYMENT,
-        "payments/yookassa_callback.lua",
-        "Эталонный callback-скрипт ЮKassa (проверка/перепроверка статуса).",
-    ),
-    (
-        "base_platega_init",
-        "Platega · инициализация платежа",
-        ScriptKind.PAYMENT,
-        "payments/platega_init.lua",
-        "Эталонный init-скрипт Platega (создание транзакции, ссылка на оплату).",
-    ),
-    (
-        "base_platega_callback",
-        "Platega · колбэк",
-        ScriptKind.PAYMENT,
-        "payments/platega_callback.lua",
-        "Эталонный callback-скрипт Platega (проверка/перепроверка статуса).",
+        "payments/platega_payment.lua",
+        ("create", "callback", "check", "refund"),
+        "Эталонный action-driven скрипт Platega (create/callback/check/refund).",
     ),
     (
         "base_service_lua",
         "Базовый шаблон услуги (action-driven)",
         ScriptKind.SERVICE,
         "base/service_lua.lua",
+        ("create", "renew", "stop", "delete", "freeze"),
         "Эталонный сервисный шаблон: create/renew/stop/delete/freeze.",
     ),
 )
@@ -70,7 +59,7 @@ async def seed_lua_scripts(session: AsyncSession, cfg: AppConfig) -> list[str]:
     """
     scripts_dir = Path(cfg.LUA_SCRIPTS_DIR)
     created: list[str] = []
-    for slug, name, kind, rel, desc in _BASE:
+    for slug, name, kind, rel, actions, desc in _BASE:
         exists = await session.scalar(
             select(SystemScriptsModel.id).where(SystemScriptsModel.slug == slug)
         )
@@ -89,6 +78,7 @@ async def seed_lua_scripts(session: AsyncSession, cfg: AppConfig) -> list[str]:
                 filename=rel,
                 sha256=hashlib.sha256(code.encode()).hexdigest(),
                 description=desc,
+                actions=list(actions),
             )
         )
         created.append(slug)

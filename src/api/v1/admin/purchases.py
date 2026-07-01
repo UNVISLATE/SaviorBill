@@ -81,8 +81,7 @@ async def create_provider(
         enabled=body.enabled,
         currency=body.currency,
         secrets_enc=box.seal(json.dumps(body.secrets)),
-        init_script_id=body.init_script_id,
-        cb_script_id=body.cb_script_id,
+        script_id=body.script_id,
         extra=body.extra,
     )
     session.add(prov)
@@ -154,6 +153,29 @@ async def recheck_payment(
     if pay.status == PayStatus.WAIT:
         pay.status = PayStatus.PENDING
     pay = await svc.recheck(pay)
+    await session.commit()
+    return PaymentAdmin.from_model(pay)
+
+
+@router.post(
+    "/purchases/{payment_id}/refund",
+    response_model=PaymentAdmin,
+    dependencies=[Depends(require_perm("purchases.refund"))],
+    summary="Возврат средств по платежу",
+    description=(
+        "Инициировать возврат оплаченного платежа (action=refund). Скрипт "
+        "провайдера обращается к API возврата. Применимо только к статусу paid."
+    ),
+)
+async def refund_payment(
+    payment_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    svc: PayMngr = Depends(get_pay_mngr),
+) -> PaymentAdmin:
+    pay = await session.get(UserPaymentsModel, payment_id)
+    if pay is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "платёж не найден")
+    pay = await svc.refund(pay)
     await session.commit()
     return PaymentAdmin.from_model(pay)
 

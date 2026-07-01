@@ -231,33 +231,26 @@ async def seed(engine: AsyncEngine):
             """
             slug = uniq("prov")
             async with engine.begin() as c:
-                init_id = await c.scalar(
+                script_id = await c.scalar(
                     text(
-                        "INSERT INTO lua_scripts (slug,name,kind,filename,is_active) "
-                        "VALUES (:slug,'demo-init','payment','payments/demo_init.lua',true) "
+                        "INSERT INTO lua_scripts "
+                        "(slug,name,kind,filename,is_active,actions) "
+                        "VALUES (:slug,'demo-pay','payment','payments/demo_payment.lua',"
+                        'true,\'["create","callback","check","refund"]\') '
                         "RETURNING id"
                     ),
-                    {"slug": uniq("init")},
-                )
-                cb_id = await c.scalar(
-                    text(
-                        "INSERT INTO lua_scripts (slug,name,kind,filename,is_active) "
-                        "VALUES (:slug,'demo-cb','payment','payments/demo_callback.lua',true) "
-                        "RETURNING id"
-                    ),
-                    {"slug": uniq("cb")},
+                    {"slug": uniq("pay")},
                 )
                 await c.execute(
                     text(
                         "INSERT INTO pay_providers "
-                        "(slug,title,enabled,secrets_enc,currency,init_script_id,cb_script_id,extra) "
-                        "VALUES (:slug,'Demo',true,:sec,'RUB',:init,:cb,'{}')"
+                        "(slug,title,enabled,secrets_enc,currency,script_id,extra) "
+                        "VALUES (:slug,'Demo',true,:sec,'RUB',:script,'{}')"
                     ),
                     {
                         "slug": slug,
                         "sec": json.dumps({"secret": secret}),
-                        "init": init_id,
-                        "cb": cb_id,
+                        "script": script_id,
                     },
                 )
             return slug

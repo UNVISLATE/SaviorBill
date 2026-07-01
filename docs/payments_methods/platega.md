@@ -3,19 +3,19 @@
 Официальная документация: <https://docs.platega.io/>. Базовый URL API —
 `https://app.platega.io/`. Авторизация — заголовки `X-MerchantId` и `X-Secret`.
 
-Скрипты: `data/lua/payments/platega_init.lua`,
-`data/lua/payments/platega_callback.lua`.
+Скрипт: `data/lua/payments/platega_payment.lua` (единый, action-driven:
+create/callback/check/refund).
 
 ## Что заполнить
 
-### `secrets` (шифруется, попадает в `provider.settings`)
+### `secrets` (шифруется, попадает в `payment.provider_data.secrets`)
 
 | Поле | Обяз. | Описание |
 |------|-------|----------|
 | `merchant_id` | да | Значение заголовка `X-MerchantId` (из ЛК → Настройки) |
 | `secret` | да | API-ключ, заголовок `X-Secret` |
 
-### `extra` (несекретное, `provider.extra`)
+### `extra` (несекретное, `payment.provider_data.extra`)
 
 | Поле | Обяз. | По умолчанию | Описание |
 |------|-------|--------------|----------|
@@ -45,14 +45,13 @@ Content-Type: application/json
     "secret": "iStHENoXjHdy78A4tGG3M6Tz..."
   },
   "extra": { "payment_method": 2 },
-  "init_script_id": 12,
-  "cb_script_id": 13
+  "script_id": 12
 }
 ```
 
 ## Как это работает
 
-**Инициализация** (`init`): скрипт шлёт
+**Инициализация** (`action=create`): скрипт шлёт
 `POST https://app.platega.io/transaction/process` с заголовками
 `X-MerchantId` / `X-Secret` и телом:
 
@@ -72,15 +71,18 @@ Content-Type: application/json
 сохраняется как `external_id`. Наш id платежа едет в `payload` — по нему
 сверяемся в колбэке.
 
-**Колбэк** (`callback`): URL вебхука в ЛК Platega:
+**Колбэк** (`action=callback`): URL вебхука в ЛК Platega:
 
 ```
 https://<PUBLIC_URL>/api/v1/callback/payment/platega
 ```
 
-Скрипт берёт `transactionId` и `payload` из уведомления, затем
-**перепроверяет** статус запросом `GET <status_url_tpl>` с мерчант-секретами.
-Платёж считается успешным, если статус входит в `paid_statuses`.
+Скрипт берёт `transactionId` и `payload` из тела уведомления
+(`ctx.request.body`), затем **перепроверяет** статус запросом
+`GET <status_url_tpl>` с мерчант-секретами. Платёж считается успешным, если
+статус входит в `paid_statuses`. Действие `action=check` использует ту же
+перепроверку (инициируется ядром), а `action=refund` шлёт
+`POST https://app.platega.io/transaction/{id}/cancel`.
 
 ## Проверка
 

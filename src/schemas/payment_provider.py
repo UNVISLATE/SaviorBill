@@ -15,8 +15,7 @@ class PayProvider(BaseModel):
     title: str | None = None
     enabled: bool
     currency: str
-    init_script_id: int | None = None
-    cb_script_id: int | None = None
+    script_id: int | None = None
     extra: dict
 
     @classmethod
@@ -46,11 +45,12 @@ class PayProviderCreate(BaseModel):
         default_factory=dict,
         description="JSON секретов/доп-данных платёжки, шифруется при сохранении (опционально)",
     )
-    init_script_id: int | None = Field(
-        default=None, description="ID lua-скрипта инициализации платежа (опционально)"
-    )
-    cb_script_id: int | None = Field(
-        default=None, description="ID lua-скрипта обработки колбэка (опционально)"
+    script_id: int | None = Field(
+        default=None,
+        description=(
+            "ID единого action-driven lua-скрипта провайдера "
+            "(create/callback/check/refund), опционально"
+        ),
     )
     extra: dict = Field(
         default_factory=dict, description="Несекретные доп-параметры (опционально)"
@@ -66,10 +66,9 @@ class PayProviderPatch(BaseModel):
     secrets: dict | None = Field(
         default=None, description="Новый JSON секретов (перешифровывается)"
     )
-    init_script_id: int | None = Field(
-        default=None, description="ID lua-скрипта инициализации"
+    script_id: int | None = Field(
+        default=None, description="ID единого action-driven lua-скрипта провайдера"
     )
-    cb_script_id: int | None = Field(default=None, description="ID lua-скрипта колбэка")
     extra: dict | None = Field(default=None, description="Несекретные доп-параметры")
 
 

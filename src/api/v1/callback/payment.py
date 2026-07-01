@@ -10,27 +10,36 @@ from enums import PayStatus, PayTarget
 from integrations.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_services import UserServicesModel
+from schemas.lua import LuaRequest
 from schemas.payments import Payment
 
 router = APIRouter(prefix="/api/v1/callback/payment", tags=["callback"])
 
 
-async def _request_data(request: Request) -> dict:
-    """Собрать данные платёжки: query-параметры + тело (json/form), как есть."""
-    data: dict = dict(request.query_params)
+async def _build_request(request: Request) -> LuaRequest:
+    """Собрать :class:`LuaRequest` из вебхука: метод, ip, заголовки, query, тело.
+
+    Тело парсится как JSON, иначе как форма. Скрипт провайдера сам проверяет
+    подпись по заголовкам/телу.
+    """
+    body: dict = {}
     try:
-        body = await request.json()
-        if isinstance(body, dict):
-            data.update(body)
-            return data
+        parsed = await request.json()
+        if isinstance(parsed, dict):
+            body = parsed
     except Exception:  # noqa: BLE001 — не JSON, пробуем форму
-        pass
-    try:
-        form = await request.form()
-        data.update({k: v for k, v in form.items()})
-    except Exception:  # noqa: BLE001 — пустое/нечитаемое тело
-        pass
-    return data
+        try:
+            form = await request.form()
+            body = {k: v for k, v in form.items()}
+        except Exception:  # noqa: BLE001 — пустое/нечитаемое тело
+            body = {}
+    return LuaRequest.build(
+        method=request.method,
+        ip=request.client.host if request.client else None,
+        headers={k.lower(): v for k, v in request.headers.items()},
+        query=dict(request.query_params),
+        body=body,
+    )
 
 
 async def _notify(svc: PayMngr, triggers: TriggerDispatcher, payment) -> None:
@@ -84,7 +93,7 @@ async def payment_callback(
     svc: PayMngr = Depends(get_pay_mngr),
     triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> Payment:
-    data = await _request_data(request)
+    data = await _build_request(request)
     payment = await svc.callback(provider, data)
     await svc.s.commit()
     await _notify(svc, triggers, payment)

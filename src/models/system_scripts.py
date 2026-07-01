@@ -8,18 +8,19 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, Boolean, DateTime, Integer, String, Text, select
+from sqlalchemy import func, Boolean, DateTime, Integer, JSON, String, Text, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from models import Base
-from enums import ScriptKind
+from enums import ScriptKind, PayAction, ServiceAction
 from utils.datetime_utils import utc_now
 
 # Подпапка хранения по виду скрипта (внутри LUA_SCRIPTS_DIR).
 _SUBDIR_BY_KIND = {
     ScriptKind.SERVICE: "services",
     ScriptKind.PAYMENT: "payments",
+    ScriptKind.TRIGGER: "triggers",
 }
 
 
@@ -56,6 +57,11 @@ class SystemScriptsModel(Base):
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Поддерживаемые действия скрипта. Для payment-скриптов обязательны
+    # create/callback (см. PayAction); для service — по крайней мере create.
+    actions: Mapped[list] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
@@ -87,6 +93,9 @@ class SystemScriptsMngr:
         if await self.by_slug(data.slug):
             raise HTTPException(status.HTTP_409_CONFLICT, "slug скрипта занят")
 
+        actions = list(getattr(data, "actions", None) or [])
+        self._check_actions(data.kind, actions)
+
         filename = self._gen_filename(data.kind)
         target = self._safe_target(filename)
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -99,10 +108,33 @@ class SystemScriptsMngr:
             filename=filename,
             sha256=hashlib.sha256(data.code.encode()).hexdigest(),
             description=data.description,
+            actions=actions,
         )
         self.s.add(row)
         await self.s.flush()
         return row
+
+    @staticmethod
+    def _check_actions(kind: str, actions: list[str]) -> None:
+        """Проверить обязательные действия скрипта по его виду.
+
+        :arg kind: вид скрипта (см. :class:`enums.ScriptKind`).
+        :arg actions: заявленные поддерживаемые действия.
+        :raises HTTPException: если обязательные действия не заявлены.
+        """
+        if kind == ScriptKind.PAYMENT:
+            missing = [a for a in PayAction.MANDATORY if a not in actions]
+            if missing:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"payment-скрипт обязан поддерживать: {', '.join(missing)}",
+                )
+        elif kind == ScriptKind.SERVICE:
+            if actions and ServiceAction.CREATE not in actions:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "service-скрипт обязан поддерживать действие create",
+                )
 
     async def by_id(self, script_id: int) -> SystemScriptsModel | None:
         return await self.s.get(SystemScriptsModel, script_id)

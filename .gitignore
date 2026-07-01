@@ -61,9 +61,6 @@ data/lua/**
 !data/lua/services/
 !data/lua/services/demo_service.lua
 !data/lua/payments/
-!data/lua/payments/demo_init.lua
-!data/lua/payments/demo_callback.lua
-!data/lua/payments/yookassa_init.lua
-!data/lua/payments/yookassa_callback.lua
-!data/lua/payments/platega_init.lua
-!data/lua/payments/platega_callback.lua
+!data/lua/payments/demo_payment.lua
+!data/lua/payments/yookassa_payment.lua
+!data/lua/payments/platega_payment.lua

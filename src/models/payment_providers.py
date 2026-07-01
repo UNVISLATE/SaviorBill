@@ -29,9 +29,11 @@ class PaymentProvidersModel(Base):
     данными платёжки (ключи API, shop_id, webhook-секрет и т.п.). В рантайме
     он расшифровывается и прокидывается в Lua-скрипты провайдера.
 
-    Каждая платёжка работает по-своему, поэтому у провайдера два скрипта:
-      * ``init_script_id`` — инициализация платежа (возвращает ссылку оплаты);
-      * ``cb_script_id``   — обработка колбэка/возврата (проверка подписи).
+    Каждая платёжка работает по-своему, поэтому у провайдера один action-driven
+    Lua-скрипт (``script_id``), который обрабатывает все действия платежа:
+    ``create`` (инициализация, вернуть ссылку), ``callback`` (доверенный вебхук),
+    ``check`` (перепроверка у API) и ``refund`` (возврат). Обязательны create и
+    callback — см. :class:`enums.PayAction`.
     """
 
     __tablename__ = "pay_providers"
@@ -61,10 +63,8 @@ class PaymentProvidersModel(Base):
     secrets_enc: Mapped[str] = mapped_column(Text, default="", nullable=False)
     currency: Mapped[str] = mapped_column(String(8), default="RUB", nullable=False)
 
-    init_script_id: Mapped[int | None] = mapped_column(
-        ForeignKey("lua_scripts.id", ondelete="SET NULL"), nullable=True, index=True
-    )
-    cb_script_id: Mapped[int | None] = mapped_column(
+    # Единый action-driven скрипт провайдера (create/callback/check/refund).
+    script_id: Mapped[int | None] = mapped_column(
         ForeignKey("lua_scripts.id", ondelete="SET NULL"), nullable=True, index=True
     )
 

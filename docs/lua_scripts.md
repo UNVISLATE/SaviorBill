@@ -61,48 +61,55 @@ ctx = {
 
 ## Скрипты платёжного провайдера (`kind = payment`)
 
-Провайдеру соответствуют два скрипта — `init` и `callback`. Подробности потока и
-подключения — в [`payments_methods/README.md`](./payments_methods/README.md).
+Провайдеру соответствует **один** action-driven скрипт: единое тело
+обрабатывает все действия платежа по `ctx.action` (create/callback/check/refund).
+Поддерживаемые действия объявляются в `lua_scripts.actions` (create и callback
+обязательны). Подробности потока и подключения — в
+[`payments_methods/README.md`](./payments_methods/README.md).
 
-### `init` — инициализация платежа
+Общий контекст:
 
 ```
 ctx = {
-  payment  = { id, amount, currency, target, user_svc_id, return_url },
-  provider = { slug, settings = {<секреты>}, extra = {<несекретное>} },
-  user     = { id, login, email },
+  action  = "create" | "callback" | "check" | "refund",
+  user    = { id, login, email, ... },
+  payment = {
+    id, amount, currency, target, user_svc_id, external_id, return_url,
+    provider_data = { slug, secrets = {<секреты>}, extra = {<несекретное>} },
+  },
+  request = { method, ip, headers, query, body },   -- только для action="callback"
 }
 ```
+
+### `action = "create"` — инициализация платежа
 
 Возвращает `{ public = { pay_url = ... }, private = { external_id = ... } }`.
 Важно прокинуть наш `payment.id` в metadata/payload провайдера, чтобы `callback`
 мог найти платёж.
 
-Пример: [`data/lua/payments/demo_init.lua`](../data/lua/payments/demo_init.lua).
-
-### `callback` — обработка вебхука
+### `action = "callback"` — обработка вебхука
 
 Ядро принимает **только** server-to-server webhook на статичный URL
 `POST /api/v1/callback/payment/{slug}` (страниц success/fail нет). `{slug}` — это
-slug платёжной системы, а конкретный платёж скрипт определяет из тела запроса.
+slug платёжной системы, а конкретный платёж скрипт определяет из тела запроса
+(`ctx.request.body`). Колбэк — доверенный канал: скрипт сам проверяет
+подпись/секрет, ядро полагается на его ответ.
 
-```
-ctx = {
-  provider  = { slug, settings = {<секреты>}, extra = {...} },
-  request   = { <тело вебхука и query как есть> },
-  directive = "webhook" | "recheck",
-}
-```
-
-Возвращает `private = { ok, paid, payment_id, external_id, status }`:
+Возвращает `private = { ok, paid, failed, payment_id, external_id, status }`:
 
 - `ok = false` → ядро отвечает `401`;
 - `paid = true` → платёж проводится (баланс/выдача услуги) идемпотентно;
 - `payment_id` / `external_id` — по ним ядро находит наш платёж.
 
-`directive = "recheck"` означает, что перепроверку инициировало само ядро
-(billing-loop или ручной вызов админа): скрипт должен обратиться к API провайдера
-за актуальным статусом.
+### `action = "check"` — перепроверка ядром
 
-Пример: [`data/lua/payments/demo_callback.lua`](../data/lua/payments/demo_callback.lua).
-Боевые шаблоны: `yookassa_*.lua`, `platega_*.lua` в `data/lua/payments/`.
+Инициируется самим ядром (billing-loop или ручной вызов админа): скрипт должен
+обратиться к API провайдера за актуальным статусом. Возвращает то же, что
+`callback`.
+
+### `action = "refund"` — возврат средств
+
+Возвращает `private = { ok, refunded, external_id }`.
+
+Пример: [`data/lua/payments/demo_payment.lua`](../data/lua/payments/demo_payment.lua).
+Боевые шаблоны: `yookassa_payment.lua`, `platega_payment.lua` в `data/lua/payments/`.

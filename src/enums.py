@@ -30,6 +30,7 @@ class PayStatus:
     PENDING = "pending"
     PAID = "paid"
     FAILED = "failed"
+    REFUNDED = "refunded"  # средства возвращены плательщику
     # Долгое ожидание без ответа провайдера: авто-перепроверка прекращена,
     # повторная проверка — только вручную (admin recheck).
     WAIT = "wait"
@@ -38,11 +39,20 @@ class PayStatus:
 TopupStatus = PayStatus
 
 
-class PayDirective:
-    """Директива запуска callback-скрипта платежа."""
+class PayAction:
+    """Действие платёжного скрипта (единый скрипт провайдера, action-driven).
 
-    WEBHOOK = "webhook"  # входящий вебхук провайдера — доверяем ответу
-    RECHECK = "recheck"  # инициировано нами — скрипт перепроверяет апстрим
+    ``create``/``callback`` — обязательны для любого платёжного скрипта;
+    ``check``/``refund`` — опциональны (заявляются в поддерживаемых действиях).
+    """
+
+    CREATE = "create"  # инициализация платежа (вернуть ссылку оплаты)
+    CALLBACK = "callback"  # входящий вебхук — доверяем подписи скрипта
+    CHECK = "check"  # перепроверка статуса у API провайдера (инициируем сами)
+    REFUND = "refund"  # возврат средств
+
+    MANDATORY = (CREATE, CALLBACK)
+    ALL = (CREATE, CALLBACK, CHECK, REFUND)
 
 
 class ServiceAction:
@@ -124,7 +134,7 @@ __all__ = [
     "UsvcStatus",
     "PayStatus",
     "TopupStatus",
-    "PayDirective",
+    "PayAction",
     "PayTarget",
     "ServiceAction",
     "TaskKind",

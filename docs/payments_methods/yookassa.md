@@ -3,12 +3,12 @@
 Официальная документация: <https://yookassa.ru/developers>. Сценарий —
 **Redirect** (одностадийный платёж, `capture=true`).
 
-Скрипты: `data/lua/payments/yookassa_init.lua`,
-`data/lua/payments/yookassa_callback.lua`.
+Скрипт: `data/lua/payments/yookassa_payment.lua` (единый, action-driven:
+create/callback/check/refund).
 
 ## Что заполнить
 
-### `secrets` (шифруется, попадает в `provider.settings`)
+### `secrets` (шифруется, попадает в `payment.provider_data.secrets`)
 
 | Поле | Обяз. | Описание |
 |------|-------|----------|
@@ -16,7 +16,7 @@
 | `secret_key` | да | Секретный ключ API из ЛК ЮKassa |
 | `return_url` | нет | URL возврата по умолчанию (если клиент не передал свой) |
 
-### `extra` (несекретное, `provider.extra`)
+### `extra` (несекретное, `payment.provider_data.extra`)
 
 Не требуется.
 
@@ -37,14 +37,13 @@ Content-Type: application/json
     "secret_key": "live_xxxxxxxxxxxxxxxxxxxxxx",
     "return_url": "https://shop.example.com/pay/return"
   },
-  "init_script_id": 10,
-  "cb_script_id": 11
+  "script_id": 10
 }
 ```
 
 ## Как это работает
 
-**Инициализация** (`init`): скрипт шлёт
+**Инициализация** (`action=create`): скрипт шлёт
 `POST https://api.yookassa.ru/v3/payments` с Basic-авторизацией
 `base64(shop_id:secret_key)`, заголовком `Idempotence-Key` и телом:
 
@@ -61,17 +60,19 @@ Content-Type: application/json
 Из ответа берётся `confirmation.confirmation_url` → отдаётся клиенту как
 `pay_url`, а `id` платежа сохраняется как `external_id`.
 
-**Колбэк** (`callback`): в ЛК ЮKassa нужно настроить уведомление
+**Колбэк** (`action=callback`): в ЛК ЮKassa нужно настроить уведомление
 `payment.succeeded` на URL:
 
 ```
 https://<PUBLIC_URL>/api/v1/callback/payment/yookassa
 ```
 
-Скрипт берёт `object.id` из уведомления и **перепроверяет** статус запросом
-`GET https://api.yookassa.ru/v3/payments/{id}`. Платёж считается успешным при
-`status == "succeeded"`. Наш внутренний `payment_id` восстанавливается из
-`metadata.payment_id`.
+Скрипт берёт `object.id` из тела уведомления (`ctx.request.body`) и
+**перепроверяет** статус запросом `GET https://api.yookassa.ru/v3/payments/{id}`.
+Платёж считается успешным при `status == "succeeded"`. Наш внутренний
+`payment_id` восстанавливается из `metadata.payment_id`. Действие
+`action=check` использует тот же запрос статуса (перепроверка ядром), а
+`action=refund` шлёт `POST https://api.yookassa.ru/v3/refunds`.
 
 ## Проверка
 

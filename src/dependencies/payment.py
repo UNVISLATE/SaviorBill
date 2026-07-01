@@ -1,4 +1,9 @@
-"""Платежи через провайдеров: инициализация и обработка колбэка."""
+"""Платежи через провайдеров: инициализация, вебхук, перепроверка, возврат.
+
+У каждого провайдера один action-driven Lua-скрипт: одно тело обрабатывает
+все действия платежа (``create``/``callback``/``check``/``refund``) — какие
+именно поддержаны, скрипт объявляет в ``lua_scripts.actions``.
+"""
 
 from __future__ import annotations
 
@@ -13,27 +18,30 @@ from dependencies.db import get_db_session
 from dependencies.lua import get_lua_bus
 from dependencies.sec import make_secbox
 from dependencies.usersvc import UserServicesMngr
-from enums import PayDirective, PayStatus, PayTarget
+from enums import PayAction, PayStatus, PayTarget
 from models.payment_providers import PaymentProvidersModel, PaymentProvidersMngr
 from models.service import ServiceModel
 from models.system_scripts import SystemScriptsModel
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel
+from schemas.lua import LuaRequest
+from services.lua_ctx import LuaRunner
 from utils.datetime_utils import utc_now
 from utils.luabus import LuaBus
 from utils.sec.box import SecBox
 
 
 class PayMngr:
-    """Создание платежей и обработка колбэков через скрипты провайдера."""
+    """Создание платежей и обработка событий платежа через скрипт провайдера."""
 
     def __init__(self, session: AsyncSession, bus: LuaBus, box: SecBox) -> None:
         self.s = session
         self.bus = bus
         self.box = box
+        self.runner = LuaRunner(bus)
 
-    # --- доступ к провайдеру/секретам ------------------------------------
+    # --- доступ к провайдеру/секретам/скрипту ----------------------------
     async def _provider(
         self, slug: str, *, enabled: bool = True
     ) -> PaymentProvidersModel:
@@ -58,24 +66,31 @@ class PayMngr:
             data = {}
         return data if isinstance(data, dict) else {}
 
-    async def _script(self, script_id: int | None, role: str) -> SystemScriptsModel:
-        if not script_id:
+    async def _script(
+        self, prov: PaymentProvidersModel, action: str
+    ) -> SystemScriptsModel:
+        """Получить action-driven скрипт провайдера и проверить поддержку действия.
+
+        :arg prov: провайдер.
+        :arg action: требуемое действие (см. :class:`enums.PayAction`).
+        :raises HTTPException: скрипт не задан/недоступен/не поддерживает действие.
+        """
+        if not prov.script_id:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, f"у провайдера не задан {role}-скрипт"
+                status.HTTP_400_BAD_REQUEST, "у провайдера не задан платёжный скрипт"
             )
-        script = await self.s.get(SystemScriptsModel, script_id)
+        script = await self.s.get(SystemScriptsModel, prov.script_id)
         if script is None or not script.is_active:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, f"{role}-скрипт провайдера недоступен"
+                status.HTTP_400_BAD_REQUEST, "платёжный скрипт провайдера недоступен"
+            )
+        supported = script.actions or []
+        if supported and action not in supported:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"скрипт провайдера не поддерживает действие «{action}»",
             )
         return script
-
-    def _prov_ctx(self, prov: PaymentProvidersModel) -> dict:
-        return {
-            "slug": prov.slug,
-            "settings": self._secrets(prov),
-            "extra": prov.extra or {},
-        }
 
     # --- инициализация платежа -------------------------------------------
     async def create(
@@ -89,9 +104,10 @@ class PayMngr:
         currency: str | None = None,
         return_url: str | None = None,
     ) -> UserPaymentsModel:
-        """Создать платёж и запустить init-скрипт провайдера за ссылкой оплаты."""
+        """Создать платёж и запустить скрипт (action=create) за ссылкой оплаты."""
         prov = await self._provider(provider_slug)
-        script = await self._script(prov.init_script_id, "init")
+        script = await self._script(prov, PayAction.CREATE)
+        secrets = self._secrets(prov)
 
         payment = UserPaymentsModel(
             account_id=acc.id,
@@ -105,21 +121,15 @@ class PayMngr:
         self.s.add(payment)
         await self.s.flush()
 
-        ctx = {
-            "payment": {
-                "id": payment.id,
-                "amount": str(amount),
-                "currency": payment.currency,
-                "target": target,
-                "user_svc_id": user_svc_id,
-                "return_url": return_url,
-            },
-            "provider": self._prov_ctx(prov),
-            "user": {"id": acc.id, "login": acc.login, "email": acc.email},
-        }
         try:
-            res = await self.bus.call(
-                "run_script", {"script": script.filename, "ctx": ctx}
+            res = await self.runner.run_payment(
+                script.filename,
+                PayAction.CREATE,
+                acc,
+                payment,
+                prov,
+                secrets,
+                return_url=return_url,
             )
             payment.public_data = res.get("public") or {}
             payment.private_data = res.get("private") or {}
@@ -131,39 +141,31 @@ class PayMngr:
         await self.s.flush()
         return payment
 
-    # --- обработка колбэка -------------------------------------------------
-    async def _run_cb(
-        self, prov: PaymentProvidersModel, request_data: dict, directive: str
-    ) -> tuple[dict, dict]:
-        """Запустить callback-скрипт провайдера. Возвращает (result, private).
-
-        :arg prov: провайдер.
-        :arg request_data: данные запроса (вебхук) или сверки (recheck).
-        :arg directive: PayDirective.WEBHOOK | RECHECK — режим для скрипта.
-        """
-        script = await self._script(prov.cb_script_id, "callback")
-        ctx = {
-            "provider": self._prov_ctx(prov),
-            "request": request_data,
-            "directive": directive,
-        }
-        res = await self.bus.call("run_script", {"script": script.filename, "ctx": ctx})
-        return res, (res.get("private") or {})
-
+    # --- обработка вебхука -------------------------------------------------
     async def callback(
-        self, provider_slug: str, request_data: dict
+        self, provider_slug: str, request: LuaRequest
     ) -> UserPaymentsModel:
         """Обработать входящий вебхук провайдера (доверенный сервер-сервер).
 
         Скрипт сам проверяет подпись/ключ и возвращает результат в ``private``;
-        мы полагаемся на его ответ без самостоятельной перепроверки.
+        мы полагаемся на его ответ без самостоятельной перепроверки апстрима.
 
-        :arg provider_slug: slug провайдера из пути колбэка.
-        :arg request_data: данные вебхука (тело + query).
+        :arg provider_slug: slug провайдера из пути колбэка (статичный URL).
+        :arg request: данные входящего запроса (метод/ip/заголовки/query/тело).
         :return: обновлённый платёж.
         """
         prov = await self._provider(provider_slug)
-        res, priv = await self._run_cb(prov, request_data, PayDirective.WEBHOOK)
+        script = await self._script(prov, PayAction.CALLBACK)
+        res = await self.runner.run_payment(
+            script.filename,
+            PayAction.CALLBACK,
+            _blank_account(),
+            _blank_payment(prov.slug),
+            prov,
+            self._secrets(prov),
+            request=request,
+        )
+        priv = res.get("private") or {}
 
         if not priv.get("ok"):
             raise HTTPException(
@@ -178,10 +180,9 @@ class PayMngr:
 
         if priv.get("paid"):
             await self._settle(payment, priv)
-        else:
+        elif priv.get("failed"):
             payment.status = PayStatus.FAILED
 
-        # Сохраняем данные колбэка (для аудита).
         if res.get("public"):
             payment.public_data = {**(payment.public_data or {}), **res["public"]}
         payment.private_data = {**(payment.private_data or {}), **priv}
@@ -190,12 +191,11 @@ class PayMngr:
         return payment
 
     async def recheck(self, payment: UserPaymentsModel) -> UserPaymentsModel:
-        """Перепроверить статус платежа у провайдера (директива ``recheck``).
+        """Перепроверить статус платежа у провайдера (action=check).
 
-        В отличие от вебхука, инициируем сверку сами: callback-скрипт по
-        ``directive=recheck`` обращается к API провайдера. Успех → ``_settle``;
-        отказ провайдера → ``failed``; неопределённость → платёж остаётся
-        ``pending`` (планировщик решит, когда переводить в ``wait``).
+        В отличие от вебхука, инициируем сверку сами: скрипт по ``action=check``
+        обращается к API провайдера. Успех → ``_settle``; явный отказ →
+        ``failed``; неопределённость → платёж остаётся ``pending``.
 
         :arg payment: платёж для перепроверки.
         :return: обновлённый платёж.
@@ -203,17 +203,55 @@ class PayMngr:
         if payment.status in (PayStatus.PAID, PayStatus.FAILED):
             return payment
         prov = await self._provider(payment.provider, enabled=False)
-        request_data = {
-            "payment_id": payment.id,
-            "external_id": payment.external_id,
-        }
-        res, priv = await self._run_cb(prov, request_data, PayDirective.RECHECK)
+        script = await self._script(prov, PayAction.CHECK)
+        acc = await self.s.get(UserModel, payment.account_id)
+
+        res = await self.runner.run_payment(
+            script.filename,
+            PayAction.CHECK,
+            acc,
+            payment,
+            prov,
+            self._secrets(prov),
+        )
+        priv = res.get("private") or {}
 
         if priv.get("ok") and priv.get("paid"):
             await self._settle(payment, priv)
         elif priv.get("ok") and priv.get("failed"):
             payment.status = PayStatus.FAILED
 
+        if res.get("public"):
+            payment.public_data = {**(payment.public_data or {}), **res["public"]}
+        payment.private_data = {**(payment.private_data or {}), **priv}
+        await self.s.flush()
+        return payment
+
+    async def refund(self, payment: UserPaymentsModel) -> UserPaymentsModel:
+        """Вернуть средства по платежу (action=refund).
+
+        :arg payment: оплаченный платёж для возврата.
+        :return: обновлённый платёж.
+        """
+        if payment.status != PayStatus.PAID:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "возврат возможен только для оплаченного"
+            )
+        prov = await self._provider(payment.provider, enabled=False)
+        script = await self._script(prov, PayAction.REFUND)
+        acc = await self.s.get(UserModel, payment.account_id)
+
+        res = await self.runner.run_payment(
+            script.filename,
+            PayAction.REFUND,
+            acc,
+            payment,
+            prov,
+            self._secrets(prov),
+        )
+        priv = res.get("private") or {}
+        if priv.get("ok") and priv.get("refunded"):
+            payment.status = PayStatus.REFUNDED
         if res.get("public"):
             payment.public_data = {**(payment.public_data or {}), **res["public"]}
         payment.private_data = {**(payment.private_data or {}), **priv}
@@ -255,6 +293,32 @@ class PayMngr:
                 await UserServicesMngr(self.s, self.bus).deliver(usvc, service, acc)
         else:  # пополнение баланса
             acc.balance += payment.amount
+
+
+def _blank_account() -> UserModel:
+    """Заглушка аккаунта для контекста вебхука (реальный платёж ищем по ответу)."""
+    return UserModel(
+        id=0,
+        login="",
+        email=None,
+        balance=Decimal("0"),
+        bonus_balance=Decimal("0"),
+    )
+
+
+def _blank_payment(provider_slug: str) -> UserPaymentsModel:
+    """Пустой платёж-заглушка для контекста вебхука."""
+    return UserPaymentsModel(
+        id=0,
+        account_id=0,
+        provider=provider_slug,
+        amount=Decimal("0"),
+        currency="RUB",
+        status=PayStatus.PENDING,
+        target=PayTarget.BALANCE,
+        public_data={},
+        private_data={},
+    )
 
 
 def get_pay_mngr(
