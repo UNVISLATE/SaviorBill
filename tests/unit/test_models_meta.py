@@ -15,7 +15,8 @@ pytestmark = pytest.mark.unit
 def test_enum_values_are_strings():
     assert enums.Delivery.KEY == "key"
     assert enums.Delivery.LUA == "lua"
-    assert enums.OrderStatus.DELIVERED == "delivered"
+    assert enums.UsvcStatus.ACTIVE == "active"
+    assert enums.UsvcStatus.EXPIRED == "expired"
     assert enums.PayStatus.PAID == "paid"
     assert enums.PayTarget.SERVICE == "service"
     assert enums.PromoKind.BONUS == "bonus"

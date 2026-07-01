@@ -9,7 +9,7 @@ from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.promo import PromoCodesMngr, get_promo_mngr
 from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
-from enums import OrderStatus, PromoKind
+from enums import UsvcStatus, PromoKind
 from models.user import UserModel
 from schemas.promo import PromoRedeem, PromoResult
 
@@ -50,7 +50,7 @@ async def redeem(
             )
         service = await svc_mngr.get_active(catalog.service_id)
         order = await usvc_mngr.create(acc, service, discount=service.price)
-        if order.status != OrderStatus.DELIVERED:
+        if order.status != UsvcStatus.ACTIVE:
             await usvc_mngr.s.rollback()
             raise HTTPException(
                 status.HTTP_502_BAD_GATEWAY, f"не удалось выдать услугу: {order.error}"

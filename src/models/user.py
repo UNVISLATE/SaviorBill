@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     func,
-    Boolean,
     DateTime,
     ForeignKey,
     Integer,
@@ -20,6 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
+from models.roles import Role
+from enums import BaseRole
 from utils.datetime_utils import utc_now
 
 if TYPE_CHECKING:
@@ -55,9 +56,6 @@ class UserModel(Base):
     )
     pass_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-
     balance: Mapped[Decimal] = mapped_column(
         Numeric(18, 2), default=Decimal("0"), server_default="0", nullable=False
     )
@@ -82,6 +80,24 @@ class UserModel(Base):
     def has_pass(self) -> bool:
         return self.pass_hash is not None
 
+    @property
+    def is_active(self) -> bool:
+        """Активен, если роль не является заблокированной (``banned``).
+
+        Производный флаг (роль — единственный источник истины). Отсутствие роли
+        трактуется как активный пользователь.
+        """
+        return not (self.role is not None and self.role.key == BaseRole.BANNED)
+
+    @property
+    def is_verified(self) -> bool:
+        """Верифицирован, если роль не ``guest`` и роль задана.
+
+        ``guest`` — только что зарегистрированный пользователь (email не
+        подтверждён); подтверждение переводит его в роль ``user``.
+        """
+        return self.role is not None and self.role.key != BaseRole.GUEST
+
 
 class UserMngr:
     """Менеджер аккаунтов (тонкий слой доступа к данным)."""
@@ -98,13 +114,46 @@ class UserMngr:
     async def by_email(self, email: str) -> UserModel | None:
         return await self.s.scalar(select(UserModel).where(UserModel.email == email))
 
+    async def role_by_key(self, key: str) -> Role | None:
+        """Найти системную роль по стабильному ключу (см. :class:`enums.BaseRole`)."""
+        return await self.s.scalar(select(Role).where(Role.key == key))
+
     async def create(
-        self, login: str, pass_hash: str | None, email: str | None = None
+        self,
+        login: str,
+        pass_hash: str | None,
+        email: str | None = None,
+        *,
+        role_key: str = BaseRole.GUEST,
     ) -> UserModel:
-        acc = UserModel(login=login, pass_hash=pass_hash, email=email)
+        """Создать аккаунт с базовой ролью.
+
+        :arg login: логин.
+        :arg pass_hash: хеш пароля (``None`` для OAuth-only).
+        :arg email: email (опционально).
+        :arg role_key: ключ стартовой роли — по умолчанию ``guest`` (не
+            верифицирован); ``user`` для уже верифицированных (напр. OAuth).
+        :return: созданный аккаунт.
+        """
+        role = await self.role_by_key(role_key)
+        acc = UserModel(
+            login=login,
+            pass_hash=pass_hash,
+            email=email,
+            role_id=role.id if role else None,
+        )
         self.s.add(acc)
         await self.s.flush()
+        acc.role = role
         return acc
+
+    async def set_role_key(self, acc: UserModel, key: str) -> None:
+        """Назначить аккаунту системную роль по ключу (если такая роль есть)."""
+        role = await self.role_by_key(key)
+        if role is not None:
+            acc.role_id = role.id
+            acc.role = role
+            await self.s.flush()
 
     async def touch_login(self, acc: UserModel) -> None:
         """Обновить отметку последнего входа."""

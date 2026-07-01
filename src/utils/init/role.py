@@ -47,6 +47,8 @@ _BASE_PERMS: dict[str, dict] = {
     },
     # Обычный (верифицированный) пользователь: загрузка аватарки.
     "user": {"media": {"upload": True}},
+    # Гость: только что зарегистрирован, email не подтверждён (== is_verified false).
+    "guest": {"media": {"upload": True}},
     # Заблокированный: без админ-прав (доступ к своему профилю — через auth-роуты).
     "banned": {},
 }
@@ -57,6 +59,7 @@ _TITLES: dict[str, str] = {
     "manager": "Manager",
     "support": "Support",
     "user": "User",
+    "guest": "Guest",
     "banned": "Banned",
 }
 
@@ -71,17 +74,24 @@ async def create_base_roles(
     out: dict[str, Role] = {}
     for key, perms in _BASE_PERMS.items():
         name = names.get(key, key)
-        role = await session.scalar(select(Role).where(Role.name == name))
+        role = await session.scalar(select(Role).where(Role.key == key))
+        if role is None:
+            # Совместимость: могла существовать одноимённая роль без ключа.
+            role = await session.scalar(select(Role).where(Role.name == name))
         if role is None:
             role = Role(
                 name=name,
                 title=_TITLES.get(key, name.title()),
+                key=key,
                 is_system=True,
                 perms=perms,
             )
             session.add(role)
             await session.flush()
             log.info("создана базовая роль %r (key=%s)", name, key)
+        elif role.key != key:
+            role.key = key
+            await session.flush()
         out[key] = role
     return out
 

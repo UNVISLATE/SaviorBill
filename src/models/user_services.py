@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
-from enums import OrderStatus, ServiceAction, UsvcState
+from enums import ServiceAction, UsvcStatus
 from integrations.services import get_issuer
 from utils.datetime_utils import utc_now
 from utils.luabus import LuaBus
@@ -28,9 +28,9 @@ from utils.luabus import LuaBus
 class UserServicesModel(Base):
     """Экземпляр выданной услуги (бывш. ``Order``).
 
-    Создаётся со статусом ``initiated``. После успешной доставки (ключ или
-    Lua) переходит в ``delivered``; результат раскладывается на ``public_data``
-    (отдаётся клиенту) и ``private_data`` (только система).
+    Единый ``status`` (см. :class:`enums.UsvcStatus`) описывает и доставку, и
+    состояние ЖЦ: ``pending`` → ``active`` → ``frozen``/``stopped``/``expired``;
+    ``failed`` — доставка не удалась.
 
     ``payment_id`` — опциональная привязка к платежу, по которому выдана
     услуга. ``NULL`` — ручная выдача администратором (без оплаты).
@@ -53,9 +53,6 @@ class UserServicesModel(Base):
         nullable=False,
     )
 
-    public_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    private_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-
     account_id: Mapped[int] = mapped_column(
         ForeignKey("accounts.id", ondelete="CASCADE"), index=True, nullable=False
     )
@@ -65,14 +62,11 @@ class UserServicesModel(Base):
     # Платёж, по которому выдана услуга (без FK — циклическая связь с payments).
     payment_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
+    # Единый статус услуги (доставка + состояние ЖЦ), см. UsvcStatus.
     status: Mapped[str] = mapped_column(
-        String(16), default=OrderStatus.INITIATED, index=True, nullable=False
-    )
-    # Состояние ЖЦ выданной услуги (active/frozen/stopped/expired), см. UsvcState.
-    state: Mapped[str] = mapped_column(
         String(16),
-        default=UsvcState.ACTIVE,
-        server_default=UsvcState.ACTIVE,
+        default=UsvcStatus.PENDING,
+        server_default=UsvcStatus.PENDING,
         index=True,
         nullable=False,
     )
@@ -93,11 +87,17 @@ class UserServicesModel(Base):
         Numeric(18, 2), default=Decimal("0"), server_default="0", nullable=False
     )
 
-    # Снимок кастом-параметров на момент заказа.
-    params: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-
     # Ключ из пула (без FK — циклическая связь с digi_keys).
     digikey_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    public_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    private_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    # Имя ключа внутри public_data, который дефолтный фронтенд отрисует как
+    # «выданный продукт» (напр. "product" -> public_data.product). Свободный текст.
+    product_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Тип отображения продукта для фронтенда (напр. "text"/"url"). Свободный
+    # текст — бэкенд его не интерпретирует, набор типов задаёт фронтенд.
+    product_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
     delivered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -167,14 +167,14 @@ class UserServicesMngr:
             account_id=acc.id,
             service_id=service.id,
             payment_id=payment_id,
-            status=OrderStatus.INITIATED,
-            state=UsvcState.ACTIVE,
+            status=UsvcStatus.PENDING,
             price=price,
             discount=discount,
-            params=merged,
             duration=service.duration,
             actions=list(service.actions or []),
         )
+        # Кастом-параметры заказа передаём в доставку транзитно (не храним в БД).
+        usvc.order_params = merged
         self.s.add(usvc)
         await self.s.flush()
 
@@ -190,7 +190,7 @@ class UserServicesMngr:
     def _apply_default_expiry(usvc: UserServicesModel) -> None:
         """Проставить expires_at из duration, если lua-скрипт его не задал."""
         if (
-            usvc.status == OrderStatus.DELIVERED
+            usvc.status == UsvcStatus.ACTIVE
             and usvc.expires_at is None
             and usvc.duration
         ):
@@ -209,16 +209,16 @@ class UserServicesMngr:
         Конкретный способ берётся из реестра нативных интеграций
         (:func:`integrations.services.get_issuer`).
         """
-        if usvc.status == OrderStatus.DELIVERED:
+        if usvc.status == UsvcStatus.ACTIVE:
             return usvc
         try:
             issuer = get_issuer(service.delivery, self.s, self.bus)
             await issuer.issue(usvc, service, acc)
-            usvc.status = OrderStatus.DELIVERED
+            usvc.status = UsvcStatus.ACTIVE
             usvc.delivered_at = utc_now()
             usvc.error = None
         except Exception as exc:  # noqa: BLE001 — любая ошибка доставки -> возврат
-            usvc.status = OrderStatus.FAILED
+            usvc.status = UsvcStatus.FAILED
             usvc.error = str(exc)[:512]
             if refund_on_fail:
                 self._refund(acc, refund_on_fail)
@@ -247,13 +247,13 @@ class UserServicesMngr:
             await issuer.run_action(usvc, service, acc, action)
         except NotImplementedError:
             if action in (ServiceAction.STOP, ServiceAction.DELETE):
-                usvc.state = UsvcState.STOPPED
+                usvc.status = UsvcStatus.STOPPED
             elif action == ServiceAction.FREEZE:
-                usvc.state = UsvcState.FROZEN
+                usvc.status = UsvcStatus.FROZEN
             elif action == ServiceAction.RENEW and usvc.duration:
                 base = usvc.expires_at or utc_now()
                 usvc.expires_at = base + timedelta(seconds=usvc.duration)
-                usvc.state = UsvcState.ACTIVE
+                usvc.status = UsvcStatus.ACTIVE
         await self.s.flush()
         return usvc
 
@@ -265,6 +265,6 @@ class UserServicesMngr:
             await self.run_action(usvc, service, acc, ServiceAction.STOP)
         except Exception:  # noqa: BLE001 — истечение помечаем даже при сбое stop
             pass
-        usvc.state = UsvcState.EXPIRED
+        usvc.status = UsvcStatus.EXPIRED
         await self.s.flush()
         return usvc

@@ -9,21 +9,21 @@ from sqlalchemy.engine.url import URL
 
 
 class AppConfig(BaseSettings):
-    """Конфигурация приложения (постоянные ENV + разовые seed → settings)."""
+    """Конфигурация приложения (постоянные ENV (настройки) + разовые seed -> settings)."""
 
-    # =========================== ПОСТОЯННЫЕ ENV ============================
+    # Настройки
 
-    # --- Приложение ---
+    # Приложение
     APP_NAME: str = Field(default="SaviorBill")
     APP_VERSION: str = Field(default="0.0.1dev")
     HOST: str = Field(default="0.0.0.0")
     PORT: int = Field(default=8000)
     DEBUG: bool = Field(default=False)
 
-    # --- БД ---
+    # БД
     DB_DRIVER: str = Field(default="postgresql+asyncpg")
     DB_USER: str = Field(default="aiosupport")
-    # Пароль БД — предоставляемый секрет: прямое значение ENV либо файл DB_PASS_FILE
+    # Пароль БД - предоставляемый секрет: значение ENV либо файл DB_PASS_FILE
     # (или облачный менеджер секретов). Разрешается на старте.
     DB_PASS: str | None = Field(default=None)
     DB_PASS_FILE: str | None = Field(default=None)
@@ -31,14 +31,12 @@ class AppConfig(BaseSettings):
     DB_PORT: int = Field(default=5432)
     DB_NAME: str = Field(default="aiosupport")
 
-    # --- Valkey / Redis ---
+    # Valkey / Redis
     VALKEY_HOST: str = Field(default="localhost")
     VALKEY_PORT: int = Field(default=6379)
     VALKEY_DB: int = Field(default=0)
 
-    # --- Auth / JWT ---
-    # JWT_SECRET — генерируемый секрет: если не задан в ENV, создаётся/читается
-    # через выбранный бэкенд секретов (по умолчанию файл JWT_SECRET_FILE).
+    # Auth / JWT
     JWT_SECRET: str | None = Field(default=None)
     JWT_SECRET_FILE: str | None = Field(default=None)
     JWT_ALG: str = Field(default="HS256")
@@ -46,14 +44,12 @@ class AppConfig(BaseSettings):
     REFRESH_TOKEN_TTL: int = Field(default=30 * 24 * 60 * 60)
     JWT_ISS: str = Field(default="saviorbill")
 
-    # --- Шифрование секретов (SecBox / Fernet) ---
-    # SECRETS_KEY — сам ключ. Если не задан, создаётся/читается через бэкенд
-    # секретов (по умолчанию файл SECRETS_KEY_PATH).
+    # Шифрование секретов (SecBox / Fernet)
     SECRETS_KEY: str | None = Field(default=None)
     SECRETS_KEY_PATH: str | None = Field(default=None)
 
-    # --- Бэкенд секретов (file|aws|gcp|azure|vault) ---
-    # Все секреты — внешние ресурсы. ENV хранит путь/координаты, не значения.
+    # Бэкенд секретов (file|aws|gcp|azure|vault)
+    # Все секреты - внешние ресурсы. ENV хранит путь/координаты, не значения.
     SECRETS_BACKEND: str = Field(default="file")
     SECRETS_PREFIX: str = Field(default="saviorbill/")
     # Облачные координаты (нужны только для соответствующего бэкенда).
@@ -64,27 +60,27 @@ class AppConfig(BaseSettings):
     SECRETS_VAULT_TOKEN: str | None = Field(default=None)
     SECRETS_VAULT_MOUNT: str = Field(default="secret")
 
-    # --- Публичный URL (редиректы OAuth, ссылки в письмах) ---
+    # Публичный URL (редиректы OAuth, ссылки в письмах)
     PUBLIC_URL: str = Field(default="http://localhost:8000")
 
-    # --- Монтируемая папка данных (lua-скрипты, ключи, загрузки) ---
+    # Монтируемая папка данных (lua-скрипты, ключи, загрузки)
     DATA_DIR: str = Field(default="data")
-    # Папка lua-скриптов. Если не задана явно — DATA_DIR/lua.
+    # Папка lua-скриптов. Если не задана явно - DATA_DIR/lua.
     LUA_SCRIPTS_DIR: str | None = Field(default=None)
-    # Папка email-шаблонов (jinja2). Если не задана явно — DATA_DIR/email.
+    # Папка email-шаблонов (jinja2). Если не задана явно - DATA_DIR/email.
     EMAIL_TEMPLATES_DIR: str | None = Field(default=None)
 
-    # --- LuaWorker (шина Redis Streams) ---
+    # LuaWorker (шина Redis Streams)
     LUA_TASK_STREAM: str = Field(default="lua:tasks")
     LUA_RESP_STREAM: str = Field(default="lua:results")
     LUA_GROUP: str = Field(default="luaworkers")
     LUA_CALL_TIMEOUT: int = Field(default=30)
-    # Сервисный токен LuaWorker — генерируемый секрет (файл LUA_SERVICE_TOKEN_FILE
+    # Сервисный токен LuaWorker - генерируемый секрет (файл LUA_SERVICE_TOKEN_FILE
     # по умолчанию либо облачный менеджер).
     LUA_SERVICE_TOKEN: str | None = Field(default=None)
     LUA_SERVICE_TOKEN_FILE: str | None = Field(default=None)
 
-    # --- Billing-loop (планировщик истечений услуг и перепроверок платежей) ---
+    # Billing-loop (планировщик истечений услуг и перепроверок платежей)
     BILLING_LOOP_ENABLED: bool = Field(default=True)
     # Размер «окна» очереди: сколько ближайших задач держать наготове.
     BILLING_QUEUE_WINDOW: int = Field(default=100)
@@ -96,7 +92,7 @@ class AppConfig(BaseSettings):
     BILLING_PAY_RECHECK_INTERVAL: int = Field(default=300)
     BILLING_PAY_RECHECK_MAX: int = Field(default=5)
 
-    # --- Хранилище файлов (медиа товаров, аватарки, иконки) ---
+    # Хранилище файлов (медиа товаров, аватарки, иконки)
     STORAGE_BACKEND: str = Field(default="fs")
     S3_ENDPOINT: str | None = Field(default=None)
     S3_BUCKET: str | None = Field(default=None)
@@ -106,7 +102,7 @@ class AppConfig(BaseSettings):
     S3_SECRET_FILE: str | None = Field(default=None)
     S3_PUBLIC_URL: str | None = Field(default=None)
 
-    # --- Кэш / TTL / лимиты (дехардкод) ---
+    # Кэш / TTL / лимиты (дехардкод)
     SETTINGS_CACHE_TTL: int = Field(default=300)
     # TTL кода подтверждения email и сброса пароля (сидится в settings как
     # mail.code_ttl, далее берётся из БД).
@@ -115,14 +111,14 @@ class AppConfig(BaseSettings):
     # Лимит строк в самоочищающихся таблицах (логи).
     LOG_ROW_LIMIT: int = Field(default=1_000_000)
 
-    # --- Загрузка медиа ---
+    # Загрузка медиа
     # Порог «маленького» файла (аватарки/иконки): до него хватает media.upload,
-    # выше — нужно право media.uploadlarge.
+    # выше - нужно право media.uploadlarge.
     MEDIA_SMALL_MAX_BYTES: int = Field(default=1_048_576)  # 1 MiB
     # Жёсткий потолок размера любого загружаемого файла.
     MEDIA_MAX_BYTES: int = Field(default=52_428_800)  # 50 MiB
 
-    # --- Rate limiting (Valkey, fixed window) ---
+    # Rate limiting (Valkey, fixed window)
     RATE_LIMIT_ENABLED: bool = Field(default=True)
     RATE_LIMIT_DEFAULT_MAX: int = Field(default=60)
     RATE_LIMIT_DEFAULT_WINDOW: int = Field(default=60)
@@ -136,9 +132,9 @@ class AppConfig(BaseSettings):
     RATE_LIMIT_SENSITIVE_MAX: int = Field(default=20)
     RATE_LIMIT_SENSITIVE_WINDOW: int = Field(default=60)
 
-    # ===================== РАЗОВЫЕ ENV (seed → settings) ==================
+    # РАЗОВЫЕ ENV (seed -> settings)
 
-    # --- SMTP (сидится в settings при первом запуске) ---
+    # SMTP (сидится в settings при первом запуске)
     SMTP_HOST: str | None = Field(default=None)
     SMTP_PORT: int = Field(default=587)
     SMTP_USER: str | None = Field(default=None)
@@ -147,17 +143,19 @@ class AppConfig(BaseSettings):
     SMTP_FROM: str | None = Field(default=None)
     SMTP_TLS: bool = Field(default=True)
 
-    # --- Имена базовых ролей (сидятся в settings, далее берутся из БД) ---
+    # Имена базовых ролей (сидятся в settings, далее берутся из БД)
     ROLE_OWNER: str = Field(default="owner")
     ROLE_ADMIN: str = Field(default="admin")
     ROLE_MANAGER: str = Field(default="manager")
     ROLE_SUPPORT: str = Field(default="support")
     # Роль обычного (верифицированного) пользователя.
     ROLE_USER: str = Field(default="user")
+    # Роль только что зарегистрированного пользователя (email не подтверждён).
+    ROLE_GUEST: str = Field(default="guest")
     # Роль заблокированного пользователя (только просмотр своего профиля/услуг).
     ROLE_BANNED: str = Field(default="banned")
 
-    # --- Bootstrap owner (создаётся при первом запуске; НЕ хранится в settings) ---
+    # Bootstrap owner (создаётся при первом запуске)
     OWNER_LOGIN: str | None = Field(default=None)
     OWNER_PASS: str | None = Field(default=None)
     OWNER_EMAIL: str | None = Field(default=None)

@@ -41,6 +41,11 @@ class Role(Base):
 
     name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     title: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # Стабильный ключ базовой роли (owner/admin/user/guest/banned…), см. BaseRole.
+    # NULL — пользовательская (не системная) роль. Не зависит от переименования.
+    key: Mapped[str | None] = mapped_column(
+        String(32), unique=True, index=True, nullable=True
+    )
     # Системные роли нельзя удалять из админки.
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     perms: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from enums import ScriptKind, ServiceAction, UsvcState
+from enums import ScriptKind, ServiceAction, UsvcStatus
 from integrations.services.base import BaseIssuer
 
 
@@ -49,9 +49,9 @@ class LuaService(BaseIssuer):
                 "service": {
                     "id": usvc.id,
                     "status": usvc.status,
-                    "state": usvc.state,
                     "price": str(usvc.price),
-                    "params": usvc.params,
+                    "duration": usvc.duration,
+                    "params": getattr(usvc, "order_params", {}) or {},
                 },
                 "payment": usvc.payment_id,
             },
@@ -60,6 +60,7 @@ class LuaService(BaseIssuer):
                 "slug": service.slug,
                 "name": service.name,
                 "price": str(service.price),
+                "duration": service.duration,
                 "params": service.params,
                 "settings": service.settings,
                 "actions": service.actions,
@@ -69,13 +70,13 @@ class LuaService(BaseIssuer):
         usvc.public_data = res.get("public") or {}
         usvc.private_data = res.get("private") or {}
 
-        state = res.get("state")
+        state = res.get("state") or res.get("status")
         if state:
-            usvc.state = state
+            usvc.status = state
         elif action in (ServiceAction.STOP, ServiceAction.DELETE):
-            usvc.state = UsvcState.STOPPED
+            usvc.status = UsvcStatus.STOPPED
         elif action == ServiceAction.FREEZE:
-            usvc.state = UsvcState.FROZEN
+            usvc.status = UsvcStatus.FROZEN
 
         expires_at = res.get("expires_at")
         if expires_at is not None:

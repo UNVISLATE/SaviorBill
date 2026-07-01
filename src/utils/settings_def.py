@@ -73,6 +73,7 @@ SETTINGS: tuple[SettingDef, ...] = (
     SettingDef("role.manager", "ROLE_MANAGER", group="role", desc="Имя роли менеджера"),
     SettingDef("role.support", "ROLE_SUPPORT", group="role", desc="Имя роли поддержки"),
     SettingDef("role.user", "ROLE_USER", group="role", desc="Имя роли пользователя"),
+    SettingDef("role.guest", "ROLE_GUEST", group="role", desc="Имя роли гостя"),
     SettingDef("role.banned", "ROLE_BANNED", group="role", desc="Имя роли блокировки"),
     # Флаги состояния системы (выставляются bootstrap-проверками, без сидинга)
     SettingDef(

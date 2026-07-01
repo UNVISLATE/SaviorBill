@@ -8,14 +8,20 @@ class Delivery:
     LUA = "lua"  # выдача через исполнение Lua-скрипта
 
 
-class OrderStatus:
-    """Жизненный цикл заказанной услуги."""
+class UsvcStatus:
+    """Единый статус выданной услуги (объединяет доставку и состояние ЖЦ).
 
-    INITIATED = "initiated"
-    PROCESSING = "processing"
-    DELIVERED = "delivered"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
+    Заменяет прежнюю пару ``OrderStatus`` (доставка) + ``UsvcState`` (состояние),
+    которые дублировали друг друга.
+    """
+
+    PENDING = "pending"  # создана, ждёт оплаты/доставки
+    ACTIVE = "active"  # доставлена и действует
+    FROZEN = "frozen"  # временно заморожена
+    STOPPED = "stopped"  # остановлена (вручную/по действию)
+    EXPIRED = "expired"  # истёк срок действия
+    FAILED = "failed"  # доставка не удалась
+    CANCELLED = "cancelled"  # отменена
 
 
 class PayStatus:
@@ -47,15 +53,6 @@ class ServiceAction:
     STOP = "stop"
     DELETE = "delete"
     FREEZE = "freeze"
-
-
-class UsvcState:
-    """Состояние выданной услуги (независимо от статуса доставки)."""
-
-    ACTIVE = "active"
-    FROZEN = "frozen"
-    STOPPED = "stopped"
-    EXPIRED = "expired"
 
 
 class TaskKind:
@@ -103,20 +100,37 @@ class ScriptKind:
     SERVICE = "service"  # доставка услуги
     PAYMENT = "payment"  # платёжная интеграция
     GENERIC = "generic"  # прочее
+    TRIGGER = "trigger"  # действие триггера
+
+
+class BaseRole:
+    """Стабильные ключи базовых ролей (не зависят от переименования в БД).
+
+    ``Role.key`` хранит один из этих ключей для системных ролей и служит основой
+    производных флагов пользователя (активен/верифицирован).
+    """
+
+    OWNER = "owner"
+    ADMIN = "admin"
+    MANAGER = "manager"
+    SUPPORT = "support"
+    USER = "user"  # верифицированный пользователь
+    GUEST = "guest"  # только что зарегистрирован (== is_verified false)
+    BANNED = "banned"  # заблокирован (== is_active false)
 
 
 __all__ = [
     "Delivery",
-    "OrderStatus",
+    "UsvcStatus",
     "PayStatus",
     "TopupStatus",
     "PayDirective",
     "PayTarget",
     "ServiceAction",
-    "UsvcState",
     "TaskKind",
     "TaskStatus",
     "PromoKind",
     "DiscountType",
     "ScriptKind",
+    "BaseRole",
 ]

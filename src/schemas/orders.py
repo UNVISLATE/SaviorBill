@@ -29,11 +29,20 @@ class Order(BaseModel):
     id: int
     service_id: int
     payment_id: int | None = None
-    status: str
-    state: str = Field(description="Состояние ЖЦ: active/frozen/stopped/expired")
+    status: str = Field(
+        description="Единый статус услуги: pending/active/frozen/stopped/expired/failed"
+    )
     price: Decimal
     discount: Decimal
     public_data: dict
+    product_key: str | None = Field(
+        default=None,
+        description="Ключ в public_data, отрисовываемый фронтендом как выданный продукт",
+    )
+    product_kind: str | None = Field(
+        default=None,
+        description="Тип отображения продукта (напр. text/url) — интерпретирует фронтенд",
+    )
     actions: list = Field(
         default_factory=list,
         description="Поддерживаемые действия услуги (create/renew/stop/delete/freeze)",

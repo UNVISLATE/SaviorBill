@@ -130,7 +130,11 @@ class VerifySvc:
 
         await self.vk.delete(key)
         await self.vk.delete(_VERIFY_FAIL + str(acc.id))
-        acc.is_verified = True
+        # Верификация = смена роли guest -> user (производный is_verified=True).
+        from models.user import UserMngr
+        from enums import BaseRole
+
+        await UserMngr(self.s).set_role_key(acc, BaseRole.USER)
         await self.s.flush()
         return acc
 

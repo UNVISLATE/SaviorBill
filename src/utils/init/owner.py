@@ -35,12 +35,11 @@ async def create_owner(
         login=cfg.OWNER_LOGIN,
         email=cfg.OWNER_EMAIL,
         pass_hash=hash_pass(cfg.OWNER_PASS),
-        is_active=True,
-        is_verified=True,
         role_id=owner_role.id,
     )
     session.add(acc)
     await session.flush()
+    acc.role = owner_role
     log.info("создан owner-пользователь %r", cfg.OWNER_LOGIN)
     return acc
 

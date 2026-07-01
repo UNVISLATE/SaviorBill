@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class User(BaseModel):
-    """Аккаунт в админ-списке (ответ)."""
+    """Аккаунт пользователя (ответ)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -26,16 +26,18 @@ class User(BaseModel):
 
     @classmethod
     def from_model(cls, m) -> "User":  # noqa: ANN001 — UserModel
-        """Явное преобразование ORM-аккаунта в схему ответа."""
         return cls.model_validate(m)
 
 
 class UserPatch(BaseModel):
-    """Частичное редактирование аккаунта (только переданные поля)."""
+    """Частичное редактирование аккаунта (только переданные поля).
+
+    Активность/верификация — производные от роли, поэтому меняются через
+    ``role_id`` (напр. назначить роль ``banned`` = заблокировать, ``user`` =
+    верифицировать), а не отдельными флагами.
+    """
 
     email: str | None = None
-    is_active: bool | None = None
-    is_verified: bool | None = None
     role_id: int | None = None
     balance: Decimal | None = None
     bonus_balance: Decimal | None = None

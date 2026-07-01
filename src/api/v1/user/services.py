@@ -10,7 +10,7 @@ from dependencies.auth import get_current_acc
 from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.db import get_db_session
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
-from enums import OrderStatus
+from enums import UsvcStatus
 from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderCreate, Order
@@ -58,7 +58,7 @@ async def create_service(
 ) -> Order:
     service = await svc_mngr.get_active(body.service_id)
     usvc = await usvc_mngr.create(acc, service, params=body.params)
-    if usvc.status != OrderStatus.DELIVERED:
+    if usvc.status != UsvcStatus.ACTIVE:
         await usvc_mngr.s.rollback()
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, f"не удалось выдать услугу: {usvc.error}"

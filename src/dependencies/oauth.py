@@ -124,10 +124,17 @@ class OAuthSvc:
                 acc = UserModel(
                     login=f"{slug}:{user.sub}"[:64],
                     email=user.email,
-                    is_verified=user.email_verified,
                 )
+                # Роль по факту верификации email провайдером: user либо guest.
+                from models.user import UserMngr
+                from enums import BaseRole
+
+                role_key = BaseRole.USER if user.email_verified else BaseRole.GUEST
+                role = await UserMngr(self.s).role_by_key(role_key)
+                acc.role_id = role.id if role else None
                 self.s.add(acc)
                 await self.s.flush()
+                acc.role = role
             self.s.add(
                 UserOauthModel(
                     account_id=acc.id,

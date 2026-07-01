@@ -35,7 +35,7 @@ async def test_order_key_delivery(http, new_user, seed, engine):
     )
     assert r.status_code in (200, 201), r.text
     body = r.json()
-    assert body["status"] == "delivered"
+    assert body["status"] == "active"
     assert "key" in body["public_data"]
 
 
@@ -52,7 +52,7 @@ async def test_order_lua_delivery_runs_script(http, new_user, seed, engine):
     )
     assert r.status_code in (200, 201), r.text
     body = r.json()
-    assert body["status"] == "delivered"
+    assert body["status"] == "active"
     # demo_service.lua читает service.params.message == "hi"
     assert body["public_data"].get("message") == "hi"
 
@@ -70,15 +70,14 @@ async def test_service_expiry_via_billing_loop(http, new_user, seed, engine):
     )
     assert r.status_code in (200, 201), r.text
     body = r.json()
-    assert body["status"] == "delivered"
-    assert body["state"] == "active"
+    assert body["status"] == "active"
     assert body["expires_at"] is not None
     usvc_id = body["id"]
 
     async def _state():
         async with engine.begin() as c:
             return await c.scalar(
-                text("SELECT state FROM user_services WHERE id=:i"), {"i": usvc_id}
+                text("SELECT status FROM user_services WHERE id=:i"), {"i": usvc_id}
             )
 
     # billing-loop должен пометить услугу истёкшей после наступления expires_at.

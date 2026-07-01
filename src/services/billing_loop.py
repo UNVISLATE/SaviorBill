@@ -20,12 +20,11 @@ from dependencies.sec import make_secbox
 from dependencies.payment import PayMngr
 from dependencies.usersvc import UserServicesMngr
 from enums import (
-    OrderStatus,
     PayStatus,
     ServiceAction,
     TaskKind,
     TaskStatus,
-    UsvcState,
+    UsvcStatus,
 )
 from models.billing_tasks import BillingTasksModel, BillingTasksMngr
 from models.service import ServiceModel
@@ -76,7 +75,6 @@ class BillingLoop:
     def _usvc_mngr(self, session: AsyncSession) -> UserServicesMngr:
         return UserServicesMngr(session, self._bus())
 
-    # --- жизненный цикл ----------------------------------------------------
     async def start(self) -> None:
         """Захватить advisory-лок, засеять очередь и запустить фоновый цикл."""
         if not self.cfg.BILLING_LOOP_ENABLED:
@@ -123,7 +121,6 @@ class BillingLoop:
         """Разбудить цикл (после внешнего добавления задачи)."""
         self._wake.set()
 
-    # --- сидинг / пополнение окна ------------------------------------------
     async def seed_on_start(self, session: AsyncSession) -> None:
         """Засеять окно: истёкшие/ближайшие услуги + висящие pending-платежи."""
         await self._refill(session)
@@ -141,7 +138,7 @@ class BillingLoop:
         rows = await session.scalars(
             select(UserServicesModel)
             .where(
-                UserServicesModel.state == UsvcState.ACTIVE,
+                UserServicesModel.status == UsvcStatus.ACTIVE,
                 UserServicesModel.expires_at.is_not(None),
                 UserServicesModel.id.not_in(queued),
             )
@@ -181,7 +178,6 @@ class BillingLoop:
         for pay in rows:
             await mngr.add(TaskKind.PAY_RECHECK, pay.id, utc_now())
 
-    # --- событийные хуки (вызываются из роутов) ----------------------------
     async def enqueue_service(self, usvc_id: int, run_at: datetime) -> None:
         """Поставить истечение услуги в очередь (при создании/продлении)."""
         async with self.sm() as session:
@@ -194,7 +190,6 @@ class BillingLoop:
             await session.commit()
         self.wake()
 
-    # --- основной цикл -----------------------------------------------------
     async def _run(self) -> None:
         while not self._stopped:
             try:
@@ -228,7 +223,6 @@ class BillingLoop:
         except asyncio.TimeoutError:
             pass
 
-    # --- исполнение задач --------------------------------------------------
     async def _execute(self, session: AsyncSession, task: BillingTasksModel) -> None:
         task.status = TaskStatus.RUNNING
         task.attempts += 1
@@ -251,7 +245,7 @@ class BillingLoop:
         self, session: AsyncSession, task: BillingTasksModel
     ) -> None:
         usvc = await session.get(UserServicesModel, task.ref_id)
-        if usvc is None or usvc.state != UsvcState.ACTIVE:
+        if usvc is None or usvc.status != UsvcStatus.ACTIVE:
             task.status = TaskStatus.DONE
             return
         # Задача истечения актуальна только если срок реально наступил.
