@@ -15,7 +15,6 @@ from .service_keys import ServiceKeysModel, ServiceKeysMngr
 from .user_services import UserServicesModel, UserServicesMngr
 from .payment_providers import PaymentProvidersModel, PaymentProvidersMngr
 from .user_payments import UserPaymentsModel, UserPaymentsMngr
-from .billing_tasks import BillingTasksModel, BillingTasksMngr
 from .promo_codes import PromoCodesModel, PromoCodesMngr
 from .promo_catalogs import PromoCatalogsModel, PromoCatalogsMngr
 from .promo_use import PromoUseModel
@@ -48,8 +47,6 @@ __all__ = [
     "PaymentProvidersMngr",
     "UserPaymentsModel",
     "UserPaymentsMngr",
-    "BillingTasksModel",
-    "BillingTasksMngr",
     "PromoCodesModel",
     "PromoCodesMngr",
     "PromoCatalogsModel",

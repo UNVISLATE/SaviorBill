@@ -65,23 +65,6 @@ class ServiceAction:
     FREEZE = "freeze"
 
 
-class TaskKind:
-    """Вид задачи в очереди billing-loop."""
-
-    SVC_ACTION = "svc_action"  # действие над услугой (напр. истечение)
-    PAY_RECHECK = "pay_recheck"  # перепроверка статуса платежа
-
-
-class TaskStatus:
-    """Статус задачи в очереди billing_tasks."""
-
-    QUEUED = "queued"
-    RUNNING = "running"
-    DONE = "done"
-    FAILED = "failed"
-    WAIT = "wait"  # отложена без авто-повтора (ждёт ручного триггера)
-
-
 class PayTarget:
     """Назначение платежа: пополнить баланс или оплатить конкретную услугу."""
 
@@ -137,8 +120,6 @@ __all__ = [
     "PayAction",
     "PayTarget",
     "ServiceAction",
-    "TaskKind",
-    "TaskStatus",
     "PromoKind",
     "DiscountType",
     "ScriptKind",

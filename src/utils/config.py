@@ -91,6 +91,12 @@ class AppConfig(BaseSettings):
     # Интервал авто-перепроверок платежа (сек) и их предел до статуса wait.
     BILLING_PAY_RECHECK_INTERVAL: int = Field(default=300)
     BILLING_PAY_RECHECK_MAX: int = Field(default=5)
+    # Ключи Valkey для очереди задач и распределённого лока планировщика.
+    BILLING_QUEUE_KEY: str = Field(default="billing:queue")
+    BILLING_ATTEMPTS_KEY: str = Field(default="billing:pay_attempts")
+    BILLING_LOCK_KEY: str = Field(default="billing:lock")
+    # TTL лока планировщика (сек); обновляется на каждой итерации.
+    BILLING_LOCK_TTL: int = Field(default=30)
 
     # Хранилище файлов (медиа товаров, аватарки, иконки)
     STORAGE_BACKEND: str = Field(default="fs")
