@@ -37,9 +37,11 @@ local function connect()
   if DB and DB > 0 then
     client:select(DB)
   end
-  -- Создаём consumer-группу (идемпотентно).
+  -- Создаём consumer-группу (идемпотентно). Стартуем с "0", а не "$", чтобы не
+  -- потерять задачи, добавленные в стрим до момента создания группы (cold-start
+  -- гонка между продюсером-биллингом и воркером на свежем стеке).
   local ok, err = pcall(function()
-    client:xgroup("CREATE", TASK, GROUP, "$", "MKSTREAM")
+    client:xgroup("CREATE", TASK, GROUP, "0", "MKSTREAM")
   end)
   if not ok and not tostring(err):find("BUSYGROUP") then
     error(err)
