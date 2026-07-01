@@ -7,6 +7,7 @@ from dependencies.valkey import create_valkey_client
 from services.billing_loop import BillingLoop
 from utils.config import AppConfig
 from utils.bootstrap import bootstrap
+from utils.init import init_system
 from utils.openapi import document_perms
 from utils.sec.secrets.resolve import resolve_secrets
 
@@ -32,7 +33,8 @@ async def lifespan(app: FastAPI):
     app.state.db_sessionmaker = create_db_sessionmaker(app.state.db_engine)
     app.state.valkey = create_valkey_client(config.valkey_url)
 
-    # Первичная инициализация: owner-роль/пользователь, сид настроек SMTP.
+    # Первичная инициализация (один раз) и per-run проверки — независимые модули.
+    await init_system(config, app.state.db_sessionmaker, app.state.valkey)
     await bootstrap(config, app.state.db_sessionmaker, app.state.valkey)
 
     # Планировщик истечений услуг и перепроверок платежей (in-process).

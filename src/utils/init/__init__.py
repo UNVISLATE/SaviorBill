@@ -1,11 +1,18 @@
-"""Инициализация первого запуска: роли, владелец, секреты, сид настроек."""
+"""Инициализация первого запуска: роли, владелец, секреты, сид настроек.
+
+Полностью независимый модуль. Не знает про ``utils.bootstrap`` и наоборот.
+Точка входа для ``lifespan`` — :func:`init_system` (сама решает по флагу, нужен ли
+запуск ``run_init``).
+"""
 
 from __future__ import annotations
 
 import logging
 
-from sqlalchemy.ext.asyncio import AsyncSession
+import valkey.asyncio as valkey
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from dependencies.sec import make_secbox
 from dependencies.settings import SystemSettingsMngr
 from utils.config import AppConfig
 from utils.init.email_templates import seed_email_templates
@@ -17,13 +24,17 @@ from utils.init.settings import seed_settings
 
 log = logging.getLogger("saviorbill.init")
 
-# Логические ключи базовых ролей ↔ атрибуты ENV с их именами.
+# Флаг «система инициализирована» в таблице настроек.
+_INIT_FLAG = "system.initialized"
+
+# Логические ключи базовых ролей -> атрибуты ENV с их именами.
 _ROLE_ENV: dict[str, str] = {
     "owner": "ROLE_OWNER",
     "admin": "ROLE_ADMIN",
     "manager": "ROLE_MANAGER",
     "support": "ROLE_SUPPORT",
     "user": "ROLE_USER",
+    "guest": "ROLE_GUEST",
     "banned": "ROLE_BANNED",
 }
 
@@ -51,4 +62,35 @@ async def run_init(
     log.info("первичная инициализация завершена")
 
 
-__all__ = ["run_init"]
+def _mngr(
+    cfg: AppConfig, session: AsyncSession, vk: valkey.Valkey
+) -> SystemSettingsMngr:
+    return SystemSettingsMngr(session, vk, make_secbox(cfg), cfg.SETTINGS_CACHE_TTL)
+
+
+async def init_system(
+    cfg: AppConfig,
+    sessionmaker: async_sessionmaker[AsyncSession],
+    vk: valkey.Valkey,
+) -> None:
+    """Выполнить первичную инициализацию один раз (идемпотентно по флагу).
+
+    Независимая точка входа: сама открывает сессию, проверяет флаг
+    ``system.initialized`` и при необходимости вызывает :func:`run_init`.
+
+    :arg cfg: конфигурация приложения.
+    :arg sessionmaker: фабрика сессий БД.
+    :arg vk: клиент Valkey (для менеджера настроек).
+    """
+    async with sessionmaker() as session:
+        mngr = _mngr(cfg, session, vk)
+        already = await mngr.get(_INIT_FLAG)
+        if already == "1":
+            log.info("система уже инициализирована — init пропущен")
+            return
+        await run_init(session, mngr, cfg)
+        await mngr.set(_INIT_FLAG, "1", is_secret=False)
+        await session.commit()
+
+
+__all__ = ["run_init", "init_system"]
