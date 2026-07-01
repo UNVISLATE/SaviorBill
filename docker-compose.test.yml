@@ -17,6 +17,9 @@ services:
   billing:
     environment:
       DATA_DIR: /app/data
+      # В интеграционных тестах много регистраций с одного IP — лимитер отключаем
+      # (бизнес-флоу тестируем без рейт-лимита).
+      RATE_LIMIT_ENABLED: "false"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
       interval: 5s

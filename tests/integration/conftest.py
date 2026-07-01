@@ -8,6 +8,7 @@ HTTP-вызовы идут на ``BASE_URL`` (контейнер billing), а с
 
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from collections.abc import AsyncIterator
@@ -112,17 +113,48 @@ async def seed(engine: AsyncEngine):
                 )
             return sid
 
-        async def payment_script(self) -> str:
-            provider = uniq("pay")
+        async def pay_provider(self, secret: str = "test-callback-secret") -> str:
+            """Создать платёжного провайдера на демо-скриптах (init + callback).
+
+            Секреты кладём сырым JSON (SecBox.open вернёт как есть) — этого
+            достаточно для демо-callback, который сверяет ``request.sign`` с
+            ``settings.secret``.
+
+            :arg secret: общий секрет для проверки подписи в демо-колбэке.
+            :return: slug созданного провайдера.
+            """
+            slug = uniq("pay")
             async with engine.begin() as c:
-                await c.execute(
+                init_id = await c.scalar(
                     text(
                         "INSERT INTO lua_scripts (slug,name,kind,filename,is_active) "
-                        "VALUES (:slug,'pay','payment','payments/demo_pay.lua',true)"
+                        "VALUES (:slug,'demo-init','payment','payments/demo_init.lua',true) "
+                        "RETURNING id"
                     ),
-                    {"slug": provider},
+                    {"slug": uniq("init")},
                 )
-            return provider
+                cb_id = await c.scalar(
+                    text(
+                        "INSERT INTO lua_scripts (slug,name,kind,filename,is_active) "
+                        "VALUES (:slug,'demo-cb','payment','payments/demo_callback.lua',true) "
+                        "RETURNING id"
+                    ),
+                    {"slug": uniq("cb")},
+                )
+                await c.execute(
+                    text(
+                        "INSERT INTO pay_providers "
+                        "(slug,title,enabled,secrets_enc,currency,init_script_id,cb_script_id,extra) "
+                        "VALUES (:slug,'Demo',true,:sec,'RUB',:init,:cb,'{}')"
+                    ),
+                    {
+                        "slug": slug,
+                        "sec": json.dumps({"secret": secret}),
+                        "init": init_id,
+                        "cb": cb_id,
+                    },
+                )
+            return slug
 
         async def make_admin(self, login: str) -> None:
             async with engine.begin() as c:
@@ -132,13 +164,6 @@ async def seed(engine: AsyncEngine):
                         "WHERE login=:login"
                     ),
                     {"login": login},
-                )
-
-        async def topup_external_id(self, topup_id: int) -> str:
-            async with engine.connect() as c:
-                return await c.scalar(
-                    text("SELECT external_id FROM topups WHERE id=:id"),
-                    {"id": topup_id},
                 )
 
     return Seeder()
