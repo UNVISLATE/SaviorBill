@@ -4,6 +4,8 @@ on:
   push:
     branches: [main, master]
   pull_request:
+  release:
+    types: [published]
 
 jobs:
   # Быстрые юнит-тесты без внешних сервисов. Это первый барьер.
@@ -37,12 +39,14 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.test.yml down -v
 
   # Сборка и публикация образов в GitHub Container Registry (ghcr.io).
-  # Запускается только при push в основную ветку, после зелёных тестов.
-  # Юнит-тесты дополнительно гоняются внутри сборки billing (стадия tests).
+  # Запускается ТОЛЬКО при публикации релиза (release: published). Релиз привязан
+  # к git-тегу вида 1.0.0 (или v1.0.0) — из него берутся теги образа: 1.0.0, 1.0,
+  # 1 и latest. latest не сдвигается для пре-релизов. Тесты (unit+integration)
+  # гоняются на коммите релиза перед публикацией.
   publish:
     runs-on: ubuntu-latest
     needs: [unit, integration]
-    if: github.event_name == 'push'
+    if: github.event_name == 'release'
     permissions:
       contents: read
       packages: write
@@ -73,9 +77,10 @@ jobs:
         with:
           images: ghcr.io/${{ github.repository }}/${{ matrix.name }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,format=short
-            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
