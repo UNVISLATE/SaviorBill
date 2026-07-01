@@ -15,6 +15,7 @@ from models.user_services import UserServicesModel
 from schemas.orders import OrderAdmin, OrderGrant
 from schemas.page import Page
 from utils.pagination import paginate
+from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -58,9 +59,12 @@ async def get_order(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("orders.edit"))],
     summary="Выдать услугу вручную",
-    description=(
-        "Создаёт выдачу без привязки к платежу (`payment_id = NULL`). "
-        "По умолчанию без списания с баланса (подарок)."
+    description=with_fields(
+        (
+            "Создаёт выдачу без привязки к платежу (`payment_id = NULL`). "
+            "По умолчанию без списания с баланса (подарок)."
+        ),
+        OrderGrant,
     ),
 )
 async def grant(

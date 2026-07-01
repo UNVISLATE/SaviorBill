@@ -15,6 +15,7 @@ from schemas.oauth_provider import (
     OAuthProvider,
     OAuthProviderPatch,
 )
+from utils.apidoc import with_fields
 from utils.sec.box import SecBox
 
 router = APIRouter()
@@ -41,6 +42,10 @@ async def list_providers(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("oauth.edit"))],
     summary="Добавить OAuth-провайдера",
+    description=with_fields(
+        "Создаёт OAuth-провайдера; client_secret хранится в зашифрованном виде.",
+        OAuthProviderCreate,
+    ),
 )
 async def create_provider(
     body: OAuthProviderCreate,
@@ -75,6 +80,10 @@ async def create_provider(
     response_model=OAuthProvider,
     dependencies=[Depends(require_perm("oauth.edit"))],
     summary="Изменить OAuth-провайдера",
+    description=with_fields(
+        "Частично обновляет OAuth-провайдера — передаются только изменяемые поля.",
+        OAuthProviderPatch,
+    ),
 )
 async def update_provider(
     provider_id: int,

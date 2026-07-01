@@ -19,6 +19,7 @@ from schemas.payment_provider import PayProviderCreate, PayProvider, PayProvider
 from schemas.payments import PaymentAdmin
 from schemas.page import Page
 from utils.pagination import paginate
+from utils.apidoc import with_fields
 from utils.sec.box import SecBox
 
 router = APIRouter()
@@ -65,6 +66,10 @@ async def list_providers(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("purchases.providers"))],
     summary="Создать платёжного провайдера",
+    description=with_fields(
+        "Создаёт платёжного провайдера; секреты хранятся в зашифрованном виде.",
+        PayProviderCreate,
+    ),
 )
 async def create_provider(
     body: PayProviderCreate,
@@ -94,6 +99,10 @@ async def create_provider(
     response_model=PayProvider,
     dependencies=[Depends(require_perm("purchases.providers"))],
     summary="Изменить платёжного провайдера",
+    description=with_fields(
+        "Частично обновляет платёжного провайдера — передаются только изменяемые поля.",
+        PayProviderPatch,
+    ),
 )
 async def update_provider(
     provider_id: int,

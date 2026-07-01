@@ -9,6 +9,7 @@ from dependencies.rbac import require_perm
 from schemas.page import Page
 from schemas.service import ServiceAdmin, ServiceCreate, ServicePatch
 from utils.pagination import paginate
+from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -36,6 +37,10 @@ async def list_services(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("services.edit"))],
     summary="Создать услугу",
+    description=with_fields(
+        "Создаёт услугу каталога.",
+        ServiceCreate,
+    ),
 )
 async def create_service(
     body: ServiceCreate, mngr: ServiceMngr = Depends(get_service_mngr)
@@ -50,6 +55,10 @@ async def create_service(
     response_model=ServiceAdmin,
     dependencies=[Depends(require_perm("services.edit"))],
     summary="Изменить услугу",
+    description=with_fields(
+        "Частично обновляет услугу — передаются только изменяемые поля.",
+        ServicePatch,
+    ),
 )
 async def update_service(
     service_id: int,

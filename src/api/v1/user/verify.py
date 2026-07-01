@@ -9,6 +9,7 @@ from dependencies.mail import VerifySvc, get_verify_svc
 from dependencies.ratelimit import LimitKind, rate_limit
 from models.user import UserModel
 from schemas.auth import Account, EmailVerifyConfirm
+from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -40,7 +41,10 @@ async def request_email(
     "/me/verify/email/confirm",
     response_model=Account,
     summary="Подтвердить email",
-    description="Подтверждает email по 4-значному коду из письма (код в теле).",
+    description=with_fields(
+        "Подтверждает email по 4-значному коду из письма (код в теле).",
+        EmailVerifyConfirm,
+    ),
     dependencies=[Depends(rate_limit("mail.verify.confirm", LimitKind.MAIL))],
 )
 async def confirm_email(

@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, status
 from dependencies.catalog import SystemScriptsMngr, get_script_mngr
 from dependencies.rbac import require_perm
 from schemas.lua import LuaScript, LuaScriptUpload, LuaScriptPatch
+from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -30,9 +31,12 @@ async def list_scripts(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("lua.edit"))],
     summary="Загрузить Lua-скрипт",
-    description=(
-        "Сохраняет тело скрипта в монтируемую папку под сгенерированным именем "
-        "и регистрирует в БД."
+    description=with_fields(
+        (
+            "Сохраняет тело скрипта в монтируемую папку под сгенерированным именем "
+            "и регистрирует в БД."
+        ),
+        LuaScriptUpload,
     ),
 )
 async def upload_script(
@@ -48,6 +52,10 @@ async def upload_script(
     response_model=LuaScript,
     dependencies=[Depends(require_perm("lua.edit"))],
     summary="Изменить тело Lua-скрипта",
+    description=with_fields(
+        "Заменяет тело существующего Lua-скрипта.",
+        LuaScriptPatch,
+    ),
 )
 async def edit_script(
     script_id: int,

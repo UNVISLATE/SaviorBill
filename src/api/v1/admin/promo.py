@@ -20,6 +20,7 @@ from schemas.promo import (
     PromoCodeBatch,
 )
 from utils.pagination import paginate
+from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -43,6 +44,10 @@ async def list_catalogs(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("promo.edit"))],
     summary="Создать каталог промокодов",
+    description=with_fields(
+        "Создаёт каталог промокодов с параметрами выпуска.",
+        PromoCatalogCreate,
+    ),
 )
 async def create_catalog(
     body: PromoCatalogCreate,
@@ -58,6 +63,10 @@ async def create_catalog(
     response_model=PromoCatalog,
     dependencies=[Depends(require_perm("promo.edit"))],
     summary="Изменить каталог промокодов",
+    description=with_fields(
+        "Частично обновляет каталог промокодов — передаются только изменяемые поля.",
+        PromoCatalogPatch,
+    ),
 )
 async def update_catalog(
     catalog_id: int,
@@ -113,6 +122,10 @@ async def list_codes(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("promo.edit"))],
     summary="Выпустить пачку кодов",
+    description=with_fields(
+        "Выпускает пачку промокодов в каталог (по списку или по количеству).",
+        PromoCodeBatch,
+    ),
 )
 async def create_codes(
     body: PromoCodeBatch,

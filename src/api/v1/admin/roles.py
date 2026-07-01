@@ -10,6 +10,7 @@ from dependencies.db import get_db_session
 from dependencies.rbac import require_perm
 from models.roles import Role as RoleModel
 from schemas.role import PermsCatalog, RoleCreate, Role, RolePatch
+from utils.apidoc import with_fields
 from utils.rbac import all_perms, perms_tree
 
 router = APIRouter()
@@ -46,6 +47,10 @@ async def list_roles(session: AsyncSession = Depends(get_db_session)) -> list[Ro
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("roles.edit"))],
     summary="Создать роль",
+    description=with_fields(
+        "Создаёт роль с набором прав.",
+        RoleCreate,
+    ),
 )
 async def create_role(
     body: RoleCreate, session: AsyncSession = Depends(get_db_session)
@@ -63,6 +68,10 @@ async def create_role(
     response_model=Role,
     dependencies=[Depends(require_perm("roles.edit"))],
     summary="Изменить роль",
+    description=with_fields(
+        "Частично обновляет роль — передаются только изменяемые поля.",
+        RolePatch,
+    ),
 )
 async def update_role(
     role_id: int, body: RolePatch, session: AsyncSession = Depends(get_db_session)

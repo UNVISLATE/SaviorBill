@@ -17,6 +17,7 @@ from schemas.page import Page
 from schemas.payments import PaymentAdmin
 from schemas.user import OAuthConnAdmin, User, UserDetail, UserPatch
 from utils.pagination import paginate
+from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -89,7 +90,10 @@ async def user_detail(
     response_model=User,
     dependencies=[Depends(require_perm("users.edit"))],
     summary="Редактировать пользователя",
-    description="Меняет только переданные поля (email, активность, роль, балансы).",
+    description=with_fields(
+        "Меняет только переданные поля (email, активность, роль, балансы).",
+        UserPatch,
+    ),
 )
 async def edit_user(
     user_id: int,

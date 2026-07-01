@@ -12,6 +12,7 @@ from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
 from enums import UsvcStatus, PromoKind
 from models.user import UserModel
 from schemas.promo import PromoRedeem, PromoResult
+from utils.apidoc import with_fields
 
 router = APIRouter(prefix="/api/v1/promocodes", tags=["promocodes"])
 
@@ -20,10 +21,11 @@ router = APIRouter(prefix="/api/v1/promocodes", tags=["promocodes"])
     "/redeem",
     response_model=PromoResult,
     summary="Активировать промокод",
-    description=(
+    description=with_fields(
         "Действие определяет каталог кода: `bonus` — зачисление на бонусный "
         "баланс; `service` — бесплатная выдача услуги. Скидочный код (`discount`) "
-        "так не активируется — его передают в поле `promocode` при заказе услуги."
+        "так не активируется — его передают в поле `promocode` при заказе услуги.",
+        PromoRedeem,
     ),
     dependencies=[Depends(rate_limit("promocodes.redeem", LimitKind.SENSITIVE))],
 )

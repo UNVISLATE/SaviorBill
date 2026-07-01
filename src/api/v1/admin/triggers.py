@@ -9,6 +9,7 @@ from dependencies.triggers import get_trigger_mngr
 from integrations.triggers import ACTION_KEYS, ALL_EVENTS
 from models.triggers import TriggerMngr
 from schemas.trigger import Trigger, TriggerCreate, TriggerMeta, TriggerPatch
+from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -43,7 +44,10 @@ async def list_triggers(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("triggers.edit"))],
     summary="Создать триггер",
-    description="Связывает доменное событие с действием (email/lua) и условием.",
+    description=with_fields(
+        "Связывает доменное событие с действием (email/lua) и условием.",
+        TriggerCreate,
+    ),
 )
 async def create_trigger(
     body: TriggerCreate,
@@ -59,6 +63,10 @@ async def create_trigger(
     response_model=Trigger,
     dependencies=[Depends(require_perm("triggers.edit"))],
     summary="Изменить триггер",
+    description=with_fields(
+        "Частично обновляет триггер — передаются только изменяемые поля.",
+        TriggerPatch,
+    ),
 )
 async def patch_trigger(
     trig_id: int,

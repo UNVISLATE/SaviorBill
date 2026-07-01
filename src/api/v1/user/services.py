@@ -16,6 +16,7 @@ from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderCreate, Order
 from schemas.page import Page
+from utils.apidoc import with_fields
 from utils.pagination import paginate
 
 router = APIRouter()
@@ -45,9 +46,10 @@ async def my_services(
     response_model=Order,
     status_code=status.HTTP_201_CREATED,
     summary="Заказать услугу с баланса",
-    description=(
+    description=with_fields(
         "Списывает стоимость услуги с баланса (сначала бонусы) и сразу её "
-        "выдаёт. Для оплаты через платёжку используйте /user/purchases/create."
+        "выдаёт. Для оплаты через платёжку используйте /user/purchases/create.",
+        OrderCreate,
     ),
     dependencies=[Depends(rate_limit("services.create", LimitKind.SENSITIVE))],
 )

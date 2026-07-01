@@ -13,6 +13,7 @@ from schemas.email import (
     EmailTemplatePatch,
     EmailTemplateUpload,
 )
+from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -36,9 +37,12 @@ async def list_templates(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("email.edit"))],
     summary="Создать email-шаблон",
-    description=(
-        "Сохраняет тело письма (jinja2) в монтируемую папку под сгенерированным "
-        "именем и регистрирует шаблон в БД."
+    description=with_fields(
+        (
+            "Сохраняет тело письма (jinja2) в монтируемую папку под сгенерированным "
+            "именем и регистрирует шаблон в БД."
+        ),
+        EmailTemplateUpload,
     ),
 )
 async def create_template(
@@ -55,6 +59,10 @@ async def create_template(
     response_model=EmailTemplate,
     dependencies=[Depends(require_perm("email.edit"))],
     summary="Изменить поля email-шаблона",
+    description=with_fields(
+        "Частично обновляет email-шаблон — передаются только изменяемые поля.",
+        EmailTemplatePatch,
+    ),
 )
 async def patch_template(
     tpl_id: int,
@@ -71,6 +79,10 @@ async def patch_template(
     response_model=EmailTemplate,
     dependencies=[Depends(require_perm("email.edit"))],
     summary="Заменить тело email-шаблона",
+    description=with_fields(
+        "Заменяет тело (jinja2) существующего email-шаблона.",
+        EmailBodyPatch,
+    ),
 )
 async def replace_body(
     tpl_id: int,

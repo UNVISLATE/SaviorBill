@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, status
 from dependencies.catalog import ServiceCatalogsMngr, get_catalog_mngr
 from dependencies.rbac import require_perm
 from schemas.catalog import CatalogRequest, CatalogResponse, CatalogPatch
+from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -30,6 +31,11 @@ async def list_catalogs(
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("catalogs.edit"))],
     summary="Создать каталог",
+    description=with_fields(
+        "Создаёт каталог услуг. Каталог может быть подкаталогом другого "
+        "(`parent_id`) или корневым.",
+        CatalogRequest,
+    ),
 )
 async def create_catalog(
     body: CatalogRequest, mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr)
@@ -44,6 +50,10 @@ async def create_catalog(
     response_model=CatalogResponse,
     dependencies=[Depends(require_perm("catalogs.edit"))],
     summary="Изменить каталог",
+    description=with_fields(
+        "Частично обновляет каталог — передаются только изменяемые поля.",
+        CatalogPatch,
+    ),
 )
 async def update_catalog(
     catalog_id: int,

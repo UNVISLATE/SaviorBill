@@ -23,6 +23,7 @@ from models.user_payments import UserPaymentsModel
 from schemas.page import Page
 from schemas.payment_provider import PayProviderPublic
 from schemas.payments import PaymentCreate, Payment
+from utils.apidoc import with_fields
 from utils.pagination import paginate
 
 router = APIRouter()
@@ -70,10 +71,12 @@ async def my_purchases(
     response_model=Payment,
     status_code=status.HTTP_201_CREATED,
     summary="Создать платёж",
-    description=(
+    description=with_fields(
         "Инициализирует платёж через провайдера. В `public_data` ответа "
         "обычно лежит ссылка для редиректа на оплату. При `target=service` "
-        "услуга будет выдана автоматически по успешному колбэку."
+        "услуга будет выдана автоматически по успешному колбэку (тогда "
+        "обязателен `service_id`).",
+        PaymentCreate,
     ),
     dependencies=[Depends(rate_limit("purchases.create", LimitKind.SENSITIVE))],
 )

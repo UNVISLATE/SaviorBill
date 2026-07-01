@@ -14,6 +14,7 @@ from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
 from integrations.triggers import TriggerDispatcher, TriggerEvent
 from schemas.auth import Login, Refresh, Reg, TokenPair
+from utils.apidoc import with_fields
 from utils.sec import jwt as jwtu
 from utils.sec.pwd import hash_pass, needs_rehash, verify_pass
 
@@ -24,6 +25,14 @@ router = APIRouter()
     "/register",
     response_model=TokenPair,
     status_code=status.HTTP_201_CREATED,
+    summary="Регистрация локального аккаунта",
+    description=with_fields(
+        "Создаёт локальный аккаунт и сразу выдаёт пару токенов (access/refresh). "
+        "Логин и email должны быть свободны. Если передан реферальный код "
+        "существующего пользователя — новый аккаунт привязывается к нему как "
+        "приглашённый.",
+        Reg,
+    ),
     dependencies=[Depends(rate_limit("auth.register", LimitKind.AUTH))],
 )
 async def register(
@@ -54,6 +63,12 @@ async def register(
 @router.post(
     "/login",
     response_model=TokenPair,
+    summary="Вход по логину и паролю",
+    description=with_fields(
+        "Проверяет логин/пароль и выдаёт новую пару токенов. Заблокированный "
+        "аккаунт (роль banned) получает 403.",
+        Login,
+    ),
     dependencies=[Depends(rate_limit("auth.login", LimitKind.AUTH))],
 )
 async def login(
@@ -78,6 +93,12 @@ async def login(
 @router.post(
     "/refresh",
     response_model=TokenPair,
+    summary="Ротация пары токенов",
+    description=with_fields(
+        "Выдаёт новую пару токенов по действующему refresh-токену; старый "
+        "refresh-токен отзывается.",
+        Refresh,
+    ),
     dependencies=[Depends(rate_limit("auth.refresh", LimitKind.AUTH))],
 )
 async def refresh(
@@ -90,7 +111,16 @@ async def refresh(
     return pair
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(
+    "/logout",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Выход (отзыв refresh-токена)",
+    description=with_fields(
+        "Отзывает переданный refresh-токен. Возвращает 204 даже если токен уже "
+        "недействителен (идемпотентно).",
+        Refresh,
+    ),
+)
 async def logout(
     body: Refresh,
     tokens: TokenSvc = Depends(get_token_svc),
