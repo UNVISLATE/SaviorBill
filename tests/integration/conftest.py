@@ -229,7 +229,7 @@ async def seed(engine: AsyncEngine):
             :arg secret: общий секрет для проверки подписи в демо-колбэке.
             :return: slug созданного провайдера.
             """
-            slug = uniq("pay")
+            slug = uniq("prov")
             async with engine.begin() as c:
                 init_id = await c.scalar(
                     text(
