@@ -22,15 +22,30 @@ def upgrade() -> None:
         sa.Column("tenant_id", sa.Integer(), nullable=True),
         sa.Column("profile_id", sa.Integer(), nullable=True),
         sa.Column("action", sa.String(length=100), nullable=False),
-        sa.Column("meta", sa.JSON(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("meta", sa.JSON(), server_default=sa.text("'{}'"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_table(
         "email_templates",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("slug", sa.String(length=64), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=True),
         sa.Column("subject", sa.String(length=255), nullable=False),
@@ -47,8 +62,18 @@ def upgrade() -> None:
     op.create_table(
         "lua_scripts",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("slug", sa.String(length=64), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=True),
         sa.Column("kind", sa.String(length=16), nullable=False),
@@ -62,8 +87,18 @@ def upgrade() -> None:
     op.create_table(
         "oauth_cfg",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("slug", sa.String(length=32), nullable=False),
         sa.Column("title", sa.String(length=128), nullable=True),
         sa.Column("enabled", sa.Boolean(), nullable=False),
@@ -75,26 +110,46 @@ def upgrade() -> None:
         sa.Column("userinfo_url", sa.String(length=512), nullable=True),
         sa.Column("jwks_uri", sa.String(length=512), nullable=True),
         sa.Column("scopes", sa.String(length=255), nullable=False),
-        sa.Column("extra", sa.JSON(), nullable=False),
+        sa.Column("extra", sa.JSON(), server_default=sa.text("'{}'"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(op.f("ix_oauth_cfg_slug"), "oauth_cfg", ["slug"], unique=True)
     op.create_table(
         "roles",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(length=64), nullable=False),
         sa.Column("title", sa.String(length=128), nullable=True),
         sa.Column("is_system", sa.Boolean(), nullable=False),
-        sa.Column("perms", sa.JSON(), nullable=False),
+        sa.Column("perms", sa.JSON(), server_default=sa.text("'{}'"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("name"),
     )
     op.create_table(
         "settings",
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("key", sa.String(length=128), nullable=False),
         sa.Column("value", sa.Text(), nullable=True),
         sa.Column("is_secret", sa.Boolean(), nullable=False),
@@ -103,8 +158,18 @@ def upgrade() -> None:
     op.create_table(
         "svc_catalogs",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("slug", sa.String(length=64), nullable=False),
         sa.Column("parent_id", sa.Integer(), nullable=True),
@@ -122,15 +187,25 @@ def upgrade() -> None:
     op.create_table(
         "system_media",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("kind", sa.String(length=16), nullable=False),
         sa.Column("path", sa.String(length=512), nullable=False),
         sa.Column("backend", sa.String(length=8), nullable=False),
         sa.Column("mime", sa.String(length=128), nullable=True),
         sa.Column("size", sa.Integer(), nullable=True),
         sa.Column("owner_id", sa.Integer(), nullable=True),
-        sa.Column("meta", sa.JSON(), nullable=False),
+        sa.Column("meta", sa.JSON(), server_default=sa.text("'{}'"), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(
@@ -139,13 +214,23 @@ def upgrade() -> None:
     op.create_table(
         "triggers",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(length=128), nullable=True),
         sa.Column("event", sa.String(length=64), nullable=False),
         sa.Column("action", sa.String(length=32), nullable=False),
-        sa.Column("config", sa.JSON(), nullable=False),
-        sa.Column("cond", sa.JSON(), nullable=False),
+        sa.Column("config", sa.JSON(), server_default=sa.text("'{}'"), nullable=False),
+        sa.Column("cond", sa.JSON(), server_default=sa.text("'{}'"), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -153,8 +238,18 @@ def upgrade() -> None:
     op.create_table(
         "accounts",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("login", sa.String(length=64), nullable=False),
         sa.Column("email", sa.String(length=255), nullable=True),
         sa.Column("pass_hash", sa.String(length=255), nullable=True),
@@ -183,8 +278,18 @@ def upgrade() -> None:
     op.create_table(
         "pay_providers",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("slug", sa.String(length=64), nullable=False),
         sa.Column("title", sa.String(length=128), nullable=True),
         sa.Column("enabled", sa.Boolean(), nullable=False),
@@ -192,7 +297,7 @@ def upgrade() -> None:
         sa.Column("currency", sa.String(length=8), nullable=False),
         sa.Column("init_script_id", sa.Integer(), nullable=True),
         sa.Column("cb_script_id", sa.Integer(), nullable=True),
-        sa.Column("extra", sa.JSON(), nullable=False),
+        sa.Column("extra", sa.JSON(), server_default=sa.text("'{}'"), nullable=False),
         sa.ForeignKeyConstraint(
             ["cb_script_id"], ["lua_scripts.id"], ondelete="SET NULL"
         ),
@@ -219,8 +324,18 @@ def upgrade() -> None:
     op.create_table(
         "services",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("slug", sa.String(length=64), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
@@ -234,8 +349,10 @@ def upgrade() -> None:
         sa.Column("currency", sa.String(length=8), nullable=False),
         sa.Column("delivery", sa.String(length=8), nullable=False),
         sa.Column("lua_script_id", sa.Integer(), nullable=True),
-        sa.Column("params", sa.JSON(), nullable=False),
-        sa.Column("settings", sa.JSON(), nullable=False),
+        sa.Column("params", sa.JSON(), server_default=sa.text("'{}'"), nullable=False),
+        sa.Column(
+            "settings", sa.JSON(), server_default=sa.text("'{}'"), nullable=False
+        ),
         sa.Column("image", sa.String(length=512), nullable=True),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.ForeignKeyConstraint(
@@ -256,8 +373,18 @@ def upgrade() -> None:
     op.create_table(
         "digi_keys",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("service_id", sa.Integer(), nullable=False),
         sa.Column("value", sa.String(length=512), nullable=False),
         sa.Column("order_id", sa.Integer(), nullable=True),
@@ -272,13 +399,23 @@ def upgrade() -> None:
     op.create_table(
         "oauth_conns",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("account_id", sa.Integer(), nullable=False),
         sa.Column("provider", sa.String(length=32), nullable=False),
         sa.Column("subject", sa.String(length=255), nullable=False),
         sa.Column("email", sa.String(length=255), nullable=True),
-        sa.Column("raw", sa.JSON(), nullable=False),
+        sa.Column("raw", sa.JSON(), server_default=sa.text("'{}'"), nullable=False),
         sa.ForeignKeyConstraint(["account_id"], ["accounts.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("provider", "subject", name="uq_oauth_provider_subject"),
@@ -292,10 +429,24 @@ def upgrade() -> None:
     op.create_table(
         "payments",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("public_data", sa.JSON(), nullable=False),
-        sa.Column("private_data", sa.JSON(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "public_data", sa.JSON(), server_default=sa.text("'{}'"), nullable=False
+        ),
+        sa.Column(
+            "private_data", sa.JSON(), server_default=sa.text("'{}'"), nullable=False
+        ),
         sa.Column("account_id", sa.Integer(), nullable=False),
         sa.Column("provider", sa.String(length=64), nullable=False),
         sa.Column("amount", sa.Numeric(precision=18, scale=2), nullable=False),
@@ -324,8 +475,18 @@ def upgrade() -> None:
     op.create_table(
         "promo_catalogs",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("slug", sa.String(length=64), nullable=False),
         sa.Column("parent_id", sa.Integer(), nullable=True),
@@ -339,8 +500,12 @@ def upgrade() -> None:
         sa.Column("discount_type", sa.String(length=8), nullable=False),
         sa.Column("service_id", sa.Integer(), nullable=True),
         sa.Column("per_user", sa.Integer(), server_default="1", nullable=False),
-        sa.Column("settings", sa.JSON(), nullable=False),
-        sa.Column("conditions", sa.JSON(), nullable=False),
+        sa.Column(
+            "settings", sa.JSON(), server_default=sa.text("'{}'"), nullable=False
+        ),
+        sa.Column(
+            "conditions", sa.JSON(), server_default=sa.text("'{}'"), nullable=False
+        ),
         sa.Column("is_active", sa.Boolean(), nullable=False),
         sa.ForeignKeyConstraint(
             ["parent_id"], ["promo_catalogs.id"], ondelete="CASCADE"
@@ -360,10 +525,24 @@ def upgrade() -> None:
     op.create_table(
         "user_services",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("public_data", sa.JSON(), nullable=False),
-        sa.Column("private_data", sa.JSON(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "public_data", sa.JSON(), server_default=sa.text("'{}'"), nullable=False
+        ),
+        sa.Column(
+            "private_data", sa.JSON(), server_default=sa.text("'{}'"), nullable=False
+        ),
         sa.Column("account_id", sa.Integer(), nullable=False),
         sa.Column("service_id", sa.Integer(), nullable=False),
         sa.Column("payment_id", sa.Integer(), nullable=True),
@@ -380,7 +559,7 @@ def upgrade() -> None:
             server_default="0",
             nullable=False,
         ),
-        sa.Column("params", sa.JSON(), nullable=False),
+        sa.Column("params", sa.JSON(), server_default=sa.text("'{}'"), nullable=False),
         sa.Column("digikey_id", sa.Integer(), nullable=True),
         sa.Column("delivered_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("error", sa.String(length=512), nullable=True),
@@ -412,8 +591,18 @@ def upgrade() -> None:
     op.create_table(
         "promocodes",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("code", sa.String(length=64), nullable=False),
         sa.Column("catalog_id", sa.Integer(), nullable=False),
         sa.Column("max_uses", sa.Integer(), nullable=True),
@@ -432,8 +621,18 @@ def upgrade() -> None:
     op.create_table(
         "promo_uses",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("promocode_id", sa.Integer(), nullable=False),
         sa.Column("account_id", sa.Integer(), nullable=False),
         sa.Column("order_id", sa.Integer(), nullable=True),
