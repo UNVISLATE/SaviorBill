@@ -8,21 +8,61 @@ HTTP-вызовы идут на ``BASE_URL`` (контейнер billing), а с
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
+from typing import Any, TypeVar
 
 import httpx
 import pytest
 import pytest_asyncio
+import valkey.asyncio as valkey
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from utils.config import AppConfig
+from utils.luabus import LuaBus, LuaError
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")
 CALLBACK_SECRET = os.environ.get("PAY_CALLBACK_SECRET", "test-callback-secret")
+
+T = TypeVar("T")
+
+
+async def wait_until(
+    factory: Callable[[], Awaitable[T]],
+    predicate: Callable[[T], bool],
+    *,
+    timeout: float = 30.0,
+    interval: float = 0.25,
+) -> T:
+    """Опрашивать ``factory`` пока ``predicate`` не станет истинным либо не выйдет время.
+
+    Нужен для тестов против async-обработки (lua-воркер, billing-loop): на медленном
+    CI терминальное состояние наступает не мгновенно, поэтому вместо единичной
+    проверки статуса ждём его достижения.
+
+    :arg factory: корутина-фабрика, дающая свежий результат на каждой итерации.
+    :arg predicate: условие завершения ожидания над результатом factory.
+    :arg timeout: предел ожидания в секундах.
+    :arg interval: пауза между попытками в секундах.
+    :return: последний результат factory, удовлетворивший predicate.
+    :raises AssertionError: если за timeout условие не выполнено.
+    """
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + timeout
+    last: Any = None
+    while True:
+        last = await factory()
+        if predicate(last):
+            return last
+        if loop.time() >= deadline:
+            raise AssertionError(
+                f"wait_until: условие не выполнено за {timeout}s (последнее={last!r})"
+            )
+        await asyncio.sleep(interval)
 
 
 @pytest.fixture(scope="session")
@@ -43,6 +83,34 @@ async def engine(cfg: AppConfig) -> AsyncIterator[AsyncEngine]:
 async def http() -> AsyncIterator[httpx.AsyncClient]:
     async with httpx.AsyncClient(base_url=BASE_URL, timeout=30) as client:
         yield client
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
+async def worker_ready(cfg: AppConfig) -> AsyncIterator[None]:
+    """Прогреть lua-воркер до старта интеграционных тестов.
+
+    На холодном стеке consumer-группа воркера и его соединение готовы не мгновенно.
+    Гоняем тривиальную ``eval``-задачу через шину, пока воркер не ответит — так
+    убираем гонку «задача ушла раньше готовности воркера» на медленном CI.
+    """
+    vk = valkey.from_url(cfg.valkey_url, decode_responses=True)
+    bus = LuaBus(vk, cfg.LUA_TASK_STREAM, cfg.LUA_RESP_STREAM, default_timeout=5)
+    loop = asyncio.get_event_loop()
+    deadline = loop.time() + 60.0
+    try:
+        while True:
+            try:
+                res = await bus.call("eval", {"code": "return 1", "data": {}})
+                if res.get("result") == 1:
+                    break
+            except LuaError:
+                pass
+            if loop.time() >= deadline:
+                raise RuntimeError("lua-воркер не готов за 60s — прерываю тесты")
+            await asyncio.sleep(0.5)
+        yield
+    finally:
+        await vk.aclose()
 
 
 def uniq(prefix: str) -> str:

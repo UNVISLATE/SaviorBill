@@ -3,6 +3,8 @@
 import pytest
 from sqlalchemy import text
 
+from conftest import wait_until
+
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 CALLBACK_SECRET = "test-callback-secret"
@@ -92,7 +94,15 @@ async def test_payment_topup_and_callback(http, new_user, seed):
         json={"payment_id": pid, "success": True, "sign": CALLBACK_SECRET},
     )
     assert r.status_code == 200, r.text
-    assert r.json()["status"] == "paid"
+
+    async def _fetch_status():
+        resp = await http.get("/api/v1/user/purchases", headers=hdr)
+        resp.raise_for_status()
+        row = next((p for p in resp.json() if p["id"] == pid), None)
+        return row and row["status"]
+
+    status_val = await wait_until(_fetch_status, lambda s: s == "paid", timeout=30)
+    assert status_val == "paid"
 
 
 async def test_callback_bad_signature_rejected(http, new_user, seed):
