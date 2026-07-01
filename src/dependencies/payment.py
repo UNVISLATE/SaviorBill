@@ -123,7 +123,7 @@ class PayMngr:
 
         try:
             res = await self.runner.run_payment(
-                script.filename,
+                script,
                 PayAction.CREATE,
                 acc,
                 payment,
@@ -157,7 +157,7 @@ class PayMngr:
         prov = await self._provider(provider_slug)
         script = await self._script(prov, PayAction.CALLBACK)
         res = await self.runner.run_payment(
-            script.filename,
+            script,
             PayAction.CALLBACK,
             _blank_account(),
             _blank_payment(prov.slug),
@@ -207,7 +207,7 @@ class PayMngr:
         acc = await self.s.get(UserModel, payment.account_id)
 
         res = await self.runner.run_payment(
-            script.filename,
+            script,
             PayAction.CHECK,
             acc,
             payment,
@@ -242,7 +242,7 @@ class PayMngr:
         acc = await self.s.get(UserModel, payment.account_id)
 
         res = await self.runner.run_payment(
-            script.filename,
+            script,
             PayAction.REFUND,
             acc,
             payment,

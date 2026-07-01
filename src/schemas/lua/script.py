@@ -23,6 +23,10 @@ class LuaScript(BaseModel):
         default_factory=list,
         description="Поддерживаемые действия скрипта (для payment: create/callback/…)",
     )
+    settings: dict = Field(
+        default_factory=dict,
+        description="Настройки шаблона (ctx.lua.settings.*), общие для всех услуг/провайдеров скрипта",
+    )
     is_active: bool
 
     @classmethod
@@ -57,18 +61,31 @@ class LuaScriptUpload(BaseModel):
         max_length=100_000,
         description="Тело Lua-скрипта (модуль с функцией handle(ctx)), обязательно",
     )
+    settings: dict = Field(
+        default_factory=dict,
+        description=(
+            "Настройки шаблона (ctx.lua.settings.*): общий JSON, разделяемый всеми "
+            "услугами/провайдерами скрипта — напр. учётные данные внешней панели "
+            "(опционально)"
+        ),
+    )
     description: str | None = Field(
         default=None, max_length=2048, description="Описание (опционально)"
     )
 
 
 class LuaScriptPatch(BaseModel):
-    """Замена тела существующего Lua-скрипта."""
+    """Обновление существующего Lua-скрипта (передавайте только изменяемые поля)."""
 
-    code: str = Field(
+    code: str | None = Field(
+        default=None,
         min_length=1,
         max_length=100_000,
-        description="Новое тело Lua-скрипта (обязательно)",
+        description="Новое тело Lua-скрипта (опционально)",
+    )
+    settings: dict | None = Field(
+        default=None,
+        description="Новые настройки шаблона (ctx.lua.settings.*), заменяют целиком (опционально)",
     )
 
 

@@ -14,7 +14,10 @@
 --   }
 -- handle возвращает { public = {...}, private = {...}, state, expires_at }.
 --
--- Настройки услуги (ctx.service.settings.*), задаются администратором в услуге:
+-- Настройки берутся из шаблона (ctx.lua.settings.*) и/или услуги
+-- (ctx.service.settings.*). Настройки шаблона общие для всех услуг, использующих
+-- этот скрипт (удобно для учётных данных панели), настройки услуги их дополняют
+-- и переопределяют:
 --   marzban_domain   — домен панели Marzban (без схемы), напр. "panel.example.com";
 --   marzban_user     — логин администратора панели;
 --   marzban_pass     — пароль администратора панели;
@@ -30,9 +33,19 @@ local M = {}
 
 -- --- helpers ---------------------------------------------------------------
 
+-- Общие настройки шаблона (ctx.lua.settings) переопределяются настройками
+-- конкретной услуги (ctx.service.settings).
 local function settings(ctx)
-  local svc = ctx.service or {}
-  return svc.settings or {}
+  local out = {}
+  local tpl = (ctx.lua or {}).settings or {}
+  for k, v in pairs(tpl) do
+    out[k] = v
+  end
+  local svc = (ctx.service or {}).settings or {}
+  for k, v in pairs(svc) do
+    out[k] = v
+  end
+  return out
 end
 
 local function host(s)
@@ -42,7 +55,7 @@ end
 -- Срок действия (сек): service.duration, иначе settings.duration.
 local function duration_seconds(ctx)
   local svc = ctx.service or {}
-  return tonumber(svc.duration) or tonumber((svc.settings or {}).duration) or 0
+  return tonumber(svc.duration) or tonumber(settings(ctx).duration) or 0
 end
 
 -- Целевой unix-момент истечения: продлеваем от текущего expires_at, если он в
@@ -141,7 +154,7 @@ end
 local function do_create(ctx)
   local s = settings(ctx)
   assert(s.marzban_domain and s.marzban_user and s.marzban_pass,
-    "marzban: нужны marzban_domain/marzban_user/marzban_pass в settings услуги")
+    "marzban: нужны marzban_domain/marzban_user/marzban_pass в настройках шаблона или услуги")
 
   local token = get_token(s)
   local username = target_username(ctx)

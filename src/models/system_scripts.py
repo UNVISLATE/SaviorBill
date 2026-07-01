@@ -62,6 +62,12 @@ class SystemScriptsModel(Base):
     actions: Mapped[list] = mapped_column(
         JSON, default=list, server_default="[]", nullable=False
     )
+    # Настройки самого шаблона (ctx.lua.settings.*). Задаются один раз на скрипт
+    # и разделяются всеми услугами/провайдерами, которые его используют (напр.
+    # учётные данные внешней панели), чтобы не дублировать их в каждой услуге.
+    settings: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 
@@ -109,6 +115,7 @@ class SystemScriptsMngr:
             sha256=hashlib.sha256(data.code.encode()).hexdigest(),
             description=data.description,
             actions=actions,
+            settings=dict(getattr(data, "settings", None) or {}),
         )
         self.s.add(row)
         await self.s.flush()
@@ -145,15 +152,28 @@ class SystemScriptsMngr:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "недопустимый путь файла")
         return target
 
-    async def update_code(self, script_id: int, code: str) -> SystemScriptsModel:
-        """Перезаписать тело существующего скрипта."""
+    async def patch(self, script_id: int, data) -> SystemScriptsModel:
+        """Обновить тело и/или настройки скрипта (только переданные поля).
+
+        :arg script_id: id скрипта.
+        :arg data: схема с опциональными ``code`` и ``settings``.
+        :return: обновлённая запись.
+        """
         row = await self.by_id(script_id)
         if row is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "скрипт не найден")
-        target = self._safe_target(row.filename)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(code, encoding="utf-8")
-        row.sha256 = hashlib.sha256(code.encode()).hexdigest()
+
+        code = getattr(data, "code", None)
+        if code is not None:
+            target = self._safe_target(row.filename)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(code, encoding="utf-8")
+            row.sha256 = hashlib.sha256(code.encode()).hexdigest()
+
+        settings = getattr(data, "settings", None)
+        if settings is not None:
+            row.settings = dict(settings)
+
         await self.s.flush()
         return row
 

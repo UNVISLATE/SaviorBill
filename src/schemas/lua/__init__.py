@@ -16,6 +16,7 @@ from .payment import LuaPayment, LuaProvider
 from .request import LuaRequest
 from .trigger import LuaTrigger
 from .script import LuaScript, LuaScriptUpload, LuaScriptPatch
+from .meta import LuaMeta
 
 __all__ = [
     "LuaUser",
@@ -28,4 +29,5 @@ __all__ = [
     "LuaScript",
     "LuaScriptUpload",
     "LuaScriptPatch",
+    "LuaMeta",
 ]

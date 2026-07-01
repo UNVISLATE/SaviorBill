@@ -51,9 +51,9 @@ async def upload_script(
     "/lua/{script_id}",
     response_model=LuaScript,
     dependencies=[Depends(require_perm("lua.edit"))],
-    summary="Изменить тело Lua-скрипта",
+    summary="Изменить Lua-скрипт (тело и/или настройки)",
     description=with_fields(
-        "Заменяет тело существующего Lua-скрипта.",
+        "Обновляет тело и/или настройки существующего Lua-скрипта.",
         LuaScriptPatch,
     ),
 )
@@ -62,7 +62,7 @@ async def edit_script(
     body: LuaScriptPatch,
     mngr: SystemScriptsMngr = Depends(get_script_mngr),
 ) -> LuaScript:
-    row = await mngr.update_code(script_id, body.code)
+    row = await mngr.patch(script_id, body)
     await mngr.s.commit()
     return LuaScript.from_model(row)
 

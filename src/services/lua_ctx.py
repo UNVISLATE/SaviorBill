@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from enums import ScriptKind
 from schemas.lua import (
+    LuaMeta,
     LuaPayment,
     LuaProvider,
     LuaRequest,
@@ -19,12 +20,20 @@ from schemas.lua import (
 from utils.luabus import LuaBus
 
 
+def _lua_meta(script) -> dict | None:  # noqa: ANN001 — SystemScriptsModel | None
+    """Собрать объект ``ctx.lua`` из модели скрипта (или ``None``)."""
+    if script is None:
+        return None
+    return LuaMeta.from_model(script).model_dump(mode="json")
+
+
 def build_service_ctx(
     action: str,
     acc,  # noqa: ANN001 — UserModel
     usvc,  # noqa: ANN001 — UserServicesModel
     service,  # noqa: ANN001 — ServiceModel
     payment=None,  # noqa: ANN001 — UserPaymentsModel | None
+    script=None,  # noqa: ANN001 — SystemScriptsModel | None
 ) -> dict:
     """Контекст скрипта услуги.
 
@@ -33,10 +42,12 @@ def build_service_ctx(
     :arg usvc: выданная услуга (данные попадают в ``user.service``).
     :arg service: эталонная услуга.
     :arg payment: платёж, по которому выдана услуга (опционально).
+    :arg script: модель шаблона — метаданные и настройки в ``lua.*`` (опционально).
     :return: словарь контекста для Lua.
     """
     ctx = {
         "action": action,
+        "lua": _lua_meta(script),
         "user": LuaUser.from_model(acc, usvc).model_dump(mode="json"),
         "service": LuaService.from_model(service).model_dump(mode="json"),
         "payment": (
@@ -56,6 +67,7 @@ def build_payment_ctx(
     secrets: dict,
     request: LuaRequest | None = None,
     return_url: str | None = None,
+    script=None,  # noqa: ANN001 — SystemScriptsModel | None
 ) -> dict:
     """Контекст платёжного скрипта.
 
@@ -66,11 +78,15 @@ def build_payment_ctx(
     :arg secrets: расшифрованные секреты провайдера.
     :arg request: данные входящего запроса (только для callback).
     :arg return_url: ссылка возврата (для create).
+    :arg script: модель шаблона — метаданные и настройки в ``lua.*`` (опционально).
+        Секреты провайдера остаются в ``payment.provider_data`` и не конфликтуют
+        с ``lua.settings``.
     :return: словарь контекста для Lua.
     """
     prov = LuaProvider.from_model(provider, secrets)
     ctx = {
         "action": action,
+        "lua": _lua_meta(script),
         "user": LuaUser.from_model(acc).model_dump(mode="json"),
         "payment": LuaPayment.from_model(
             payment, provider=prov, return_url=return_url
@@ -81,17 +97,22 @@ def build_payment_ctx(
     return ctx
 
 
-def build_trigger_ctx(event: str, config: dict, data: dict) -> dict:
+def build_trigger_ctx(
+    event: str, config: dict, data: dict, script=None
+) -> dict:  # noqa: ANN001
     """Контекст триггерного скрипта.
 
     :arg event: событие-условие.
     :arg config: полная конфигурация действия триггера.
     :arg data: унифицированные данные события (кто/что запустил).
+    :arg script: модель шаблона — метаданные и настройки в ``lua.*`` (опционально).
     :return: словарь контекста для Lua.
     """
-    return LuaTrigger(event=event, config=config or {}, data=data or {}).model_dump(
+    ctx = LuaTrigger(event=event, config=config or {}, data=data or {}).model_dump(
         mode="json"
     )
+    ctx["lua"] = _lua_meta(script)
+    return ctx
 
 
 class LuaRunner:
@@ -114,15 +135,19 @@ class LuaRunner:
         )
 
     async def run_service(
-        self, script_filename: str, action, acc, usvc, service, payment=None
+        self, script, action, acc, usvc, service, payment=None
     ) -> dict:  # noqa: ANN001
-        """Собрать контекст услуги и исполнить скрипт."""
-        ctx = build_service_ctx(action, acc, usvc, service, payment)
-        return await self.run(script_filename, ScriptKind.SERVICE, ctx)
+        """Собрать контекст услуги и исполнить скрипт.
+
+        :arg script: модель скрипта (``SystemScriptsModel``) — источник имени файла
+            и данных ``lua.*``/``lua.settings.*``.
+        """
+        ctx = build_service_ctx(action, acc, usvc, service, payment, script)
+        return await self.run(script.filename, ScriptKind.SERVICE, ctx)
 
     async def run_payment(
         self,
-        script_filename: str,
+        script,  # noqa: ANN001 — SystemScriptsModel
         action,  # noqa: ANN001
         acc,
         payment,
@@ -133,16 +158,16 @@ class LuaRunner:
     ) -> dict:
         """Собрать контекст платежа и исполнить скрипт."""
         ctx = build_payment_ctx(
-            action, acc, payment, provider, secrets, request, return_url
+            action, acc, payment, provider, secrets, request, return_url, script
         )
-        return await self.run(script_filename, ScriptKind.PAYMENT, ctx)
+        return await self.run(script.filename, ScriptKind.PAYMENT, ctx)
 
     async def run_trigger(
-        self, script_filename: str, event: str, config: dict, data: dict
-    ) -> dict:
+        self, script, event: str, config: dict, data: dict
+    ) -> dict:  # noqa: ANN001
         """Собрать контекст триггера и исполнить скрипт."""
-        ctx = build_trigger_ctx(event, config, data)
-        return await self.run(script_filename, ScriptKind.TRIGGER, ctx)
+        ctx = build_trigger_ctx(event, config, data, script)
+        return await self.run(script.filename, ScriptKind.TRIGGER, ctx)
 
 
 __all__ = [

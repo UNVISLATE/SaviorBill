@@ -48,7 +48,7 @@ class LuaService(BaseIssuer):
             payment = await self.s.get(UserPaymentsModel, usvc.payment_id)
 
         res = await LuaRunner(self.bus).run_service(
-            script.filename, action, acc, usvc, service, payment
+            script, action, acc, usvc, service, payment
         )
         usvc.public_data = res.get("public") or {}
         usvc.private_data = res.get("private") or {}

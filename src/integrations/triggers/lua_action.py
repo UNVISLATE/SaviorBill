@@ -37,7 +37,7 @@ class LuaAction(BaseAction):
         if script is None or not script.is_active:
             return False
 
-        await LuaRunner(self.bus).run_trigger(script.filename, event, config, ctx)
+        await LuaRunner(self.bus).run_trigger(script, event, config, ctx)
         return True
 
 
