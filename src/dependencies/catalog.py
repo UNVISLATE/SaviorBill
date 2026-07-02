@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
 from models.service import ServiceMngr
+from models.service_attachment import ServiceAttachmentMngr
 from models.service_catalogs import ServiceCatalogsMngr
 from models.system_scripts import SystemScriptsMngr
 from utils.config import AppConfig
@@ -20,6 +21,12 @@ def _scripts_dir(request: Request) -> str:
 
 def get_service_mngr(session: AsyncSession = Depends(get_db_session)) -> ServiceMngr:
     return ServiceMngr(session)
+
+
+def get_attachment_mngr(
+    session: AsyncSession = Depends(get_db_session),
+) -> ServiceAttachmentMngr:
+    return ServiceAttachmentMngr(session)
 
 
 def get_catalog_mngr(
@@ -40,9 +47,11 @@ def get_storage(request: Request) -> StorageSvc:
 
 __all__ = [
     "ServiceMngr",
+    "ServiceAttachmentMngr",
     "ServiceCatalogsMngr",
     "SystemScriptsMngr",
     "get_service_mngr",
+    "get_attachment_mngr",
     "get_catalog_mngr",
     "get_script_mngr",
     "get_storage",

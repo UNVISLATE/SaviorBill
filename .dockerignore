@@ -1,0 +1,37 @@
+.git
+.github
+.venv
+venv
+env
+ENV
+**/__pycache__
+*.py[cod]
+*.egg-info
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+.coverage.*
+htmlcov
+.idea
+.vscode
+*.swp
+*.log
+*.pid
+
+# Рантайм-данные и примеры не нужны в образе billing.
+data
+examples
+
+# Другие сервисы собираются из своих контекстов.
+luaworker
+mediaworker
+
+# Документация и деплой-обвязка (кроме нужного pytest.ini) не нужны в образе.
+docs
+deploy/dev
+deploy/README.md
+deploy/Caddyfile
+deploy/setup.sh
+deploy/.env.example
+deploy/docker-compose.yml

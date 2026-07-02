@@ -1,100 +1,64 @@
-"""Загрузка медиа-файлов (/api/v1/media)."""
+"""Медиа: статус конвертации (/api/v1/media).
+
+Приём загрузки и отдача файлов вынесены в mediaworker (через Caddy). billing
+хранит только метаданные и отдаёт статус конвертации по токену.
+"""
 
 from __future__ import annotations
 
-from fastapi import (
-    APIRouter,
-    Depends,
-    File,
-    Form,
-    HTTPException,
-    Request,
-    UploadFile,
-    status,
-)
+import valkey.asyncio as valkey
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from dependencies.auth import get_current_acc
-from dependencies.media import get_media_mngr, get_storage_svc
+from dependencies.media import get_media_mngr
+from dependencies.valkey import get_valkey_client
 from models.system_media import SystemMediaMngr
-from models.user import UserModel
-from schemas.media import Media
+from schemas.media import MediaStatus
 from utils.config import AppConfig
-from utils.rbac import has_perm, reg_perm
-from utils.storage import StorageSvc
+from utils.mediabus import MediaBus
 
 router = APIRouter(prefix="/api/v1/media", tags=["media"])
 
-# Регистрируем оба права в каталоге (для админ-UI), т.к. проверяем их вручную.
-_PERM_SMALL = reg_perm("media.upload")
-_PERM_LARGE = reg_perm("media.uploadlarge")
 
-# Допустимые виды и их подпапки в хранилище.
-_FOLDER_BY_KIND = {
-    "image": "images",
-    "video": "videos",
-    "icon": "icons",
-    "avatar": "avatars",
-}
-
-
-@router.post(
-    "/upload",
-    response_model=Media,
-    status_code=status.HTTP_201_CREATED,
-    summary="Загрузить медиа-файл",
+@router.get(
+    "/status/{token}",
+    response_model=MediaStatus,
+    summary="Статус конвертации медиа",
     description=(
-        "Загрузка изображения/видео/иконки/аватарки. Маленькие файлы требуют "
-        "права `media.upload`, большие — `media.uploadlarge` (порог и потолок "
-        "размера заданы конфигом)."
+        "Опрос статуса обработки загруженного медиа по токену.\n\n"
+        "- `token`: идентификатор медиа/задачи, полученный при загрузке (в пути)\n"
+        "- ответ `state`: `processing` — в обработке; `ready` — готово (есть `url`); "
+        "`failed` — ошибка (см. `error`)."
     ),
 )
-async def upload_media(
+async def media_status(
     request: Request,
-    file: UploadFile = File(...),
-    kind: str = Form("image"),
-    acc: UserModel = Depends(get_current_acc),
-    storage: StorageSvc = Depends(get_storage_svc),
+    token: str,
+    vk: valkey.Valkey = Depends(get_valkey_client),
     mngr: SystemMediaMngr = Depends(get_media_mngr),
-) -> Media:
+) -> MediaStatus:
     cfg: AppConfig = request.app.state.settings
+    bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM)
 
-    if kind not in _FOLDER_BY_KIND:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "недопустимый вид медиа")
-
-    # Читаем с ограничением: на байт больше потолка — отказ (без OOM).
-    data = await file.read(cfg.MEDIA_MAX_BYTES + 1)
-    size = len(data)
-    if size > cfg.MEDIA_MAX_BYTES:
-        raise HTTPException(
-            status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "файл слишком большой"
-        )
-    if size == 0:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "пустой файл")
-
-    # Право зависит от размера.
-    needed = _PERM_SMALL if size <= cfg.MEDIA_SMALL_MAX_BYTES else _PERM_LARGE
-    perms = acc.role.perms if acc.role else None
-    if not has_perm(perms, needed):
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, detail=f"недостаточно прав: {needed}"
+    data = await bus.status(token)
+    if data:
+        return MediaStatus(
+            token=token,
+            state=data.get("state", "processing"),
+            url=data.get("url") or None,
+            mime=data.get("mime") or None,
+            error=data.get("error") or None,
         )
 
-    url = await storage.save(
-        _FOLDER_BY_KIND[kind],
-        file.filename or "upload",
-        data,
-        content_type=file.content_type,
+    # Статус в Valkey мог истечь — источник истины по готовым медиа это БД.
+    media = await mngr.by_token(token)
+    if media is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "медиа не найдено")
+    return MediaStatus(
+        token=token,
+        state=media.status,
+        url=f"/media/{media.token}" if media.status == "ready" else None,
+        mime=media.mime,
     )
-    media = await mngr.create(
-        kind,
-        url,
-        backend=storage.backend,
-        mime=file.content_type,
-        size=size,
-        owner_id=acc.id,
-    )
-    await mngr.s.commit()
-    return Media.from_model(media)
 
 
 __all__ = ["router"]

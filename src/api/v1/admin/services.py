@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from dependencies.catalog import ServiceMngr, get_service_mngr
+from dependencies.catalog import (
+    ServiceAttachmentMngr,
+    ServiceMngr,
+    get_attachment_mngr,
+    get_service_mngr,
+)
 from dependencies.rbac import require_perm
+from schemas.media import Attachment, AttachmentIn
 from schemas.page import Page
 from schemas.service import ServiceAdmin, ServiceCreate, ServicePatch
 from utils.pagination import paginate
@@ -68,6 +74,62 @@ async def update_service(
     svc = await mngr.update(service_id, body.model_dump(exclude_unset=True))
     await mngr.s.commit()
     return ServiceAdmin.from_model(svc)
+
+
+@router.get(
+    "/services/{service_id}/attachments",
+    response_model=list[Attachment],
+    dependencies=[Depends(require_perm("services.read"))],
+    summary="Вложения товара",
+)
+async def list_attachments(
+    service_id: int,
+    mngr: ServiceAttachmentMngr = Depends(get_attachment_mngr),
+) -> list[Attachment]:
+    rows = await mngr.list_by_service(service_id)
+    return [Attachment.from_model(a) for a in rows]
+
+
+@router.post(
+    "/services/{service_id}/attachments",
+    response_model=Attachment,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_perm("services.edit"))],
+    summary="Добавить вложение товара",
+    description=with_fields(
+        "Привязывает загруженное медиа к товару с тегом и позицией.",
+        AttachmentIn,
+    ),
+)
+async def add_attachment(
+    service_id: int,
+    body: AttachmentIn,
+    svc_mngr: ServiceMngr = Depends(get_service_mngr),
+    mngr: ServiceAttachmentMngr = Depends(get_attachment_mngr),
+) -> Attachment:
+    if await svc_mngr.by_id(service_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "услуга не найдена")
+    att = await mngr.add(
+        service_id, body.media_id, tag=body.tag, position=body.position
+    )
+    await mngr.s.commit()
+    await mngr.s.refresh(att)
+    return Attachment.from_model(att)
+
+
+@router.delete(
+    "/services/{service_id}/attachments/{att_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_perm("services.edit"))],
+    summary="Удалить вложение товара",
+)
+async def remove_attachment(
+    service_id: int,
+    att_id: int,
+    mngr: ServiceAttachmentMngr = Depends(get_attachment_mngr),
+) -> None:
+    await mngr.remove(att_id)
+    await mngr.s.commit()
 
 
 __all__ = ["router"]

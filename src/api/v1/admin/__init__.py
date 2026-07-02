@@ -6,6 +6,7 @@ from .catalogs import router as catalogs_router
 from .email import router as email_router
 from .lua import router as lua_router
 from .me import router as me_router
+from .media import router as media_router
 from .oauth import router as oauth_router
 from .orders import router as orders_router
 from .promo import router as promo_router
@@ -28,5 +29,6 @@ router.include_router(oauth_router, tags=["admin: oauth"])
 router.include_router(lua_router, tags=["admin: lua"])
 router.include_router(email_router, tags=["admin: email"])
 router.include_router(triggers_router, tags=["admin: triggers"])
+router.include_router(media_router, tags=["admin: media"])
 
 __all__ = ["router"]

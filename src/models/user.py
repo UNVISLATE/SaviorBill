@@ -71,6 +71,11 @@ class UserModel(Base):
         DateTime(timezone=True), nullable=True
     )
 
+    # Аватар пользователя — ссылка на медиа (см. SystemMediaModel). NULL — нет.
+    avatar_media_id: Mapped[int | None] = mapped_column(
+        ForeignKey("system_media.id", ondelete="SET NULL"), nullable=True
+    )
+
     # Собственный реферальный код (для приглашения других пользователей).
     ref_code: Mapped[str | None] = mapped_column(
         String(16), unique=True, index=True, nullable=True

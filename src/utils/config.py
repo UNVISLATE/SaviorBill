@@ -126,6 +126,16 @@ class AppConfig(BaseSettings):
     MEDIA_SMALL_MAX_BYTES: int = Field(default=1_048_576)  # 1 MiB
     # Жёсткий потолок размера любого загружаемого файла.
     MEDIA_MAX_BYTES: int = Field(default=52_428_800)  # 50 MiB
+    # Публичный домен проекта (для Caddy). Пусто -> localhost.
+    DOMAIN: str | None = Field(default=None)
+    # URL сервиса mediaworker (внутренняя сеть) для служебных обращений billing.
+    MEDIAWORKER_URL: str = Field(default="http://mediaworker:8080")
+    # Стрим задач медиа (конвертация/удаление) в Valkey.
+    MEDIA_TASK_STREAM: str = Field(default="media:tasks")
+    # TTL статуса конвертации в Valkey (сек).
+    MEDIA_STATUS_TTL: int = Field(default=3600)
+    # Бан IP при фейковом Content-Length (сек).
+    MEDIA_BAN_SECONDS: int = Field(default=180)
 
     # Rate limiting (Valkey, fixed window)
     RATE_LIMIT_ENABLED: bool = Field(default=True)
@@ -206,6 +216,11 @@ class AppConfig(BaseSettings):
     def uploads_dir(self) -> Path:
         """Папка для загружаемых файлов (бэкенд fs)."""
         return self.data_path / "uploads"
+
+    @property
+    def media_dir(self) -> Path:
+        """Публичная папка готовых медиа (отдаёт Caddy), бэкенд fs."""
+        return self.data_path / "media"
 
     @property
     def secret_key_file(self) -> Path:

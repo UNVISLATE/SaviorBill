@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 from sqlalchemy import func, DateTime, Integer, JSON, String, select
@@ -12,8 +13,19 @@ from models import Base
 from utils.datetime_utils import utc_now
 
 
+def _gen_token() -> str:
+    """Публичный идентификатор медиа (он же file_id и task_token)."""
+    return uuid.uuid4().hex
+
+
 class SystemMediaModel(Base):
-    """Медиа-файл системы (изображение, иконка, аватар и т.п.)."""
+    """Медиа-файл системы (изображение, иконка, аватар и т.п.).
+
+    Файлы физически хранит и отдаёт mediaworker; здесь — только метаданные.
+    ``token`` — публичный идентификатор в URL ``/media/{token}`` (и task_token
+    конверсии). ``path`` для fs — относительный ключ в ``data/media`` (напр.
+    ``{token}.webp``), для s3 — ключ объекта.
+    """
 
     __tablename__ = "system_media"
 
@@ -32,10 +44,17 @@ class SystemMediaModel(Base):
         nullable=False,
     )
 
+    token: Mapped[str] = mapped_column(
+        String(32), unique=True, index=True, default=_gen_token, nullable=False
+    )
+    # processing | ready | failed
+    status: Mapped[str] = mapped_column(
+        String(16), default="ready", server_default="ready", nullable=False
+    )
     kind: Mapped[str] = mapped_column(
         String(16), nullable=False
     )  # image/video/icon/avatar
-    path: Mapped[str] = mapped_column(String(512), nullable=False)  # fs path or s3 key
+    path: Mapped[str] = mapped_column(String(512), nullable=False)  # fs key or s3 key
     backend: Mapped[str] = mapped_column(String(8), default="fs", nullable=False)
     mime: Mapped[str | None] = mapped_column(String(128), nullable=True)
     size: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -53,6 +72,11 @@ class SystemMediaMngr:
 
     async def by_id(self, media_id: int) -> SystemMediaModel | None:
         return await self.s.get(SystemMediaModel, media_id)
+
+    async def by_token(self, token: str) -> SystemMediaModel | None:
+        return await self.s.scalar(
+            select(SystemMediaModel).where(SystemMediaModel.token == token)
+        )
 
     async def list_all(
         self, limit: int = 100, offset: int = 0
@@ -78,6 +102,8 @@ class SystemMediaMngr:
         kind: str,
         path: str,
         *,
+        token: str | None = None,
+        status: str = "ready",
         backend: str = "fs",
         mime: str | None = None,
         size: int | None = None,
@@ -92,10 +118,37 @@ class SystemMediaMngr:
             size=size,
             owner_id=owner_id,
             meta=meta or {},
+            status=status,
+            **({"token": token} if token else {}),
         )
         self.s.add(media)
         await self.s.flush()
         return media
+
+    async def delete(self, media: SystemMediaModel) -> None:
+        """Удалить запись медиа из БД (файл удаляет mediaworker отдельно)."""
+        await self.s.delete(media)
+        await self.s.flush()
+
+    async def orphans(self) -> list[SystemMediaModel]:
+        """Медиа, не привязанные ни к товарам (attachments), ни к аватаркам.
+
+        :return: список «осиротевших» записей для чистки.
+        """
+        from models.service_attachment import ServiceAttachmentModel
+        from models.user import UserModel
+
+        used_att = select(ServiceAttachmentModel.media_id)
+        used_avatar = select(UserModel.avatar_media_id).where(
+            UserModel.avatar_media_id.is_not(None)
+        )
+        rows = await self.s.scalars(
+            select(SystemMediaModel)
+            .where(SystemMediaModel.id.not_in(used_att))
+            .where(SystemMediaModel.id.not_in(used_avatar))
+            .order_by(SystemMediaModel.id)
+        )
+        return list(rows)
 
 
 __all__ = ["SystemMediaModel", "SystemMediaMngr"]

@@ -1,6 +1,11 @@
 # syntax=docker/dockerfile:1
 #
-# Многостадийная сборка с авто-прогоном юнит-тестов.
+# Многостадийная сборка billing с авто-прогоном юнит-тестов.
+# Dockerfile и requirements лежат в src/, но КОНТЕКСТ сборки — корень репозитория
+# (нужны migrations/, alembic.ini, tests/, deploy/test/pytest.ini). Поэтому COPY-пути
+# заданы относительно корня. Сборка:
+#   docker build -f src/Dockerfile -t billing .
+# либо через deploy/dev/docker-compose.yml (context: ../.., dockerfile: src/Dockerfile).
 #
 #   base    — прод-зависимости + исходники (общий слой).
 #   tests   — добавляет dev-зависимости и ГОНЯЕТ юнит-тесты прямо во время сборки.
@@ -20,7 +25,7 @@ ENV PYTHONUNBUFFERED=1 \
 WORKDIR /app
 
 # Прод-зависимости отдельным слоем для кэширования.
-COPY requirements.txt /app/requirements.txt
+COPY src/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ /app/src/
@@ -30,10 +35,10 @@ COPY migrations/ /app/migrations/
 
 FROM base AS tests
 
-COPY requirements-dev.txt /app/requirements-dev.txt
+COPY src/requirements-dev.txt /app/requirements-dev.txt
 RUN pip install --no-cache-dir -r requirements-dev.txt
 
-COPY pytest.ini /app/pytest.ini
+COPY deploy/test/pytest.ini /app/pytest.ini
 COPY tests/ /app/tests/
 
 # Конфигу нужны обязательные переменные даже для импорта приложения.

@@ -1,0 +1,129 @@
+# ПРОД-развёртывание SaviorBill.
+#
+# Образы тянутся из реестра (ghcr.io) — локальная сборка НЕ выполняется.
+# Настройте окружение (bash deploy/setup.sh создаёт deploy/.env из deploy/.env.example)
+# и запустите ИЗ КОРНЯ репозитория:
+#
+#   docker compose -f deploy/docker-compose.yml pull
+#   docker compose -f deploy/docker-compose.yml up -d
+#
+# Project directory при запуске = deploy/ (каталог этого файла), поэтому относительные
+# пути указывают на корень как ../data, а .env берётся из deploy/.env.
+# Реестр/тег переопределяются через deploy/.env: IMAGE_PREFIX, TAG.
+#
+# Разработка со сборкой из исходников — deploy/dev/docker-compose.yml.
+# Прогон тестов                       — deploy/test/docker-compose.yml. См. README.md.
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-saviorbill}
+      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS is required in .env}
+      POSTGRES_DB: ${DB_NAME:-saviorbill}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-saviorbill}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    command: ["valkey-server", "--save", "60", "1", "--appendonly", "yes"]
+    volumes:
+      - valkeydata:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  billing:
+    image: ${IMAGE_PREFIX:-ghcr.io/unvislate/saviorbill}/billing:${TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      DATA_DIR: /app/data
+      LUA_SCRIPTS_DIR: /app/data/lua
+      EMAIL_TEMPLATES_DIR: /app/data/email
+    volumes:
+      - ../data:/app/data:rw
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app:app --app-dir src --host 0.0.0.0 --port 8000"
+    expose:
+      - "8000"
+
+  luaworker:
+    image: ${IMAGE_PREFIX:-ghcr.io/unvislate/saviorbill}/luaworker:${TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      valkey:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      VALKEY_DB: 0
+      BILLING_URL: http://billing:8000
+      LUA_SCRIPTS_DIR: /app/data/lua
+    volumes:
+      - ../data:/app/data:ro
+
+  mediaworker:
+    image: ${IMAGE_PREFIX:-ghcr.io/unvislate/saviorbill}/mediaworker:${TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      valkey:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      VALKEY_DB: 0
+      DATA_DIR: /app/data
+      BILLING_URL: http://billing:8000
+    volumes:
+      - ../data:/app/data:rw
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - billing
+      - mediaworker
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../data/media:/srv/media:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  valkeydata:
+  caddy_data:
+  caddy_config:

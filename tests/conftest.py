@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 
 # Значения по умолчанию для конфига. Интеграционные тесты переопределяют
-# DB_HOST/VALKEY_HOST через окружение docker-compose.test.yml.
+# DB_HOST/VALKEY_HOST через окружение deploy/test/docker-compose.yml.
 os.environ.setdefault("DB_PASS", "test")
 os.environ.setdefault("JWT_SECRET", "test-secret-please-change")
 os.environ.setdefault("PAY_CALLBACK_SECRET", "test-callback-secret")

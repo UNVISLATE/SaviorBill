@@ -30,7 +30,6 @@ class LuaService(BaseModel):
     actions: list = []
     params: dict = {}
     settings: dict = {}
-    image: str | None = None
     is_active: bool = True
 
     @field_serializer("price")

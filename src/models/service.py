@@ -20,7 +20,7 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
 from enums import Delivery
@@ -94,10 +94,15 @@ class ServiceModel(Base):
     # для планирования истечения, если lua-шаблон сам не вернул expires_at.
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    # Путь к изображению/иконке услуги в хранилище.
-    image: Mapped[str | None] = mapped_column(String(512), nullable=True)
-
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    # Вложения товара (фото/видео), см. ServiceAttachmentModel.
+    attachments: Mapped[list["ServiceAttachmentModel"]] = relationship(  # noqa: F821
+        "ServiceAttachmentModel",
+        order_by="ServiceAttachmentModel.position, ServiceAttachmentModel.id",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
 
 class ServiceMngr:

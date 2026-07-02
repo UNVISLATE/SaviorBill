@@ -1,0 +1,34 @@
+# Маршрутизация:
+#   /media/*  — локально готовые файлы отдаёт САМ Caddy (file_server из ./data/media
+#               с try_files {token}.webp/.webm); промах и загрузка (POST /media/upload)
+#               уходят в mediaworker (S3-presign / приём стрима).
+#   /internal — внутренний API billing, наружу закрыт.
+#   всё прочее — billing.
+{$DOMAIN:localhost} {
+	encode zstd gzip
+
+	handle /internal/* {
+		respond "not found" 404
+	}
+
+	handle /media/* {
+		# Локальный готовый файл (webp/webm) отдаём напрямую.
+		@static file {
+			root /srv/media
+			try_files {path} {path}.webp {path}.webm
+		}
+		handle @static {
+			root * /srv/media
+			rewrite * {http.matchers.file.relative}
+			file_server
+		}
+		# Промах (S3/не готово) и загрузка -> mediaworker.
+		handle {
+			reverse_proxy mediaworker:8080
+		}
+	}
+
+	handle {
+		reverse_proxy billing:8000
+	}
+}

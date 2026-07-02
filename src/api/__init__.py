@@ -1,11 +1,13 @@
 from fastapi import APIRouter
 
 from .health import router as health_router
+from .internal import router as internal_router
 from .v1 import router as v1_router
 
 api_router = APIRouter()
 
 api_router.include_router(health_router)
+api_router.include_router(internal_router)
 api_router.include_router(v1_router)
 
 __all__ = ["api_router"]

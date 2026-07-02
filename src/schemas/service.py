@@ -6,6 +6,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from schemas.media import Attachment
+
 
 class Service(BaseModel):
     """Услуга в публичном каталоге (ответ)."""
@@ -20,13 +22,26 @@ class Service(BaseModel):
     price: Decimal
     currency: str
     delivery: str
-    image: str | None = None
+    attachments: list[Attachment] = Field(
+        default_factory=list, description="Медиа-вложения товара (фото/видео)"
+    )
     is_active: bool
 
     @classmethod
     def from_model(cls, m) -> "Service":  # noqa: ANN001 — ServiceModel
         """Явное преобразование ORM-услуги в публичную схему ответа."""
-        return cls.model_validate(m)
+        return cls(
+            id=m.id,
+            slug=m.slug,
+            name=m.name,
+            description=m.description,
+            catalog_id=m.catalog_id,
+            price=m.price,
+            currency=m.currency,
+            delivery=m.delivery,
+            attachments=[Attachment.from_model(a) for a in m.attachments],
+            is_active=m.is_active,
+        )
 
 
 class ServiceAdmin(Service):
@@ -39,7 +54,21 @@ class ServiceAdmin(Service):
     @classmethod
     def from_model(cls, m) -> "ServiceAdmin":  # noqa: ANN001 — ServiceModel
         """Явное преобразование ORM-услуги в админ-схему ответа."""
-        return cls.model_validate(m)
+        return cls(
+            id=m.id,
+            slug=m.slug,
+            name=m.name,
+            description=m.description,
+            catalog_id=m.catalog_id,
+            price=m.price,
+            currency=m.currency,
+            delivery=m.delivery,
+            attachments=[Attachment.from_model(a) for a in m.attachments],
+            is_active=m.is_active,
+            lua_script_id=m.lua_script_id,
+            params=m.params,
+            settings=m.settings,
+        )
 
 
 class ServiceCreate(BaseModel):
@@ -73,9 +102,6 @@ class ServiceCreate(BaseModel):
     settings: dict = Field(
         default_factory=dict, description="Настройки услуги (опционально)"
     )
-    image: str | None = Field(
-        default=None, description="URL/путь изображения (опционально)"
-    )
     is_active: bool = Field(default=True, description="Активна ли услуга (опционально)")
 
 
@@ -91,7 +117,6 @@ class ServicePatch(BaseModel):
     lua_script_id: int | None = Field(default=None, description="ID lua-скрипта")
     params: dict | None = Field(default=None, description="Параметры выдачи")
     settings: dict | None = Field(default=None, description="Настройки услуги")
-    image: str | None = Field(default=None, description="URL/путь изображения")
     is_active: bool | None = Field(default=None, description="Активна ли услуга")
 
 

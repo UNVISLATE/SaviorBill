@@ -1,0 +1,6 @@
+fastapi==0.138.1
+uvicorn[standard]==0.49.0
+valkey==6.1.1
+httpx==0.28.1
+aioboto3==13.2.0
+python-multipart==0.0.20

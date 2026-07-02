@@ -1,3 +1,14 @@
+# РАЗРАБОТКА: полный стек со сборкой образов из исходников (Dockerfile'ы).
+#
+# Пути в этом файле заданы относительно каталога deploy/dev/, поэтому запускать
+# нужно из корня репозитория (project dir = deploy/dev/):
+#   docker compose -f deploy/dev/docker-compose.yml up --build
+# Либо через Makefile:  make dev
+#
+# Отличия от прод (deploy/docker-compose.yml):
+#   * образы СОБИРАЮТСЯ локально (build:), а не тянутся из реестра;
+#   * порт billing (8000) проброшен на хост для удобной отладки;
+#   * дефолты переменных заданы прямо здесь — .env не обязателен.
 services:
   db:
     image: postgres:16-alpine
@@ -23,7 +34,9 @@ services:
       retries: 10
 
   billing:
-    build: .
+    build:
+      context: ../..
+      dockerfile: src/Dockerfile
     depends_on:
       db:
         condition: service_healthy
@@ -57,7 +70,7 @@ services:
       SMTP_TLS: ${SMTP_TLS:-true}
       BILLING_LOOP_ENABLED: ${BILLING_LOOP_ENABLED:-true}
     volumes:
-      - ./data:/app/data:rw
+      - ../../data:/app/data:rw
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app:app --app-dir src --host 0.0.0.0 --port 8000"
@@ -65,7 +78,8 @@ services:
       - "8000:8000"
 
   luaworker:
-    build: ./luaworker
+    build:
+      context: ../../luaworker
     depends_on:
       valkey:
         condition: service_healthy
@@ -79,9 +93,56 @@ services:
       LUA_CONSUMER: worker-1
       BILLING_URL: http://billing:8000
       LUA_SERVICE_TOKEN: ${LUA_SERVICE_TOKEN:-dev-service-token}
-      LUA_SCRIPTS_DIR: /lua
+      LUA_SCRIPTS_DIR: /app/data/lua
     volumes:
-      - ./data/lua:/lua:ro
+      - ../../data:/app/data:ro
+
+  mediaworker:
+    build:
+      context: ../../mediaworker
+    depends_on:
+      valkey:
+        condition: service_healthy
+    environment:
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      VALKEY_DB: 0
+      DATA_DIR: /app/data
+      MEDIA_TASK_STREAM: media:tasks
+      MEDIA_GROUP: mediaworkers
+      MEDIA_CONSUMER: media-1
+      BILLING_URL: http://billing:8000
+      LUA_SERVICE_TOKEN: ${LUA_SERVICE_TOKEN:-dev-service-token}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-fs}
+      MEDIA_STATUS_TTL: ${MEDIA_STATUS_TTL:-3600}
+      MEDIA_BAN_SECONDS: ${MEDIA_BAN_SECONDS:-180}
+      MEDIA_KEEP_ORIGINAL: ${MEDIA_KEEP_ORIGINAL:-false}
+      S3_ENDPOINT: ${S3_ENDPOINT:-}
+      S3_BUCKET: ${S3_BUCKET:-}
+      S3_REGION: ${S3_REGION:-}
+      S3_KEY: ${S3_KEY:-}
+      S3_SECRET: ${S3_SECRET:-}
+    volumes:
+      - ../../data:/app/data:rw
+
+  caddy:
+    image: caddy:2-alpine
+    depends_on:
+      - billing
+      - mediaworker
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ../Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../../data/media:/srv/media:ro
+      - caddy_data:/data
+      - caddy_config:/config
 
 volumes:
   pgdata:
+  caddy_data:
+  caddy_config:

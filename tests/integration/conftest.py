@@ -3,7 +3,7 @@
 Тесты гоняются против ПОДНЯТОГО стека (Postgres + Valkey + LuaWorker + billing):
 HTTP-вызовы идут на ``BASE_URL`` (контейнер billing), а сидинг данных — напрямую
 в БД через async-движок SQLAlchemy. Поэтому раннер должен иметь сетевой доступ
-и к billing, и к Postgres (см. docker-compose.test.yml).
+и к billing, и к Postgres (см. deploy/test/docker-compose.yml).
 """
 
 from __future__ import annotations

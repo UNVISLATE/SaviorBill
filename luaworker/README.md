@@ -51,7 +51,7 @@ Python (LuaBus.call)                    LuaWorker
 
 ## Локально
 ```bash
-docker compose up --build luaworker
+docker compose -f deploy/dev/docker-compose.yml up --build luaworker
 ```
 
 ## Пример из Python

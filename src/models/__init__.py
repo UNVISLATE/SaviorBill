@@ -11,6 +11,7 @@ from .user_oauth import UserOauthModel, UserOauthMngr
 from .system_scripts import SystemScriptsModel, SystemScriptsMngr
 from .service_catalogs import ServiceCatalogsModel, ServiceCatalogsMngr
 from .service import ServiceModel, ServiceMngr
+from .service_attachment import ServiceAttachmentModel, ServiceAttachmentMngr
 from .service_keys import ServiceKeysModel, ServiceKeysMngr
 from .user_services import UserServicesModel, UserServicesMngr
 from .payment_providers import PaymentProvidersModel, PaymentProvidersMngr
@@ -39,6 +40,8 @@ __all__ = [
     "ServiceCatalogsMngr",
     "ServiceModel",
     "ServiceMngr",
+    "ServiceAttachmentModel",
+    "ServiceAttachmentMngr",
     "ServiceKeysModel",
     "ServiceKeysMngr",
     "UserServicesModel",

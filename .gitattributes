@@ -1,0 +1,5 @@
+# Скрипты и Makefile — всегда LF (иначе ломаются в bash/make на Linux).
+*.sh text eol=lf
+Makefile text eol=lf
+*.lua text eol=lf
+Dockerfile text eol=lf
