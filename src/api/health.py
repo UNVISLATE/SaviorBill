@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 
-from utils.config import AppConfig
+from utils.config import AppConfig, APP_NAME, APP_VERSION
 from schemas.system import HealthCheck
 
 router = APIRouter(tags=["health"])
@@ -11,6 +11,6 @@ async def health(request: Request):
     settings: AppConfig = request.app.state.settings
     return HealthCheck(
         status="ok",
-        app_name=settings.APP_NAME,
-        app_version=settings.APP_VERSION,
+        app_name=APP_NAME,
+        app_version=APP_VERSION,
     )

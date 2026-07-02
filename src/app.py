@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI
 
 from lifespan import lifespan
-from utils.config import AppConfig
+from utils.config import AppConfig, APP_NAME, APP_VERSION
 
 settings = AppConfig()
 
@@ -47,8 +47,8 @@ TAGS_META = [
 ]
 
 app = FastAPI(
-    title=settings.APP_NAME,
-    version=settings.APP_VERSION,
+    title=APP_NAME,
+    version=APP_VERSION,
     description=DESCRIPTION,
     openapi_tags=TAGS_META,
     lifespan=lifespan,
