@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from dependencies.db import create_db_engine, create_db_sessionmaker
 from dependencies.valkey import create_valkey_client
 from services.billing_loop import BillingLoop
+from services.media_results import MediaResults
 from utils.config import AppConfig
 from utils.bootstrap import bootstrap
 from utils.init import init_system
@@ -46,6 +47,14 @@ async def lifespan(app: FastAPI):
     )
     await app.state.billing_loop.start()
 
+    # Консьюмер результатов конвертации медиа (mediaworker -> billing пишет в БД).
+    app.state.media_results = MediaResults(
+        app.state.db_sessionmaker,
+        app.state.valkey,
+        config,
+    )
+    await app.state.media_results.start()
+
     app.include_router(api_router)
     # Роуты добавлены — задокументировать требуемые права в OpenAPI.
     document_perms(app)
@@ -53,6 +62,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await app.state.media_results.stop()
         await app.state.billing_loop.stop()
         await app.state.valkey.aclose()
         await app.state.db_engine.dispose()

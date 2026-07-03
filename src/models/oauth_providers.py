@@ -4,7 +4,17 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, Boolean, DateTime, Integer, JSON, String, Text, select
+from sqlalchemy import (
+    func,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Text,
+    select,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -13,7 +23,7 @@ from utils.datetime_utils import utc_now
 
 
 class OAuthProvidersModel(Base):
-    """подключение внешнего OAuth/OIDC-провайдера"""
+    """подключение внешнего OAuth-провайдера (флоу через Lua-скрипт)"""
 
     __tablename__ = "oauth_cfg"
 
@@ -38,8 +48,17 @@ class OAuthProvidersModel(Base):
     title: Mapped[str | None] = mapped_column(String(128), nullable=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
-    client_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    client_secret_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    # Единый action-driven Lua-скрипт провайдера (start/callback). Обязателен для
+    # исполнения OAuth-флоу — как у платёжных провайдеров.
+    script_id: Mapped[int | None] = mapped_column(
+        ForeignKey("lua_scripts.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    # Зашифрованный JSON секретов/доп-данных провайдера (client_id/secret и пр.),
+    # прокидывается в скрипт как ctx.secrets.*.
+    secrets_enc: Mapped[str] = mapped_column(Text, default="", nullable=False)
+
+    client_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    client_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     issuer: Mapped[str | None] = mapped_column(String(255), nullable=True)
     authorize_url: Mapped[str | None] = mapped_column(String(512), nullable=True)

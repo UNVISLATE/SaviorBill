@@ -65,7 +65,7 @@ class PaymentProvidersModel(Base):
 
     # Единый action-driven скрипт провайдера (create/callback/check/refund).
     script_id: Mapped[int | None] = mapped_column(
-        ForeignKey("lua_scripts.id", ondelete="SET NULL"), nullable=True, index=True
+        ForeignKey("lua_scripts.id", ondelete="RESTRICT"), nullable=True, index=True
     )
 
     # Несекретные дополнительные настройки провайдера.

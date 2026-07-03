@@ -21,7 +21,6 @@ ENV VALKEY_HOST=valkey \
     LUA_TASK_STREAM=lua:tasks \
     LUA_RESP_STREAM=lua:results \
     LUA_GROUP=luaworkers \
-    LUA_CONSUMER=worker-1 \
     BILLING_URL=http://billing:8000
 
 CMD ["lua", "main.lua"]

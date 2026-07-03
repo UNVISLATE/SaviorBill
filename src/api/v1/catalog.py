@@ -13,7 +13,7 @@ from dependencies.catalog import (
 from schemas.catalog import CatalogResponse
 from schemas.page import Page
 from schemas.service import Service
-from utils.pagination import paginate
+from utils.pagination import PageParams, page_params, paginate
 
 router = APIRouter(prefix="/api/v1/catalog", tags=["catalog"])
 
@@ -32,19 +32,20 @@ async def list_catalogs(
 @router.get("/services", response_model=Page[Service], summary="Список услуг")
 async def list_services(
     catalog_id: int | None = Query(default=None, description="фильтр по каталогу"),
-    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
-    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
+    pp: PageParams = Depends(page_params),
     mngr: ServiceMngr = Depends(get_service_mngr),
 ) -> Page[Service]:
     """Активные услуги каталога (опц. в рамках одного каталога), постранично."""
-    items, total = await paginate(
+    items, total, has_more = await paginate(
         mngr.s,
         mngr.stmt_active(catalog_id),
         Service.from_model,
-        limit=limit,
-        offset=offset,
+        limit=pp.limit,
+        offset=pp.offset,
     )
-    return Page(items=items, total=total, limit=limit, offset=offset)
+    return Page(
+        items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
+    )
 
 
 @router.get("/services/{service_id}", response_model=Service, summary="Карточка услуги")

@@ -61,6 +61,9 @@ class SystemMediaModel(Base):
     owner_id: Mapped[int | None] = mapped_column(
         Integer, nullable=True, index=True
     )  # uploader account id
+    # Варианты файла: {"main": {...}, "thumb": {...}, "preview": {...}}.
+    # Каждый — {"key", "mime", "size", "url"}. Заполняет mediaworker.
+    variants: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
     meta: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
 
 
@@ -108,6 +111,7 @@ class SystemMediaMngr:
         mime: str | None = None,
         size: int | None = None,
         owner_id: int | None = None,
+        variants: dict | None = None,
         meta: dict | None = None,
     ) -> SystemMediaModel:
         media = SystemMediaModel(
@@ -117,6 +121,7 @@ class SystemMediaMngr:
             mime=mime,
             size=size,
             owner_id=owner_id,
+            variants=variants or {},
             meta=meta or {},
             status=status,
             **({"token": token} if token else {}),
@@ -128,6 +133,57 @@ class SystemMediaMngr:
     async def delete(self, media: SystemMediaModel) -> None:
         """Удалить запись медиа из БД (файл удаляет mediaworker отдельно)."""
         await self.s.delete(media)
+        await self.s.flush()
+
+    async def upsert(
+        self,
+        *,
+        token: str,
+        kind: str,
+        path: str,
+        backend: str = "fs",
+        mime: str | None = None,
+        size: int | None = None,
+        owner_id: int | None = None,
+        variants: dict | None = None,
+        status: str = "ready",
+    ) -> SystemMediaModel:
+        """Идемпотентно записать готовое медиа по ``token`` (insert или update).
+
+        Используется консьюмером результатов конвертации (mediaworker → billing):
+        логика записи в БД живёт только здесь, в одном сервисе.
+        """
+        media = await self.by_token(token)
+        if media is None:
+            return await self.create(
+                kind,
+                path,
+                token=token,
+                status=status,
+                backend=backend,
+                mime=mime,
+                size=size,
+                owner_id=owner_id,
+                variants=variants or {},
+            )
+        media.kind = kind
+        media.path = path
+        media.backend = backend
+        media.mime = mime
+        media.size = size
+        if owner_id is not None:
+            media.owner_id = owner_id
+        media.variants = variants or {}
+        media.status = status
+        await self.s.flush()
+        return media
+
+    async def merge_variants(self, token: str, variants: dict) -> None:
+        """Домержить набор вариантов к существующей записи (ручное превью)."""
+        media = await self.by_token(token)
+        if media is None:
+            return
+        media.variants = {**(media.variants or {}), **variants}
         await self.s.flush()
 
     async def orphans(self) -> list[SystemMediaModel]:

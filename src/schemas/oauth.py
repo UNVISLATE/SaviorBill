@@ -1,4 +1,4 @@
-"""Контракты OAuth/OIDC слоя (Python <-> провайдеры)."""
+"""Контракты OAuth слоя (Python <-> провайдеры через Lua)."""
 
 from __future__ import annotations
 
@@ -19,11 +19,11 @@ class OAuthStart(BaseModel):
     state: str
 
 
-class OIDCUser(BaseModel):
+class OAuthUser(BaseModel):
     """Нормализованный профиль пользователя от провайдера.
 
-    Любая платформа обязана привести свой ответ к этому контракту
-    (см. integrations/oauth/base.py). ``raw`` — исходные данные.
+    Lua-скрипт провайдера обязан привести ответ платформы к этому контракту и
+    вернуть его в ``private``. ``raw`` — исходные данные.
     """
 
     model_config = ConfigDict(extra="ignore")
@@ -69,4 +69,4 @@ class Conn(BaseModel):
         return cls.model_validate(m)
 
 
-__all__ = ["Provider", "OAuthStart", "OIDCUser", "TokenSet", "Conn"]
+__all__ = ["Provider", "OAuthStart", "OAuthUser", "TokenSet", "Conn"]

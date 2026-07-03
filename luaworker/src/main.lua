@@ -25,7 +25,12 @@ local DB = tonumber(env("VALKEY_DB", "0"))
 local TASK = env("LUA_TASK_STREAM", "lua:tasks")
 local RESP = env("LUA_RESP_STREAM", "lua:results")
 local GROUP = env("LUA_GROUP", "luaworkers")
-local CONSUMER = env("LUA_CONSUMER", "worker-1")
+-- Уникальное имя консьюмера на реплику: HOSTNAME (id контейнера) + случайный
+-- суффикс. Иначе несколько реплик с одинаковым именем делят PEL и путают
+-- атрибуцию pending-задач при масштабировании.
+math.randomseed(math.floor(socket.gettime() * 1000))
+local DEFAULT_CONSUMER = (env("HOSTNAME", "worker") .. "-" .. tostring(math.random(100000, 999999)))
+local CONSUMER = env("LUA_CONSUMER", DEFAULT_CONSUMER)
 local LOG_TTL = tonumber(env("LUA_LOG_TTL", "3600"))
 local LOG_PREFIX = env("LUA_LOG_PREFIX", "lua:log:")
 

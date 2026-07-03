@@ -8,9 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.auth import get_current_acc
 from dependencies.db import get_db_session
+from dependencies.oauth import OAuthSvc, get_oauth_svc
 from models.user import UserModel
 from models.user_oauth import UserOauthModel
-from schemas.oauth import Conn
+from schemas.oauth import Conn, OAuthStart
 
 router = APIRouter()
 
@@ -27,6 +28,24 @@ async def my_connections(
         .order_by(UserOauthModel.id)
     )
     return [Conn.from_model(r) for r in rows]
+
+
+@router.get(
+    "/oauth/{provider}/link",
+    response_model=OAuthStart,
+    summary="Привязать провайдера к моему аккаунту",
+    description=(
+        "Старт OAuth для привязки внешней учётки к ТЕКУЩЕМУ аккаунту. Возвращает "
+        "authorize_url для редиректа; после колбэка учётка привяжется к вам."
+    ),
+)
+async def link_start(
+    provider: str,
+    acc: UserModel = Depends(get_current_acc),
+    svc: OAuthSvc = Depends(get_oauth_svc),
+) -> OAuthStart:
+    """Инициировать привязку провайдера к вошедшему аккаунту."""
+    return await svc.start(provider, account_id=acc.id)
 
 
 @router.delete(

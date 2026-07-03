@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from dependencies.promo import (
     PromoCatalogsMngr,
@@ -19,7 +19,7 @@ from schemas.promo import (
     PromoCode,
     PromoCodeBatch,
 )
-from utils.pagination import paginate
+from utils.pagination import PageParams, page_params, paginate
 from utils.apidoc import with_fields
 
 router = APIRouter()
@@ -102,18 +102,19 @@ async def delete_catalog(
 )
 async def list_codes(
     catalog_id: int,
-    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
-    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
+    pp: PageParams = Depends(page_params),
     mngr: PromoCodesMngr = Depends(get_promo_mngr),
 ) -> Page[PromoCode]:
-    items, total = await paginate(
+    items, total, has_more = await paginate(
         mngr.s,
         mngr.stmt_for(catalog_id),
         PromoCode.from_model,
-        limit=limit,
-        offset=offset,
+        limit=pp.limit,
+        offset=pp.offset,
     )
-    return Page(items=items, total=total, limit=limit, offset=offset)
+    return Page(
+        items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
+    )
 
 
 @router.post(

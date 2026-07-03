@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from enums import ScriptKind
 from schemas.lua import (
+    LuaAuthProvider,
     LuaMeta,
     LuaPayment,
     LuaProvider,
@@ -97,6 +98,46 @@ def build_payment_ctx(
     return ctx
 
 
+def build_auth_ctx(
+    action: str,
+    provider,  # noqa: ANN001 — OAuthProvidersModel
+    secrets: dict,
+    *,
+    redirect_uri: str,
+    state: str | None = None,
+    code: str | None = None,
+    request: LuaRequest | None = None,
+    script=None,  # noqa: ANN001 — SystemScriptsModel | None
+) -> dict:
+    """Контекст OAuth-скрипта (action-driven, как у платежей).
+
+    :arg action: start (построить authorize_url) | callback (обмен кода на профиль).
+    :arg provider: ORM-провайдер (источник scopes/extra).
+    :arg secrets: расшифрованные секреты провайдера (client_id/secret, endpoints).
+    :arg redirect_uri: callback-URL нашей системы для этого провайдера.
+    :arg state: антифрод-метка (для start — что положить в url; для callback — сверка).
+    :arg code: код авторизации от провайдера (только для callback).
+    :arg request: данные входящего запроса callback (опционально).
+    :arg script: модель шаблона — метаданные и настройки в ``lua.*`` (опционально).
+        Секреты провайдера лежат в ``provider.secrets`` и не конфликтуют с
+        ``lua.settings``.
+    :return: словарь контекста для Lua.
+    """
+    ctx = {
+        "action": action,
+        "lua": _lua_meta(script),
+        "provider": LuaAuthProvider.from_model(provider, secrets).model_dump(
+            mode="json"
+        ),
+        "redirect_uri": redirect_uri,
+        "state": state,
+        "code": code,
+    }
+    if request is not None:
+        ctx["request"] = request.model_dump(mode="json")
+    return ctx
+
+
 def build_trigger_ctx(
     event: str, config: dict, data: dict, script=None
 ) -> dict:  # noqa: ANN001
@@ -169,10 +210,36 @@ class LuaRunner:
         ctx = build_trigger_ctx(event, config, data, script)
         return await self.run(script.filename, ScriptKind.TRIGGER, ctx)
 
+    async def run_auth(
+        self,
+        script,  # noqa: ANN001 — SystemScriptsModel
+        action,  # noqa: ANN001
+        provider,  # noqa: ANN001 — OAuthProvidersModel
+        secrets,
+        *,
+        redirect_uri: str,
+        state: str | None = None,
+        code: str | None = None,
+        request=None,
+    ) -> dict:
+        """Собрать контекст OAuth и исполнить скрипт провайдера."""
+        ctx = build_auth_ctx(
+            action,
+            provider,
+            secrets,
+            redirect_uri=redirect_uri,
+            state=state,
+            code=code,
+            request=request,
+            script=script,
+        )
+        return await self.run(script.filename, ScriptKind.AUTH, ctx)
+
 
 __all__ = [
     "LuaRunner",
     "build_service_ctx",
     "build_payment_ctx",
+    "build_auth_ctx",
     "build_trigger_ctx",
 ]

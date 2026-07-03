@@ -78,7 +78,7 @@ class ServiceModel(Base):
         String(8), default=Delivery.KEY, nullable=False
     )
     lua_script_id: Mapped[int | None] = mapped_column(
-        ForeignKey("lua_scripts.id", ondelete="SET NULL"), nullable=True, index=True
+        ForeignKey("lua_scripts.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     # Кастом-параметры услуги (снимок прокидывается в скрипт как ctx.params).
     params: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

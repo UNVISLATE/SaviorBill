@@ -52,7 +52,7 @@ class UserOauthModel(Base):
         ForeignKey("accounts.id", ondelete="CASCADE"), index=True, nullable=False
     )
     provider: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
-    # Идентификатор пользователя у провайдера (OIDC claim ``sub``).
+    # Идентификатор пользователя у провайдера (claim ``sub`` / внешний id).
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     raw: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)

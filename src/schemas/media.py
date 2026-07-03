@@ -29,6 +29,10 @@ class Media(BaseModel):
     mime: str | None = None
     size: int | None = None
     owner_id: int | None = None
+    variants: dict = Field(
+        default_factory=dict,
+        description="Варианты файла (main/thumb/preview/…): key, mime, size, url",
+    )
 
     @classmethod
     def from_model(cls, m) -> "Media":  # noqa: ANN001 — SystemMediaModel
@@ -43,6 +47,7 @@ class Media(BaseModel):
             mime=m.mime,
             size=m.size,
             owner_id=m.owner_id,
+            variants=m.variants or {},
         )
 
 
@@ -65,42 +70,6 @@ class MediaStatus(BaseModel):
         default=None, description="MIME готового файла (опционально)"
     )
     error: str | None = Field(default=None, description="Текст ошибки (опционально)")
-
-
-class MediaAuthzReq(BaseModel):
-    """Запрос авторизации загрузки (mediaworker -> billing, /internal)."""
-
-    user_token: str = Field(description="Access-JWT пользователя (обязательно)")
-    kind: str = Field(
-        default="image",
-        description="Вид: image | video | icon | avatar (опционально)",
-    )
-
-
-class MediaAuthz(BaseModel):
-    """Ответ авторизации загрузки (billing -> mediaworker, /internal)."""
-
-    owner_id: int = Field(description="ID пользователя-владельца")
-    max_bytes: int = Field(description="Максимально разрешённый размер файла (байты)")
-
-
-class MediaRegister(BaseModel):
-    """Регистрация готового медиа (mediaworker -> billing, /internal).
-
-    Вызывается после успешной конвертации; billing создаёт запись в БД.
-    """
-
-    token: str = Field(description="Идентификатор медиа (обязательно)")
-    kind: str = Field(description="Вид: image | video | icon | avatar (обязательно)")
-    path: str = Field(description="Ключ файла в хранилище (обязательно)")
-    backend: str = Field(default="fs", description="fs | s3 (опционально)")
-    mime: str | None = Field(
-        default=None, description="MIME итогового файла (опционально)"
-    )
-    size: int | None = Field(
-        default=None, description="Размер файла в байтах (опционально)"
-    )
-    owner_id: int | None = Field(default=None, description="ID владельца (опционально)")
 
 
 class Attachment(BaseModel):
@@ -149,9 +118,6 @@ __all__ = [
     "Media",
     "MediaTask",
     "MediaStatus",
-    "MediaAuthzReq",
-    "MediaAuthz",
-    "MediaRegister",
     "Attachment",
     "AttachmentIn",
 ]

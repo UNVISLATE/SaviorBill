@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from dependencies.catalog import (
     ServiceAttachmentMngr,
@@ -14,7 +14,7 @@ from dependencies.rbac import require_perm
 from schemas.media import Attachment, AttachmentIn
 from schemas.page import Page
 from schemas.service import ServiceAdmin, ServiceCreate, ServicePatch
-from utils.pagination import paginate
+from utils.pagination import PageParams, page_params, paginate
 from utils.apidoc import with_fields
 
 router = APIRouter()
@@ -27,14 +27,19 @@ router = APIRouter()
     summary="Список услуг (все)",
 )
 async def list_services(
-    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
-    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
+    pp: PageParams = Depends(page_params),
     mngr: ServiceMngr = Depends(get_service_mngr),
 ) -> Page[ServiceAdmin]:
-    items, total = await paginate(
-        mngr.s, mngr.stmt_all(), ServiceAdmin.from_model, limit=limit, offset=offset
+    items, total, has_more = await paginate(
+        mngr.s,
+        mngr.stmt_all(),
+        ServiceAdmin.from_model,
+        limit=pp.limit,
+        offset=pp.offset,
     )
-    return Page(items=items, total=total, limit=limit, offset=offset)
+    return Page(
+        items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
+    )
 
 
 @router.post(

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,7 +16,7 @@ from schemas.orders import OrderAdmin
 from schemas.page import Page
 from schemas.payments import PaymentAdmin
 from schemas.user import OAuthConnAdmin, User, UserDetail, UserPatch
-from utils.pagination import paginate
+from utils.pagination import PageParams, page_params, paginate
 from utils.apidoc import with_fields
 
 router = APIRouter()
@@ -42,16 +42,17 @@ async def _get_user(session: AsyncSession, user_id: int) -> UserModel:
     description="Постранично. Требует право users.read.",
 )
 async def list_users(
-    limit: int = Query(50, ge=1, le=200, description="Размер страницы (1–200)"),
-    offset: int = Query(0, ge=0, description="Смещение"),
+    pp: PageParams = Depends(page_params),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[User]:
     """Постраничный список аккаунтов."""
     stmt = select(UserModel).order_by(UserModel.id)
-    items, total = await paginate(
-        session, stmt, User.from_model, limit=limit, offset=offset
+    items, total, has_more = await paginate(
+        session, stmt, User.from_model, limit=pp.limit, offset=pp.offset
     )
-    return Page(items=items, total=total, limit=limit, offset=offset)
+    return Page(
+        items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
+    )
 
 
 @router.get(
@@ -121,8 +122,7 @@ async def edit_user(
 )
 async def user_services(
     user_id: int,
-    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
-    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
+    pp: PageParams = Depends(page_params),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[OrderAdmin]:
     """Список услуг (заказов) пользователя (постранично)."""
@@ -132,10 +132,12 @@ async def user_services(
         .where(UserServicesModel.account_id == user_id)
         .order_by(UserServicesModel.id.desc())
     )
-    items, total = await paginate(
-        session, stmt, OrderAdmin.from_model, limit=limit, offset=offset
+    items, total, has_more = await paginate(
+        session, stmt, OrderAdmin.from_model, limit=pp.limit, offset=pp.offset
     )
-    return Page(items=items, total=total, limit=limit, offset=offset)
+    return Page(
+        items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
+    )
 
 
 @router.get(
@@ -147,12 +149,11 @@ async def user_services(
 )
 async def user_orders(
     user_id: int,
-    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
-    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
+    pp: PageParams = Depends(page_params),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[OrderAdmin]:
     """Список заказов пользователя (совпадает с услугами)."""
-    return await user_services(user_id, limit, offset, session)
+    return await user_services(user_id, pp, session)
 
 
 @router.get(
@@ -164,8 +165,7 @@ async def user_orders(
 )
 async def user_payments(
     user_id: int,
-    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
-    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
+    pp: PageParams = Depends(page_params),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[PaymentAdmin]:
     """Список платежей пользователя (постранично)."""
@@ -175,10 +175,12 @@ async def user_payments(
         .where(UserPaymentsModel.account_id == user_id)
         .order_by(UserPaymentsModel.id.desc())
     )
-    items, total = await paginate(
-        session, stmt, PaymentAdmin.from_model, limit=limit, offset=offset
+    items, total, has_more = await paginate(
+        session, stmt, PaymentAdmin.from_model, limit=pp.limit, offset=pp.offset
     )
-    return Page(items=items, total=total, limit=limit, offset=offset)
+    return Page(
+        items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
+    )
 
 
 @router.get(

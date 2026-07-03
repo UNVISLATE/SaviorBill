@@ -26,9 +26,6 @@ class PaymentCreate(BaseModel):
     service_id: int | None = Field(
         default=None, description="ID услуги, обязателен при target=service"
     )
-    params: dict | None = Field(
-        default=None, description="Доп. параметры услуги (опционально)"
-    )
     return_url: str | None = Field(
         default=None,
         description="URL возврата после оплаты, если провайдер его поддерживает (опционально)",

@@ -90,7 +90,6 @@ services:
       LUA_TASK_STREAM: lua:tasks
       LUA_RESP_STREAM: lua:results
       LUA_GROUP: luaworkers
-      LUA_CONSUMER: worker-1
       BILLING_URL: http://billing:8000
       LUA_SERVICE_TOKEN: ${LUA_SERVICE_TOKEN:-dev-service-token}
       LUA_SCRIPTS_DIR: /app/data/lua
@@ -101,18 +100,25 @@ services:
     build:
       context: ../../mediaworker
     depends_on:
+      db:
+        condition: service_healthy
       valkey:
         condition: service_healthy
     environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-aiosupport}
+      DB_PASS: ${DB_PASS:-test123}
+      DB_NAME: ${DB_NAME:-aiosupport}
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
       VALKEY_DB: 0
       DATA_DIR: /app/data
+      JWT_SECRET: ${JWT_SECRET:-}
       MEDIA_TASK_STREAM: media:tasks
+      MEDIA_RESULT_STREAM: media:results
       MEDIA_GROUP: mediaworkers
-      MEDIA_CONSUMER: media-1
-      BILLING_URL: http://billing:8000
-      LUA_SERVICE_TOKEN: ${LUA_SERVICE_TOKEN:-dev-service-token}
+      MEDIA_UPLOADS_PER_HOUR: ${MEDIA_UPLOADS_PER_HOUR:-30}
       STORAGE_BACKEND: ${STORAGE_BACKEND:-fs}
       MEDIA_STATUS_TTL: ${MEDIA_STATUS_TTL:-3600}
       MEDIA_BAN_SECONDS: ${MEDIA_BAN_SECONDS:-180}

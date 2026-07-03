@@ -15,10 +15,6 @@ class OrderCreate(BaseModel):
     promocode: str | None = Field(
         default=None, max_length=64, description="Промокод-скидка (опционально)"
     )
-    params: dict | None = Field(
-        default=None,
-        description="Доп. параметры от клиента, мёрджатся поверх Service.params (опционально)",
-    )
 
 
 class Order(BaseModel):

@@ -90,17 +90,20 @@ services:
     image: ${IMAGE_PREFIX:-ghcr.io/unvislate/saviorbill}/mediaworker:${TAG:-latest}
     restart: unless-stopped
     depends_on:
+      db:
+        condition: service_healthy
       valkey:
         condition: service_healthy
     env_file:
       - path: .env
         required: false
     environment:
+      DB_HOST: db
+      DB_PORT: 5432
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
       VALKEY_DB: 0
       DATA_DIR: /app/data
-      BILLING_URL: http://billing:8000
     volumes:
       - ../data:/app/data:rw
 

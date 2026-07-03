@@ -10,6 +10,7 @@ from sqlalchemy.engine.url import URL
 APP_NAME = "SaviorBill"
 APP_VERSION = "0.0.2dev"
 
+
 class AppConfig(BaseSettings):
     """Конфигурация приложения (постоянные ENV (настройки) + разовые seed -> settings)."""
 
@@ -19,6 +20,11 @@ class AppConfig(BaseSettings):
     HOST: str = Field(default="0.0.0.0")
     PORT: int = Field(default=8000)
     DEBUG: bool = Field(default=False)
+
+    # OpenAPI-документация (Swagger UI / ReDoc / openapi.json). По умолчанию
+    # включена; в проде можно выключить (DOCS_ENABLED=false), тогда все три
+    # эндпоинта отдают 404.
+    DOCS_ENABLED: bool = Field(default=True)
 
     # БД
     DB_DRIVER: str = Field(default="postgresql+asyncpg")
@@ -130,8 +136,17 @@ class AppConfig(BaseSettings):
     DOMAIN: str | None = Field(default=None)
     # URL сервиса mediaworker (внутренняя сеть) для служебных обращений billing.
     MEDIAWORKER_URL: str = Field(default="http://mediaworker:8080")
+    # Публичный базовый URL mediaworker для ссылки на его OpenAPI-документацию в
+    # описании billing. Пусто -> строится из DOMAIN (или MEDIAWORKER_URL как
+    # fallback). Ссылка на доку рисуется только если DOCS_ENABLED=true.
+    MEDIA_PUBLIC_URL: str | None = Field(default=None)
     # Стрим задач медиа (конвертация/удаление) в Valkey.
     MEDIA_TASK_STREAM: str = Field(default="media:tasks")
+    # Стрим результатов конвертации: mediaworker публикует готовое медиа, billing
+    # (владелец схемы БД) его потребляет и записывает. Consumer-группа шардирует
+    # нагрузку между инстансами billing (каждый результат обрабатывается один раз).
+    MEDIA_RESULT_STREAM: str = Field(default="media:results")
+    MEDIA_RESULT_GROUP: str = Field(default="billingmedia")
     # TTL статуса конвертации в Valkey (сек).
     MEDIA_STATUS_TTL: int = Field(default=3600)
     # Бан IP при фейковом Content-Length (сек).
@@ -203,6 +218,18 @@ class AppConfig(BaseSettings):
         return self
 
     @property
+    def media_docs_url(self) -> str:
+        """Публичный URL OpenAPI-документации mediaworker.
+
+        Приоритет: явный ``MEDIA_PUBLIC_URL`` -> публичный ``DOMAIN`` (https) ->
+        внутренний ``MEDIAWORKER_URL``. К базе добавляется путь ``/docs``.
+        """
+        base = self.MEDIA_PUBLIC_URL
+        if not base:
+            base = f"https://{self.DOMAIN}" if self.DOMAIN else self.MEDIAWORKER_URL
+        return f"{base.rstrip('/')}/docs"
+
+    @property
     def data_path(self) -> Path:
         """Корень монтируемой папки данных."""
         return Path(self.DATA_DIR)
@@ -211,6 +238,19 @@ class AppConfig(BaseSettings):
     def keys_dir(self) -> Path:
         """Папка для ключей шифрования (создаётся при необходимости)."""
         return self.data_path / "keys"
+
+    @property
+    def instance_id(self) -> str:
+        """Уникальный идентификатор процесса-инстанса (для имён консьюмеров).
+
+        Используется как имя консьюмера в Valkey consumer-группах, чтобы при
+        горизонтальном масштабировании инстансы не делили одно имя (иначе ломается
+        учёт pending/claim). Стабилен в пределах процесса (hostname + pid).
+        """
+        import os
+        import socket
+
+        return f"{socket.gethostname()}-{os.getpid()}"
 
     @property
     def uploads_dir(self) -> Path:

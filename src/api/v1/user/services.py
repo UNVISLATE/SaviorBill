@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,15 +17,14 @@ from models.user_services import UserServicesModel
 from schemas.orders import OrderCreate, Order
 from schemas.page import Page
 from utils.apidoc import with_fields
-from utils.pagination import paginate
+from utils.pagination import PageParams, page_params, paginate
 
 router = APIRouter()
 
 
 @router.get("/services", response_model=Page[Order], summary="Мои услуги")
 async def my_services(
-    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
-    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
+    pp: PageParams = Depends(page_params),
     acc: UserModel = Depends(get_current_acc),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[Order]:
@@ -35,10 +34,12 @@ async def my_services(
         .where(UserServicesModel.account_id == acc.id)
         .order_by(UserServicesModel.id.desc())
     )
-    items, total = await paginate(
-        session, stmt, Order.from_model, limit=limit, offset=offset
+    items, total, has_more = await paginate(
+        session, stmt, Order.from_model, limit=pp.limit, offset=pp.offset
     )
-    return Page(items=items, total=total, limit=limit, offset=offset)
+    return Page(
+        items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
+    )
 
 
 @router.post(
@@ -61,7 +62,7 @@ async def create_service(
     usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
 ) -> Order:
     service = await svc_mngr.get_active(body.service_id)
-    usvc = await usvc_mngr.create(acc, service, params=body.params)
+    usvc = await usvc_mngr.create(acc, service)
     if usvc.status != UsvcStatus.ACTIVE:
         await usvc_mngr.s.rollback()
         raise HTTPException(

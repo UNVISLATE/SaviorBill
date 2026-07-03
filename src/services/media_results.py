@@ -1,0 +1,124 @@
+"""Консьюмер результатов конвертации медиа (mediaworker → billing).
+
+mediaworker публикует готовое медиа в стрим ``media:results`` как выполненную
+задачу; billing — владелец схемы БД — потребляет её через consumer-группу и сам
+записывает запись ``system_media``. Так логика записи в (изменяемую) БД живёт
+только в одном сервисе.
+
+Consumer-группа шардирует сообщения между инстансами billing (каждый результат
+обрабатывается ровно один раз), поэтому распределённый лок не нужен — достаточно
+уникального имени консьюмера на инстанс.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+
+import valkey.asyncio as valkey
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
+from models.system_media import SystemMediaMngr
+from utils.config import AppConfig
+
+log = logging.getLogger("saviorbill.media")
+
+
+class MediaResults:
+    """Фоновый консьюмер стрима результатов конвертации медиа."""
+
+    def __init__(
+        self,
+        sessionmaker: async_sessionmaker[AsyncSession],
+        vk: valkey.Valkey,
+        cfg: AppConfig,
+    ) -> None:
+        self.sm = sessionmaker
+        self.vk = vk
+        self.cfg = cfg
+        self._task: asyncio.Task | None = None
+        self._stopped = False
+
+    async def _ensure_group(self) -> None:
+        try:
+            await self.vk.xgroup_create(
+                self.cfg.MEDIA_RESULT_STREAM,
+                self.cfg.MEDIA_RESULT_GROUP,
+                id="0",
+                mkstream=True,
+            )
+        except valkey.ResponseError as exc:
+            if "BUSYGROUP" not in str(exc):
+                raise
+
+    async def start(self) -> None:
+        """Создать группу и запустить фоновый цикл чтения."""
+        await self._ensure_group()
+        self._task = asyncio.create_task(self._run(), name="media-results")
+        log.info("media-results консьюмер запущен")
+
+    async def stop(self) -> None:
+        self._stopped = True
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+            self._task = None
+
+    async def _run(self) -> None:
+        consumer = self.cfg.instance_id
+        while not self._stopped:
+            try:
+                resp = await self.vk.xreadgroup(
+                    self.cfg.MEDIA_RESULT_GROUP,
+                    consumer,
+                    {self.cfg.MEDIA_RESULT_STREAM: ">"},
+                    count=10,
+                    block=5000,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:  # noqa: BLE001 — цикл не должен падать
+                log.exception("media-results: ошибка чтения")
+                await asyncio.sleep(2)
+                continue
+            for _stream, entries in resp or []:
+                for msg_id, data in entries:
+                    try:
+                        await self._handle(data)
+                    except Exception:  # noqa: BLE001 — одна запись не валит цикл
+                        log.exception("media-results: ошибка записи")
+                    finally:
+                        await self.vk.xack(
+                            self.cfg.MEDIA_RESULT_STREAM,
+                            self.cfg.MEDIA_RESULT_GROUP,
+                            msg_id,
+                        )
+
+    async def _handle(self, data: dict) -> None:
+        op = data.get("op")
+        variants = json.loads(data.get("variants") or "{}")
+        async with self.sm() as session:
+            mngr = SystemMediaMngr(session)
+            if op == "preview":
+                await mngr.merge_variants(data["token"], variants)
+            else:  # convert
+                owner = data.get("owner_id")
+                await mngr.upsert(
+                    token=data["token"],
+                    kind=data.get("kind", "image"),
+                    path=data["path"],
+                    backend=data.get("backend", "fs"),
+                    mime=data.get("mime") or None,
+                    size=int(data["size"]) if data.get("size") else None,
+                    owner_id=int(owner) if owner else None,
+                    variants=variants,
+                    status=data.get("status", "ready"),
+                )
+            await session.commit()
+
+
+__all__ = ["MediaResults"]

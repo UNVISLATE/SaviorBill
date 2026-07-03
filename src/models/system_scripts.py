@@ -13,13 +13,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from models import Base
-from enums import ScriptKind, PayAction, ServiceAction
+from enums import ScriptKind, PayAction, AuthAction, ServiceAction
 from utils.datetime_utils import utc_now
 
 # Подпапка хранения по виду скрипта (внутри LUA_SCRIPTS_DIR).
 _SUBDIR_BY_KIND = {
     ScriptKind.SERVICE: "services",
     ScriptKind.PAYMENT: "payments",
+    ScriptKind.AUTH: "auth",
     ScriptKind.TRIGGER: "triggers",
 }
 
@@ -136,6 +137,13 @@ class SystemScriptsMngr:
                     status.HTTP_400_BAD_REQUEST,
                     f"payment-скрипт обязан поддерживать: {', '.join(missing)}",
                 )
+        elif kind == ScriptKind.AUTH:
+            missing = [a for a in AuthAction.MANDATORY if a not in actions]
+            if missing:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"auth-скрипт обязан поддерживать: {', '.join(missing)}",
+                )
         elif kind == ScriptKind.SERVICE:
             if actions and ServiceAction.CREATE not in actions:
                 raise HTTPException(
@@ -177,11 +185,54 @@ class SystemScriptsMngr:
         await self.s.flush()
         return row
 
+    async def _references(self, script_id: int) -> list[str]:
+        """Найти сущности, ссылающиеся на скрипт (для дружелюбного 409).
+
+        DB-уровень (FK ondelete=RESTRICT) — финальный барьер; здесь же собираем
+        человекочитаемый список ссылок, чтобы вернуть осмысленную ошибку.
+
+        :arg script_id: id проверяемого скрипта.
+        :return: список описаний ссылающихся сущностей (пусто — если ссылок нет).
+        """
+        from models.oauth_providers import OAuthProvidersModel
+        from models.payment_providers import PaymentProvidersModel
+        from models.service import ServiceModel
+
+        refs: list[str] = []
+        svc = await self.s.scalars(
+            select(ServiceModel.slug).where(ServiceModel.lua_script_id == script_id)
+        )
+        refs += [f"услуга:{s}" for s in svc]
+        pay = await self.s.scalars(
+            select(PaymentProvidersModel.slug).where(
+                PaymentProvidersModel.script_id == script_id
+            )
+        )
+        refs += [f"платёжный провайдер:{s}" for s in pay]
+        oauth = await self.s.scalars(
+            select(OAuthProvidersModel.slug).where(
+                OAuthProvidersModel.script_id == script_id
+            )
+        )
+        refs += [f"oauth-провайдер:{s}" for s in oauth]
+        return refs
+
     async def delete(self, script_id: int) -> None:
-        """Удалить запись скрипта и его файл."""
+        """Удалить запись скрипта и его файл.
+
+        Скрипт нельзя удалить, пока на него ссылается услуга, платёжный или
+        oauth-провайдер — иначе сломается их логика. Предпроверяем ссылки и
+        отдаём 409; на уровне БД тот же инвариант закреплён FK ``ondelete=RESTRICT``.
+        """
         row = await self.by_id(script_id)
         if row is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "скрипт не найден")
+        refs = await self._references(script_id)
+        if refs:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "скрипт используется и не может быть удалён: " + ", ".join(refs),
+            )
         target = self._safe_target(row.filename)
         if target.exists():
             target.unlink()

@@ -13,6 +13,7 @@ from __future__ import annotations
 from .user import LuaUser, LuaUsvc
 from .service import LuaService
 from .payment import LuaPayment, LuaProvider
+from .auth import LuaAuthProvider
 from .request import LuaRequest
 from .trigger import LuaTrigger
 from .script import LuaScript, LuaScriptUpload, LuaScriptPatch
@@ -24,6 +25,7 @@ __all__ = [
     "LuaService",
     "LuaPayment",
     "LuaProvider",
+    "LuaAuthProvider",
     "LuaRequest",
     "LuaTrigger",
     "LuaScript",

@@ -95,7 +95,12 @@ async def test_admin_media_list_and_cleanup(http, new_user, seed):
 
     lst = await http.get("/api/v1/admin/media", headers=hdr)
     assert lst.status_code == 200, lst.text
-    assert any(m["token"] == token for m in lst.json())
+    entry = next((m for m in lst.json() if m["token"] == token), None)
+    assert entry is not None
+    # mediaworker записал варианты (полный webp + обрезанный мини-webp).
+    assert "main" in entry["variants"]
+    assert "thumb" in entry["variants"]
+    assert entry["variants"]["thumb"]["url"] == f"/media/{token}.thumb"
 
     # чистка орфанов (медиа не привязано ни к товару, ни к аватарке)
     cl = await http.post("/api/v1/admin/media/cleanup", headers=hdr)

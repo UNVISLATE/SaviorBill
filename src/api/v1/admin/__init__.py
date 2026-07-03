@@ -13,6 +13,7 @@ from .promo import router as promo_router
 from .purchases import router as purchases_router
 from .roles import router as roles_router
 from .services import router as services_router
+from .settings import router as settings_router
 from .triggers import router as triggers_router
 from .users import router as users_router
 
@@ -30,5 +31,6 @@ router.include_router(lua_router, tags=["admin: lua"])
 router.include_router(email_router, tags=["admin: email"])
 router.include_router(triggers_router, tags=["admin: triggers"])
 router.include_router(media_router, tags=["admin: media"])
+router.include_router(settings_router, tags=["admin: settings"])
 
 __all__ = ["router"]

@@ -87,11 +87,27 @@ class DiscountType:
     FIXED = "fixed"
 
 
+class AuthAction:
+    """Действие OAuth-скрипта (единый скрипт провайдера, action-driven).
+
+    ``start`` — подготовка редиректа (вернуть authorize_url);
+    ``callback`` — обмен кода на нормализованный профиль пользователя.
+    Оба обязательны для любого OAuth-скрипта.
+    """
+
+    START = "start"  # подготовка authorize_url для редиректа
+    CALLBACK = "callback"  # обмен кода на профиль (sub/email/…)
+
+    MANDATORY = (START, CALLBACK)
+    ALL = (START, CALLBACK)
+
+
 class ScriptKind:
     """Назначение Lua-скрипта."""
 
     SERVICE = "service"  # доставка услуги
     PAYMENT = "payment"  # платёжная интеграция
+    AUTH = "auth"  # OAuth-интеграция (вход через провайдера)
     GENERIC = "generic"  # прочее
     TRIGGER = "trigger"  # действие триггера
 
@@ -118,6 +134,7 @@ __all__ = [
     "PayStatus",
     "TopupStatus",
     "PayAction",
+    "AuthAction",
     "PayTarget",
     "ServiceAction",
     "PromoKind",

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,7 +14,7 @@ from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderAdmin, OrderGrant
 from schemas.page import Page
-from utils.pagination import paginate
+from utils.pagination import PageParams, page_params, paginate
 from utils.apidoc import with_fields
 
 router = APIRouter()
@@ -27,15 +27,16 @@ router = APIRouter()
     summary="Список выдач",
 )
 async def list_orders(
-    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
-    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
+    pp: PageParams = Depends(page_params),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[OrderAdmin]:
     stmt = select(UserServicesModel).order_by(UserServicesModel.id.desc())
-    items, total = await paginate(
-        session, stmt, OrderAdmin.from_model, limit=limit, offset=offset
+    items, total, has_more = await paginate(
+        session, stmt, OrderAdmin.from_model, limit=pp.limit, offset=pp.offset
     )
-    return Page(items=items, total=total, limit=limit, offset=offset)
+    return Page(
+        items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
+    )
 
 
 @router.get(

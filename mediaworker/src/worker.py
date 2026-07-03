@@ -1,8 +1,10 @@
-"""Consumer задач media:tasks: конвертация и удаление файлов.
+"""Consumer задач media:tasks: конвертация, ручное превью и удаление файлов.
 
-Слушает поток Valkey ``media:tasks`` (группа consumer-group), конвертирует
-загруженные оригиналы (webp/webm), публикует статус, регистрирует готовое медиа в
-billing (внутренний API) и обрабатывает задачи удаления.
+Слушает поток Valkey ``media:tasks`` (consumer-group), конвертирует оригиналы
+(webp/webm + варианты) и публикует статус в Valkey. Готовое медиа НЕ пишется в БД
+напрямую: воркер публикует результат как задачу в стрим ``media:results``, а
+запись в БД делает billing (владелец схемы). Биллинг и воркер друг о друге не
+знают — общий контракт только через Valkey.
 """
 
 from __future__ import annotations
@@ -11,11 +13,10 @@ import asyncio
 import json
 import os
 
-import httpx
 import valkey.asyncio as valkey
 
 from config import Config
-from convert import ConvertError, convert, target_key
+from convert import ConvertError, Variant, convert, make_video_preview
 from storage import Storage
 
 _STATUS_PREFIX = "media:status:"
@@ -75,72 +76,104 @@ class Worker:
         op = data.get("op")
         if op == "convert":
             await self._convert(data)
+        elif op == "preview":
+            await self._preview(data)
         elif op == "delete":
             await self._delete(data)
+
+    async def _publish(self, variant: Variant) -> tuple[str, int]:
+        """Переместить вариант в хранилище; вернуть ключ и размер."""
+        tmp = os.path.join(self.cfg.uploads_dir, variant.key)
+        size = os.path.getsize(tmp)
+        await self.storage.put_final(variant.key, tmp, variant.mime)
+        return variant.key, size
+
+    def _variant_map(self, token: str, variants: list[Variant], sizes: dict) -> dict:
+        """Собрать словарь вариантов (key/mime/size + относительный url)."""
+        out: dict = {}
+        for v in variants:
+            base = v.key.rsplit(".", 1)[0]  # {token} или {token}.thumb -> url без ext
+            out[v.name] = {
+                "key": v.key,
+                "mime": v.mime,
+                "size": sizes.get(v.key),
+                "url": f"/media/{base}",
+            }
+        return out
+
+    async def _emit_result(self, fields: dict) -> None:
+        """Опубликовать результат конверсии в стрим (billing запишет в БД)."""
+        await self.vk.xadd(self.cfg.result_stream, fields)
 
     async def _convert(self, data: dict) -> None:
         token = data["token"]
         kind = data.get("kind", "image")
         owner_id = data.get("owner_id")
         src = self.storage.orig_path(token)
-        key, mime = target_key(token, kind)
-        tmp = os.path.join(self.cfg.uploads_dir, key)
 
         try:
-            await convert(self.cfg, kind, src, tmp)
+            variants = await convert(self.cfg, kind, src, self.cfg.uploads_dir, token)
         except ConvertError as exc:
             await self._set_status(token, state="failed", error=str(exc))
             self.storage._safe_unlink(src)
-            self.storage._safe_unlink(tmp)
             return
 
-        size = os.path.getsize(tmp)
-        await self.storage.put_final(key, tmp, mime)
+        sizes: dict = {}
+        for v in variants:
+            key, size = await self._publish(v)
+            sizes[key] = size
+            if self.cfg.backend == "s3":
+                await self.vk.hset(f"{_FILE_PREFIX}{token}", mapping={v.name: v.key})
 
-        if self.cfg.backend == "s3":
-            await self.vk.hset(
-                f"{_FILE_PREFIX}{token}", mapping={"key": key, "mime": mime}
-            )
-
-        await self._set_status(token, state="ready", url=f"/media/{token}", mime=mime)
-        await self._register(token, kind, key, mime, size, owner_id)
+        main = variants[0]
+        vmap = self._variant_map(token, variants, sizes)
+        result = {
+            "op": "convert",
+            "token": token,
+            "kind": kind,
+            "path": main.key,
+            "backend": self.cfg.backend,
+            "mime": main.mime,
+            "status": "ready",
+            "variants": json.dumps(vmap),
+        }
+        if main.key in sizes:
+            result["size"] = str(sizes[main.key])
+        if owner_id:
+            result["owner_id"] = str(owner_id)
+        await self._emit_result(result)
+        await self._set_status(
+            token, state="ready", url=f"/media/{token}", mime=main.mime
+        )
 
         if not self.cfg.keep_original:
             self.storage._safe_unlink(src)
 
-    async def _register(
-        self,
-        token: str,
-        kind: str,
-        key: str,
-        mime: str,
-        size: int,
-        owner_id: str | None,
-    ) -> None:
-        body = {
-            "token": token,
-            "kind": kind,
-            "path": key,
-            "backend": self.cfg.backend,
-            "mime": mime,
-            "size": size,
-        }
-        if owner_id:
-            body["owner_id"] = int(owner_id)
-        async with httpx.AsyncClient(timeout=15) as client:
-            try:
-                r = await client.post(
-                    f"{self.cfg.billing_url}/internal/media/register",
-                    json=body,
-                    headers={"Authorization": f"Bearer {self.cfg.service_token}"},
-                )
-                if r.status_code >= 400:
-                    print(
-                        f"[mediaworker] register failed {r.status_code}: {r.text}",
-                        flush=True,
-                    )
-            except Exception as exc:  # noqa: BLE001
-                print(f"[mediaworker] register error: {exc}", flush=True)
+    async def _preview(self, data: dict) -> None:
+        """Ручная загрузка превью для видео: пересобрать preview/preview_thumb."""
+        token = data["token"]
+        src = self.storage.orig_path(f"{token}.preview")
+        try:
+            variants = await make_video_preview(
+                self.cfg, src, self.cfg.uploads_dir, token
+            )
+        except ConvertError as exc:
+            print(f"[mediaworker] preview failed {token}: {exc}", flush=True)
+            self.storage._safe_unlink(src)
+            return
+
+        sizes: dict = {}
+        for v in variants:
+            key, size = await self._publish(v)
+            sizes[key] = size
+            if self.cfg.backend == "s3":
+                await self.vk.hset(f"{_FILE_PREFIX}{token}", mapping={v.name: v.key})
+
+        vmap = self._variant_map(token, variants, sizes)
+        await self._emit_result(
+            {"op": "preview", "token": token, "variants": json.dumps(vmap)}
+        )
+        self.storage._safe_unlink(src)
 
     async def _delete(self, data: dict) -> None:
         payload = json.loads(data.get("payload", "{}"))

@@ -1,14 +1,61 @@
-"""Помощник постраничной выборки поверх SQLAlchemy select."""
+"""Помощник постраничной выборки поверх SQLAlchemy select.
+
+Модель пагинации (см. UPDATE_PLAN.md): три параметра запроса —
+``limit`` (сколько отдать), ``offset`` (приоритетное смещение) и ``pass``/``skip``
+(сколько пропустить, если ``offset`` не задан). Если ``offset`` задан — ``pass``
+игнорируется. Ответ (:class:`schemas.page.Page`) помимо элементов несёт ``total``
+(всего записей) и ``has_more`` (есть ли ещё страницы) — для динамической подгрузки.
+"""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Callable, TypeVar
 
+from fastapi import Query
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 M = TypeVar("M")
 S = TypeVar("S")
+
+
+@dataclass(slots=True)
+class PageParams:
+    """Разрешённые параметры пагинации (эффективное смещение уже вычислено)."""
+
+    limit: int
+    offset: int
+
+
+def page_params(
+    limit: int = Query(
+        50,
+        ge=1,
+        le=200,
+        description="Размер страницы — сколько записей отдать (опционально)",
+    ),
+    offset: int | None = Query(
+        None,
+        ge=0,
+        description="Приоритетное смещение выборки. Если задан — pass игнорируется (опционально)",
+    ),
+    skip: int = Query(
+        0,
+        ge=0,
+        alias="pass",
+        description="Сколько записей пропустить, если offset не задан — для динамической подгрузки (опционально)",
+    ),
+) -> PageParams:
+    """FastAPI-зависимость: свести ``limit``/``offset``/``pass`` к :class:`PageParams`.
+
+    :arg limit: размер страницы.
+    :arg offset: приоритетное смещение (если задано — ``pass`` игнорируется).
+    :arg skip: смещение-«пропуск» (алиас запроса ``pass``), применяется без ``offset``.
+    :return: разрешённые параметры пагинации.
+    """
+    effective = offset if offset is not None else skip
+    return PageParams(limit=limit, offset=effective)
 
 
 async def paginate(
@@ -18,21 +65,24 @@ async def paginate(
     *,
     limit: int,
     offset: int,
-) -> tuple[list[S], int]:
+) -> tuple[list[S], int, bool]:
     """Посчитать total и вернуть страницу результатов ``stmt``.
 
     :arg session: активная сессия БД.
     :arg stmt: базовый select (без limit/offset), с нужными where/order_by.
     :arg mapper: преобразование ORM-строки в схему ответа.
     :arg limit: размер страницы.
-    :arg offset: смещение выборки.
-    :return: кортеж (элементы страницы, общее число записей).
+    :arg offset: эффективное смещение выборки.
+    :return: кортеж (элементы страницы, общее число записей, есть ли ещё страницы).
     """
     total = await session.scalar(
         select(func.count()).select_from(stmt.order_by(None).subquery())
     )
+    total = int(total or 0)
     rows = await session.scalars(stmt.limit(limit).offset(offset))
-    return [mapper(r) for r in rows], int(total or 0)
+    items = [mapper(r) for r in rows]
+    has_more = (offset + len(items)) < total
+    return items, total, has_more
 
 
-__all__ = ["paginate"]
+__all__ = ["PageParams", "page_params", "paginate"]

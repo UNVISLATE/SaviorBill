@@ -46,11 +46,12 @@ COPY --from=tests /app/.tests-passed /app/.tests-passed
 ENV VALKEY_HOST=valkey \
     VALKEY_PORT=6379 \
     VALKEY_DB=0 \
+    DB_HOST=db \
+    DB_PORT=5432 \
     DATA_DIR=/app/data \
     MEDIA_TASK_STREAM=media:tasks \
+    MEDIA_RESULT_STREAM=media:results \
     MEDIA_GROUP=mediaworkers \
-    MEDIA_CONSUMER=media-1 \
-    BILLING_URL=http://billing:8000 \
     STORAGE_BACKEND=fs
 
 EXPOSE 8080

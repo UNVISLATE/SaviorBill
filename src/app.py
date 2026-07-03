@@ -13,11 +13,18 @@ logging.basicConfig(
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
 )
 
-DESCRIPTION = "**SaviorBill** — событийная биллинг-система."
+DESCRIPTION = (
+    "**SaviorBill** — событийная биллинг-система.\n\n"
+    f"Медиа-подсистема (загрузка/конвертация/отдача файлов) вынесена в отдельный "
+    f"сервис **mediaworker** — его OpenAPI-документация (форматы загрузки и "
+    f"ответов) доступна по адресу [{settings.media_docs_url}]({settings.media_docs_url})."
+    if settings.DOCS_ENABLED
+    else "**SaviorBill** — событийная биллинг-система."
+)
 
 TAGS_META = [
     {"name": "auth", "description": "Регистрация, вход, JWT-токены, выход."},
-    {"name": "oauth", "description": "Вход через внешних OIDC-провайдеров."},
+    {"name": "oauth", "description": "Вход через внешних OAuth-провайдеров (Lua)."},
     {"name": "catalog", "description": "Публичный каталог услуг и дерево каталогов."},
     {
         "name": "user",
@@ -52,6 +59,9 @@ app = FastAPI(
     description=DESCRIPTION,
     openapi_tags=TAGS_META,
     lifespan=lifespan,
+    docs_url="/docs" if settings.DOCS_ENABLED else None,
+    redoc_url="/redoc" if settings.DOCS_ENABLED else None,
+    openapi_url="/openapi.json" if settings.DOCS_ENABLED else None,
 )
 
 if __name__ == "__main__":

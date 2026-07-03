@@ -1,29 +1,37 @@
-"""mediaworker: приём загрузки (стриминг+бан), отдача S3, статус, consumer.
+"""mediaworker: приём загрузки (стриминг+бан+лимит), отдача S3, статус, consumer.
 
-Изолированный сервис. Ядро billing файлы не трогает: авторизацию загрузки и
-регистрацию готового медиа делает через внутренний API billing, конвертацию —
-ffmpeg, очередь и статусы — Valkey. Локальные готовые файлы отдаёт Caddy напрямую;
-mediaworker отдаёт только S3 (presigned) и служит fallback.
+Изолированный сервис домена медиа. Он сам валидирует access-JWT (общий секрет с
+billing), читает роль/квоту из Postgres, пишет готовое медиа в БД и публикует
+статус в Valkey. Ядро billing о воркере не знает и только читает результат.
+Локальные готовые файлы отдаёт Caddy напрямую; mediaworker отдаёт S3 (presigned)
+и служит fallback.
 """
 
 from __future__ import annotations
 
 import asyncio
+import time
 import uuid
 from contextlib import asynccontextmanager
 
-import httpx
 import valkey.asyncio as valkey
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 
 import ipban
+import security
 from config import Config
+from db import DB
+from rbac import has_perm
 from storage import Storage
 from worker import Worker
 
 _STATUS_PREFIX = "media:status:"
 _FILE_PREFIX = "media:file:"
+_RATE_PREFIX = "media:uprate:"
+_KINDS = {"image", "video", "icon", "avatar"}
+_PERM_SMALL = "media.upload"
+_PERM_LARGE = "media.uploadlarge"
 
 
 def _client_ip(request: Request) -> str:
@@ -34,16 +42,26 @@ def _client_ip(request: Request) -> str:
     return request.client.host if request.client else "0.0.0.0"
 
 
+def _bearer(request: Request) -> str:
+    auth = request.headers.get("authorization", "")
+    if not auth.lower().startswith("bearer "):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bearer token required")
+    return auth.split(" ", 1)[1].strip()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = Config.load()
     vk = valkey.from_url(cfg.valkey_url, decode_responses=True)
     storage = Storage(cfg)
+    db = DB(cfg.db_dsn)
+    await db.connect()
     worker = Worker(cfg, vk, storage)
 
     app.state.cfg = cfg
     app.state.vk = vk
     app.state.storage = storage
+    app.state.db = db
     task = asyncio.create_task(worker.run())
     print(
         f"[mediaworker] {cfg.consumer} -> {cfg.valkey_url} "
@@ -54,10 +72,87 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         task.cancel()
+        await db.close()
         await vk.aclose()
 
 
-app = FastAPI(title="SaviorBill mediaworker", lifespan=lifespan)
+_DOCS_DESCRIPTION = """
+Сервис приёма, конвертации и отдачи медиа (изображения/видео/иконки/аватары).
+Изолирован от ядра billing: сам валидирует access-JWT (общий секрет), читает
+роль/квоту из Postgres и публикует результат конвертации в стрим `media:results`.
+
+## Аутентификация
+
+Все эндпоинты (кроме `/health`) требуют заголовок
+`Authorization: Bearer <access-JWT>` — тот же токен, что выдаёт billing на
+`/api/v1/auth/login`. Секрет и алгоритм общие с billing.
+
+## Загрузка — `POST /media/upload?kind=<image|video|icon|avatar>`
+
+Тело запроса — **сырой поток файла** (не multipart). Приём потоковый, с бегущим
+счётчиком размера — полное чтение в память не выполняется.
+
+Лимиты и правила:
+
+- право `media.uploadlarge` → потолок `MEDIA_MAX_BYTES` (по умолчанию 50 MiB);
+- право `media.upload` → потолок `MEDIA_SMALL_MAX_BYTES` (по умолчанию 1 MiB);
+- частота для обычных пользователей — `MEDIA_UPLOADS_PER_HOUR` загрузок в час;
+- честно заявленный `Content-Length > лимит` → `413` **без бана**;
+- фейковый `Content-Length` (реальный объём превысил лимит) → `413` **+ бан IP**
+  на `MEDIA_BAN_SECONDS`.
+
+Успешный ответ `201`:
+
+```json
+{"token": "0f1e2d…", "status": "processing"}
+```
+
+По `token` дальше проверяется статус и отдаётся файл.
+
+## Ручная загрузка превью видео — `POST /media/{token}/preview`
+
+Только владелец медиа и только для `kind=video`. Тело — картинка-постер (стрим,
+лимит `MEDIA_SMALL_MAX_BYTES`). Ответ `202`: `{"token": …, "status": "processing"}`.
+
+## Отдача — `GET /media/{token}[.<variant>]`
+
+Варианты в суффиксе токена: `thumb`, `preview`, `preview_thumb` (иначе — `main`).
+
+- `fs`-бэкенд: готовый файл отдаёт Caddy напрямую; сюда попадаем только при промахе;
+- `s3`-бэкенд: `307` redirect на presigned-URL.
+
+Коды состояния при отдаче:
+
+- `425 Too Early` — конвертация ещё идёт (`media:status:{token} = processing`);
+- `404 Not Found` — конвертация провалилась либо файла/варианта нет.
+
+## Коды ответов (сводно)
+
+| Код | Значение |
+|---|---|
+| `201` | загрузка принята, задача поставлена |
+| `202` | превью принято |
+| `307` | redirect на presigned S3-URL |
+| `401` | нет/невалидный access-JWT |
+| `403` | забанен (роль/IP) или недостаточно прав |
+| `413` | файл больше лимита (возможен бан IP) |
+| `425` | медиа ещё конвертируется |
+| `429` | превышен часовой лимит загрузок |
+
+Полное описание домена — `docs/media.md` в репозитории.
+"""
+
+_cfg = Config.load()
+
+app = FastAPI(
+    title="SaviorBill mediaworker",
+    description=_DOCS_DESCRIPTION,
+    version="0.0.2dev",
+    lifespan=lifespan,
+    docs_url="/docs" if _cfg.docs_enabled else None,
+    redoc_url="/redoc" if _cfg.docs_enabled else None,
+    openapi_url="/openapi.json" if _cfg.docs_enabled else None,
+)
 
 
 @app.get("/health")
@@ -65,27 +160,52 @@ async def health() -> dict:
     return {"status": "ok"}
 
 
-async def _authorize(cfg: Config, user_token: str, kind: str) -> dict:
-    """Спросить billing, можно ли грузить и какой лимит объёма."""
-    async with httpx.AsyncClient(timeout=15) as client:
-        r = await client.post(
-            f"{cfg.billing_url}/internal/media/authorize",
-            json={"user_token": user_token, "kind": kind},
-            headers={"Authorization": f"Bearer {cfg.service_token}"},
-        )
-    if r.status_code == 200:
-        return r.json()
-    detail = "authorization failed"
+async def _authenticate(request: Request) -> int:
+    """Проверить access-JWT и вернуть id аккаунта."""
+    cfg: Config = request.app.state.cfg
+    token = _bearer(request)
     try:
-        detail = r.json().get("detail", detail)
-    except Exception:  # noqa: BLE001
-        pass
-    raise HTTPException(r.status_code, detail)
+        return security.account_id(
+            token, cfg.resolve_jwt_secret(), cfg.jwt_alg, cfg.jwt_iss
+        )
+    except security.InvalidToken as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
+
+
+async def _authorize(request: Request, acc_id: int) -> tuple[dict | None, str | None]:
+    """Прочитать права аккаунта; вернуть (perms, role_key). 401, если забанен/нет."""
+    cfg: Config = request.app.state.cfg
+    db: DB = request.app.state.db
+    acc = await db.account(acc_id)
+    if acc is None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "access denied")
+    if acc.role_key == cfg.role_banned:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "account banned")
+    return acc.perms, acc.role_key
+
+
+async def _enforce_hourly_limit(
+    request: Request, acc_id: int, perms: dict | None
+) -> None:
+    """Лимит загрузок в час для обычных пользователей (кроме media.uploadlarge)."""
+    cfg: Config = request.app.state.cfg
+    if has_perm(perms, _PERM_LARGE):
+        return  # привилегированные — без ограничения по частоте
+    vk: valkey.Valkey = request.app.state.vk
+    bucket = int(time.time()) // 3600
+    key = f"{_RATE_PREFIX}{acc_id}:{bucket}"
+    used = await vk.incr(key)
+    if used == 1:
+        await vk.expire(key, 3600)
+    if used > cfg.uploads_per_hour:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "upload rate limit exceeded"
+        )
 
 
 @app.post("/media/upload", status_code=status.HTTP_201_CREATED)
 async def upload(request: Request, kind: str = "image") -> dict:
-    """Потоково принять файл: авторизация, контроль объёма, постановка конверсии."""
+    """Потоково принять файл: авторизация, лимиты объёма/частоты, постановка задачи."""
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
     storage: Storage = request.app.state.storage
@@ -94,14 +214,22 @@ async def upload(request: Request, kind: str = "image") -> dict:
     if await ipban.is_banned(vk, ip):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "temporarily banned")
 
-    auth = request.headers.get("authorization", "")
-    if not auth.lower().startswith("bearer "):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bearer token required")
-    user_token = auth.split(" ", 1)[1].strip()
+    if kind not in _KINDS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "недопустимый вид медиа")
 
-    info = await _authorize(cfg, user_token, kind)
-    owner_id = info["owner_id"]
-    max_bytes = int(info["max_bytes"])
+    acc_id = await _authenticate(request)
+    perms, _role = await _authorize(request, acc_id)
+
+    if has_perm(perms, _PERM_LARGE):
+        max_bytes = cfg.max_bytes
+    elif has_perm(perms, _PERM_SMALL):
+        max_bytes = cfg.small_max_bytes
+    else:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, f"недостаточно прав: {_PERM_SMALL}"
+        )
+
+    await _enforce_hourly_limit(request, acc_id, perms)
 
     # Пре-проверка: честно заявленный слишком большой размер -> отказ БЕЗ бана.
     clen = request.headers.get("content-length")
@@ -125,7 +253,7 @@ async def upload(request: Request, kind: str = "image") -> dict:
             "op": "convert",
             "token": token,
             "kind": kind,
-            "owner_id": str(owner_id),
+            "owner_id": str(acc_id),
             "backend": cfg.backend,
             "size": str(size),
         },
@@ -133,24 +261,72 @@ async def upload(request: Request, kind: str = "image") -> dict:
     return {"token": token, "status": "processing"}
 
 
+@app.post("/media/{token}/preview", status_code=status.HTTP_202_ACCEPTED)
+async def upload_preview(request: Request, token: str) -> dict:
+    """Ручная загрузка превью для видео (только владелец медиа)."""
+    cfg: Config = request.app.state.cfg
+    vk: valkey.Valkey = request.app.state.vk
+    storage: Storage = request.app.state.storage
+    db: DB = request.app.state.db
+
+    ip = _client_ip(request)
+    if await ipban.is_banned(vk, ip):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "temporarily banned")
+
+    acc_id = await _authenticate(request)
+    await _authorize(request, acc_id)
+
+    media = await db.media_owner(token)
+    if media is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "медиа не найдено")
+    _mid, owner_id, mkind = media
+    if owner_id != acc_id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "не владелец медиа")
+    if mkind != "video":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "превью только для видео")
+
+    try:
+        await storage.save_stream(
+            f"{token}.preview", request.stream(), cfg.small_max_bytes
+        )
+    except ValueError:
+        await ipban.ban(vk, ip, cfg.ban_seconds)
+        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
+
+    await vk.xadd(cfg.task_stream, {"op": "preview", "token": token})
+    return {"token": token, "status": "processing"}
+
+
 @app.get("/media/{token}")
 async def serve(request: Request, token: str):
-    """Отдать медиа: S3 -> presigned redirect; локально обслуживает Caddy."""
+    """Отдать медиа: S3 -> presigned redirect; локально обслуживает Caddy.
+
+    ``token`` может нести суффикс варианта: ``{token}.thumb`` / ``{token}.preview``.
+    """
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
     storage: Storage = request.app.state.storage
 
-    st = await vk.hgetall(f"{_STATUS_PREFIX}{token}")
+    base, _, suffix = token.partition(".")
+    variant = {
+        "": "main",
+        "thumb": "thumb",
+        "preview": "preview",
+        "preview_thumb": "preview_thumb",
+    }.get(suffix, "main")
+
+    st = await vk.hgetall(f"{_STATUS_PREFIX}{base}")
     if st and st.get("state") == "processing":
         raise HTTPException(status.HTTP_425_TOO_EARLY, "still processing")
     if st and st.get("state") == "failed":
         raise HTTPException(status.HTTP_404_NOT_FOUND, "conversion failed")
 
     if cfg.backend == "s3":
-        cached = await vk.hgetall(f"{_FILE_PREFIX}{token}")
-        if not cached:
+        cached = await vk.hgetall(f"{_FILE_PREFIX}{base}")
+        key = cached.get(variant) if cached else None
+        if not key:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
-        url = await storage.presign(cached["key"])
+        url = await storage.presign(key)
         if not url:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
         return RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)

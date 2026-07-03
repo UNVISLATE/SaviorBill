@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,7 +24,7 @@ from schemas.page import Page
 from schemas.payment_provider import PayProviderPublic
 from schemas.payments import PaymentCreate, Payment
 from utils.apidoc import with_fields
-from utils.pagination import paginate
+from utils.pagination import PageParams, page_params, paginate
 
 router = APIRouter()
 
@@ -49,8 +49,7 @@ async def list_pay_providers(
 
 @router.get("/purchases", response_model=Page[Payment], summary="Мои платежи")
 async def my_purchases(
-    limit: int = Query(50, ge=1, le=200, description="Размер страницы (опционально)"),
-    offset: int = Query(0, ge=0, description="Смещение выборки (опционально)"),
+    pp: PageParams = Depends(page_params),
     acc: UserModel = Depends(get_current_acc),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[Payment]:
@@ -60,10 +59,12 @@ async def my_purchases(
         .where(UserPaymentsModel.account_id == acc.id)
         .order_by(UserPaymentsModel.id.desc())
     )
-    items, total = await paginate(
-        session, stmt, Payment.from_model, limit=limit, offset=offset
+    items, total, has_more = await paginate(
+        session, stmt, Payment.from_model, limit=pp.limit, offset=pp.offset
     )
-    return Page(items=items, total=total, limit=limit, offset=offset)
+    return Page(
+        items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
+    )
 
 
 @router.post(
@@ -96,9 +97,7 @@ async def create_purchase(
             )
         service = await svc_mngr.get_active(body.service_id)
         # Создаём отложенную выдачу (без списания/доставки — доставит колбэк).
-        usvc = await usvc_mngr.create(
-            acc, service, params=body.params, charge=False, deliver=False
-        )
+        usvc = await usvc_mngr.create(acc, service, charge=False, deliver=False)
         user_svc_id = usvc.id
 
     payment = await pay_mngr.create(
