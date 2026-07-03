@@ -1,30 +1,52 @@
 #!/usr/bin/env bash
-# SaviorBill — подготовка к развёртыванию (прод).
+# SaviorBill — быстрый старт (прод, без клонирования репозитория).
 #
-# 1) создаёт deploy/.env из deploy/.env.example (если ещё нет);
-# 2) открывает редактор для правки deploy/.env;
-# 3) печатает команду запуска (и предлагает запустить сразу).
+# 1) Устанавливает Docker (если ещё не установлен).
+# 2) Скачивает docker-compose.yml, Caddyfile и .env (из .env.example) в текущую директорию.
+# 3) Просит отредактировать .env.
+# 4) Показывает команды для запуска, просмотра логов и остановки.
 #
-# Использование (из корня репозитория):
-#   git clone https://github.com/UNVISLATE/SaviorBill.git && cd SaviorBill && bash deploy/setup.sh
+# Использование (запускать ОТ КУДА ХОТИТЕ разместить стек, например ~/saviorbill/):
+#   mkdir ~/saviorbill && cd ~/saviorbill
+#   bash <(curl -fsSL https://raw.githubusercontent.com/UNVISLATE/SaviorBill/main/deploy/setup.sh)
+# или:
+#   bash <(wget -qO- https://raw.githubusercontent.com/UNVISLATE/SaviorBill/main/deploy/setup.sh)
 set -euo pipefail
 
-# Работаем из каталога deploy/ (где лежат .env.example и прод-compose).
-cd "$(dirname "$0")"
+RAW="https://raw.githubusercontent.com/UNVISLATE/SaviorBill/main/deploy"
 
+# ── 1. Docker ────────────────────────────────────────────────────────────────
 if ! command -v docker >/dev/null 2>&1; then
-  echo "!! Требуется Docker. Установка: https://docs.docker.com/engine/install/" >&2
-  exit 1
+  echo ">> Docker не найден — устанавливаю..."
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL https://get.docker.com | sudo sh
+  elif command -v wget >/dev/null 2>&1; then
+    wget -qO- https://get.docker.com | sudo sh
+  else
+    echo "!! Требуется curl или wget для установки Docker." >&2
+    exit 1
+  fi
+  echo ">> Docker установлен."
+else
+  echo ">> Docker уже установлен: $(docker --version)"
 fi
+
+# ── 2. Файлы конфигурации ────────────────────────────────────────────────────
+echo ">> Скачиваю docker-compose.yml..."
+curl -fsSL "$RAW/docker-compose.yml" -o docker-compose.yml
+
+echo ">> Скачиваю Caddyfile..."
+curl -fsSL "$RAW/Caddyfile" -o Caddyfile
 
 if [ ! -f .env ]; then
-  cp .env.example .env
-  echo ">> Создан deploy/.env из deploy/.env.example."
+  echo ">> Скачиваю .env из .env.example..."
+  curl -fsSL "$RAW/.env.example" -o .env
+  echo ">> Создан .env."
 else
-  echo ">> deploy/.env уже существует — оставляю как есть."
+  echo ">> .env уже существует — оставляю как есть."
 fi
 
-# Выбираем редактор: $EDITOR/$VISUAL -> nano -> vim -> vi.
+# ── 3. Редактирование .env ───────────────────────────────────────────────────
 editor="${VISUAL:-${EDITOR:-}}"
 if [ -z "$editor" ]; then
   for e in nano vim vi; do
@@ -33,41 +55,51 @@ if [ -z "$editor" ]; then
 fi
 
 if [ -n "$editor" ]; then
-  echo ">> Открываю $editor для правки deploy/.env (обязательно задайте DB_PASS, OWNER_*, DOMAIN)."
+  echo ""
+  echo ">> Открываю $editor — ОБЯЗАТЕЛЬНО задайте:"
+  echo "     DB_PASS, DOMAIN, MEDIA_DOMAIN, OWNER_LOGIN, OWNER_PASS, OWNER_EMAIL"
+  echo ""
   "$editor" .env
 else
-  echo "!! Редактор не найден — отредактируйте deploy/.env вручную перед запуском."
+  echo ""
+  echo "!! Редактор не найден. Отредактируйте .env вручную перед запуском."
+  echo "   Обязательные поля: DB_PASS, DOMAIN, MEDIA_DOMAIN, OWNER_*"
+  echo ""
 fi
 
-# Мы уже в каталоге deploy/, поэтому плоский `docker compose` берёт прод-файл.
-RUN_CMD="docker compose pull && docker compose up -d"
-
-cat <<EOF
+# ── 4. Инструкции ────────────────────────────────────────────────────────────
+cat <<'EOF'
 
 ============================================================================
- Готово. Запуск в проде (образы из ghcr.io), из каталога deploy/:
+ Запуск стека (из текущей директории):
 
-     $RUN_CMD
+   docker compose pull          # скачать образы
+   docker compose up -d         # запустить в фоне
 
- Из корня репозитория это эквивалентно:
-     docker compose -f deploy/docker-compose.yml pull
-     docker compose -f deploy/docker-compose.yml up -d
+ Полезные команды:
 
- Локальная разработка (сборка из исходников), из корня:
-     docker compose -f deploy/dev/docker-compose.yml up --build       # или: make dev
+   docker compose ps            # статус контейнеров
+   docker compose logs -f       # все логи (Ctrl+C для выхода)
+   docker compose logs -f billing mediaworker   # логи конкретных сервисов
+   docker compose down          # остановить стек
+   docker compose pull && docker compose up -d  # обновить образы
 
- Тесты, из корня:
-     docker compose -f deploy/dev/docker-compose.yml -f deploy/test/docker-compose.yml \\
-         up --build --abort-on-container-exit --exit-code-from tests           # или: make test
+ После запуска:
+   API billing:      https://<DOMAIN>/api/v1/
+   Swagger billing:  https://<DOMAIN>/docs
+   Swagger media:    https://<MEDIA_DOMAIN>/docs
+   Health:           https://<DOMAIN>/health
 ============================================================================
 EOF
 
-read -r -p ">> Запустить прод сейчас? [y/N] " ans
+read -r -p ">> Запустить стек сейчас? [y/N] " ans
 case "${ans:-}" in
   [yY]|[yY][eE][sS])
-    eval "$RUN_CMD"
+    docker compose pull
+    docker compose up -d
+    echo ">> Стек запущен. Логи: docker compose logs -f"
     ;;
   *)
-    echo ">> Ок. Запустите позже: $RUN_CMD"
+    echo ">> Запустите позже: docker compose pull && docker compose up -d"
     ;;
 esac

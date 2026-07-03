@@ -83,7 +83,7 @@ ctx = {
 обрабатывает все действия платежа по `ctx.action` (create/callback/check/refund).
 Поддерживаемые действия объявляются в `lua_scripts.actions` (create и callback
 обязательны). Подробности потока и подключения — в
-[`payments_methods/README.md`](./payments_methods/README.md).
+[`payments_methods/README.md`](payments.md).
 
 Общий контекст:
 

@@ -6,3 +6,4 @@ PyJWT==2.10.1
 aioboto3==13.2.0
 python-multipart==0.0.20
 prometheus-client==0.21.1
+pydantic-settings==2.7.1

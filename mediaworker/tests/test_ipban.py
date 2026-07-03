@@ -1,6 +1,6 @@
 """Юнит-тесты бана IP в Valkey (на фейковом клиенте)."""
 
-import ipban
+import utils.ipban as ipban
 
 
 class FakeVK:

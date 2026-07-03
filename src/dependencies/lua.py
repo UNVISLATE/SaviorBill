@@ -9,7 +9,7 @@ from utils.luabus import LuaBus
 
 
 def get_lua_bus(request: Request) -> LuaBus:
-    """Собрать ``LuaBus`` из ресурсов приложения."""
+    """Собрать `LuaBus` из ресурсов приложения."""
     cfg: AppConfig = request.app.state.settings
     return LuaBus(
         request.app.state.valkey,

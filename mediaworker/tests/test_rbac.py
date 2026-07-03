@@ -1,6 +1,6 @@
 """Юнит-тесты проверки иерархических прав mediaworker."""
 
-from rbac import has_perm
+from utils.rbac import has_perm
 
 
 def test_none_perms_denied():

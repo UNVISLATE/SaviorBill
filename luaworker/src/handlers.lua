@@ -1,6 +1,4 @@
 -- Обработчики задач LuaWorker. Каждый вид задачи (kind) — отдельная функция.
--- Контракт данных задаётся Python-стороной (Pydantic), сюда приходит уже
--- декодированная из JSON таблица payload.
 
 local cjson = require("cjson")
 local httpc = require("httpc")

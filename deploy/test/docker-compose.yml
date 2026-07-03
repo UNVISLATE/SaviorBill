@@ -1,25 +1,13 @@
 # ТЕСТЫ: оверлей поверх deploy/dev/docker-compose.yml (полный стек + сервис `tests`).
 #
-# ВАЖНО: пути разрешаются относительно project directory, а это каталог ПЕРВОГО -f
-# файла, т.е. deploy/dev/. Поэтому context: ../.. указывает на корень репозитория
-# (НЕ относительно deploy/test/, где лежит этот файл). Запуск из корня:
+# Запуск из корня:
 #   docker compose -f deploy/dev/docker-compose.yml -f deploy/test/docker-compose.yml \
 #       up --build --abort-on-container-exit --exit-code-from tests
-# Либо через Makefile:  make test
-#
-# Что происходит:
-#   1. Поднимается полный стек (db, valkey, luaworker, mediaworker, billing).
-#      При сборке billing- и mediaworker-образов уже прогоняются ЮНИТ-тесты.
-#   2. billing прогоняет alembic-миграции и стартует API; healthcheck ждёт /health.
-#   3. Сервис `tests` дожидается healthy-billing и гоняет ИНТЕГРАЦИОННЫЕ тесты по
-#      HTTP (BASE_URL=billing, MEDIAWORKER_URL=mediaworker) с сидингом в Postgres.
-#   4. Код выхода контейнера `tests` => код выхода всей команды.
+# Либо: make test
 services:
   billing:
     environment:
-      DATA_DIR: /app/data
-      # Тестовые lua-скрипты лежат отдельно от рантайм-папки (data/lua пуста и
-      # наполняется вручную). Интеграционные тесты используют data/tests/lua.
+      # Тестовые lua-скрипты лежат отдельно от рантайм-папки.
       LUA_SCRIPTS_DIR: /app/data/tests/lua
       # В интеграционных тестах много регистраций с одного IP — лимитер отключаем.
       RATE_LIMIT_ENABLED: "false"
@@ -33,7 +21,6 @@ services:
 
   luaworker:
     environment:
-      # Читаем тестовые скрипты из смонтированной data/tests/lua.
       LUA_SCRIPTS_DIR: /app/data/tests/lua
 
   mediaworker:
@@ -52,16 +39,10 @@ services:
         condition: service_healthy
       mediaworker:
         condition: service_started
+    env_file:
+      - path: .env
+        required: false
     environment:
       BASE_URL: http://billing:8000
       MEDIAWORKER_URL: http://mediaworker:8080
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_USER: ${DB_USER:-aiosupport}
-      DB_PASS: ${DB_PASS:-test123}
-      DB_NAME: ${DB_NAME:-aiosupport}
-      VALKEY_HOST: valkey
-      VALKEY_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-prod-32bytes-min-secret}
-    # Полный прогон: юнит + интеграция (юнит уже прошли на сборке, но повторим для отчёта).
     command: ["pytest", "-m", "unit or integration", "--maxfail=1"]

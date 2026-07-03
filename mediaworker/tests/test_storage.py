@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from storage import Storage
+from utils.storage import Storage
 
 
 def _storage(tmp_path) -> Storage:

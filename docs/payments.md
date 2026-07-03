@@ -102,8 +102,8 @@ body } -> { ok, status, headers, body }`, `string`, `table`, `math`,
 
 Конкретные значения `secrets`/`extra` — в файлах:
 
-- [`yookassa.md`](./yookassa.md)
-- [`platega.md`](./platega.md)
+- [`yookassa.md`](payments_methods/yookassa.md)
+- [`platega.md`](payments_methods/platega.md)
 
 Готовые тела скриптов лежат в `examples/lua/payments/`:
 `yookassa_payment.lua`, `platega_payment.lua` (и `demo_payment.lua` для тестов).

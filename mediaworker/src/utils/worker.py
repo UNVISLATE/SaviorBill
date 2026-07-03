@@ -1,9 +1,9 @@
 """Consumer задач media:tasks: конвертация, ручное превью и удаление файлов.
 
 Слушает поток Valkey ``media:tasks`` (consumer-group), конвертирует оригиналы
-(webp/webm + варианты) и публикует статус в Valkey. Готовое медиа НЕ пишется в БД
-напрямую: воркер публикует результат как задачу в стрим ``media:results``, а
-запись в БД делает billing (владелец схемы). Биллинг и воркер друг о друге не
+(webp/webm + варианты) и публикует статус в Valkey. Готовое медиа НЕ пишется в
+БД напрямую: воркер публикует результат как задачу в стрим ``media:results``,
+а запись в БД делает billing (владелец схемы). Биллинг и воркер друг о друге не
 знают — общий контракт только через Valkey.
 """
 
@@ -15,9 +15,9 @@ import os
 
 import valkey.asyncio as valkey
 
-from config import Config
-from convert import ConvertError, Variant, convert, make_video_preview
-from storage import Storage
+from .config import Config
+from .convert import ConvertError, Variant, convert, make_video_preview
+from .storage import Storage
 
 _STATUS_PREFIX = "media:status:"
 _FILE_PREFIX = "media:file:"

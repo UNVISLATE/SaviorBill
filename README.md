@@ -31,91 +31,62 @@ email-уведомления и загрузка медиа. Внешние ин
   Caddy или S3 (presigned); товарные вложения (`media_id` + тег). См. `docs/media.md`
 - Рейт-лимитинг на Valkey
 
-## Быстрый старт (прод, одной командой)
+## Быстрый старт (прод, без клонирования репозитория)
+
+Создайте рабочую директорию и запустите `setup.sh` одной командой:
 
 ```bash
-git clone https://github.com/UNVISLATE/SaviorBill.git && cd SaviorBill && bash deploy/setup.sh
+mkdir ~/saviorbill && cd ~/saviorbill
+bash <(curl -fsSL https://raw.githubusercontent.com/UNVISLATE/SaviorBill/main/deploy/setup.sh)
 ```
 
-`deploy/setup.sh` создаёт `deploy/.env` из `deploy/.env.example`, открывает редактор
-(`$EDITOR`/`nano`/`vi`) для правки, затем печатает команду запуска и предлагает поднять
-стек. Образы тянутся из реестра (`ghcr.io`), сборка не требуется:
+или через `wget`:
 
 ```bash
-docker compose -f deploy/docker-compose.yml pull
-docker compose -f deploy/docker-compose.yml up -d   # прод: billing, luaworker, mediaworker, Caddy, БД, Valkey
+mkdir ~/saviorbill && cd ~/saviorbill
+bash <(wget -qO- https://raw.githubusercontent.com/UNVISLATE/SaviorBill/main/deploy/setup.sh)
 ```
 
-Через Caddy: `https://<DOMAIN>` (для `localhost` — самоподписанный сертификат) ·
-Swagger: `/docs` · здоровье: `/health`.
+`setup.sh` автоматически:
+1. Устанавливает Docker (если не установлен) — через скрипт `get.docker.com`.
+2. Скачивает `docker-compose.yml`, `Caddyfile` и `.env` в текущую директорию.
+3. Открывает редактор для правки `.env` (задайте `DB_PASS`, `DOMAIN`, `MEDIA_DOMAIN`, `OWNER_*` и другие необходимые под ваши нужды)
 
-## Развёртывания (compose-файлы)
+```bash
+docker compose pull
+docker compose up -d
+```
 
-| Назначение | Файл(ы) | Команда |
-|------------|---------|---------|
-| **Прод** — образы из реестра | `deploy/docker-compose.yml` | `make prod` |
-| **Dev** — сборка из исходников | `deploy/dev/docker-compose.yml` | `make dev` |
-| **Тесты** — полный стек + прогон | `deploy/dev/docker-compose.yml` + `deploy/test/docker-compose.yml` | `make test` |
+После запуска доступно:
+- API billing: `https://<DOMAIN>/api/v1/`
+- Медиа: `https://<MEDIA_DOMAIN>/`
+- Документация billing: `https://<DOMAIN>/docs` или `https://<DOMAIN>/redoc`
+- Документация mediaworker: `https://<MEDIA_DOMAIN>/docs` или `https://<MEDIA_DOMAIN>/redoc`
 
-Реестр и тег образов для прода настраиваются в `deploy/.env` (`IMAGE_PREFIX`, `TAG`).
-Удобные цели — в `Makefile` (`make dev`, `make test`, `make prod`, `make unit`, …).
+> При необходимости можно настроить используя заместо Caddy иной reverse-proxy (Nginx, Traefik, HAProxy и т.д.)
+> см. `deploy/Caddyfile` как пример.  
+> Caddy выбран из-за простоты и автоматического получения сертификатов.
+
+Для прода: `.env` создаётся `setup.sh` из `.env.example` в вашей рабочей директории.
+Для dev: скопируйте `deploy/.env.example` → `deploy/dev/.env` и поправьте нужные поля.
 
 ## Секреты
 
-Политика: секреты — внешние ресурсы. В ENV указывается лишь путь/координаты,
+Секреты — внешние ресурсы. В ENV указывается лишь путь/координаты,
 сами значения хранятся в файлах или менеджере секретов. Генерируемые секреты
 (`JWT_SECRET`, ключ шифрования `SECRETS_KEY`, `LUA_SERVICE_TOKEN`) создаются
 один раз при отсутствии и далее переиспользуются.
 
+> [!CAUTION]
+> Настоятельно рекомендуем сделать резервную копию секретов, в случае потери ключа защищенные данные станут недоступны.
+
 Бэкенд выбирается через `SECRETS_BACKEND`:
 
-- `file` (по умолчанию) — каждый секрет в своём файле под `DATA_DIR/keys`;
-- `aws` — AWS Secrets Manager; `gcp` — Google Secret Manager;
-- `azure` — Azure Key Vault; `vault` — HashiCorp Vault (KV v2).
-
-Предоставляемые секреты (`DB_PASS`, `SMTP_PASS`, `S3_SECRET`) можно задать
-напрямую, через файл `*_FILE` (Docker secret) или из менеджера секретов.
-
-## Локальная разработка
-
-```bash
-python -m venv .venv && . .venv/bin/activate
-pip install -r src/requirements-dev.txt
-
-export PYTHONPATH=src DB_PASS=test JWT_SECRET=test-secret-please-change
-python -m pytest -c deploy/test/pytest.ini --rootdir=. -m unit   # юнит-тесты billing
-python -m black src tests migrations mediaworker
-
-# mediaworker (отдельный сервис): юнит-тесты
-cd mediaworker && PYTHONPATH=src pytest -q
-```
-
-Полный стек со сборкой из исходников — `make dev` (или
-`docker compose -f deploy/dev/docker-compose.yml up --build`); в dev порт billing
-проброшен на `http://localhost:8000`. Прогон интеграционных тестов в докере —
-`make test`.
-
-## Структура репозитория
-
-```
-alembic.ini · Makefile · README.md · LICENSE.txt   # остаются в корне
-src/                          # ядро billing (FastAPI)
-  Dockerfile                  # образ billing (контекст сборки = корень)
-  requirements*.txt           # зависимости billing
-deploy/
-  docker-compose.yml          # ПРОД: образы из ghcr.io (сборки нет)
-  Caddyfile                   # единый reverse-proxy (TLS/HTTP2/3)
-  setup.sh · .env.example     # подготовка окружения (deploy/.env)
-  dev/docker-compose.yml      # DEV: сборка из исходников
-  test/docker-compose.yml     # ТЕСТЫ: оверлей + сервис `tests`
-  test/pytest.ini             # конфигурация pytest
-luaworker/                    # изолированный Lua-движок (Redis Streams)
-mediaworker/                  # приём/конвертация/отдача медиа (ffmpeg)
-migrations/                   # Alembic
-data/                         # монтируемые lua-скрипты, ключи, media (рантайм)
-examples/lua/                 # примеры скриптов (в рантайм добавляются вручную)
-docs/                         # документация
-```
+- `file` (по умолчанию) — каждый секрет в своём файле;
+- `aws` — AWS Secrets Manager;
+- `gcp` — Google Secret Manager;
+- `azure` — Azure Key Vault;
+- `vault` — HashiCorp Vault (KV v2).
 
 ## Документация
 

@@ -1,16 +1,31 @@
 # Маршрутизация:
-#   /media/*  — всё (отдача готовых файлов, presign S3, двухшаговая загрузка) идёт
-#               в mediaworker: он сам отдаёт локальные файлы (fs) и presigned-URL (s3).
-#   /internal — внутренний API billing, наружу закрыт.
-#   всё прочее — billing.
+#   {$DOMAIN}       → исключительно billing (все эндпоинты API).
+#   {$MEDIA_DOMAIN} → исключительно mediaworker (отдача, загрузка, presign S3).
+#   /internal/*     → закрыт наружу на обоих хостах.
+#
+# Домены настраиваются в .env: DOMAIN и MEDIA_DOMAIN.
+# localhost → самоподписанный сертификат Caddy.
+
 {$DOMAIN:localhost} {
 	encode zstd gzip
 
-	handle /media/* {
-		reverse_proxy mediaworker:8080
+	handle /internal/* {
+		respond "not found" 404
 	}
 
 	handle {
 		reverse_proxy billing:8000
+	}
+}
+
+{$MEDIA_DOMAIN:media.localhost} {
+	encode zstd gzip
+
+	handle /internal/* {
+		respond "not found" 404
+	}
+
+	handle {
+		reverse_proxy mediaworker:8080
 	}
 }

@@ -1,6 +1,6 @@
 """Юнит-тесты именования вариантов конверсии."""
 
-from convert import _thumb_vf, target_key
+from utils.convert import _thumb_vf, target_key
 
 
 def test_image_main_key():

@@ -1,7 +1,7 @@
 -- LuaWorker: исполнитель Lua-задач из шины Redis Streams (Valkey).
 --
 -- Поток работы:
---   1. Python публикует задачу в LUA_TASK_STREAM (XADD) с полями cid/kind/payload.
+--   1. Биллинг публикует задачу в LUA_TASK_STREAM (XADD) с полями cid/kind/payload.
 --   2. Воркер читает её через consumer-группу (XREADGROUP), исполняет handler.
 --   3. Результат публикуется в LUA_RESP_STREAM (XADD) с полями cid/ok/data.
 --   4. Задача подтверждается (XACK).

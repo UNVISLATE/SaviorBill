@@ -1,5 +1,5 @@
 -- Библиотека песочницы LuaWorker: логирование выполнения, криптография и кэш.
--- Эти наборы функций пробрасываются в скрипты (run_script) сверх json/http.
+-- Эти наборы функций пробрасываются в скрипты (run_script).
 
 local cjson = require("cjson")
 
@@ -13,9 +13,7 @@ local function env(key, default)
   return v
 end
 
--- ---------------------------------------------------------------------------
 -- Логгер выполнения: собирает записи { ts, level, msg } и возвращает их ядру.
--- ---------------------------------------------------------------------------
 function M.make_logger()
   local entries = {}
   local function record(level, ...)
@@ -41,9 +39,7 @@ function M.make_logger()
   return api, entries
 end
 
--- ---------------------------------------------------------------------------
 -- Криптография поверх OpenSSL (luaossl). hex/base64 — чистый Lua.
--- ---------------------------------------------------------------------------
 local B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
 local function b64encode(data)
@@ -139,9 +135,7 @@ function M.make_crypto()
   }
 end
 
--- ---------------------------------------------------------------------------
 -- Кэш поверх Valkey (redis-lua). Ключи изолируются префиксом.
--- ---------------------------------------------------------------------------
 function M.make_cache()
   local redis = require("redis")
   local host = env("VALKEY_HOST", "valkey")

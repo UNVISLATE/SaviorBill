@@ -17,7 +17,7 @@ import asyncio
 import os
 from dataclasses import dataclass
 
-from config import Config
+from utils.config import Config
 
 _IMAGE_KINDS = {"image", "icon", "avatar"}
 _VIDEO_KINDS = {"video"}
@@ -96,20 +96,9 @@ async def convert_video(
     main = Variant("main", *target_key(token, "video"))
     await _run(
         [
-            "ffmpeg",
-            "-y",
-            "-i",
-            src,
-            "-c:v",
-            "libvpx-vp9",
-            "-b:v",
-            "0",
-            "-crf",
-            str(cfg.webm_crf),
-            "-c:a",
-            "libopus",
-            "-row-mt",
-            "1",
+            "ffmpeg", "-y", "-i", src,
+            "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", str(cfg.webm_crf),
+            "-c:a", "libopus", "-row-mt", "1",
             os.path.join(out_dir, main.key),
         ]
     )

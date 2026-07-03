@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from typing import AsyncIterator
 
-from config import Config
+from utils.config import Config
 
 
 class Storage:

@@ -5,7 +5,7 @@ import time
 import jwt
 import pytest
 
-import security
+import utils.security as security
 
 _SECRET = "test-secret-please-change-32chars!!"
 _ALG = "HS256"

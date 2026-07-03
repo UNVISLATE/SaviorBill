@@ -49,12 +49,7 @@ Python (LuaBus.call)                    LuaWorker
 `LUA_CONSUMER`, `BILLING_URL`, `LUA_SERVICE_TOKEN` (сервисный токен для команд
 биллинга), `LUA_LOG_TTL`, `LUA_LOG_PREFIX`, `LUA_CACHE_PREFIX`.
 
-## Локально
-```bash
-docker compose -f deploy/dev/docker-compose.yml up --build luaworker
-```
-
-## Пример из Python
+## Пример использования LuaBus в Python-коде биллинга
 ```python
 from dependencies.lua import get_lua_bus
 

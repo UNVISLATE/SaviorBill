@@ -1,6 +1,6 @@
 """Юнит-тесты выбора формата/MIME по виду медиа."""
 
-from convert import target_key
+from utils.convert import target_key
 
 
 def test_image_kinds_go_webp():
