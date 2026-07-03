@@ -13,7 +13,9 @@ from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
 from dependencies.valkey import get_valkey_client
 from models.system_media import SystemMediaMngr, SystemMediaModel
+from models.user import UserModel
 from schemas.media import Media
+from services.audit import audit
 from utils.config import AppConfig
 from utils.mediabus import MediaBus
 
@@ -49,7 +51,6 @@ async def _drop(mngr: SystemMediaMngr, bus: MediaBus, media: SystemMediaModel) -
 @router.delete(
     "/media/{media_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_perm("media.admin"))],
     summary="Удалить медиа",
 )
 async def delete_media(
@@ -57,11 +58,22 @@ async def delete_media(
     media_id: int,
     mngr: SystemMediaMngr = Depends(get_media_mngr),
     vk: valkey.Valkey = Depends(get_valkey_client),
+    acc: UserModel = Depends(require_perm("media.admin")),
 ) -> None:
     media = await mngr.by_id(media_id)
     if media is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "медиа не найдено")
     await _drop(mngr, _bus(request, vk), media)
+    await audit(
+        mngr.s,
+        action="media.delete",
+        actor_id=acc.id,
+        actor_role=acc.role.name if acc.role else None,
+        target_type="media",
+        target_id=str(media_id),
+        ip=request.client.host if request.client else None,
+        meta={"token": media.token, "backend": media.backend},
+    )
     await mngr.s.commit()
 
 

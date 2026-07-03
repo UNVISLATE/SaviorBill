@@ -4,8 +4,12 @@
 Задачи хранятся **исключительно в Valkey** (sorted set по времени запуска) —
 таблицы в БД нет. Очередь детерминированно пересобирается из ``user_services`` и
 ``user_payments`` при старте и пополняется по внешним событиям (создание/
-продление услуги). Единственный активный экземпляр гарантируется распределённым
-локом ``SET NX`` с TTL.
+продление услуги).
+
+Очередь **разделяемая**: каждый инстанс billing засевает её и запускает свой
+диспетчер. Выборка «созревших» задач атомарна — Lua-скрипт делает
+``ZRANGEBYSCORE`` + ``ZREM`` одним вызовом, поэтому один и тот же член очереди не
+достаётся двум инстансам одновременно (распределённый лок больше не нужен).
 
 Идемпотентность: член очереди детерминирован (``svc:<id>`` / ``pay:<id>``), поэтому
 повторный засев (новый инстанс/рестарт) не плодит дубликатов.
@@ -29,15 +33,25 @@ from models.service import ServiceModel
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel
+from services.audit import audit
 from utils.config import AppConfig
 from utils.datetime_utils import utc_now
 from utils.luabus import LuaBus
+from utils.retry import attempts, clear_attempts
 
 log = logging.getLogger("saviorbill.billing")
 
 # Префиксы членов очереди по виду задачи.
 _SVC = "svc:"  # истечение услуги (ref = user_services.id)
 _PAY = "pay:"  # перепроверка платежа (ref = user_payments.id)
+
+# Атомарная выборка «созревших» задач: ZRANGEBYSCORE + ZREM одним вызовом, чтобы
+# один и тот же член не достался двум инстансам billing одновременно.
+_CLAIM_SCRIPT = """
+local due = redis.call('ZRANGEBYSCORE', KEYS[1], '-inf', ARGV[1], 'LIMIT', 0, ARGV[2])
+if #due > 0 then redis.call('ZREM', KEYS[1], unpack(due)) end
+return due
+"""
 
 
 def _score(dt: datetime) -> float:
@@ -62,9 +76,8 @@ class BillingLoop:
         self._task: asyncio.Task | None = None
         self._wake = asyncio.Event()
         self._stopped = False
-        self._has_lock = False
-        # Уникальный токен владельца лока (для безопасного освобождения).
-        self._lock_token = f"{id(self)}-{utc_now().timestamp()}"
+        # Ограничитель параллелизма задач одной итерации (backpressure).
+        self._sem = asyncio.Semaphore(cfg.BILLING_CONCURRENCY)
 
     # --- ресурсы -----------------------------------------------------------
     def _bus(self) -> LuaBus:
@@ -85,49 +98,27 @@ class BillingLoop:
     def _qkey(self) -> str:
         return self.cfg.BILLING_QUEUE_KEY
 
-    # --- распределённый лок (SET NX + TTL) --------------------------------
-    async def _acquire_lock(self) -> bool:
-        return bool(
-            await self.vk.set(
-                self.cfg.BILLING_LOCK_KEY,
-                self._lock_token,
-                nx=True,
-                ex=self.cfg.BILLING_LOCK_TTL,
-            )
+    # --- атомарная выборка созревших задач --------------------------------
+    async def _claim_due(self, now: float, limit: int) -> list[str]:
+        """Атомарно забрать «созревшие» задачи (ZRANGEBYSCORE + ZREM)."""
+        raw = await self.vk.eval(
+            _CLAIM_SCRIPT, 1, self._qkey, str(now), str(limit)
         )
-
-    async def _renew_lock(self) -> bool:
-        """Продлить лок, только если он всё ещё наш. Возвращает удержание."""
-        cur = await self.vk.get(self.cfg.BILLING_LOCK_KEY)
-        token = cur.decode() if isinstance(cur, bytes) else cur
-        if token != self._lock_token:
-            return False
-        await self.vk.expire(self.cfg.BILLING_LOCK_KEY, self.cfg.BILLING_LOCK_TTL)
-        return True
-
-    async def _release_lock(self) -> None:
-        cur = await self.vk.get(self.cfg.BILLING_LOCK_KEY)
-        token = cur.decode() if isinstance(cur, bytes) else cur
-        if token == self._lock_token:
-            await self.vk.delete(self.cfg.BILLING_LOCK_KEY)
+        return [r.decode() if isinstance(r, bytes) else r for r in (raw or [])]
 
     # --- жизненный цикл ----------------------------------------------------
     async def start(self) -> None:
-        """Захватить лок, засеять очередь и запустить фоновый цикл."""
+        """Засеять разделяемую очередь и запустить фоновый диспетчер."""
         if not self.cfg.BILLING_LOOP_ENABLED:
             log.info("billing-loop отключён (BILLING_LOOP_ENABLED=false)")
             return
-        if not await self._acquire_lock():
-            log.info("billing-loop уже ведёт другой экземпляр — пассивный режим")
-            return
-        self._has_lock = True
         async with self.sm() as session:
             await self.seed_on_start(session)
         self._task = asyncio.create_task(self._run(), name="billing-loop")
         log.info("billing-loop запущен")
 
     async def stop(self) -> None:
-        """Остановить цикл и освободить лок."""
+        """Остановить диспетчер."""
         self._stopped = True
         self._wake.set()
         if self._task:
@@ -137,12 +128,6 @@ class BillingLoop:
             except asyncio.CancelledError:
                 pass
             self._task = None
-        if self._has_lock:
-            try:
-                await self._release_lock()
-            except Exception:  # noqa: BLE001 — соединение могло закрыться
-                pass
-            self._has_lock = False
 
     def wake(self) -> None:
         """Разбудить цикл (после внешнего добавления задачи)."""
@@ -208,9 +193,6 @@ class BillingLoop:
     async def _run(self) -> None:
         while not self._stopped:
             try:
-                if not await self._renew_lock():
-                    log.warning("billing-loop: лок утерян, останавливаюсь")
-                    break
                 await self._tick()
             except asyncio.CancelledError:
                 raise
@@ -220,9 +202,16 @@ class BillingLoop:
 
     async def _tick(self) -> None:
         now = _score(utc_now())
-        due = await self.vk.zrangebyscore(self._qkey, "-inf", now)
-        for raw in due:
-            member = raw.decode() if isinstance(raw, bytes) else raw
+        # Забираем задачи атомарно; членов больше нет в очереди после claim.
+        due = await self._claim_due(now, self.cfg.BILLING_CONCURRENCY)
+        if due:
+            await asyncio.gather(*(self._process_one(member) for member in due))
+        async with self.sm() as session:
+            await self._refill(session)
+
+    async def _process_one(self, member: str) -> None:
+        """Обработать один claimed-член в отдельной сессии под семафором."""
+        async with self._sem:
             async with self.sm() as session:
                 try:
                     await self._execute(session, member)
@@ -230,8 +219,6 @@ class BillingLoop:
                 except Exception:  # noqa: BLE001 — единичная задача не валит цикл
                     await session.rollback()
                     log.exception("billing-loop: задача %s провалилась", member)
-        async with self.sm() as session:
-            await self._refill(session)
 
     async def _sleep_until_next(self) -> None:
         self._wake.clear()
@@ -250,18 +237,18 @@ class BillingLoop:
 
     # --- исполнение задач --------------------------------------------------
     async def _execute(self, session: AsyncSession, member: str) -> None:
+        # Член уже извлечён из очереди атомарным claim: повторный zrem не нужен.
         if member.startswith(_SVC):
-            await self._exec_svc_action(session, int(member[len(_SVC) :]))
+            await self._exec_svc_action(session, int(member[len(_SVC):]))
         elif member.startswith(_PAY):
-            await self._exec_pay_recheck(session, int(member[len(_PAY) :]))
-        else:  # неизвестный член — просто убираем
-            await self.vk.zrem(self._qkey, member)
+            await self._exec_pay_recheck(session, int(member[len(_PAY):]))
+        # неизвестный член — уже удалён claim'ом, делать нечего.
 
     async def _exec_svc_action(self, session: AsyncSession, usvc_id: int) -> None:
         member = f"{_SVC}{usvc_id}"
         usvc = await session.get(UserServicesModel, usvc_id)
         if usvc is None or usvc.status != UsvcStatus.ACTIVE:
-            await self.vk.zrem(self._qkey, member)
+            # Член уже извлечён claim'ом — просто выходим.
             return
         # Срок ещё не наступил — перепланируем на актуальное время истечения.
         if usvc.expires_at is not None and usvc.expires_at > utc_now():
@@ -269,26 +256,65 @@ class BillingLoop:
             return
         service = await session.get(ServiceModel, usvc.service_id)
         acc = await session.get(UserModel, usvc.account_id)
-        await self._usvc_mngr(session).expire(usvc, service, acc)
-        await self.vk.zrem(self._qkey, member)
+        try:
+            await self._usvc_mngr(session).expire(usvc, service, acc)
+        except Exception:  # noqa: BLE001 — учёт попыток + DLQ, затем проброс
+            await self._dlq_or_retry(member, f"svc:action:{usvc_id}", usvc_id)
+            raise
+        await self._clear_attempts(f"svc:action:{usvc_id}")
+        await self._audit_expire(session, usvc, acc)
+
+    async def _dlq_or_retry(self, member: str, attempt_key: str, ref_id: int) -> None:
+        """Учесть попытку; при исчерпании — в DLQ, иначе вернуть задачу в очередь."""
+        n, exhausted = await attempts(
+            self.vk, attempt_key, self.cfg.BILLING_QUEUE_MAX_ATTEMPTS
+        )
+        if exhausted:
+            await self.vk.xadd(
+                self.cfg.BILLING_QUEUE_DLQ,
+                {"member": member, "ref_id": str(ref_id), "attempts": str(n)},
+            )
+            await clear_attempts(self.vk, attempt_key)
+        else:
+            # Повтор через интервал перепроверки — задача снова в очереди.
+            nxt = utc_now() + timedelta(seconds=self.cfg.BILLING_PAY_RECHECK_INTERVAL)
+            await self.vk.zadd(self._qkey, {member: _score(nxt)})
+
+    async def _clear_attempts(self, attempt_key: str) -> None:
+        await clear_attempts(self.vk, attempt_key)
+
+    async def _audit_expire(
+        self, session: AsyncSession, usvc: UserServicesModel, acc
+    ) -> None:
+        """Best-effort запись в аудит об истечении услуги."""
+        try:
+            await audit(
+                session,
+                action="service.expire",
+                actor_id=getattr(acc, "id", None),
+                target_type="user_service",
+                target_id=str(usvc.id),
+                meta={"service_id": usvc.service_id},
+            )
+        except Exception:  # noqa: BLE001 — аудит не должен ломать задачу
+            log.exception("billing-loop: не удалось записать аудит истечения")
 
     async def _exec_pay_recheck(self, session: AsyncSession, pay_id: int) -> None:
         member = f"{_PAY}{pay_id}"
         payment = await session.get(UserPaymentsModel, pay_id)
         if payment is None or payment.status != PayStatus.PENDING:
-            await self.vk.zrem(self._qkey, member)
             await self.vk.hdel(self.cfg.BILLING_ATTEMPTS_KEY, str(pay_id))
             return
         await self._pay_mngr(session).recheck(payment)
         if payment.status != PayStatus.PENDING:
-            await self.vk.zrem(self._qkey, member)
             await self.vk.hdel(self.cfg.BILLING_ATTEMPTS_KEY, str(pay_id))
             return
         # Всё ещё pending: считаем попытки, либо повторяем позже, либо → wait.
-        attempts = await self.vk.hincrby(self.cfg.BILLING_ATTEMPTS_KEY, str(pay_id), 1)
-        if attempts >= self.cfg.BILLING_PAY_RECHECK_MAX:
+        attempts_n = await self.vk.hincrby(
+            self.cfg.BILLING_ATTEMPTS_KEY, str(pay_id), 1
+        )
+        if attempts_n >= self.cfg.BILLING_PAY_RECHECK_MAX:
             payment.status = PayStatus.WAIT
-            await self.vk.zrem(self._qkey, member)
             await self.vk.hdel(self.cfg.BILLING_ATTEMPTS_KEY, str(pay_id))
         else:
             nxt = utc_now() + timedelta(seconds=self.cfg.BILLING_PAY_RECHECK_INTERVAL)

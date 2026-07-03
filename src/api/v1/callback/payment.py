@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import valkey.asyncio as valkey
 from fastapi import APIRouter, Depends, Request
 
 from dependencies.payment import PayMngr, get_pay_mngr
 from dependencies.triggers import get_dispatcher
+from dependencies.valkey import get_valkey_client
 from enums import PayStatus, PayTarget
 from integrations.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.lua import LuaRequest
 from schemas.payments import Payment
+from services.audit import audit
+from utils.idempotency import once
 
 router = APIRouter(prefix="/api/v1/callback/payment", tags=["callback"])
 
@@ -92,9 +96,37 @@ async def payment_callback(
     request: Request,
     svc: PayMngr = Depends(get_pay_mngr),
     triggers: TriggerDispatcher = Depends(get_dispatcher),
+    vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> Payment:
     data = await _build_request(request)
     payment = await svc.callback(provider, data)
+
+    # Валкей-дедупликация: повторный вебхук с тем же external_id — no-op-действия
+    # уже применены транзакцией; фиксируем «обработано впервые» для аудита.
+    dedup_key = f"pay:callback:{provider}:{payment.external_id or payment.id}"
+    first_time = await once(vk, dedup_key)
+
+    if first_time:
+        ip = request.client.host if request.client else None
+        result = "ok" if payment.status == PayStatus.PAID else "pending"
+        if payment.status == PayStatus.FAILED:
+            result = "failed"
+        await audit(
+            svc.s,
+            action="payment.callback",
+            actor_id=payment.account_id or None,
+            target_type="payment",
+            target_id=str(payment.id),
+            ip=ip,
+            result=result,
+            meta={
+                "provider": provider,
+                "status": payment.status,
+                "external_id": payment.external_id,
+                "amount": str(payment.amount),
+            },
+        )
+
     await svc.s.commit()
     await _notify(svc, triggers, payment)
     return payment

@@ -4,8 +4,11 @@ from fastapi import FastAPI
 
 from lifespan import lifespan
 from utils.config import AppConfig, APP_NAME, APP_VERSION
+from utils.telemetry import metrics_app, setup_telemetry
 
 settings = AppConfig()
+
+setup_telemetry(APP_NAME)
 
 
 logging.basicConfig(
@@ -51,6 +54,7 @@ TAGS_META = [
         "name": "admin: triggers",
         "description": "Триггеры: событие → действие (email/lua).",
     },
+    {"name": "admin: audit", "description": "Аудит финансовых и админ-действий."},
 ]
 
 app = FastAPI(
@@ -63,6 +67,12 @@ app = FastAPI(
     redoc_url="/redoc" if settings.DOCS_ENABLED else None,
     openapi_url="/openapi.json" if settings.DOCS_ENABLED else None,
 )
+
+# Экспорт метрик Prometheus (/metrics). None, если prometheus_client не установлен
+# или METRICS_ENABLED=false — тогда эндпоинт отсутствует.
+_metrics = metrics_app()
+if _metrics is not None:
+    app.mount("/metrics", _metrics)
 
 if __name__ == "__main__":
     import uvicorn

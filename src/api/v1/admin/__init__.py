@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from .catalogs import router as catalogs_router
+from .audit import router as audit_router
 from .email import router as email_router
 from .lua import router as lua_router
 from .me import router as me_router
@@ -32,5 +33,6 @@ router.include_router(email_router, tags=["admin: email"])
 router.include_router(triggers_router, tags=["admin: triggers"])
 router.include_router(media_router, tags=["admin: media"])
 router.include_router(settings_router, tags=["admin: settings"])
+router.include_router(audit_router, tags=["admin: audit"])
 
 __all__ = ["router"]

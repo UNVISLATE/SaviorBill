@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
 from dependencies.rbac import require_perm
 from models.roles import Role as RoleModel
+from models.user import UserModel
 from schemas.role import PermsCatalog, RoleCreate, Role, RolePatch
+from services.audit import audit
 from utils.apidoc import with_fields
 from utils.rbac import all_perms, perms_tree
 
@@ -45,7 +47,6 @@ async def list_roles(session: AsyncSession = Depends(get_db_session)) -> list[Ro
     "/roles",
     response_model=Role,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_perm("roles.edit"))],
     summary="Создать роль",
     description=with_fields(
         "Создаёт роль с набором прав.",
@@ -53,12 +54,26 @@ async def list_roles(session: AsyncSession = Depends(get_db_session)) -> list[Ro
     ),
 )
 async def create_role(
-    body: RoleCreate, session: AsyncSession = Depends(get_db_session)
+    request: Request,
+    body: RoleCreate,
+    session: AsyncSession = Depends(get_db_session),
+    acc: UserModel = Depends(require_perm("roles.edit")),
 ) -> Role:
     if await session.scalar(select(RoleModel).where(RoleModel.name == body.name)):
         raise HTTPException(status.HTTP_409_CONFLICT, "роль с таким именем уже есть")
     role = RoleModel(name=body.name, title=body.title, perms=body.perms)
     session.add(role)
+    await session.flush()
+    await audit(
+        session,
+        action="role.create",
+        actor_id=acc.id,
+        actor_role=acc.role.name if acc.role else None,
+        target_type="role",
+        target_id=str(role.id),
+        ip=request.client.host if request.client else None,
+        meta={"name": role.name},
+    )
     await session.commit()
     return Role.from_model(role)
 
@@ -66,7 +81,6 @@ async def create_role(
 @router.patch(
     "/roles/{role_id}",
     response_model=Role,
-    dependencies=[Depends(require_perm("roles.edit"))],
     summary="Изменить роль",
     description=with_fields(
         "Частично обновляет роль — передаются только изменяемые поля.",
@@ -74,7 +88,11 @@ async def create_role(
     ),
 )
 async def update_role(
-    role_id: int, body: RolePatch, session: AsyncSession = Depends(get_db_session)
+    request: Request,
+    role_id: int,
+    body: RolePatch,
+    session: AsyncSession = Depends(get_db_session),
+    acc: UserModel = Depends(require_perm("roles.edit")),
 ) -> Role:
     role = await session.get(RoleModel, role_id)
     if role is None:
@@ -86,6 +104,16 @@ async def update_role(
         role.title = data["title"]
     if "perms" in data:
         role.perms = data["perms"]
+    await audit(
+        session,
+        action="role.update",
+        actor_id=acc.id,
+        actor_role=acc.role.name if acc.role else None,
+        target_type="role",
+        target_id=str(role_id),
+        ip=request.client.host if request.client else None,
+        meta={"fields": sorted(data.keys())},
+    )
     await session.commit()
     return Role.from_model(role)
 

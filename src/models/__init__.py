@@ -24,6 +24,7 @@ from .system_media import SystemMediaModel, SystemMediaMngr
 from .email_templates import EmailModel, EmailMngr
 from .triggers import TriggerModel, TriggerMngr
 from .log import LogModel
+from .audit_log import AuditLogModel
 
 __all__ = [
     "Base",
@@ -64,4 +65,5 @@ __all__ = [
     "TriggerModel",
     "TriggerMngr",
     "LogModel",
+    "AuditLogModel",
 ]

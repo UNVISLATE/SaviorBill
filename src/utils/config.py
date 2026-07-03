@@ -100,9 +100,17 @@ class AppConfig(BaseSettings):
     # Ключи Valkey для очереди задач и распределённого лока планировщика.
     BILLING_QUEUE_KEY: str = Field(default="billing:queue")
     BILLING_ATTEMPTS_KEY: str = Field(default="billing:pay_attempts")
+    # DEPRECATED: распределённый лок больше не используется — очередь разделяемая,
+    # задачи выбираются атомарным claim (ZRANGEBYSCORE+ZREM). Поля оставлены для
+    # обратной совместимости конфигов и будут удалены в будущем.
     BILLING_LOCK_KEY: str = Field(default="billing:lock")
-    # TTL лока планировщика (сек); обновляется на каждой итерации.
+    # DEPRECATED: TTL неиспользуемого лока планировщика (сек).
     BILLING_LOCK_TTL: int = Field(default=30)
+    # Предел одновременно обрабатываемых задач за одну итерацию (backpressure).
+    BILLING_CONCURRENCY: int = Field(default=4)
+    # Dead-letter очередь и предел попыток исполнения задачи биллинга.
+    BILLING_QUEUE_DLQ: str = Field(default="billing:queue:dead")
+    BILLING_QUEUE_MAX_ATTEMPTS: int = Field(default=5)
 
     # Реферальная программа: глобальный процент отчислений рефереру (%).
     REFERRAL_PERCENT: int = Field(default=0)
@@ -151,6 +159,11 @@ class AppConfig(BaseSettings):
     MEDIA_STATUS_TTL: int = Field(default=3600)
     # Бан IP при фейковом Content-Length (сек).
     MEDIA_BAN_SECONDS: int = Field(default=180)
+    # Dead-letter очереди и пределы попыток для медиа-задач/результатов.
+    MEDIA_TASK_DLQ: str = Field(default="media:tasks:dead")
+    MEDIA_TASK_MAX_ATTEMPTS: int = Field(default=5)
+    MEDIA_RESULT_DLQ: str = Field(default="media:results:dead")
+    MEDIA_RESULT_MAX_ATTEMPTS: int = Field(default=5)
 
     # Rate limiting (Valkey, fixed window)
     RATE_LIMIT_ENABLED: bool = Field(default=True)

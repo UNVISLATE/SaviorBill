@@ -2,14 +2,25 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 
 from dependencies.catalog import SystemScriptsMngr, get_script_mngr
 from dependencies.rbac import require_perm
+from models.user import UserModel
 from schemas.lua import LuaScript, LuaScriptUpload, LuaScriptPatch
+from services.audit import audit
 from utils.apidoc import with_fields
 
 router = APIRouter()
+
+
+def _actor(request: Request, acc: UserModel) -> dict:
+    """Собрать поля актора (id/роль/ip) для аудита."""
+    return {
+        "actor_id": acc.id,
+        "actor_role": acc.role.name if acc.role else None,
+        "ip": request.client.host if request.client else None,
+    }
 
 
 @router.get(
@@ -29,7 +40,6 @@ async def list_scripts(
     "/lua",
     response_model=LuaScript,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_perm("lua.edit"))],
     summary="Загрузить Lua-скрипт",
     description=with_fields(
         (
@@ -40,9 +50,20 @@ async def list_scripts(
     ),
 )
 async def upload_script(
-    body: LuaScriptUpload, mngr: SystemScriptsMngr = Depends(get_script_mngr)
+    request: Request,
+    body: LuaScriptUpload,
+    mngr: SystemScriptsMngr = Depends(get_script_mngr),
+    acc: UserModel = Depends(require_perm("lua.edit")),
 ) -> LuaScript:
     row = await mngr.create(body)
+    await audit(
+        mngr.s,
+        action="lua.upload",
+        target_type="lua_script",
+        target_id=str(row.id),
+        meta={"name": getattr(row, "name", None)},
+        **_actor(request, acc),
+    )
     await mngr.s.commit()
     return LuaScript.from_model(row)
 
@@ -50,7 +71,6 @@ async def upload_script(
 @router.patch(
     "/lua/{script_id}",
     response_model=LuaScript,
-    dependencies=[Depends(require_perm("lua.edit"))],
     summary="Изменить Lua-скрипт (тело и/или настройки)",
     description=with_fields(
         "Обновляет тело и/или настройки существующего Lua-скрипта.",
@@ -58,11 +78,20 @@ async def upload_script(
     ),
 )
 async def edit_script(
+    request: Request,
     script_id: int,
     body: LuaScriptPatch,
     mngr: SystemScriptsMngr = Depends(get_script_mngr),
+    acc: UserModel = Depends(require_perm("lua.edit")),
 ) -> LuaScript:
     row = await mngr.patch(script_id, body)
+    await audit(
+        mngr.s,
+        action="lua.edit",
+        target_type="lua_script",
+        target_id=str(script_id),
+        **_actor(request, acc),
+    )
     await mngr.s.commit()
     return LuaScript.from_model(row)
 
@@ -70,13 +99,22 @@ async def edit_script(
 @router.delete(
     "/lua/{script_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_perm("lua.edit"))],
     summary="Удалить Lua-скрипт",
 )
 async def delete_script(
-    script_id: int, mngr: SystemScriptsMngr = Depends(get_script_mngr)
+    request: Request,
+    script_id: int,
+    mngr: SystemScriptsMngr = Depends(get_script_mngr),
+    acc: UserModel = Depends(require_perm("lua.edit")),
 ) -> None:
     await mngr.delete(script_id)
+    await audit(
+        mngr.s,
+        action="lua.delete",
+        target_type="lua_script",
+        target_id=str(script_id),
+        **_actor(request, acc),
+    )
     await mngr.s.commit()
 
 

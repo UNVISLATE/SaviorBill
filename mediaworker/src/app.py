@@ -29,9 +29,18 @@ from worker import Worker
 _STATUS_PREFIX = "media:status:"
 _FILE_PREFIX = "media:file:"
 _RATE_PREFIX = "media:uprate:"
+_UPTOKEN_PREFIX = "media:uptoken:"
 _KINDS = {"image", "video", "icon", "avatar"}
 _PERM_SMALL = "media.upload"
 _PERM_LARGE = "media.uploadlarge"
+
+# Атомарный claim одноразового upload-token: HGETALL + DEL одним вызовом.
+_CLAIM_TOKEN_SCRIPT = """
+local data = redis.call('HGETALL', KEYS[1])
+if #data == 0 then return nil end
+redis.call('DEL', KEYS[1])
+return data
+"""
 
 
 def _client_ip(request: Request) -> str:
@@ -87,12 +96,28 @@ _DOCS_DESCRIPTION = """
 `Authorization: Bearer <access-JWT>` — тот же токен, что выдаёт billing на
 `/api/v1/auth/login`. Секрет и алгоритм общие с billing.
 
-## Загрузка — `POST /media/upload?kind=<image|video|icon|avatar>`
+## Загрузка — два шага
+
+**Шаг 1. Получить upload-token** — `POST /media/upload?kind=<image|video|icon|avatar>`
+
+Проверяет права и часовой лимит, выдаёт одноразовый `upload_token` (TTL
+`MEDIA_UPLOAD_TOKEN_TTL`). Тело запроса не нужно. Ответ `201`:
+
+```json
+{"upload_token": "0f1e…", "expires_in": 60, "upload_url": "/media/upload/0f1e…"}
+```
+
+**Шаг 2. Отправить файл** — `POST /media/upload/{upload_token}`
 
 Тело запроса — **сырой поток файла** (не multipart). Приём потоковый, с бегущим
-счётчиком размера — полное чтение в память не выполняется.
+счётчиком размера — полное чтение в память не выполняется. Token одноразовый
+(извлекается атомарно). Ответ `202`:
 
-Лимиты и правила:
+```json
+{"token": "9a8b…", "status": "queued"}
+```
+
+Лимиты и правила (проверяются на шаге 1, применяются на шаге 2):
 
 - право `media.uploadlarge` → потолок `MEDIA_MAX_BYTES` (по умолчанию 50 MiB);
 - право `media.upload` → потолок `MEDIA_SMALL_MAX_BYTES` (по умолчанию 1 MiB);
@@ -100,12 +125,6 @@ _DOCS_DESCRIPTION = """
 - честно заявленный `Content-Length > лимит` → `413` **без бана**;
 - фейковый `Content-Length` (реальный объём превысил лимит) → `413` **+ бан IP**
   на `MEDIA_BAN_SECONDS`.
-
-Успешный ответ `201`:
-
-```json
-{"token": "0f1e2d…", "status": "processing"}
-```
 
 По `token` дальше проверяется статус и отдаётся файл.
 
@@ -118,23 +137,24 @@ _DOCS_DESCRIPTION = """
 
 Варианты в суффиксе токена: `thumb`, `preview`, `preview_thumb` (иначе — `main`).
 
-- `fs`-бэкенд: готовый файл отдаёт Caddy напрямую; сюда попадаем только при промахе;
+- `fs`-бэкенд: mediaworker отдаёт готовый файл напрямую (`FileResponse`);
 - `s3`-бэкенд: `307` redirect на presigned-URL.
 
 Коды состояния при отдаче:
 
-- `425 Too Early` — конвертация ещё идёт (`media:status:{token} = processing`);
+- `425 Too Early` — конвертация ещё идёт (`media:status:{token}` = `queued`/`processing`);
 - `404 Not Found` — конвертация провалилась либо файла/варианта нет.
 
 ## Коды ответов (сводно)
 
 | Код | Значение |
 |---|---|
-| `201` | загрузка принята, задача поставлена |
-| `202` | превью принято |
+| `201` | выдан upload-token (шаг 1) |
+| `202` | файл/превью принят, задача поставлена |
 | `307` | redirect на presigned S3-URL |
 | `401` | нет/невалидный access-JWT |
 | `403` | забанен (роль/IP) или недостаточно прав |
+| `404` | upload-token не найден/истёк либо медиа нет |
 | `413` | файл больше лимита (возможен бан IP) |
 | `425` | медиа ещё конвертируется |
 | `429` | превышен часовой лимит загрузок |
@@ -204,11 +224,10 @@ async def _enforce_hourly_limit(
 
 
 @app.post("/media/upload", status_code=status.HTTP_201_CREATED)
-async def upload(request: Request, kind: str = "image") -> dict:
-    """Потоково принять файл: авторизация, лимиты объёма/частоты, постановка задачи."""
+async def request_upload_token(request: Request, kind: str = "image") -> dict:
+    """Шаг 1: проверить права и выдать одноразовый upload-token."""
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
-    storage: Storage = request.app.state.storage
 
     ip = _client_ip(request)
     if await ipban.is_banned(vk, ip):
@@ -231,34 +250,78 @@ async def upload(request: Request, kind: str = "image") -> dict:
 
     await _enforce_hourly_limit(request, acc_id, perms)
 
-    # Пре-проверка: честно заявленный слишком большой размер -> отказ БЕЗ бана.
+    token = uuid.uuid4().hex
+    uptoken_key = f"{_UPTOKEN_PREFIX}{token}"
+    await vk.hset(
+        uptoken_key,
+        mapping={"owner": str(acc_id), "kind": kind, "max_bytes": str(max_bytes)},
+    )
+    await vk.expire(uptoken_key, cfg.upload_token_ttl)
+    return {
+        "upload_token": token,
+        "expires_in": cfg.upload_token_ttl,
+        "upload_url": f"/media/upload/{token}",
+    }
+
+
+@app.post("/media/upload/{upload_token}", status_code=status.HTTP_202_ACCEPTED)
+async def upload_file(request: Request, upload_token: str) -> dict:
+    """Шаг 2: принять файл по одноразовому upload-token."""
+    cfg: Config = request.app.state.cfg
+    vk: valkey.Valkey = request.app.state.vk
+    storage: Storage = request.app.state.storage
+
+    ip = _client_ip(request)
+    if await ipban.is_banned(vk, ip):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "temporarily banned")
+
+    # Атомарно забрать одноразовый token (Lua HGETALL + DEL).
+    uptoken_key = f"{_UPTOKEN_PREFIX}{upload_token}"
+    raw = await vk.eval(_CLAIM_TOKEN_SCRIPT, 1, uptoken_key)
+    if not raw:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, "upload token not found or expired"
+        )
+
+    # Разобрать результат HGETALL (плоский список пар поле-значение).
+    payload: dict = {}
+    for i in range(0, len(raw), 2):
+        k = raw[i].decode() if isinstance(raw[i], bytes) else raw[i]
+        v = raw[i + 1].decode() if isinstance(raw[i + 1], bytes) else raw[i + 1]
+        payload[k] = v
+
+    owner_id = payload.get("owner")
+    kind = payload.get("kind", "image")
+    max_bytes = int(payload.get("max_bytes", cfg.small_max_bytes))
+
+    # Пре-проверка: честно заявленный слишком большой Content-Length -> отказ.
     clen = request.headers.get("content-length")
     if clen and clen.isdigit() and int(clen) > max_bytes:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
 
-    token = uuid.uuid4().hex
+    media_token = uuid.uuid4().hex
     try:
-        size = await storage.save_stream(token, request.stream(), max_bytes)
+        size = await storage.save_stream(media_token, request.stream(), max_bytes)
     except ValueError:
         # Реальный объём превысил лимит — заголовок длины был фейковым -> БАН.
         await ipban.ban(vk, ip, cfg.ban_seconds)
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
 
-    status_key = f"{_STATUS_PREFIX}{token}"
-    await vk.hset(status_key, mapping={"state": "processing"})
+    status_key = f"{_STATUS_PREFIX}{media_token}"
+    await vk.hset(status_key, mapping={"state": "queued"})
     await vk.expire(status_key, cfg.status_ttl)
     await vk.xadd(
         cfg.task_stream,
         {
             "op": "convert",
-            "token": token,
+            "token": media_token,
             "kind": kind,
-            "owner_id": str(acc_id),
+            "owner_id": str(owner_id) if owner_id else "",
             "backend": cfg.backend,
             "size": str(size),
         },
     )
-    return {"token": token, "status": "processing"}
+    return {"token": media_token, "status": "queued"}
 
 
 @app.post("/media/{token}/preview", status_code=status.HTTP_202_ACCEPTED)
@@ -299,7 +362,7 @@ async def upload_preview(request: Request, token: str) -> dict:
 
 @app.get("/media/{token}")
 async def serve(request: Request, token: str):
-    """Отдать медиа: S3 -> presigned redirect; локально обслуживает Caddy.
+    """Отдать медиа. S3 -> presigned redirect; fs -> файл напрямую.
 
     ``token`` может нести суффикс варианта: ``{token}.thumb`` / ``{token}.preview``.
     """
@@ -316,7 +379,7 @@ async def serve(request: Request, token: str):
     }.get(suffix, "main")
 
     st = await vk.hgetall(f"{_STATUS_PREFIX}{base}")
-    if st and st.get("state") == "processing":
+    if st and st.get("state") in ("processing", "queued"):
         raise HTTPException(status.HTTP_425_TOO_EARLY, "still processing")
     if st and st.get("state") == "failed":
         raise HTTPException(status.HTTP_404_NOT_FOUND, "conversion failed")
@@ -331,7 +394,31 @@ async def serve(request: Request, token: str):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
         return RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
-    # Локальный бэкенд: обычно файл отдаёт Caddy; сюда попадаем при промахе.
+    # fs-бэкенд: отдаём файл сами.
+    from fastapi.responses import FileResponse
+    import os
+
+    # Ключ варианта из кэша media:file:{base}, записанного воркером.
+    cached = await vk.hgetall(f"{_FILE_PREFIX}{base}")
+    if cached and cached.get(variant):
+        file_key = cached.get(variant)
+        file_path = os.path.join(cfg.media_dir, file_key)
+        if os.path.exists(file_path):
+            mime = st.get("mime") if st else None
+            return FileResponse(file_path, media_type=mime or "application/octet-stream")
+
+    # Детерминированный fallback по соглашению об именах файлов.
+    if variant == "main":
+        for ext in (".webp", ".webm"):
+            file_path = os.path.join(cfg.media_dir, f"{base}{ext}")
+            if os.path.exists(file_path):
+                mime = "image/webp" if ext == ".webp" else "video/webm"
+                return FileResponse(file_path, media_type=mime)
+    else:
+        file_path = os.path.join(cfg.media_dir, f"{base}.{variant}.webp")
+        if os.path.exists(file_path):
+            return FileResponse(file_path, media_type="image/webp")
+
     raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
 
 

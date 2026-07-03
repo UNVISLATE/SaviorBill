@@ -57,6 +57,14 @@ class Config:
     ban_seconds: int
     keep_original: bool
 
+    # TTL одноразового upload-token (двухшаговая загрузка), сек.
+    upload_token_ttl: int
+    # Повторы обработки медиа-задач воркером и dead-letter стрим.
+    task_max_attempts: int
+    task_dlq_stream: str
+    # Предел одновременно обрабатываемых задач (backpressure).
+    task_concurrency: int
+
     # Квоты и лимиты загрузок.
     max_bytes: int
     small_max_bytes: int
@@ -125,6 +133,10 @@ class Config:
             status_ttl=_int("MEDIA_STATUS_TTL", 3600),
             ban_seconds=_int("MEDIA_BAN_SECONDS", 180),
             keep_original=os.getenv("MEDIA_KEEP_ORIGINAL", "false").lower() == "true",
+            upload_token_ttl=_int("MEDIA_UPLOAD_TOKEN_TTL", 60),
+            task_max_attempts=_int("MEDIA_TASK_MAX_ATTEMPTS", 5),
+            task_dlq_stream=os.getenv("MEDIA_TASK_DLQ", "media:tasks:dead"),
+            task_concurrency=_int("MEDIA_TASK_CONCURRENCY", 4),
             max_bytes=_int("MEDIA_MAX_BYTES", 52_428_800),
             small_max_bytes=_int("MEDIA_SMALL_MAX_BYTES", 1_048_576),
             uploads_per_hour=_int("MEDIA_UPLOADS_PER_HOUR", 30),
