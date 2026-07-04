@@ -34,4 +34,4 @@ __all__ = ["app"]
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host=_cfg.HOST, port=_cfg.PORT)
+    uvicorn.run(app, host=_cfg.MEDIA_HOST, port=_cfg.MEDIA_PORT)

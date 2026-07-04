@@ -14,7 +14,7 @@ from conftest import wait_until
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
-MEDIAWORKER_URL = os.environ.get("MEDIAWORKER_URL", "http://localhost:8080")
+MEDIAWORKER_URL = os.environ.get("MEDIAWORKER_URL", "http://localhost:8001")
 
 # 16x16 PNG (валидный вход для ffmpeg -> webp; 1x1 — крайний случай libwebp).
 _PNG = base64.b64decode(

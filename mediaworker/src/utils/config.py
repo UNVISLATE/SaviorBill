@@ -24,7 +24,7 @@ class Config(BaseSettings):
 
     # --- HTTP-сервер ---
     MEDIA_HOST: str = Field(default="0.0.0.0")
-    MEDIA_PORT: int = Field(default=8080)
+    MEDIA_PORT: int = Field(default=8001)
 
     # --- Valkey / Redis ---
     VALKEY_HOST: str = Field(default="valkey")
