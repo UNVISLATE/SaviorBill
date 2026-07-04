@@ -28,22 +28,42 @@ async def _access(new_user) -> str:
     return tokens["access_token"]
 
 
-async def test_media_upload_convert_register(http, new_user):
-    token_access = await _access(new_user)
+async def _upload(token_access: str, *, kind: str = "image") -> str:
+    """Пройти двухшаговую загрузку и вернуть media-token.
+
+    Шаг 1: ``POST /media/upload`` — проверка прав, выдача одноразового upload-token.
+    Шаг 2: ``POST /media/upload/{upload_token}`` — приём файла, постановка в очередь.
+
+    :arg token_access: access-JWT загружающего пользователя.
+    :arg kind: вид медиа (image|video|icon|avatar).
+    :return: media-token для опроса статуса/выдачи.
+    """
     async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=30) as mw:
-        r = await mw.post(
+        r1 = await mw.post(
             "/media/upload",
-            params={"kind": "image"},
+            params={"kind": kind},
+            headers={"Authorization": f"Bearer {token_access}"},
+        )
+        assert r1.status_code == 201, r1.text
+        upload_token = r1.json()["upload_token"]
+
+        r2 = await mw.post(
+            f"/media/upload/{upload_token}",
             content=_PNG,
             headers={
                 "Authorization": f"Bearer {token_access}",
                 "Content-Type": "image/png",
             },
         )
-    assert r.status_code == 201, r.text
-    body = r.json()
-    token = body["token"]
-    assert body["status"] == "processing"
+    assert r2.status_code == 202, r2.text
+    body = r2.json()
+    assert body["status"] == "queued"
+    return body["token"]
+
+
+async def test_media_upload_convert_register(http, new_user):
+    token_access = await _access(new_user)
+    token = await _upload(token_access)
 
     async def _status():
         resp = await http.get(f"/api/v1/media/status/{token}")
@@ -59,24 +79,13 @@ async def test_media_upload_convert_register(http, new_user):
 
 async def test_media_upload_requires_auth(new_user):
     async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=30) as mw:
-        r = await mw.post("/media/upload", params={"kind": "image"}, content=_PNG)
+        r = await mw.post("/media/upload", params={"kind": "image"})
     assert r.status_code == 401, r.text
 
 
 async def test_admin_media_list_and_cleanup(http, new_user, seed):
     token_access = await _access(new_user)
-    async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=30) as mw:
-        r = await mw.post(
-            "/media/upload",
-            params={"kind": "image"},
-            content=_PNG,
-            headers={
-                "Authorization": f"Bearer {token_access}",
-                "Content-Type": "image/png",
-            },
-        )
-    assert r.status_code == 201, r.text
-    token = r.json()["token"]
+    token = await _upload(token_access)
 
     await wait_until(
         lambda: _state(http, token),

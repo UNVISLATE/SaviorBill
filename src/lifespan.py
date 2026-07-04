@@ -11,6 +11,7 @@ from utils.bootstrap import bootstrap
 from utils.init import init_system
 from utils.openapi import document_perms
 from utils.sec.secrets.resolve import resolve_secrets
+from utils.telemetry import instrument_sqlalchemy
 
 from api import api_router
 
@@ -33,6 +34,9 @@ async def lifespan(app: FastAPI):
     app.state.db_engine = create_db_engine(config.db_url)
     app.state.db_sessionmaker = create_db_sessionmaker(app.state.db_engine)
     app.state.valkey = create_valkey_client(config.valkey_url)
+
+    # Автоинструментация запросов к БД (no-op, если трейсинг выключен).
+    instrument_sqlalchemy(app.state.db_engine, config)
 
     # Первичная инициализация (один раз) и per-run проверки — независимые модули.
     await init_system(config, app.state.db_sessionmaker, app.state.valkey)

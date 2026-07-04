@@ -23,6 +23,7 @@ from models.system_media import SystemMediaMngr
 from utils.config import AppConfig
 from utils.idempotency import once, release_once
 from utils.retry import attempts, clear_attempts
+from utils.telemetry import span_from_carrier
 
 log = logging.getLogger("saviorbill.media")
 
@@ -83,6 +84,10 @@ class MediaResults:
                 )
             except asyncio.CancelledError:
                 raise
+            except (valkey.TimeoutError, asyncio.TimeoutError):
+                # Блокирующее чтение истекло без сообщений (гонка block-таймаута
+                # сервера и read-таймаута клиента) — это штатная пауза, не ошибка.
+                continue
             except Exception:  # noqa: BLE001 — цикл не должен падать
                 log.exception("media-results: ошибка чтения")
                 await asyncio.sleep(2)
@@ -90,7 +95,8 @@ class MediaResults:
             for _stream, entries in resp or []:
                 for msg_id, data in entries:
                     try:
-                        await self._handle(data)
+                        with span_from_carrier("media.result.consume", data):
+                            await self._handle(data)
                     except Exception:  # noqa: BLE001 — одна запись не валит цикл
                         log.exception("media-results: ошибка записи")
                         await self._on_failure(data)

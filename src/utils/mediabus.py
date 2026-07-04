@@ -13,6 +13,8 @@ import json
 
 import valkey.asyncio as valkey
 
+from utils.telemetry import inject_carrier
+
 _STATUS_PREFIX = "media:status:"
 
 
@@ -33,11 +35,13 @@ class MediaBus:
             return
         await self.vk.xadd(
             self.task_stream,
-            {
-                "op": "delete",
-                "backend": backend,
-                "payload": json.dumps({"paths": paths}),
-            },
+            inject_carrier(
+                {
+                    "op": "delete",
+                    "backend": backend,
+                    "payload": json.dumps({"paths": paths}),
+                }
+            ),
         )
 
     async def status(self, token: str) -> dict | None:

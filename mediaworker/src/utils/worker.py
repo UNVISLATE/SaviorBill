@@ -18,6 +18,7 @@ import valkey.asyncio as valkey
 from .config import Config
 from .convert import ConvertError, Variant, convert, make_video_preview
 from .storage import Storage
+from .telemetry import inject_carrier, span_from_carrier
 
 _STATUS_PREFIX = "media:status:"
 _FILE_PREFIX = "media:file:"
@@ -61,6 +62,10 @@ class Worker:
                     count=count,
                     block=5000,
                 )
+            except (valkey.TimeoutError, asyncio.TimeoutError):
+                # Блокирующее чтение истекло без сообщений (гонка block-таймаута
+                # сервера и read-таймаута клиента) — штатная пауза, не ошибка.
+                continue
             except Exception as exc:  # noqa: BLE001
                 print(f"[mediaworker] read error: {exc}", flush=True)
                 await asyncio.sleep(2)
@@ -78,7 +83,8 @@ class Worker:
         """Обработать одну задачу под семафором; при ошибке — повтор/DLQ."""
         async with self._sem:
             try:
-                await self._handle(data)
+                with span_from_carrier(f"media.task.{data.get('op', '?')}", data):
+                    await self._handle(data)
             except Exception as exc:  # noqa: BLE001
                 print(f"[mediaworker] task error: {exc}", flush=True)
                 await self._on_failure(data)
@@ -130,7 +136,7 @@ class Worker:
 
     async def _emit_result(self, fields: dict) -> None:
         """Опубликовать результат конверсии в стрим (billing запишет в БД)."""
-        await self.vk.xadd(self.cfg.result_stream, fields)
+        await self.vk.xadd(self.cfg.result_stream, inject_carrier(fields))
 
     async def _convert(self, data: dict) -> None:
         token = data["token"]

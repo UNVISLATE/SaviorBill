@@ -1,5 +1,6 @@
 services:
   db:
+    container_name: saviorpg
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
@@ -15,6 +16,7 @@ services:
       retries: 10
 
   valkey:
+    container_name: saviorvalkey
     image: valkey/valkey:8-alpine
     restart: unless-stopped
     command: ["valkey-server", "--save", "60", "1", "--appendonly", "yes"]
@@ -27,6 +29,7 @@ services:
       retries: 10
 
   billing:
+    container_name: saviorbill
     image: ${IMAGE_PREFIX:-ghcr.io/unvislate/saviorbill}/billing:${TAG:-latest}
     restart: unless-stopped
     depends_on:
@@ -46,11 +49,10 @@ services:
       - ../data:/app/data:rw
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app:app --app-dir src --host 0.0.0.0 --port 8000"
-    expose:
-      - "8000"
+             python src/app.py"
 
   luaworker:
+    container_name: saviorlua
     image: ${IMAGE_PREFIX:-ghcr.io/unvislate/saviorbill}/luaworker:${TAG:-latest}
     restart: unless-stopped
     depends_on:
@@ -68,6 +70,7 @@ services:
       - ../data:/app/data:ro
 
   mediaworker:
+    container_name: saviormedia
     image: ${IMAGE_PREFIX:-ghcr.io/unvislate/saviorbill}/mediaworker:${TAG:-latest}
     restart: unless-stopped
     depends_on:
@@ -89,13 +92,15 @@ services:
       - ../data:/app/data:rw
 
   caddy:
+    container_name: saviorcaddy
     image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
       - billing
       - mediaworker
     environment:
-      DOMAIN: ${DOMAIN:-localhost}
+      DOMAIN: ${DOMAIN:-localhost:8000}
+      MEDIA_DOMAIN: ${MEDIA_DOMAIN:-localhost:8001}
     ports:
       - "80:80"
       - "443:443"

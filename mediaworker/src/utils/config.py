@@ -22,6 +22,10 @@ def _default_consumer() -> str:
 class Config(BaseSettings):
     """Настройки процесса mediaworker."""
 
+    # --- HTTP-сервер ---
+    MEDIA_HOST: str = Field(default="0.0.0.0")
+    MEDIA_PORT: int = Field(default=8080)
+
     # --- Valkey / Redis ---
     VALKEY_HOST: str = Field(default="valkey")
     VALKEY_PORT: int = Field(default=6379)
@@ -87,6 +91,16 @@ class Config(BaseSettings):
 
     # --- Роли ---
     ROLE_BANNED: str = Field(default="banned")
+
+    # --- Наблюдаемость: метрики Prometheus (/metrics) и трейсинг OpenTelemetry ---
+    # Имена переменных совпадают с billing-конфигом (общий .env на весь стек).
+    METRICS_ENABLED: bool = Field(default=True)
+    METRICS_TOKEN: str | None = Field(default=None)
+    OTEL_ENABLED: bool = Field(default=False)
+    OTEL_EXPORTER_OTLP_ENDPOINT: str | None = Field(default=None)
+    OTEL_EXPORTER_OTLP_PROTOCOL: str = Field(default="grpc")
+    OTEL_EXPORTER_OTLP_INSECURE: bool = Field(default=True)
+    OTEL_SERVICE_NAME: str | None = Field(default=None)
 
     model_config = SettingsConfigDict(
         env_file=(".env", ".env.dev"),

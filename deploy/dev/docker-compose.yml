@@ -1,5 +1,6 @@
 services:
   db:
+    container_name: saviorpg
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${DB_USER:-aiosupport}
@@ -14,6 +15,7 @@ services:
       retries: 10
 
   valkey:
+    container_name: saviorvalkey
     image: valkey/valkey:8-alpine
     command: ["valkey-server", "--save", "", "--appendonly", "no"]
     healthcheck:
@@ -23,6 +25,7 @@ services:
       retries: 10
 
   billing:
+    container_name: saviorbill
     build:
       context: ../..
       dockerfile: src/Dockerfile
@@ -62,11 +65,12 @@ services:
       - ../../data:/app/data:rw
     command: >
       sh -c "alembic upgrade head &&
-             uvicorn app:app --app-dir src --host 0.0.0.0 --port 8000"
+             python src/app.py"
     ports:
       - "8000:8000"
 
   luaworker:
+    container_name: saviorlua
     build:
       context: ../../luaworker
     depends_on:
@@ -86,6 +90,7 @@ services:
       - ../../data:/app/data:ro
 
   mediaworker:
+    container_name: saviormedia
     build:
       context: ../../mediaworker
     depends_on:
@@ -119,6 +124,8 @@ services:
       S3_SECRET: ${S3_SECRET:-}
     volumes:
       - ../../data:/app/data:rw
+    ports:
+      - "8001:8001"
 
 volumes:
   pgdata:

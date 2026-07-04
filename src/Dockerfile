@@ -54,5 +54,6 @@ COPY --from=tests /app/.unit-tests-passed /app/.unit-tests-passed
 
 EXPOSE 8000
 
-# host/port берутся из конфигурации; миграции запускаются в entrypoint compose.
-CMD ["uvicorn", "app:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8000"]
+# host/port берутся из конфигурации (AppConfig.HOST/PORT); запуск идёт через
+# сам модуль app.py (uvicorn.run c host/port из ENV), без дублирования флагов.
+CMD ["python", "src/app.py"]

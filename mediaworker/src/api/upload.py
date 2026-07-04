@@ -20,6 +20,7 @@ from utils.config import Config
 from utils.rbac import has_perm
 from utils import security
 from utils.storage import Storage
+from utils.telemetry import inject_carrier
 
 router = APIRouter()
 
@@ -188,14 +189,16 @@ async def upload_file(request: Request, upload_token: str) -> dict:
     await vk.expire(status_key, cfg.status_ttl)
     await vk.xadd(
         cfg.task_stream,
-        {
-            "op": "convert",
-            "token": media_token,
-            "kind": kind,
-            "owner_id": str(owner_id) if owner_id else "",
-            "backend": cfg.backend,
-            "size": str(size),
-        },
+        inject_carrier(
+            {
+                "op": "convert",
+                "token": media_token,
+                "kind": kind,
+                "owner_id": str(owner_id) if owner_id else "",
+                "backend": cfg.backend,
+                "size": str(size),
+            }
+        ),
     )
     return {"token": media_token, "status": "queued"}
 

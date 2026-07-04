@@ -60,8 +60,8 @@ data/uploads/
 data/media/
 data/email/
 data/lua/**
-data/tests/lua/**
 
+!data/tests/
 !data/tests/lua/services/
 !data/tests/lua/services/demo_service.lua
 !data/tests/lua/services/service_lua.lua

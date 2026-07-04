@@ -179,6 +179,28 @@ class AppConfig(BaseSettings):
     RATE_LIMIT_SENSITIVE_MAX: int = Field(default=20)
     RATE_LIMIT_SENSITIVE_WINDOW: int = Field(default=60)
 
+    # Наблюдаемость: метрики Prometheus (/metrics) и трейсинг OpenTelemetry.
+    # Метрики: эндпоинт /metrics включён по умолчанию (METRICS_ENABLED=false — снят).
+    METRICS_ENABLED: bool = Field(default=True)
+    # Токен для доступа к /metrics (заголовок X-Metrics-Token). Основная защита —
+    # сетевая (реверс-прокси не проксирует /metrics наружу, см. deploy/Caddyfile);
+    # токен — дополнительный рубеж на случай прямого доступа к порту контейнера.
+    # Если не задан — эндпоинт не защищён токеном (полагаемся только на сеть).
+    METRICS_TOKEN: str | None = Field(default=None)
+    # Трейсинг OpenTelemetry. Выключен по умолчанию: включается флагом и требует
+    # заданного OTLP-эндпоинта коллектора/Jaeger. Когда выключен — нулевой оверхед
+    # (провайдер не ставится, инструментация не применяется).
+    OTEL_ENABLED: bool = Field(default=False)
+    # OTLP-эндпоинт коллектора (например, Jaeger): grpc — host:4317, http — :4318.
+    OTEL_EXPORTER_OTLP_ENDPOINT: str | None = Field(default=None)
+    # Протокол экспорта спанов: grpc (по умолчанию) либо http/protobuf.
+    OTEL_EXPORTER_OTLP_PROTOCOL: str = Field(default="grpc")
+    # Плейнтекст (без TLS) для grpc-экспорта — по умолчанию true, т.к. коллектор/Jaeger
+    # обычно живёт во внутренней сети без TLS. В проде с TLS-коллектором — false.
+    OTEL_EXPORTER_OTLP_INSECURE: bool = Field(default=True)
+    # Имя сервиса в трейсах (по умолчанию — имя приложения).
+    OTEL_SERVICE_NAME: str | None = Field(default=None)
+
     # РАЗОВЫЕ ENV (seed -> settings)
 
     # SMTP (сидится в settings при первом запуске)

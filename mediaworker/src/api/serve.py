@@ -14,6 +14,7 @@ from utils import ipban
 from utils.config import Config
 from utils import security
 from utils.storage import Storage
+from utils.telemetry import inject_carrier
 
 router = APIRouter()
 
@@ -160,7 +161,7 @@ async def upload_preview(request: Request, token: str) -> dict:
         await ipban.ban(vk, ip, cfg.ban_seconds)
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
 
-    await vk.xadd(cfg.task_stream, {"op": "preview", "token": token})
+    await vk.xadd(cfg.task_stream, inject_carrier({"op": "preview", "token": token}))
     return {"token": token, "status": "processing"}
 
 

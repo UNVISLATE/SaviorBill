@@ -1,15 +1,8 @@
-# Маршрутизация:
-#   {$DOMAIN}       → исключительно billing (все эндпоинты API).
-#   {$MEDIA_DOMAIN} → исключительно mediaworker (отдача, загрузка, presign S3).
-#   /internal/*     → закрыт наружу на обоих хостах.
-#
-# Домены настраиваются в .env: DOMAIN и MEDIA_DOMAIN.
-# localhost → самоподписанный сертификат Caddy.
-
-{$DOMAIN:localhost} {
+{$DOMAIN:localhost:8000} {
 	encode zstd gzip
 
-	handle /internal/* {
+	# /metrics — служебный эндпоинт для Prometheus
+	handle /metrics {
 		respond "not found" 404
 	}
 
@@ -18,14 +11,15 @@
 	}
 }
 
-{$MEDIA_DOMAIN:media.localhost} {
+{$MEDIA_DOMAIN:localhost:8001} {
 	encode zstd gzip
 
-	handle /internal/* {
+	# /metrics — служебный эндпоинт для Prometheus
+	handle /metrics {
 		respond "not found" 404
 	}
 
 	handle {
-		reverse_proxy mediaworker:8080
+		reverse_proxy mediaworker:8001
 	}
 }

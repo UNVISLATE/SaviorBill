@@ -4,17 +4,17 @@ from fastapi import FastAPI
 
 from lifespan import lifespan
 from utils.config import AppConfig, APP_NAME, APP_VERSION
-from utils.telemetry import metrics_app, setup_telemetry
+from utils.telemetry import install_access_log_filter, setup_observability
 
 settings = AppConfig()
-
-setup_telemetry(APP_NAME)
 
 
 logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     level=logging.DEBUG if settings.DEBUG else logging.INFO,
 )
+install_access_log_filter()
+
 
 DESCRIPTION = (
     "**SaviorBill** — событийная биллинг-система.\n\n"
@@ -68,11 +68,8 @@ app = FastAPI(
     openapi_url="/openapi.json" if settings.DOCS_ENABLED else None,
 )
 
-# Экспорт метрик Prometheus (/metrics). None, если prometheus_client не установлен
-# или METRICS_ENABLED=false — тогда эндпоинт отсутствует.
-_metrics = metrics_app()
-if _metrics is not None:
-    app.mount("/metrics", _metrics)
+# Метрики Prometheus + трейсинг OpenTelemetry (по флагам METRICS_ENABLED/OTEL_ENABLED).
+setup_observability(app, settings, APP_NAME, APP_VERSION)
 
 if __name__ == "__main__":
     import uvicorn

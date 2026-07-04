@@ -56,4 +56,5 @@ ENV VALKEY_HOST=valkey \
 
 EXPOSE 8080
 
-CMD ["uvicorn", "app:app", "--app-dir", "src", "--host", "0.0.0.0", "--port", "8080"]
+# host/port берутся из конфигурации (Config.HOST/PORT) через сам app.py.
+CMD ["python", "src/app.py"]
