@@ -3,13 +3,13 @@ services:
     container_name: saviorpg
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: ${DB_USER:-aiosupport}
+      POSTGRES_USER: ${DB_USER:-saviorbill}
       POSTGRES_PASSWORD: ${DB_PASS:-test123}
-      POSTGRES_DB: ${DB_NAME:-aiosupport}
+      POSTGRES_DB: ${DB_NAME:-saviorbill}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-aiosupport}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-saviorbill}"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -37,9 +37,9 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: 5432
-      DB_USER: ${DB_USER:-aiosupport}
+      DB_USER: ${DB_USER:-saviorbill}
       DB_PASS: ${DB_PASS:-test123}
-      DB_NAME: ${DB_NAME:-aiosupport}
+      DB_NAME: ${DB_NAME:-saviorbill}
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
       JWT_SECRET: ${JWT_SECRET:-}
@@ -101,9 +101,9 @@ services:
     environment:
       DB_HOST: db
       DB_PORT: 5432
-      DB_USER: ${DB_USER:-aiosupport}
+      DB_USER: ${DB_USER:-saviorbill}
       DB_PASS: ${DB_PASS:-test123}
-      DB_NAME: ${DB_NAME:-aiosupport}
+      DB_NAME: ${DB_NAME:-saviorbill}
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
       VALKEY_DB: 0

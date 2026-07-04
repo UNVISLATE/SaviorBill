@@ -20,22 +20,16 @@ class AppConfig(BaseSettings):
     HOST: str = Field(default="0.0.0.0")
     PORT: int = Field(default=8000)
     DEBUG: bool = Field(default=False)
-
-    # OpenAPI-документация (Swagger UI / ReDoc / openapi.json). По умолчанию
-    # включена; в проде можно выключить (DOCS_ENABLED=false), тогда все три
-    # эндпоинта отдают 404.
     DOCS_ENABLED: bool = Field(default=True)
 
     # БД
     DB_DRIVER: str = Field(default="postgresql+asyncpg")
-    DB_USER: str = Field(default="aiosupport")
-    # Пароль БД - предоставляемый секрет: значение ENV либо файл DB_PASS_FILE
-    # (или облачный менеджер секретов). Разрешается на старте.
+    DB_USER: str = Field(default="saviorbill")
     DB_PASS: str | None = Field(default=None)
     DB_PASS_FILE: str | None = Field(default=None)
     DB_HOST: str = Field(default="localhost")
     DB_PORT: int = Field(default=5432)
-    DB_NAME: str = Field(default="aiosupport")
+    DB_NAME: str = Field(default="saviorbill")
 
     # Valkey / Redis
     VALKEY_HOST: str = Field(default="localhost")
@@ -55,7 +49,6 @@ class AppConfig(BaseSettings):
     SECRETS_KEY_PATH: str | None = Field(default=None)
 
     # Бэкенд секретов (file|aws|gcp|azure|vault)
-    # Все секреты - внешние ресурсы. ENV хранит путь/координаты, не значения.
     SECRETS_BACKEND: str = Field(default="file")
     SECRETS_PREFIX: str = Field(default="saviorbill/")
     # Облачные координаты (нужны только для соответствующего бэкенда).

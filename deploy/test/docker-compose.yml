@@ -46,9 +46,9 @@ services:
       BASE_URL: http://billing:8000
       MEDIAWORKER_URL: http://mediaworker:8001
       DB_HOST: db
-      DB_USER: ${DB_USER:-aiosupport}
+      DB_USER: ${DB_USER:-saviorbill}
       DB_PASS: ${DB_PASS:-test123}
-      DB_NAME: ${DB_NAME:-aiosupport}
+      DB_NAME: ${DB_NAME:-saviorbill}
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
     command: ["pytest", "-m", "unit or integration", "--maxfail=1"]

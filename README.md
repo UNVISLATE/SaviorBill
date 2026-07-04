@@ -25,7 +25,7 @@ email-уведомления и загрузка медиа. Внешние ин
   (инициализация + обработка колбэка через server-to-server webhook)
 - Промокоды: код-токен + каталог, описывающий действие (бонус/скидка/услуга)
 - Email-шаблоны (правятся в рантайме) + прямые письма (верификация, сброс пароля)
-- Триггеры `событие → действие` (email/lua, подключаемые модули), правятся в рантайме
+- Триггеры `событие -> действие` (email/lua, подключаемые модули), правятся в рантайме
 - Загрузка медиа (изображения/видео/аватары) через изолированный `mediaworker`:
   потоковый приём с защитой от OOM, конвертация в webp/webm, локальная отдача через
   Caddy или S3 (presigned); товарные вложения (`media_id` + тег). См. `docs/media.md`
@@ -37,14 +37,14 @@ email-уведомления и загрузка медиа. Внешние ин
 
 ```bash
 mkdir ~/saviorbill && cd ~/saviorbill
-bash <(curl -fsSL https://raw.githubusercontent.com/UNVISLATE/SaviorBill/main/deploy/setup.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/UNVISLATE/SaviorBill/master/deploy/setup.sh)
 ```
 
 или через `wget`:
 
 ```bash
 mkdir ~/saviorbill && cd ~/saviorbill
-bash <(wget -qO- https://raw.githubusercontent.com/UNVISLATE/SaviorBill/main/deploy/setup.sh)
+bash <(wget -qO- https://raw.githubusercontent.com/UNVISLATE/SaviorBill/master/deploy/setup.sh)
 ```
 
 `setup.sh` автоматически:

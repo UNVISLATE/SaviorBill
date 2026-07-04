@@ -35,12 +35,12 @@ class Config(BaseSettings):
     DATA_DIR: str = Field(default="/app/data")
 
     # --- PostgreSQL (только SELECT — схемой владеет billing) ---
-    DB_USER: str = Field(default="aiosupport")
+    DB_USER: str = Field(default="saviorbill")
     DB_PASS: str | None = Field(default=None)
     DB_PASS_FILE: str | None = Field(default=None)
     DB_HOST: str = Field(default="db")
     DB_PORT: int = Field(default=5432)
-    DB_NAME: str = Field(default="aiosupport")
+    DB_NAME: str = Field(default="saviorbill")
     # Явный DSN — переопределяет сборку из DB_* (необязателен).
     DB_DSN: str | None = Field(default=None)
 
