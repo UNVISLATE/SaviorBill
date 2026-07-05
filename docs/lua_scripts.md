@@ -90,7 +90,7 @@ ctx = {
 ```
 ctx = {
   action  = "create" | "callback" | "check" | "refund",
-  lua     = { id, slug, name, kind, actions, settings },  -- сам шаблон + его настройки
+  lua     = { id, slug, name, kind, actions, settings },
   user    = { id, login, email, ... },
   payment = {
     id, amount, currency, target, user_svc_id, external_id, return_url,
@@ -101,10 +101,7 @@ ctx = {
 ```
 
 Секреты провайдера приходят в `payment.provider_data.secrets` (шифруются),
-несекретные параметры — в `payment.provider_data.extra`. Настройки шаблона
-`lua.settings.*` — отдельный ключ верхнего уровня и с ними не конфликтуют: их
-используют, если один платёжный скрипт делят несколько провайдеров с общей
-конфигурацией.
+иные параметры в `payment.provider_data.extra`.
 
 ### `action = "create"` — инициализация платежа
 
@@ -114,35 +111,34 @@ ctx = {
 
 ### `action = "callback"` — обработка вебхука
 
-Ядро принимает **только** server-to-server webhook на статичный URL
-`POST /api/v1/callback/payment/{slug}` (страниц success/fail нет). `{slug}` — это
-slug платёжной системы, а конкретный платёж скрипт определяет из тела запроса
-(`ctx.request.body`). Колбэк — доверенный канал: скрипт сам проверяет
-подпись/секрет, ядро полагается на его ответ.
+Биллинг принимает только webhook на статичный URL
+`POST /api/v1/callback/payment/{slug}`. 
+`{slug}` — это slug платёжной системы, а конкретный платёж скрипт определяет из тела запроса
+(`ctx.request.body`). 
+Скрипт сам проверяет подпись/секрет, биллинг полагается на его ответ.
 
 Возвращает `private = { ok, paid, failed, payment_id, external_id, status }`:
 
-- `ok = false` → ядро отвечает `401`;
+- `ok = false` → отвечает `401`;
 - `paid = true` → платёж проводится (баланс/выдача услуги) идемпотентно;
 - `payment_id` / `external_id` — по ним ядро находит наш платёж.
 
-### `action = "check"` — перепроверка ядром
+### `action = "check"` — перепроверка биллингом
 
-Инициируется самим ядром (billing-loop или ручной вызов админа): скрипт должен
-обратиться к API провайдера за актуальным статусом. Возвращает то же, что
-`callback`.
+Инициируется самим биллингом (billing-loop или ручной вызов админа): скрипт должен
+обратиться к API провайдера за актуальным статусом. Возвращает то же, что `callback`.
 
 ### `action = "refund"` — возврат средств
 
 Возвращает `private = { ok, refunded, external_id }`.
 
 Пример: [`examples/lua/payments/demo_payment.lua`](../examples/lua/payments/demo_payment.lua).
-Боевые шаблоны: `yookassa_payment.lua`, `platega_payment.lua` в `examples/lua/payments/`.
+Рабочие шаблоны: `yookassa_payment.lua`, `platega_payment.lua`.
 
 ## Триггерный скрипт (`kind = trigger`)
 
 Связывает доменное событие (`user.registered`, `service.delivered`,
 `payment.succeeded` …) с действием-скриптом. Получает
-`ctx = { event, config, data, lua }` (где `lua.settings.*` — настройки шаблона) и
-может, например, отправить уведомление во
-внешний webhook. Пример: [`examples/lua/triggers/notify.lua`](../examples/lua/triggers/notify.lua).
+`ctx = { event, config, data, lua }` (`lua.settings.*` — настройки шаблона) и
+может, например, отправить уведомление. 
+Пример: [`examples/lua/triggers/notify.lua`](../examples/lua/triggers/notify.lua).

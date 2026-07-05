@@ -67,9 +67,6 @@ docker compose up -d
 > см. `deploy/Caddyfile` как пример.  
 > Caddy выбран из-за простоты и автоматического получения сертификатов.
 
-Для прода: `.env` создаётся `setup.sh` из `.env.example` в вашей рабочей директории.
-Для dev: скопируйте `deploy/.env.example` → `deploy/dev/.env` и поправьте нужные поля.
-
 ## Секреты
 
 Секреты — внешние ресурсы. В ENV указывается лишь путь/координаты,
@@ -87,14 +84,6 @@ docker compose up -d
 - `gcp` — Google Secret Manager;
 - `azure` — Azure Key Vault;
 - `vault` — HashiCorp Vault (KV v2).
-
-## Документация
-
-- **`docs/lua_scripts.md`** — контракты Lua-скриптов (услуги, платежи, триггеры)
-  и справочные примеры в `examples/lua/` (в т.ч. выдача VPN через Marzban).
-- **`docs/payments_methods/`** — подключение платёжных провайдеров
-  (ЮKassa, Platega) и что заполнять в `secrets`/`extra`.
-- **`deploy/.env.example`** — все переменные окружения с пояснениями.
 
 ## Лицензия
 
