@@ -57,7 +57,7 @@ async def create_role(
     request: Request,
     body: RoleCreate,
     session: AsyncSession = Depends(get_db_session),
-    acc: UserModel = Depends(require_perm("roles.edit")),
+    acc: UserModel = Depends(require_perm("roles.create")),
 ) -> Role:
     if await session.scalar(select(RoleModel).where(RoleModel.name == body.name)):
         raise HTTPException(status.HTTP_409_CONFLICT, "роль с таким именем уже есть")

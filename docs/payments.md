@@ -80,7 +80,7 @@ body } -> { ok, status, headers, body }`, `string`, `table`, `math`,
    `kind=payment`, `actions=["create","callback","check","refund"]`. Запомнить
    выданный `id` скрипта.
 2. **Создать провайдера** `POST /api/v1/admin/purchases/providers`
-   (право `purchases.providers`):
+   (право `purchases.providers.create`):
 
    ```json
    {

@@ -57,7 +57,7 @@ async def list_providers(
     "/oauth",
     response_model=OAuthProvider,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_perm("oauth.edit"))],
+    dependencies=[Depends(require_perm("oauth.create"))],
     summary="Добавить OAuth-провайдера",
     description=with_fields(
         "Создаёт OAuth-провайдера на auth-скрипте; секреты хранятся зашифрованными.",
@@ -121,7 +121,7 @@ async def update_provider(
 @router.delete(
     "/oauth/{provider_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_perm("oauth.edit"))],
+    dependencies=[Depends(require_perm("oauth.delete"))],
     summary="Удалить OAuth-провайдера",
 )
 async def delete_provider(

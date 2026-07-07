@@ -58,7 +58,7 @@ async def delete_media(
     media_id: int,
     mngr: SystemMediaMngr = Depends(get_media_mngr),
     vk: valkey.Valkey = Depends(get_valkey_client),
-    acc: UserModel = Depends(require_perm("media.admin")),
+    acc: UserModel = Depends(require_perm("media.delete")),
 ) -> None:
     media = await mngr.by_id(media_id)
     if media is None:
@@ -79,7 +79,7 @@ async def delete_media(
 
 @router.post(
     "/media/cleanup",
-    dependencies=[Depends(require_perm("media.admin"))],
+    dependencies=[Depends(require_perm("media.cleanup"))],
     summary="Удалить неиспользуемые медиа",
     description=(
         "Удаляет все медиа, не привязанные ни к товарам (вложения), ни к аватаркам "

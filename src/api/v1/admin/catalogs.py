@@ -29,7 +29,7 @@ async def list_catalogs(
     "/catalogs",
     response_model=CatalogResponse,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_perm("catalogs.edit"))],
+    dependencies=[Depends(require_perm("catalogs.create"))],
     summary="Создать каталог",
     description=with_fields(
         "Создаёт каталог услуг. Каталог может быть подкаталогом другого "
@@ -68,7 +68,7 @@ async def update_catalog(
 @router.delete(
     "/catalogs/{catalog_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_perm("catalogs.edit"))],
+    dependencies=[Depends(require_perm("catalogs.delete"))],
     summary="Удалить каталог",
 )
 async def delete_catalog(

@@ -76,7 +76,7 @@ async def set_rate_limit(
 @router.delete(
     "/settings/ratelimits/{kind}",
     response_model=RateLimitRule,
-    dependencies=[Depends(require_perm("settings.ratelimits.delete"))],
+    dependencies=[Depends(require_perm("settings.ratelimits.edit"))],
     summary="Сбросить лимит категории к ENV-дефолту",
 )
 async def reset_rate_limit(

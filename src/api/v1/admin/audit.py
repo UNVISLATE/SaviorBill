@@ -26,8 +26,7 @@ router = APIRouter()
     dependencies=[Depends(require_perm("audit.read"))],
     summary="Аудит-журнал",
     description=(
-        "Постраничный просмотр append-only журнала финансовых и административных "
-        "действий. Опциональные фильтры: по действию (`action`) и актору "
+        "Постраничный просмотр append-only журнала аудита. Опциональные фильтры: по действию (`action`) и актору "
         "(`actor_account_id`)."
     ),
 )

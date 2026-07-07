@@ -58,7 +58,7 @@ async def get_order(
     "/orders/grant",
     response_model=OrderAdmin,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_perm("orders.edit"))],
+    dependencies=[Depends(require_perm("orders.create"))],
     summary="Выдать услугу вручную",
     description=with_fields(
         (

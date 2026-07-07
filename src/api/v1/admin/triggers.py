@@ -42,7 +42,7 @@ async def list_triggers(
     "/triggers",
     response_model=Trigger,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_perm("triggers.edit"))],
+    dependencies=[Depends(require_perm("triggers.create"))],
     summary="Создать триггер",
     description=with_fields(
         "Связывает доменное событие с действием (email/lua) и условием.",
@@ -81,7 +81,7 @@ async def patch_trigger(
 @router.delete(
     "/triggers/{trig_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_perm("triggers.edit"))],
+    dependencies=[Depends(require_perm("triggers.delete"))],
     summary="Удалить триггер",
 )
 async def delete_trigger(

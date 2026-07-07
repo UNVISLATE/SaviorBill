@@ -35,7 +35,7 @@ async def list_templates(
     "/email/templates",
     response_model=EmailTemplate,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_perm("email.edit"))],
+    dependencies=[Depends(require_perm("email.create"))],
     summary="Создать email-шаблон",
     description=with_fields(
         (
@@ -97,7 +97,7 @@ async def replace_body(
 @router.delete(
     "/email/templates/{tpl_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_perm("email.edit"))],
+    dependencies=[Depends(require_perm("email.delete"))],
     summary="Удалить email-шаблон",
 )
 async def delete_template(

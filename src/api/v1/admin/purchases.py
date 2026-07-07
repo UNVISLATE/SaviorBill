@@ -48,7 +48,7 @@ async def list_payments(
 @router.get(
     "/purchases/providers",
     response_model=list[PayProvider],
-    dependencies=[Depends(require_perm("purchases.providers"))],
+    dependencies=[Depends(require_perm("purchases.providers.read"))],
     summary="Список платёжных провайдеров",
 )
 async def list_providers(
@@ -65,7 +65,7 @@ async def list_providers(
     "/purchases/providers",
     response_model=PayProvider,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_perm("purchases.providers"))],
+    dependencies=[Depends(require_perm("purchases.providers.create"))],
     summary="Создать платёжного провайдера",
     description=with_fields(
         "Создаёт платёжного провайдера; секреты хранятся в зашифрованном виде.",
@@ -98,7 +98,7 @@ async def create_provider(
 @router.patch(
     "/purchases/providers/{provider_id}",
     response_model=PayProvider,
-    dependencies=[Depends(require_perm("purchases.providers"))],
+    dependencies=[Depends(require_perm("purchases.providers.edit"))],
     summary="Изменить платёжного провайдера",
     description=with_fields(
         "Частично обновляет платёжного провайдера — передаются только изменяемые поля.",

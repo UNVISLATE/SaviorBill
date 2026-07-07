@@ -1,4 +1,4 @@
-"""управление таблицей ``settings`` (/api/v1/admin/settings/raw).
+"""Админ: ручное (raw) управление таблицей ``settings`` (/api/v1/admin/settings/raw).
 
 Позволяет напрямую просматривать/создавать/менять/удалять произвольные строки
 таблицы ``settings`` (key-value). Зашифрованные системные значения (``is_secret``)
@@ -18,9 +18,11 @@ from dependencies.rbac import require_perm
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from models.system_settings import SystemSettingsModel
 from models.user import UserModel
+from schemas.page import Page
 from schemas.settings_raw import SettingRawOut, SettingRawUpsert
 from services.audit import audit
 from utils.apidoc import with_fields
+from utils.pagination import PageParams, page_params, paginate
 from utils.settings_def import by_key
 
 router = APIRouter()
@@ -37,22 +39,30 @@ def _is_locked(row: SystemSettingsModel | None, key: str) -> bool:
 
 @router.get(
     "/settings/raw",
-    response_model=list[SettingRawOut],
-    dependencies=[Depends(require_perm("settings.raw.edit"))],
+    response_model=Page[SettingRawOut],
+    dependencies=[Depends(require_perm("settings.raw.read"))],
     summary="Все строки таблицы settings (raw)",
     description=(
-        "Полный список настроек как есть в БД. Значения зашифрованных "
+        "Постраничный список настроек как есть в БД. Значения зашифрованных "
         "(`is_secret=true`) записей не раскрываются (`value: null`, "
         "`editable: false`)."
     ),
 )
 async def list_settings_raw(
+    pp: PageParams = Depends(page_params),
     session: AsyncSession = Depends(get_db_session),
-) -> list[SettingRawOut]:
-    rows = await session.scalars(
-        select(SystemSettingsModel).order_by(SystemSettingsModel.key)
+) -> Page[SettingRawOut]:
+    stmt = select(SystemSettingsModel).order_by(SystemSettingsModel.key)
+    items, total, has_more = await paginate(
+        session,
+        stmt,
+        lambda r: SettingRawOut.from_model(r, by_key(r.key)),
+        limit=pp.limit,
+        offset=pp.offset,
     )
-    return [SettingRawOut.from_model(r, by_key(r.key)) for r in rows]
+    return Page(
+        items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
+    )
 
 
 @router.get(

@@ -28,7 +28,7 @@ router = APIRouter()
 @router.get(
     "/promo/catalogs",
     response_model=list[PromoCatalog],
-    dependencies=[Depends(require_perm("promo.read"))],
+    dependencies=[Depends(require_perm("promo.catalogs.read"))],
     summary="Список каталогов промокодов",
 )
 async def list_catalogs(
@@ -42,7 +42,7 @@ async def list_catalogs(
     "/promo/catalogs",
     response_model=PromoCatalog,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_perm("promo.edit"))],
+    dependencies=[Depends(require_perm("promo.catalogs.create"))],
     summary="Создать каталог промокодов",
     description=with_fields(
         "Создаёт каталог промокодов с параметрами выпуска.",
@@ -61,7 +61,7 @@ async def create_catalog(
 @router.patch(
     "/promo/catalogs/{catalog_id}",
     response_model=PromoCatalog,
-    dependencies=[Depends(require_perm("promo.edit"))],
+    dependencies=[Depends(require_perm("promo.catalogs.edit"))],
     summary="Изменить каталог промокодов",
     description=with_fields(
         "Частично обновляет каталог промокодов — передаются только изменяемые поля.",
@@ -83,7 +83,7 @@ async def update_catalog(
 @router.delete(
     "/promo/catalogs/{catalog_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_perm("promo.edit"))],
+    dependencies=[Depends(require_perm("promo.catalogs.delete"))],
     summary="Удалить каталог промокодов",
 )
 async def delete_catalog(
@@ -97,7 +97,7 @@ async def delete_catalog(
 @router.get(
     "/promo/catalogs/{catalog_id}/codes",
     response_model=Page[PromoCode],
-    dependencies=[Depends(require_perm("promo.read"))],
+    dependencies=[Depends(require_perm("promo.codes.read"))],
     summary="Коды каталога",
 )
 async def list_codes(
@@ -121,7 +121,7 @@ async def list_codes(
     "/promo/codes",
     response_model=list[PromoCode],
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_perm("promo.edit"))],
+    dependencies=[Depends(require_perm("promo.codes.create"))],
     summary="Выпустить пачку кодов",
     description=with_fields(
         "Выпускает пачку промокодов в каталог (по списку или по количеству).",

@@ -46,7 +46,7 @@ async def list_services(
     "/services",
     response_model=ServiceAdmin,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_perm("services.edit"))],
+    dependencies=[Depends(require_perm("services.create"))],
     summary="Создать услугу",
     description=with_fields(
         "Создаёт услугу каталога.",
@@ -84,7 +84,7 @@ async def update_service(
 @router.get(
     "/services/{service_id}/attachments",
     response_model=list[Attachment],
-    dependencies=[Depends(require_perm("services.read"))],
+    dependencies=[Depends(require_perm("services.attachments.read"))],
     summary="Вложения товара",
 )
 async def list_attachments(
@@ -99,7 +99,7 @@ async def list_attachments(
     "/services/{service_id}/attachments",
     response_model=Attachment,
     status_code=status.HTTP_201_CREATED,
-    dependencies=[Depends(require_perm("services.edit"))],
+    dependencies=[Depends(require_perm("services.attachments.create"))],
     summary="Добавить вложение товара",
     description=with_fields(
         "Привязывает загруженное медиа к товару с тегом и позицией.",
@@ -125,7 +125,7 @@ async def add_attachment(
 @router.delete(
     "/services/{service_id}/attachments/{att_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_perm("services.edit"))],
+    dependencies=[Depends(require_perm("services.attachments.delete"))],
     summary="Удалить вложение товара",
 )
 async def remove_attachment(

@@ -110,10 +110,10 @@ upload-token, затем — сама передача файла. Это отд
 ## Удаление и чистка
 
 - `DELETE /api/v1/admin/media/{id}` — удаляет запись и ставит задачу
-  `media:tasks {op:delete}` (файл удаляет mediaworker).
+  `media:tasks {op:delete}` (файл удаляет mediaworker). Право `media.delete`.
 - `POST /api/v1/admin/media/cleanup` — удаляет «осиротевшие» медиа (не привязанные ни
-  к товарам-вложениям, ни к аватаркам пользователей).
-- Право `media.admin` (список — `media.read`).
+  к товарам-вложениям, ни к аватаркам пользователей). Право `media.cleanup`.
+- Список — право `media.read`.
 
 ## Вложения товаров
 

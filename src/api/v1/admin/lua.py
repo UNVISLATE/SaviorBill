@@ -53,7 +53,7 @@ async def upload_script(
     request: Request,
     body: LuaScriptUpload,
     mngr: SystemScriptsMngr = Depends(get_script_mngr),
-    acc: UserModel = Depends(require_perm("lua.edit")),
+    acc: UserModel = Depends(require_perm("lua.create")),
 ) -> LuaScript:
     row = await mngr.create(body)
     await audit(
@@ -105,7 +105,7 @@ async def delete_script(
     request: Request,
     script_id: int,
     mngr: SystemScriptsMngr = Depends(get_script_mngr),
-    acc: UserModel = Depends(require_perm("lua.edit")),
+    acc: UserModel = Depends(require_perm("lua.delete")),
 ) -> None:
     await mngr.delete(script_id)
     await audit(
