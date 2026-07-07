@@ -1,9 +1,3 @@
-"""Админ: настройка лимитов частоты запросов (/api/v1/admin/settings).
-
-Значения хранятся в Valkey (персистентные ключи ``rlcfg:kind:*``), читаются в
-хот-пути лимитера. ENV задаёт лишь первичные дефолты (сид через SETNX при старте).
-"""
-
 from __future__ import annotations
 
 import valkey.asyncio as valkey
@@ -22,7 +16,7 @@ router = APIRouter()
 @router.get(
     "/settings/ratelimits",
     response_model=list[RateLimitRule],
-    dependencies=[Depends(require_perm("settings.admin"))],
+    dependencies=[Depends(require_perm("settings.ratelimits.read"))],
     summary="Текущие лимиты частоты запросов",
 )
 async def list_rate_limits(
@@ -54,7 +48,7 @@ async def list_rate_limits(
 @router.put(
     "/settings/ratelimits/{kind}",
     response_model=RateLimitRule,
-    dependencies=[Depends(require_perm("settings.admin"))],
+    dependencies=[Depends(require_perm("settings.ratelimits.edit"))],
     summary="Переопределить лимит категории",
     description=with_fields(
         "Задаёт лимит для категории (default/auth/mail/sensitive) в рантайме без "
@@ -82,7 +76,7 @@ async def set_rate_limit(
 @router.delete(
     "/settings/ratelimits/{kind}",
     response_model=RateLimitRule,
-    dependencies=[Depends(require_perm("settings.admin"))],
+    dependencies=[Depends(require_perm("settings.ratelimits.delete"))],
     summary="Сбросить лимит категории к ENV-дефолту",
 )
 async def reset_rate_limit(

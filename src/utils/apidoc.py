@@ -10,8 +10,8 @@ from __future__ import annotations
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
-_OPTIONAL_MARK = "(опционально)"
-_REQUIRED_MARK = "(обязательно)"
+_OPTIONAL_MARK = "`опционально`"
+_REQUIRED_MARK = "`обязательно`"
 
 
 def _field_line(name: str, field: FieldInfo) -> str:
