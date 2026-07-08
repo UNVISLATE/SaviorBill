@@ -76,9 +76,9 @@ async def update_service(
     body: ServicePatch,
     mngr: ServiceMngr = Depends(get_service_mngr),
 ) -> ServiceAdmin:
-    svc = await mngr.update(service_id, body.model_dump(exclude_unset=True))
+    svc, warnings = await mngr.update(service_id, body.model_dump(exclude_unset=True))
     await mngr.s.commit()
-    return ServiceAdmin.from_model(svc)
+    return ServiceAdmin.from_model(svc, warnings=warnings)
 
 
 @router.get(

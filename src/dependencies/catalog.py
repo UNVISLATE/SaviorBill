@@ -6,11 +6,14 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
+from dependencies.sec import get_secbox, make_secbox
 from models.service import ServiceMngr
 from models.service_attachment import ServiceAttachmentMngr
 from models.service_catalogs import ServiceCatalogsMngr
+from models.service_keys import ServiceKeysMngr
 from models.system_scripts import SystemScriptsMngr
 from utils.config import AppConfig
+from utils.sec.box import SecBox
 from utils.storage import StorageSvc
 
 
@@ -35,6 +38,13 @@ def get_catalog_mngr(
     return ServiceCatalogsMngr(session)
 
 
+def get_servicekeys_mngr(
+    session: AsyncSession = Depends(get_db_session),
+    box: SecBox = Depends(get_secbox),
+) -> ServiceKeysMngr:
+    return ServiceKeysMngr(session, box)
+
+
 def get_script_mngr(
     request: Request, session: AsyncSession = Depends(get_db_session)
 ) -> SystemScriptsMngr:
@@ -49,10 +59,12 @@ __all__ = [
     "ServiceMngr",
     "ServiceAttachmentMngr",
     "ServiceCatalogsMngr",
+    "ServiceKeysMngr",
     "SystemScriptsMngr",
     "get_service_mngr",
     "get_attachment_mngr",
     "get_catalog_mngr",
+    "get_servicekeys_mngr",
     "get_script_mngr",
     "get_storage",
 ]

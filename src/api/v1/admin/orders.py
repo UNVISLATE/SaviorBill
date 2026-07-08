@@ -9,7 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.db import get_db_session
 from dependencies.rbac import require_perm
+from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
+from integrations.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderAdmin, OrderGrant
@@ -73,6 +75,7 @@ async def grant(
     session: AsyncSession = Depends(get_db_session),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
     usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
+    triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> OrderAdmin:
     acc = await session.get(UserModel, body.account_id)
     if acc is None:
@@ -80,6 +83,13 @@ async def grant(
     service = await svc_mngr.get_active(body.service_id)
     usvc = await usvc_mngr.create(acc, service, params=body.params, charge=body.charge)
     await usvc_mngr.s.commit()
+    await triggers.fire(
+        TriggerEvent.ORDER_CREATED,
+        {
+            "order": {"id": usvc.id, "service_id": service.id, "via": "admin_grant"},
+            "user": {"id": acc.id, "login": acc.login},
+        },
+    )
     return OrderAdmin.from_model(usvc)
 
 

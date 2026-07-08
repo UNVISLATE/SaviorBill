@@ -15,10 +15,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
-from dependencies.lua import get_lua_bus
+from dependencies.lua import get_lua_bus_configured
 from dependencies.sec import make_secbox
+from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr
 from enums import PayAction, PayStatus, PayTarget
+from integrations.triggers import TriggerDispatcher, TriggerEvent
 from models.payment_providers import PaymentProvidersModel, PaymentProvidersMngr
 from models.service import ServiceModel
 from models.system_scripts import SystemScriptsModel
@@ -26,6 +28,7 @@ from models.user import UserModel
 from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel
 from schemas.lua import LuaRequest
+from services.audit import audit
 from services.lua_ctx import LuaRunner
 from utils.datetime_utils import utc_now
 from utils.luabus import LuaBus
@@ -35,11 +38,18 @@ from utils.sec.box import SecBox
 class PayMngr:
     """Создание платежей и обработка событий платежа через скрипт провайдера."""
 
-    def __init__(self, session: AsyncSession, bus: LuaBus, box: SecBox) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        bus: LuaBus,
+        box: SecBox,
+        dispatcher: TriggerDispatcher | None = None,
+    ) -> None:
         self.s = session
         self.bus = bus
         self.box = box
         self.runner = LuaRunner(bus)
+        self.dispatcher = dispatcher
 
     # --- доступ к провайдеру/секретам/скрипту ----------------------------
     async def _provider(
@@ -172,14 +182,20 @@ class PayMngr:
                 status.HTTP_401_UNAUTHORIZED, "колбэк не прошёл проверку"
             )
 
-        payment = await self._locate(priv, provider_slug)
+        # Блокируем строку платежа на время мутации: сеть/скрипт уже
+        # отработали выше без удержания лока, а сам commit/settle идёт под
+        # ним — исключает гонку с параллельным recheck/refund/повторным
+        # вебхуком одного и того же платежа.
+        payment = await self._locate(priv, provider_slug, for_update=True)
         if payment is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "платёж не найден")
-        if payment.status == PayStatus.PAID:
+        if payment.status in (PayStatus.PAID, PayStatus.REFUNDED):
             return payment  # идемпотентность
 
         if priv.get("paid"):
             await self._settle(payment, priv)
+        elif priv.get("refunded") and payment.status == PayStatus.PAID:
+            await self._apply_refund(payment, priv)
         elif priv.get("failed"):
             payment.status = PayStatus.FAILED
 
@@ -200,7 +216,7 @@ class PayMngr:
         :arg payment: платёж для перепроверки.
         :return: обновлённый платёж.
         """
-        if payment.status in (PayStatus.PAID, PayStatus.FAILED):
+        if payment.status in (PayStatus.PAID, PayStatus.FAILED, PayStatus.REFUNDED):
             return payment
         prov = await self._provider(payment.provider, enabled=False)
         script = await self._script(prov, PayAction.CHECK)
@@ -215,6 +231,15 @@ class PayMngr:
             self._secrets(prov),
         )
         priv = res.get("private") or {}
+
+        # Перечитываем и блокируем платёж перед мутацией: пока мы ждали
+        # ответ скрипта (сеть), его мог обработать параллельный
+        # callback/recheck/refund.
+        payment = await self.s.get(
+            UserPaymentsModel, payment.id, with_for_update=True
+        )
+        if payment.status in (PayStatus.PAID, PayStatus.FAILED, PayStatus.REFUNDED):
+            return payment
 
         if priv.get("ok") and priv.get("paid"):
             await self._settle(payment, priv)
@@ -250,30 +275,116 @@ class PayMngr:
             self._secrets(prov),
         )
         priv = res.get("private") or {}
+
+        # Как и в recheck — блокируем и перечитываем статус перед мутацией
+        # (сеть к провайдеру уже отработала без удержания лока).
+        payment = await self.s.get(
+            UserPaymentsModel, payment.id, with_for_update=True
+        )
+        if payment.status != PayStatus.PAID:
+            return payment  # уже обработан конкурентным запросом — идемпотентно
+
         if priv.get("ok") and priv.get("refunded"):
-            payment.status = PayStatus.REFUNDED
+            await self._apply_refund(payment, priv)
         if res.get("public"):
             payment.public_data = {**(payment.public_data or {}), **res["public"]}
         payment.private_data = {**(payment.private_data or {}), **priv}
         await self.s.flush()
         return payment
 
-    async def _locate(self, priv: dict, provider_slug: str) -> UserPaymentsModel | None:
+    async def _apply_refund(self, payment: UserPaymentsModel, priv: dict) -> None:
+        """Применить рефанд: пометить ``REFUNDED``, откатить услугу/ключ и
+        списать баланс в пределах суммы этого платежа (см. IMPLEMENTATION_PLAN.md §2).
+
+        Рефанд не поддерживает частичные суммы — либо весь платёж возвращён,
+        либо нет. Но откат выданного по нему (услуга/ключ/баланс) — не
+        "партиальный рефанд", а обязательное следствие возврата денег за
+        этот конкретный платёж.
+
+        :arg payment: платёж, для которого провайдер подтвердил возврат.
+        :arg priv: приватные данные ответа скрипта (для дальнейшего merge).
+        """
+        if payment.status == PayStatus.REFUNDED:
+            return
+        payment.status = PayStatus.REFUNDED
+
+        if payment.target == PayTarget.SERVICE and payment.user_svc_id:
+            usvc = await self.s.get(UserServicesModel, payment.user_svc_id)
+            if usvc is not None:
+                service = await self.s.get(ServiceModel, usvc.service_id)
+                acc = await self.s.get(UserModel, payment.account_id)
+                if service is not None and acc is not None:
+                    await UserServicesMngr(self.s, self.bus, self.box).revoke(
+                        usvc, service, acc
+                    )
+        else:  # возврат пополнения баланса
+            acc = await self.s.get(UserModel, payment.account_id)
+            if acc is not None:
+                # Списываем не больше суммы этого платежа и не больше того,
+                # что реально ещё есть на балансе — старые/чужие средства
+                # не трогаем и в минус не уходим.
+                deduct = min(acc.balance, payment.amount)
+                acc.balance -= deduct
+                shortfall = payment.amount - deduct
+                payment.private_data = {
+                    **(payment.private_data or {}),
+                    "refund": {
+                        "deducted": str(deduct),
+                        "shortfall": str(shortfall),
+                    },
+                }
+                if shortfall > 0:
+                    # Часть суммы уже потрачена — списать в минус не можем,
+                    # оставляем след для ручного разбора саппортом.
+                    await audit(
+                        self.s,
+                        action="payment_refund_shortfall",
+                        target_type="payment",
+                        target_id=payment.id,
+                        result="warn",
+                        meta={
+                            "amount": str(payment.amount),
+                            "deducted": str(deduct),
+                            "shortfall": str(shortfall),
+                            "account_id": payment.account_id,
+                        },
+                    )
+
+        await self.s.flush()
+        if self.dispatcher is not None:
+            await self.dispatcher.fire(
+                TriggerEvent.PAYMENT_REFUNDED,
+                {
+                    "payment": {
+                        "id": payment.id,
+                        "account_id": payment.account_id,
+                        "amount": str(payment.amount),
+                        "target": payment.target,
+                    }
+                },
+            )
+
+    async def _locate(
+        self, priv: dict, provider_slug: str, *, for_update: bool = False
+    ) -> UserPaymentsModel | None:
         """Найти платёж по payment_id или external_id из ответа скрипта."""
         pid = priv.get("payment_id")
         if pid is not None:
             try:
-                return await self.s.get(UserPaymentsModel, int(pid))
+                return await self.s.get(
+                    UserPaymentsModel, int(pid), with_for_update=for_update
+                )
             except (TypeError, ValueError):
                 return None
         ext = priv.get("external_id")
         if ext:
-            return await self.s.scalar(
-                select(UserPaymentsModel).where(
-                    UserPaymentsModel.provider == provider_slug,
-                    UserPaymentsModel.external_id == str(ext),
-                )
+            stmt = select(UserPaymentsModel).where(
+                UserPaymentsModel.provider == provider_slug,
+                UserPaymentsModel.external_id == str(ext),
             )
+            if for_update:
+                stmt = stmt.with_for_update()
+            return await self.s.scalar(stmt)
         return None
 
     async def _settle(self, payment: UserPaymentsModel, priv: dict) -> None:
@@ -290,7 +401,9 @@ class PayMngr:
             if usvc is not None:
                 service = await self.s.get(ServiceModel, usvc.service_id)
                 usvc.payment_id = payment.id
-                await UserServicesMngr(self.s, self.bus).deliver(usvc, service, acc)
+                await UserServicesMngr(self.s, self.bus, self.box).deliver(
+                    usvc, service, acc
+                )
         else:  # пополнение баланса
             acc.balance += payment.amount
 
@@ -321,11 +434,14 @@ def _blank_payment(provider_slug: str) -> UserPaymentsModel:
     )
 
 
-def get_pay_mngr(
-    request: Request, session: AsyncSession = Depends(get_db_session)
+async def get_pay_mngr(
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+    dispatcher: TriggerDispatcher = Depends(get_dispatcher),
+    bus: LuaBus = Depends(get_lua_bus_configured),
 ) -> PayMngr:
     cfg = request.app.state.settings
-    return PayMngr(session, get_lua_bus(request), make_secbox(cfg))
+    return PayMngr(session, bus, make_secbox(cfg), dispatcher)
 
 
 def get_pay_providers_mngr(

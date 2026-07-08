@@ -40,7 +40,7 @@ async def create_owner(
     session.add(acc)
     await session.flush()
     acc.role = owner_role
-    log.info("создан owner-пользователь %r", cfg.OWNER_LOGIN)
+    log.info("created owner-user %r", cfg.OWNER_LOGIN)
     return acc
 
 

@@ -103,3 +103,86 @@ async def test_fire_best_effort_on_action_error():
     disp = TriggerDispatcher(_FakeTrigMngr(trigs), {"rec": _Boom()})
     # Ошибки действий не пробрасываются; успешных — ноль.
     assert await disp.fire("e", {}) == 0
+
+
+class _FakeSettings:
+    """Заглушка ``SystemSettingsMngr``: значения настроек + фейковый Valkey."""
+
+    def __init__(self, values: dict, vk=None):
+        self._values = values
+        self.vk = vk or _FakeValkey()
+
+    async def get_int(self, key, default=None):
+        return self._values.get(key, default)
+
+
+class _FakeValkey:
+    """Минимальный in-memory Valkey для INCR/EXPIRE (без реального TTL)."""
+
+    def __init__(self):
+        self._counts: dict[str, int] = {}
+
+    async def incr(self, key):
+        self._counts[key] = self._counts.get(key, 0) + 1
+        return self._counts[key]
+
+    async def expire(self, key, ttl):
+        return True
+
+
+@pytest.mark.asyncio
+async def test_fire_retries_up_to_max_retries():
+    class _FailTwice(BaseAction):
+        key = "rec"
+
+        def __init__(self):
+            self.attempts = 0
+
+        async def run(self, event, ctx, config):
+            self.attempts += 1
+            if self.attempts < 3:
+                raise RuntimeError("transient")
+            return True
+
+    action = _FailTwice()
+    trigs = [_trig(id=1, event="e")]
+    settings = _FakeSettings({"triggers.max_retries": 3})
+    disp = TriggerDispatcher(_FakeTrigMngr(trigs), {"rec": action}, settings)
+
+    assert await disp.fire("e", {}) == 1
+    assert action.attempts == 3
+
+
+@pytest.mark.asyncio
+async def test_fire_gives_up_after_max_retries():
+    class _AlwaysFails(BaseAction):
+        key = "rec"
+
+        def __init__(self):
+            self.attempts = 0
+
+        async def run(self, event, ctx, config):
+            self.attempts += 1
+            raise RuntimeError("permanent")
+
+    action = _AlwaysFails()
+    trigs = [_trig(id=1, event="e")]
+    settings = _FakeSettings({"triggers.max_retries": 2})
+    disp = TriggerDispatcher(_FakeTrigMngr(trigs), {"rec": action}, settings)
+
+    assert await disp.fire("e", {}) == 0
+    assert action.attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_fire_antiloop_blocks_after_limit():
+    action = _RecAction()
+    trigs = [_trig(id=1, event=TriggerEvent.ORDER_CREATED)]
+    settings = _FakeSettings({"triggers.max_fires_per_event_per_minute": 2})
+    disp = TriggerDispatcher(_FakeTrigMngr(trigs), {"rec": action}, settings)
+
+    assert await disp.fire(TriggerEvent.ORDER_CREATED, {}) == 1
+    assert await disp.fire(TriggerEvent.ORDER_CREATED, {}) == 1
+    # Третье срабатывание в течение того же окна — заблокировано анти-петлёй.
+    assert await disp.fire(TriggerEvent.ORDER_CREATED, {}) == 0
+    assert len(action.calls) == 2

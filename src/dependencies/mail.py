@@ -73,6 +73,12 @@ class VerifySvc:
         """TTL кода: настройка ``mail.code_ttl`` из БД, иначе значение ENV."""
         return await self.settings.get_int("mail.code_ttl", self.default_ttl)
 
+    async def _digits(self) -> int:
+        """Длина кода: настройка ``mail.code_digits`` из БД, иначе дефолт."""
+        return await self.settings.get_int("mail.code_digits", _CODE_DIGITS) or (
+            _CODE_DIGITS
+        )
+
     async def request_email(self, acc: UserModel) -> None:
         """Сгенерировать код и отправить письмо с кодом подтверждения email.
 
@@ -88,7 +94,7 @@ class VerifySvc:
                 status.HTTP_404_NOT_FOUND, "отправка почты не настроена"
             )
 
-        code = generate_numeric_code(_CODE_DIGITS)
+        code = generate_numeric_code(await self._digits())
         ttl = await self._ttl()
         await self.vk.set(_VERIFY + str(acc.id), code, ex=ttl)
         await self.vk.delete(_VERIFY_FAIL + str(acc.id))
@@ -110,7 +116,7 @@ class VerifySvc:
         """Подтвердить email по числовому коду.
 
         :arg acc: текущий аутентифицированный аккаунт.
-        :arg code: код из письма (4 цифры).
+        :arg code: код из письма (длина настраивается через ``mail.code_digits``).
         :return: обновлённый аккаунт (``is_verified=True``).
         """
         if acc.is_verified:

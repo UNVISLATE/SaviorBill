@@ -47,6 +47,7 @@ class TokenSvc:
             access_token=self._access(acc),
             refresh_token=self._refresh(acc),
             expires_in=self.cfg.ACCESS_TOKEN_TTL,
+            is_active=acc.is_active,
         )
 
     def _decode_refresh(self, token: str) -> jwtu.JWTToken:
@@ -54,7 +55,7 @@ class TokenSvc:
             token, self.cfg.JWT_SECRET, self.cfg.JWT_ALG, self.cfg.JWT_ISS
         )
         if claims.typ != jwtu.REFRESH:
-            raise jwtu.InvalidJWT("ожидался refresh-токен")
+            raise jwtu.InvalidJWT("a refresh token was expected")
         return claims
 
     async def revoke(self, claims: jwtu.JWTToken) -> None:

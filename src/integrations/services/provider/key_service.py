@@ -31,7 +31,8 @@ class KeyService(BaseIssuer):
         key.order_id = usvc.id
         key.used_at = utc_now()
         usvc.digikey_id = key.id
-        usvc.public_data = {"key": key.value}
+        value = self.box.open(key.value) if self.box is not None else key.value
+        usvc.public_data = {"key": value}
         usvc.private_data = {"digikey_id": key.id}
 
 

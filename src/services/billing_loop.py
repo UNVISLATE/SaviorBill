@@ -30,6 +30,7 @@ from dependencies.payment import PayMngr
 from dependencies.usersvc import UserServicesMngr
 from enums import PayStatus, UsvcStatus
 from models.service import ServiceModel
+from models.system_settings import SystemSettingsMngr
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel
@@ -80,19 +81,33 @@ class BillingLoop:
         self._sem = asyncio.Semaphore(cfg.BILLING_CONCURRENCY)
 
     # --- ресурсы -----------------------------------------------------------
-    def _bus(self) -> LuaBus:
+    async def _bus(self, session: AsyncSession) -> LuaBus:
+        """`LuaBus` с runtime-таймаутом/ретраями из `SystemSettingsMngr`.
+
+        Тот же настраиваемый механизм, что и у request-scoped вызовов (см.
+        `dependencies/lua.py::get_lua_bus_configured`) — фоновый billing-loop
+        не должен вести себя иначе только потому, что у него нет HTTP-запроса.
+        """
+        settings = SystemSettingsMngr(
+            session, self.vk, make_secbox(self.cfg), self.cfg.SETTINGS_CACHE_TTL
+        )
+        timeout = await settings.get_int("lua.call_timeout_sec", self.cfg.LUA_CALL_TIMEOUT)
+        max_retries = await settings.get_int("lua.max_retries", 2)
+        backoff = await settings.get_int("lua.retry_backoff_sec", 5)
         return LuaBus(
             self.vk,
             self.cfg.LUA_TASK_STREAM,
             self.cfg.LUA_RESP_STREAM,
-            self.cfg.LUA_CALL_TIMEOUT,
+            default_timeout=timeout or self.cfg.LUA_CALL_TIMEOUT,
+            max_retries=max_retries or 0,
+            retry_backoff=backoff or 0,
         )
 
-    def _pay_mngr(self, session: AsyncSession) -> PayMngr:
-        return PayMngr(session, self._bus(), make_secbox(self.cfg))
+    async def _pay_mngr(self, session: AsyncSession) -> PayMngr:
+        return PayMngr(session, await self._bus(session), make_secbox(self.cfg))
 
-    def _usvc_mngr(self, session: AsyncSession) -> UserServicesMngr:
-        return UserServicesMngr(session, self._bus())
+    async def _usvc_mngr(self, session: AsyncSession) -> UserServicesMngr:
+        return UserServicesMngr(session, await self._bus(session), make_secbox(self.cfg))
 
     @property
     def _qkey(self) -> str:
@@ -110,12 +125,12 @@ class BillingLoop:
     async def start(self) -> None:
         """Засеять разделяемую очередь и запустить фоновый диспетчер."""
         if not self.cfg.BILLING_LOOP_ENABLED:
-            log.info("billing-loop отключён (BILLING_LOOP_ENABLED=false)")
+            log.info("billing-loop is disabled (BILLING_LOOP_ENABLED=false)")
             return
         async with self.sm() as session:
             await self.seed_on_start(session)
         self._task = asyncio.create_task(self._run(), name="billing-loop")
-        log.info("billing-loop запущен")
+        log.info("billing-loop launched")
 
     async def stop(self) -> None:
         """Остановить диспетчер."""
@@ -197,7 +212,7 @@ class BillingLoop:
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001 — цикл не должен падать
-                log.exception("billing-loop: ошибка итерации")
+                log.exception("billing-loop: iteration error")
             await self._sleep_until_next()
 
     async def _tick(self) -> None:
@@ -218,7 +233,7 @@ class BillingLoop:
                     await session.commit()
                 except Exception:  # noqa: BLE001 — единичная задача не валит цикл
                     await session.rollback()
-                    log.exception("billing-loop: задача %s провалилась", member)
+                    log.exception("billing-loop: %s task failed", member)
 
     async def _sleep_until_next(self) -> None:
         self._wake.clear()
@@ -257,7 +272,8 @@ class BillingLoop:
         service = await session.get(ServiceModel, usvc.service_id)
         acc = await session.get(UserModel, usvc.account_id)
         try:
-            await self._usvc_mngr(session).expire(usvc, service, acc)
+            mngr = await self._usvc_mngr(session)
+            await mngr.expire(usvc, service, acc)
         except Exception:  # noqa: BLE001 — учёт попыток + DLQ, затем проброс
             await self._dlq_or_retry(member, f"svc:action:{usvc_id}", usvc_id)
             raise
@@ -297,7 +313,7 @@ class BillingLoop:
                 meta={"service_id": usvc.service_id},
             )
         except Exception:  # noqa: BLE001 — аудит не должен ломать задачу
-            log.exception("billing-loop: не удалось записать аудит истечения")
+            log.exception("billing-loop: Failed to record expiration audit")
 
     async def _exec_pay_recheck(self, session: AsyncSession, pay_id: int) -> None:
         member = f"{_PAY}{pay_id}"
@@ -305,7 +321,8 @@ class BillingLoop:
         if payment is None or payment.status != PayStatus.PENDING:
             await self.vk.hdel(self.cfg.BILLING_ATTEMPTS_KEY, str(pay_id))
             return
-        await self._pay_mngr(session).recheck(payment)
+        mngr = await self._pay_mngr(session)
+        await mngr.recheck(payment)
         if payment.status != PayStatus.PENDING:
             await self.vk.hdel(self.cfg.BILLING_ATTEMPTS_KEY, str(pay_id))
             return

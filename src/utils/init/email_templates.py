@@ -69,7 +69,7 @@ async def seed_email_templates(session: AsyncSession, cfg: AppConfig) -> list[st
         )
         created.append(slug)
     if created:
-        log.info("созданы дефолтные email-шаблоны: %s", ", ".join(created))
+        log.info("created default email-templates: %s", ", ".join(created))
     return created
 
 

@@ -27,6 +27,69 @@ class ConvertError(RuntimeError):
     """Ошибка конвертации ffmpeg."""
 
 
+class SignatureError(ConvertError):
+    """Сигнатура файла не соответствует заявленному виду медиа."""
+
+
+# Первые байты (magic bytes) известных форматов — дешёвая проверка перед
+# запуском ffmpeg (IMPLEMENTATION_PLAN §11.1). Не защита от подделки как
+# таковая (легко подделываемая эвристика), а экономия ресурсов на заведомо
+# невалидном/не том файле: сразу отказ без запуска внешнего процесса.
+# Формат записи: (сигнатура, смещение в байтах).
+_IMAGE_SIGNATURES: list[tuple[bytes, int]] = [
+    (b"\xff\xd8\xff", 0),  # JPEG
+    (b"\x89PNG\r\n\x1a\n", 0),  # PNG
+    (b"GIF87a", 0),  # GIF
+    (b"GIF89a", 0),  # GIF
+    (b"BM", 0),  # BMP
+]
+_VIDEO_SIGNATURES: list[tuple[bytes, int]] = [
+    (b"ftyp", 4),  # MP4/MOV/... (ISO base media file format)
+    (b"\x1aE\xdf\xa3", 0),  # WebM/MKV (Matroska/EBML)
+    (b"OggS", 0),  # OGG
+]
+# RIFF-контейнер общий для нескольких форматов — fourCC на смещении 8
+# определяет реальный формат (WEBP → image, AVI → video).
+_RIFF_HEADER = b"RIFF"
+_RIFF_FOURCC_OFFSET = 8
+_RIFF_IMAGE_FOURCC = b"WEBP"
+_RIFF_VIDEO_FOURCC = b"AVI "
+
+# Сколько байт заголовка достаточно прочитать для проверки всех сигнатур выше.
+SIGNATURE_READ_BYTES = 16
+
+
+def _header_matches(header: bytes, signatures: list[tuple[bytes, int]]) -> bool:
+    return any(
+        header[offset : offset + len(sig)] == sig for sig, offset in signatures
+    )
+
+
+def check_signature(kind: str, header: bytes) -> None:
+    """Сверить первые байты файла с magic bytes заявленного вида медиа.
+
+    :arg kind: вид медиа (image|icon|avatar|video).
+    :arg header: первые ``SIGNATURE_READ_BYTES`` байт файла.
+    :raises SignatureError: сигнатура не распознана как ни один из известных
+        форматов данного вида — экономим ffmpeg-вызов на заведомо невалидном
+        (или не том) файле.
+    """
+    is_video = kind in _VIDEO_KINDS
+    if header.startswith(_RIFF_HEADER):
+        fourcc = header[_RIFF_FOURCC_OFFSET : _RIFF_FOURCC_OFFSET + 4]
+        expected = _RIFF_VIDEO_FOURCC if is_video else _RIFF_IMAGE_FOURCC
+        if fourcc == expected:
+            return
+        raise SignatureError(
+            f"файл не распознан как {kind}: RIFF-контейнер не того формата"
+        )
+    signatures = _VIDEO_SIGNATURES if is_video else _IMAGE_SIGNATURES
+    if not _header_matches(header, signatures):
+        raise SignatureError(
+            f"файл не распознан как {kind}: неизвестная сигнатура"
+        )
+
+
 @dataclass(slots=True)
 class Variant:
     """Один выходной файл конверсии."""
@@ -139,8 +202,12 @@ async def convert(
     :arg out_dir: каталог для выходных файлов.
     :arg token: идентификатор медиа (префикс имён файлов).
     :return: список вариантов (``main`` всегда первый).
+    :raises SignatureError: сигнатура файла не соответствует заявленному виду.
     :raises ConvertError: при ненулевом коде возврата ffmpeg.
     """
+    with open(src, "rb") as fh:
+        header = fh.read(SIGNATURE_READ_BYTES)
+    check_signature(kind, header)
     if kind in _VIDEO_KINDS:
         return await convert_video(cfg, src, out_dir, token)
     return await convert_image(cfg, src, out_dir, token)
@@ -154,6 +221,9 @@ __all__ = [
     "target_key",
     "Variant",
     "ConvertError",
+    "SignatureError",
+    "check_signature",
+    "SIGNATURE_READ_BYTES",
     "_IMAGE_KINDS",
     "_VIDEO_KINDS",
 ]

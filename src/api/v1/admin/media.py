@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
+from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
 from models.system_media import SystemMediaMngr, SystemMediaModel
 from models.user import UserModel
@@ -83,16 +84,22 @@ async def delete_media(
     summary="Удалить неиспользуемые медиа",
     description=(
         "Удаляет все медиа, не привязанные ни к товарам (вложения), ни к аватаркам "
-        "пользователей. Файлы удаляет mediaworker. Возвращает число удалённых."
+        "пользователей. Файлы удаляет mediaworker. Записи младше "
+        "`media.cleanup_grace_sec` (по умолчанию 1 час) не рассматриваются "
+        "кандидатами — грейс-период защищает от удаления только что "
+        "загруженного, ещё не привязанного к сущности файла (TOCTOU). "
+        "Возвращает число удалённых."
     ),
 )
 async def cleanup_media(
     request: Request,
     mngr: SystemMediaMngr = Depends(get_media_mngr),
     vk: valkey.Valkey = Depends(get_valkey_client),
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> dict:
     bus = _bus(request, vk)
-    orphans = await mngr.orphans()
+    grace = await settings.get_int("media.cleanup_grace_sec", 3600)
+    orphans = await mngr.orphans(grace_sec=grace or 0)
     for media in orphans:
         await _drop(mngr, bus, media)
     await mngr.s.commit()

@@ -11,11 +11,21 @@ from models.roles import Role
 
 log = logging.getLogger("saviorbill.init")
 
+# Системные роли — их назначение управляется платформой автоматически
+# (регистрация/верификация/бан) или они зарезервированы под встроенную логику
+# на будущее. У системных ролей можно менять права (см. api/v1/admin/roles.py),
+# но не более — они не подлежат обычному CRUD как пользовательские роли.
+_SYSTEM_KEYS: frozenset[str] = frozenset(
+    {"owner", "user", "guest", "banned", "support", "media"}
+)
+
 # Логические ключи базовых ролей → дефолтные права.
 # ``{"*": True}`` — суперправо (см. utils/rbac.has_perm).
 _BASE_PERMS: dict[str, dict] = {
     "owner": {"*": True},
-    # Полный доступ к админ-разделам (без неявного владения системой).
+    # Обычная (не системная) роль — создаётся как удобный дефолт, но не
+    # назначается автоматически никакими условиями платформы: полностью
+    # управляется через админку наравне с любой пользовательской ролью.
     "admin": {
         "users": True,
         "roles": True,
@@ -29,8 +39,11 @@ _BASE_PERMS: dict[str, dict] = {
         "triggers": True,
         "media": True,
         "promo": True,
+        "audit": True,
+        "settings": True,
+        "analytics": {"basic": {"read": True}},
     },
-    # Менеджер: товары/каталоги/заказы/оплаты + промокоды + загрузка медиа.
+    # Тоже не системная: удобный дефолт, назначается только вручную.
     "manager": {
         "services": True,
         "catalogs": True,
@@ -40,17 +53,15 @@ _BASE_PERMS: dict[str, dict] = {
         "triggers": {"read": True},
         "media": {"upload": True},
     },
-    # Поддержка: просмотр пользователей и заказов.
-    "support": {
-        "users": {"read": True},
-        "orders": {"read": True},
-    },
-    # Обычный (верифицированный) пользователь: загрузка аватарки.
-    "user": {"media": {"upload": True}},
-    # Гость: только что зарегистрирован, email не подтверждён (== is_verified false).
-    "guest": {"media": {"upload": True}},
-    # Заблокированный: без админ-прав (доступ к своему профилю — через auth-роуты).
-    "banned": {},
+    # Системная, зарезервирована на будущее (интеграция с AIOSupport)
+    "support": {},
+    # Системная, зарезервирована на будущее (медиа-партнерка)
+    "media": {},
+    # Обычный (верифицированный) пользователь: полный доступ к своим данным.
+    "user": {"media": {"upload": True}, "user": {"*": True}},
+    "guest": {"media": {"upload": True}, "user": {"*": True}},
+    # Заблокированный: видит свой профиль/бан-флаг, ничего больше.
+    "banned": {"user": {"profile": {"read": True}}},
 }
 
 _TITLES: dict[str, str] = {
@@ -58,6 +69,7 @@ _TITLES: dict[str, str] = {
     "admin": "Administrator",
     "manager": "Manager",
     "support": "Support",
+    "media": "Media",
     "user": "User",
     "guest": "Guest",
     "banned": "Banned",
@@ -83,12 +95,12 @@ async def create_base_roles(
                 name=name,
                 title=_TITLES.get(key, name.title()),
                 key=key,
-                is_system=True,
+                is_system=key in _SYSTEM_KEYS,
                 perms=perms,
             )
             session.add(role)
             await session.flush()
-            log.info("создана базовая роль %r (key=%s)", name, key)
+            log.info("created base role %r (key=%s)", name, key)
         elif role.key != key:
             role.key = key
             await session.flush()

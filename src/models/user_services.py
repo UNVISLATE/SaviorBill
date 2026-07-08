@@ -23,6 +23,7 @@ from enums import ServiceAction, UsvcStatus
 from integrations.services import get_issuer
 from utils.datetime_utils import utc_now
 from utils.luabus import LuaBus
+from utils.sec.box import SecBox
 
 
 class UserServicesModel(Base):
@@ -112,9 +113,12 @@ from models.service import ServiceModel
 class UserServicesMngr:
     """Оформление выдачи услуги и её доставка (ключ или Lua-скрипт)."""
 
-    def __init__(self, session: AsyncSession, bus: LuaBus) -> None:
+    def __init__(
+        self, session: AsyncSession, bus: LuaBus, box: SecBox | None = None
+    ) -> None:
         self.s = session
         self.bus = bus
+        self.box = box
 
     # --- деньги -----------------------------------------------------------
     @staticmethod
@@ -212,7 +216,7 @@ class UserServicesMngr:
         if usvc.status == UsvcStatus.ACTIVE:
             return usvc
         try:
-            issuer = get_issuer(service.delivery, self.s, self.bus)
+            issuer = get_issuer(service.delivery, self.s, self.bus, self.box)
             await issuer.issue(usvc, service, acc)
             usvc.status = UsvcStatus.ACTIVE
             usvc.delivered_at = utc_now()
@@ -254,7 +258,7 @@ class UserServicesMngr:
         :arg acc: аккаунт-владелец.
         :arg action: действие из :class:`enums.ServiceAction`.
         """
-        issuer = get_issuer(service.delivery, self.s, self.bus)
+        issuer = get_issuer(service.delivery, self.s, self.bus, self.box)
         try:
             await issuer.run_action(usvc, service, acc, action)
         except NotImplementedError:
@@ -278,5 +282,30 @@ class UserServicesMngr:
         except Exception:  # noqa: BLE001 — истечение помечаем даже при сбое stop
             pass
         usvc.status = UsvcStatus.EXPIRED
+        await self.s.flush()
+        return usvc
+
+    async def revoke(
+        self, usvc: UserServicesModel, service: ServiceModel, acc
+    ) -> UserServicesModel:
+        """Откатить выданную услугу при рефанде платежа: остановить интеграцию
+        (lua-скрипт или нативная выдача) и пометить ``CANCELLED``.
+
+        Для цифрового ключа (``Delivery.KEY``) сам ключ не возвращается в
+        свободный пул автоматически — он мог быть уже скопирован
+        пользователем, повторная выдача другому небезопасна; при
+        необходимости администратор вручную заменяет ключ.
+
+        :arg usvc: выданная услуга, привязанная к возвращаемому платежу.
+        :arg service: эталонная услуга.
+        :arg acc: аккаунт-владелец.
+        """
+        if usvc.status == UsvcStatus.CANCELLED:
+            return usvc
+        try:
+            await self.run_action(usvc, service, acc, ServiceAction.STOP)
+        except Exception:  # noqa: BLE001 — откат помечаем даже при сбое stop
+            pass
+        usvc.status = UsvcStatus.CANCELLED
         await self.s.flush()
         return usvc

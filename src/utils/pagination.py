@@ -85,4 +85,36 @@ async def paginate(
     return items, total, has_more
 
 
-__all__ = ["PageParams", "page_params", "paginate"]
+async def paginate_rows(
+    session: AsyncSession,
+    stmt: Select,
+    mapper: Callable[[object], S],
+    *,
+    limit: int,
+    offset: int,
+) -> tuple[list[S], int, bool]:
+    """Как :func:`paginate`, но для select с несколькими колонками/агрегатами.
+
+    ``session.scalars()`` (использует :func:`paginate`) отдаёт только первую
+    колонку select — не годится для группировок (``select(col1, func.count())``
+    и т.п.). Здесь вместо этого ``session.execute()`` — ``mapper`` получает
+    ``Row`` целиком (обычно через ``row._mapping`` или именованные атрибуты).
+
+    :arg session: активная сессия БД.
+    :arg stmt: базовый select (без limit/offset), с нужными where/group_by/order_by.
+    :arg mapper: преобразование ``Row`` в схему ответа.
+    :arg limit: размер страницы.
+    :arg offset: эффективное смещение выборки.
+    :return: кортеж (элементы страницы, общее число записей, есть ли ещё страницы).
+    """
+    total = await session.scalar(
+        select(func.count()).select_from(stmt.order_by(None).subquery())
+    )
+    total = int(total or 0)
+    rows = (await session.execute(stmt.limit(limit).offset(offset))).all()
+    items = [mapper(r) for r in rows]
+    has_more = (offset + len(items)) < total
+    return items, total, has_more
+
+
+__all__ = ["PageParams", "page_params", "paginate", "paginate_rows"]

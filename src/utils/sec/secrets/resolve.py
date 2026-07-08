@@ -29,8 +29,10 @@ def resolve_secrets(cfg: AppConfig) -> str:
     res = SecretResolver(store)
 
     # Генерируемые секреты: создаются один раз, затем переиспользуются.
+    # SECRETS_KEY сразу в версионированном формате (см. SecBox.new_versioned_key) —
+    # будущая ротация не потребует миграции формата.
     cfg.SECRETS_KEY = res.ensure(
-        SecretName.SECRETS_KEY, SecBox.new_key, fallback=cfg.SECRETS_KEY
+        SecretName.SECRETS_KEY, SecBox.new_versioned_key, fallback=cfg.SECRETS_KEY
     )
     cfg.JWT_SECRET = res.ensure(
         SecretName.JWT, lambda: _secrets.token_urlsafe(48), fallback=cfg.JWT_SECRET
@@ -47,11 +49,11 @@ def resolve_secrets(cfg: AppConfig) -> str:
     cfg.S3_SECRET = res.ensure(SecretName.S3_SECRET, fallback=cfg.S3_SECRET)
 
     if not cfg.JWT_SECRET:
-        raise RuntimeError("JWT_SECRET не разрешён ни из хранилища, ни из ENV")
+        raise RuntimeError("JWT_SECRET is not resolved from either storage or ENV")
     if not cfg.DB_PASS:
-        raise RuntimeError("DB_PASS не разрешён ни из хранилища, ни из ENV")
+        raise RuntimeError("DB_PASS is not allowed from either storage or ENV")
 
-    log.info("секреты разрешены через бэкенд %r", store.name)
+    log.info("secrets are allowed through the backend %r", store.name)
     return store.name
 
 

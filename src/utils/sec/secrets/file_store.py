@@ -32,7 +32,7 @@ class FileSecretStore(SecretStore):
     def put(self, key: str, value: str) -> None:
         path = self.paths.get(key)
         if path is None:
-            raise KeyError(f"не задан путь файла для секрета {key!r}")
+            raise KeyError(f"the file path for the secret {key!r} is not specified")
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(value, encoding="utf-8")
         if os.name == "posix":

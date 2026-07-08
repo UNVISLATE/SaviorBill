@@ -6,7 +6,10 @@ from fastapi import APIRouter, Depends, status
 
 from dependencies.auth import get_current_acc
 from dependencies.mail import VerifySvc, get_verify_svc
+from dependencies.rbac import require_perm
 from dependencies.ratelimit import LimitKind, rate_limit
+from dependencies.triggers import get_dispatcher
+from integrations.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from schemas.auth import Account, EmailVerifyConfirm
 from utils.apidoc import with_fields
@@ -19,10 +22,14 @@ router = APIRouter()
     status_code=status.HTTP_202_ACCEPTED,
     summary="Запросить подтверждение email",
     description=(
-        "Отправляет на email аккаунта 4-значный код подтверждения с ограниченным "
-        "временем жизни. Если SMTP не настроен — возвращает 404."
+        "Отправляет на email аккаунта числовой код подтверждения (длина "
+        "настраивается через `mail.code_digits`, по умолчанию 4 цифры) с "
+        "ограниченным временем жизни. Если SMTP не настроен — возвращает 404."
     ),
-    dependencies=[Depends(rate_limit("mail.verify.request", LimitKind.MAIL))],
+    dependencies=[
+        Depends(require_perm("user.profile.edit")),
+        Depends(rate_limit("mail.verify.request", LimitKind.MAIL)),
+    ],
 )
 async def request_email(
     acc: UserModel = Depends(get_current_acc),
@@ -42,24 +49,32 @@ async def request_email(
     response_model=Account,
     summary="Подтвердить email",
     description=with_fields(
-        "Подтверждает email по 4-значному коду из письма (код в теле).",
+        "Подтверждает email по числовому коду из письма (код в теле).",
         EmailVerifyConfirm,
     ),
-    dependencies=[Depends(rate_limit("mail.verify.confirm", LimitKind.MAIL))],
+    dependencies=[
+        Depends(require_perm("user.profile.edit")),
+        Depends(rate_limit("mail.verify.confirm", LimitKind.MAIL)),
+    ],
 )
 async def confirm_email(
     body: EmailVerifyConfirm,
     acc: UserModel = Depends(get_current_acc),
     svc: VerifySvc = Depends(get_verify_svc),
+    triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> Account:
     """Подтвердить email текущего пользователя по коду.
 
-    :arg body: тело с полем ``code`` (4 цифры, обязательно).
+    :arg body: тело с полем ``code`` (числовой код, длина настраивается).
     :arg acc: текущий аутентифицированный аккаунт.
     :return: обновлённый профиль аккаунта.
     """
     acc = await svc.confirm_email(acc, body.code)
     await svc.s.commit()
+    await triggers.fire(
+        TriggerEvent.USER_VERIFIED,
+        {"user": {"id": acc.id, "login": acc.login, "email": acc.email}},
+    )
     return Account.from_account(acc)
 
 

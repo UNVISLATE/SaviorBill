@@ -111,7 +111,13 @@ async def test_admin_media_list_and_cleanup(http, new_user, seed):
     assert "thumb" in entry["variants"]
     assert entry["variants"]["thumb"]["url"] == f"/media/{token}.thumb"
 
-    # чистка орфанов (медиа не привязано ни к товару, ни к аватарке)
+    # чистка орфанов (медиа не привязано ни к товару, ни к аватарке) — грейс-период
+    # по умолчанию (1 час) исключил бы только что загруженный файл, обнуляем для теста.
+    await http.put(
+        "/api/v1/admin/settings/raw/media.cleanup_grace_sec",
+        headers=hdr,
+        json={"value": "0"},
+    )
     cl = await http.post("/api/v1/admin/media/cleanup", headers=hdr)
     assert cl.status_code == 200, cl.text
     assert cl.json()["deleted"] >= 1

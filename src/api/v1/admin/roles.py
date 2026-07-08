@@ -83,7 +83,10 @@ async def create_role(
     response_model=Role,
     summary="Изменить роль",
     description=with_fields(
-        "Частично обновляет роль — передаются только изменяемые поля.",
+        "Частично обновляет роль — передаются только изменяемые поля. "
+        "Права (`perms`) системных ролей (`is_system=true`) менять можно так же, "
+        "как и у обычных — системность защищает только сам факт существования "
+        "и стабильный `key` роли, не набор прав.",
         RolePatch,
     ),
 )
@@ -97,8 +100,6 @@ async def update_role(
     role = await session.get(RoleModel, role_id)
     if role is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "роль не найдена")
-    if role.is_system:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "системную роль менять нельзя")
     data = body.model_dump(exclude_unset=True)
     if "title" in data:
         role.title = data["title"]

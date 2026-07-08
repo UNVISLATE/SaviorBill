@@ -32,21 +32,21 @@ async def check_access(mngr: SystemSettingsMngr, cfg: AppConfig) -> bool:
     insecure = False
 
     if os.name != "posix":
-        log.info("не-POSIX ОС: проверки прав файлов/пользователя пропущены")
+        log.info("non-POSIX OS: File/user rights checks skipped")
         await mngr.set("system.fs_insecure", "0", is_secret=False)
         return False
 
     # 1. Процесс не должен быть root.
     if hasattr(os, "geteuid") and os.geteuid() == 0:
         insecure = True
-        log.warning("биллинг запущен от root — это небезопасно")
+        log.warning("billing is running from root — it's not safe")
 
     # 2. Файл секретного ключа — только владельцу.
     key_file = cfg.secret_key_file
     if key_file.exists() and _key_too_open(key_file):
         insecure = True
         log.warning(
-            "файл ключа %s доступен не только владельцу (ожидается 0o600/0o400)",
+            "the %s key file is not only available to the owner (expected 0o600/0o400)",
             key_file,
         )
 
@@ -58,11 +58,11 @@ async def check_access(mngr: SystemSettingsMngr, cfg: AppConfig) -> bool:
                 continue
             if _world_writable(entry):
                 insecure = True
-                log.warning("файл %s доступен на запись группе/другим", entry)
+                log.warning("the %s file is writable by the group/others", entry)
 
     await mngr.set("system.fs_insecure", "1" if insecure else "0", is_secret=False)
     if not insecure:
-        log.info("проверка прав ФС/процесса: OK")
+        log.info("FS/process rights check: OK")
     return insecure
 
 

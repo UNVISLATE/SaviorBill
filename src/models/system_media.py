@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, DateTime, Integer, JSON, String, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -186,9 +186,15 @@ class SystemMediaMngr:
         media.variants = {**(media.variants or {}), **variants}
         await self.s.flush()
 
-    async def orphans(self) -> list[SystemMediaModel]:
+    async def orphans(self, grace_sec: int = 3600) -> list[SystemMediaModel]:
         """Медиа, не привязанные ни к товарам (attachments), ни к аватаркам.
 
+        :arg grace_sec: не рассматривать кандидатами записи младше этого
+            порога (секунды от создания) — грейс-период против TOCTOU: файл,
+            только что загруженный и ещё не успевший привязаться к сущности
+            (или ещё обрабатываемый mediaworker'ом), не удаляется в текущем
+            проходе, будет учтён в следующем, если действительно осиротел
+            (см. IMPLEMENTATION_PLAN §11.3).
         :return: список «осиротевших» записей для чистки.
         """
         from models.service_attachment import ServiceAttachmentModel
@@ -198,10 +204,12 @@ class SystemMediaMngr:
         used_avatar = select(UserModel.avatar_media_id).where(
             UserModel.avatar_media_id.is_not(None)
         )
+        cutoff = utc_now() - timedelta(seconds=grace_sec)
         rows = await self.s.scalars(
             select(SystemMediaModel)
             .where(SystemMediaModel.id.not_in(used_att))
             .where(SystemMediaModel.id.not_in(used_avatar))
+            .where(SystemMediaModel.created_at < cutoff)
             .order_by(SystemMediaModel.id)
         )
         return list(rows)

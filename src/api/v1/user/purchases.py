@@ -15,9 +15,12 @@ from dependencies.payment import (
     get_pay_mngr,
     get_pay_providers_mngr,
 )
+from dependencies.rbac import require_perm
 from dependencies.ratelimit import LimitKind, rate_limit
+from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
 from enums import PayTarget
+from integrations.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
 from schemas.page import Page
@@ -37,6 +40,7 @@ router = APIRouter()
         "Список включённых платёжных провайдеров для выбора при создании "
         "платежа. Требует аутентификации (Bearer)."
     ),
+    dependencies=[Depends(require_perm("user.purchases.read"))],
 )
 async def list_pay_providers(
     acc: UserModel = Depends(get_current_acc),
@@ -47,7 +51,12 @@ async def list_pay_providers(
     return [PayProviderPublic.from_model(p) for p in rows]
 
 
-@router.get("/purchases", response_model=Page[Payment], summary="Мои платежи")
+@router.get(
+    "/purchases",
+    response_model=Page[Payment],
+    summary="Мои платежи",
+    dependencies=[Depends(require_perm("user.purchases.read"))],
+)
 async def my_purchases(
     pp: PageParams = Depends(page_params),
     acc: UserModel = Depends(get_current_acc),
@@ -79,7 +88,10 @@ async def my_purchases(
         "обязателен `service_id`).",
         PaymentCreate,
     ),
-    dependencies=[Depends(rate_limit("purchases.create", LimitKind.SENSITIVE))],
+    dependencies=[
+        Depends(require_perm("user.purchases.create")),
+        Depends(rate_limit("purchases.create", LimitKind.SENSITIVE)),
+    ],
 )
 async def create_purchase(
     body: PaymentCreate,
@@ -87,6 +99,7 @@ async def create_purchase(
     pay_mngr: PayMngr = Depends(get_pay_mngr),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
     usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
+    triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> Payment:
     user_svc_id: int | None = None
 
@@ -109,6 +122,18 @@ async def create_purchase(
         return_url=body.return_url,
     )
     await pay_mngr.s.commit()
+    if body.target == PayTarget.SERVICE:
+        await triggers.fire(
+            TriggerEvent.ORDER_CREATED,
+            {
+                "order": {
+                    "id": user_svc_id,
+                    "service_id": body.service_id,
+                    "via": "payment",
+                },
+                "user": {"id": acc.id, "login": acc.login},
+            },
+        )
     return Payment.from_model(payment)
 
 

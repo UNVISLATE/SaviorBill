@@ -5,14 +5,21 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from utils.luabus import LuaBus
+from utils.sec.box import SecBox
 
 
 class BaseIssuer:
     """Базовый способ выдачи услуги."""
 
-    def __init__(self, session: AsyncSession, bus: LuaBus | None = None) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        bus: LuaBus | None = None,
+        box: SecBox | None = None,
+    ) -> None:
         self.s = session
         self.bus = bus
+        self.box = box
 
     async def issue(self, usvc, service, acc) -> None:  # noqa: ANN001 — ORM-объекты
         """Выполнить доставку и заполнить ``usvc.public_data`` / ``private_data``.

@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import FastAPI
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from lifespan import lifespan
 from utils.config import AppConfig, APP_NAME, APP_VERSION
@@ -55,6 +56,13 @@ TAGS_META = [
         "description": "Триггеры: событие → действие (email/lua).",
     },
     {"name": "admin: audit", "description": "Аудит финансовых и админ-действий."},
+    {
+        "name": "admin: analytics",
+        "description": (
+            "Аналитика: базовый уровень (промокоды/платежи/услуги) и "
+            "продвинутый (Polars: LTV/retention/churn)."
+        ),
+    },
 ]
 
 app = FastAPI(
@@ -70,6 +78,16 @@ app = FastAPI(
 
 # Метрики Prometheus + трейсинг OpenTelemetry (по флагам METRICS_ENABLED/OTEL_ENABLED).
 setup_observability(app, settings, APP_NAME, APP_VERSION)
+
+# Доверять X-Forwarded-For/-Proto только если явно сконфигурирован список
+# реверс-прокси — иначе `request.client.host` (реальный TCP-peer) остаётся
+# единственным источником IP клиента (см. dependencies/ratelimit.py,
+# IMPLEMENTATION_PLAN §10). Без этого небезопасный дефолт "доверяем всегда"
+# позволял бы обойти rate-limit по IP подделкой заголовка напрямую.
+if settings.trusted_proxies_list:
+    app.add_middleware(
+        ProxyHeadersMiddleware, trusted_hosts=settings.trusted_proxies_list
+    )
 
 if __name__ == "__main__":
     import uvicorn

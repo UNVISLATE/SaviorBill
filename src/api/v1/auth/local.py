@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from dependencies.auth import (
     UserMngr,
@@ -10,13 +10,14 @@ from dependencies.auth import (
     get_acc_mngr,
     get_token_svc,
 )
+from dependencies.login_guard import LoginGuard, client_ip, get_login_guard
 from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
 from integrations.triggers import TriggerDispatcher, TriggerEvent
 from schemas.auth import Login, Refresh, Reg, TokenPair
 from utils.apidoc import with_fields
 from utils.sec import jwt as jwtu
-from utils.sec.pwd import hash_pass, needs_rehash, verify_pass
+from utils.sec.pwd import dummy_hash, hash_pass, needs_rehash, verify_pass
 
 router = APIRouter()
 
@@ -42,10 +43,13 @@ async def register(
     triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> TokenPair:
     """Создать локальный аккаунт и сразу выдать токены."""
-    if await mngr.by_login(body.login):
-        raise HTTPException(status.HTTP_409_CONFLICT, "логин занят")
-    if body.email and await mngr.by_email(body.email):
-        raise HTTPException(status.HTTP_409_CONFLICT, "email занят")
+    # Единое сообщение (не раскрывает, что именно занято — логин или email).
+    if await mngr.by_login(body.login) or (
+        body.email and await mngr.by_email(body.email)
+    ):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "аккаунт с такими данными уже существует"
+        )
 
     acc = await mngr.create(
         body.login, hash_pass(body.password), body.email, ref_by=body.ref_code
@@ -66,27 +70,41 @@ async def register(
     summary="Вход по логину и паролю",
     description=with_fields(
         "Проверяет логин/пароль и выдаёт новую пару токенов. Заблокированный "
-        "аккаунт (роль banned) получает 403.",
+        "(забаненный) аккаунт получает токены как обычно — см. поле "
+        "`is_active` в ответе; доступ к защищённым ручкам ограничивается RBAC.",
         Login,
     ),
     dependencies=[Depends(rate_limit("auth.login", LimitKind.AUTH))],
 )
 async def login(
     body: Login,
+    request: Request,
     mngr: UserMngr = Depends(get_acc_mngr),
     tokens: TokenSvc = Depends(get_token_svc),
+    guard: LoginGuard = Depends(get_login_guard),
 ) -> TokenPair:
     """Вход по логину/паролю."""
-    acc = await mngr.by_login(body.login)
-    if acc is None or not acc.has_pass or not verify_pass(acc.pass_hash, body.password):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "неверный логин или пароль")
-    if not acc.is_active:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "аккаунт заблокирован")
+    ip = client_ip(request)
+    # Доп. анти-брутфорс поверх общего rate_limit — блокировка по логину и IP.
+    await guard.check(body.login, ip)
 
+    acc = await mngr.by_login(body.login)
+    # Анти-тайминг: путь исполнения (и его длительность) одинаков независимо
+    # от существования аккаунта — иначе раннее замыкание раскрывает через
+    # разницу во времени ответа, что логин занят (user enumeration).
+    pass_hash = acc.pass_hash if (acc is not None and acc.has_pass) else dummy_hash()
+    pass_ok = verify_pass(pass_hash, body.password)
+    if acc is None or not acc.has_pass or not pass_ok:
+        await guard.record_fail(body.login, ip)
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "неверный логин или пароль")
+
+    # is_active (бан) больше не блокирует вход — роль banned и так лишена
+    # прав через RBAC; клиент получает токены + флаг is_active=false.
     if needs_rehash(acc.pass_hash):
         acc.pass_hash = hash_pass(body.password)
     await mngr.touch_login(acc)
     await mngr.s.commit()
+    await guard.clear(body.login)
     return tokens.issue(acc)
 
 

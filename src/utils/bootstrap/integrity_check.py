@@ -22,10 +22,10 @@ async def check_integrity(session: AsyncSession, box: SecBox) -> bool:
     # 1. Round-trip канарейки.
     try:
         if box.open(box.seal(_CANARY)) != _CANARY:
-            log.critical("проверка ключа: round-trip не совпал")
+            log.critical("key verification: round-trip did not match")
             return False
     except Exception as exc:  # noqa: BLE001 - любой сбой ключа критичен
-        log.critical("проверка ключа провалена: %s", exc)
+        log.critical("key verification failed: %s", exc)
         return False
 
     # 2. Расшифровка реально сохранённых секретов.
@@ -43,12 +43,12 @@ async def check_integrity(session: AsyncSession, box: SecBox) -> bool:
 
     if bad:
         log.critical(
-            "не расшифровываются секреты (ключ заменён/повреждён): %s",
+            "secrets cannot be decrypted (key replaced/damaged): %s",
             ", ".join(bad),
         )
         return False
 
-    log.info("проверка целостности шифрования: OK")
+    log.info("Encryption integrity check: OK")
     return True
 
 

@@ -8,8 +8,10 @@ from dependencies.auth import get_current_acc
 from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.promo import PromoCodesMngr, get_promo_mngr
 from dependencies.ratelimit import LimitKind, rate_limit
+from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
 from enums import UsvcStatus, PromoKind
+from integrations.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from schemas.promo import PromoRedeem, PromoResult
 from utils.apidoc import with_fields
@@ -35,6 +37,7 @@ async def redeem(
     promo_mngr: PromoCodesMngr = Depends(get_promo_mngr),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
     usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
+    triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> PromoResult:
     promo = await promo_mngr.load_valid(body.code, acc)
     catalog = await promo_mngr.catalog_of(promo)
@@ -59,6 +62,13 @@ async def redeem(
             )
         await promo_mngr.record_use(promo, acc, order.id)
         await promo_mngr.s.commit()
+        await triggers.fire(
+            TriggerEvent.ORDER_CREATED,
+            {
+                "order": {"id": order.id, "service_id": service.id, "via": "promo"},
+                "user": {"id": acc.id, "login": acc.login},
+            },
+        )
         return PromoResult(kind="service", message="услуга выдана", order_id=order.id)
 
     raise HTTPException(
@@ -68,3 +78,4 @@ async def redeem(
 
 
 __all__ = ["router"]
+

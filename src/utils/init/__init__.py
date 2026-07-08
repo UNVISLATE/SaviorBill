@@ -42,6 +42,7 @@ _ROLE_ENV: dict[str, str] = {
     "admin": "ROLE_ADMIN",
     "manager": "ROLE_MANAGER",
     "support": "ROLE_SUPPORT",
+    "media": "ROLE_MEDIA",
     "user": "ROLE_USER",
     "guest": "ROLE_GUEST",
     "banned": "ROLE_BANNED",
@@ -60,14 +61,14 @@ async def run_init(
     session: AsyncSession, mngr: SystemSettingsMngr, cfg: AppConfig
 ) -> None:
     """Выполнить первичную инициализацию системы (в рамках переданной сессии)."""
-    log.info("первичная инициализация системы…")
+    log.info("initial initialization of the system...")
     await seed_settings(mngr, cfg)
     await seed_email_templates(session, cfg)
     names = await _role_names(mngr, cfg)
     roles = await create_base_roles(session, names)
     await create_owner(session, cfg, roles["owner"])
     harden_secret(cfg)
-    log.info("первичная инициализация завершена")
+    log.info("initial initialization completed")
 
 
 def _mngr(
@@ -87,12 +88,12 @@ async def _wait_initialized(cfg: AppConfig, sessionmaker, vk: valkey.Valkey) -> 
     waited = 0.0
     while waited < _INIT_WAIT_MAX:
         if await _flag_set(cfg, sessionmaker, vk):
-            log.info("инициализация выполнена другим экземпляром — продолжаем")
+            log.info("initialization was performed by another instance — continue")
             return
         await asyncio.sleep(_INIT_WAIT_STEP)
         waited += _INIT_WAIT_STEP
     log.warning(
-        "ожидание инициализации превысило %ss — продолжаем без гарантии", _INIT_WAIT_MAX
+        "waiting for initialization has exceeded %ss — we continue without guarantee", _INIT_WAIT_MAX
     )
 
 
@@ -125,13 +126,13 @@ async def init_system(
     :arg vk: клиент Valkey (для менеджера настроек и распределённого лока).
     """
     if await _flag_set(cfg, sessionmaker, vk):
-        log.info("система уже инициализирована — init пропущен")
+        log.info("the system has already been initialized — init skipped")
         return
 
     token = uuid.uuid4().hex
     got_lock = bool(await vk.set(_INIT_LOCK, token, nx=True, ex=_INIT_LOCK_TTL))
     if not got_lock:
-        log.info("инициализацию ведёт другой экземпляр — ожидание флага")
+        log.info("initialization is performed by another instance — waiting...")
         await _wait_initialized(cfg, sessionmaker, vk)
         return
 
@@ -139,7 +140,7 @@ async def init_system(
         async with sessionmaker() as session:
             mngr = _mngr(cfg, session, vk)
             if await mngr.get(_INIT_FLAG) == "1":
-                log.info("система уже инициализирована — init пропущен")
+                log.info("the system has already been initialized — init skipped")
                 return
             await run_init(session, mngr, cfg)
             await mngr.set(_INIT_FLAG, "1", is_secret=False)

@@ -106,6 +106,8 @@ def build_auth_ctx(
     redirect_uri: str,
     state: str | None = None,
     code: str | None = None,
+    nonce: str | None = None,
+    expected_nonce: str | None = None,
     request: LuaRequest | None = None,
     script=None,  # noqa: ANN001 — SystemScriptsModel | None
 ) -> dict:
@@ -117,6 +119,11 @@ def build_auth_ctx(
     :arg redirect_uri: callback-URL нашей системы для этого провайдера.
     :arg state: антифрод-метка (для start — что положить в url; для callback — сверка).
     :arg code: код авторизации от провайдера (только для callback).
+    :arg nonce: nonce, сгенерированный платформой (для start — что передать
+        провайдеру в authorize-запросе, если скрипт поддерживает OIDC nonce).
+    :arg expected_nonce: тот же nonce, восстановленный платформой из Valkey по
+        ``state`` (для callback) — скрипт сам решает, сверять ли его с claim
+        ``nonce`` из ``id_token`` (не все провайдеры используют OIDC).
     :arg request: данные входящего запроса callback (опционально).
     :arg script: модель шаблона — метаданные и настройки в ``lua.*`` (опционально).
         Секреты провайдера лежат в ``provider.secrets`` и не конфликтуют с
@@ -132,6 +139,8 @@ def build_auth_ctx(
         "redirect_uri": redirect_uri,
         "state": state,
         "code": code,
+        "nonce": nonce,
+        "expected_nonce": expected_nonce,
     }
     if request is not None:
         ctx["request"] = request.model_dump(mode="json")
@@ -220,6 +229,8 @@ class LuaRunner:
         redirect_uri: str,
         state: str | None = None,
         code: str | None = None,
+        nonce: str | None = None,
+        expected_nonce: str | None = None,
         request=None,
     ) -> dict:
         """Собрать контекст OAuth и исполнить скрипт провайдера."""
@@ -230,6 +241,8 @@ class LuaRunner:
             redirect_uri=redirect_uri,
             state=state,
             code=code,
+            nonce=nonce,
+            expected_nonce=expected_nonce,
             request=request,
             script=script,
         )

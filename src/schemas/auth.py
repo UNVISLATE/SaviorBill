@@ -48,6 +48,7 @@ class TokenPair(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int  # TTL access-токена, секунды
+    is_active: bool = True  # False = аккаунт забанен (роль banned/RBAC урезан)
 
 
 class PassResetRequest(BaseModel):
@@ -71,10 +72,15 @@ class PassResetConfirm(BaseModel):
 
 
 class EmailVerifyConfirm(BaseModel):
-    """Подтверждение email 4-значным кодом из письма."""
+    """Подтверждение email числовым кодом из письма."""
 
     code: str = Field(
-        min_length=4, max_length=4, description="4-значный код из письма (обязательно)"
+        min_length=4,
+        max_length=10,
+        description=(
+            "Числовой код из письма (длина настраивается через `mail.code_digits`, "
+            "по умолчанию 4 цифры)"
+        ),
     )
 
 

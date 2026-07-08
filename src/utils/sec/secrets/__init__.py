@@ -55,7 +55,7 @@ def build_secret_store(cfg: "AppConfig") -> SecretStore:
 
     if backend == "vault":
         if not (cfg.SECRETS_VAULT_ADDR and cfg.SECRETS_VAULT_TOKEN):
-            raise ValueError("vault: нужны SECRETS_VAULT_ADDR и SECRETS_VAULT_TOKEN")
+            raise ValueError("vault: SECRETS_VAULT_ADDR and SECRETS_VAULT_TOKEN are needed")
         from .vault_store import VaultSecretStore
 
         return VaultSecretStore(
@@ -72,19 +72,19 @@ def build_secret_store(cfg: "AppConfig") -> SecretStore:
 
     if backend == "gcp":
         if not cfg.SECRETS_GCP_PROJECT:
-            raise ValueError("gcp: нужен SECRETS_GCP_PROJECT")
+            raise ValueError("gcp: need SECRETS_GCP_PROJECT")
         from .gcp_store import GCPSecretStore
 
         return GCPSecretStore(cfg.SECRETS_GCP_PROJECT, cfg.SECRETS_PREFIX)
 
     if backend == "azure":
         if not cfg.SECRETS_AZURE_VAULT_URL:
-            raise ValueError("azure: нужен SECRETS_AZURE_VAULT_URL")
+            raise ValueError("azure: need SECRETS_AZURE_VAULT_URL")
         from .azure_store import AzureSecretStore
 
         return AzureSecretStore(cfg.SECRETS_AZURE_VAULT_URL, cfg.SECRETS_PREFIX)
 
-    raise ValueError(f"неизвестный SECRETS_BACKEND: {backend!r} (из {BACKENDS})")
+    raise ValueError(f"unknown SECRETS_BACKEND: {backend!r} (from {BACKENDS})")
 
 
 __all__ = [

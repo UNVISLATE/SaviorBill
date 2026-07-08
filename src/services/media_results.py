@@ -59,7 +59,7 @@ class MediaResults:
         """Создать группу и запустить фоновый цикл чтения."""
         await self._ensure_group()
         self._task = asyncio.create_task(self._run(), name="media-results")
-        log.info("media-results консьюмер запущен")
+        log.info("media-results the consumer is launched")
 
     async def stop(self) -> None:
         self._stopped = True
@@ -89,7 +89,7 @@ class MediaResults:
                 # сервера и read-таймаута клиента) — это штатная пауза, не ошибка.
                 continue
             except Exception:  # noqa: BLE001 — цикл не должен падать
-                log.exception("media-results: ошибка чтения")
+                log.exception("media-results: reading error")
                 await asyncio.sleep(2)
                 continue
             for _stream, entries in resp or []:
@@ -98,7 +98,7 @@ class MediaResults:
                         with span_from_carrier("media.result.consume", data):
                             await self._handle(data)
                     except Exception:  # noqa: BLE001 — одна запись не валит цикл
-                        log.exception("media-results: ошибка записи")
+                        log.exception("media-results: recording error")
                         await self._on_failure(data)
                     finally:
                         await self.vk.xack(

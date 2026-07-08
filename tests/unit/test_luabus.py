@@ -212,3 +212,105 @@ async def test_call_ignores_unrelated_entries():
 
     result = await bus.call("eval", {})
     assert result == {"result": 7}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# call: ретраи (IMPLEMENTATION_PLAN §9)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_call_default_no_retry_raises_immediately():
+    """max_retries=0 (по умолчанию) — старое поведение: одна попытка, без ретраев."""
+    fake = FakeValkey()
+    bus = LuaBus(fake, "lua:tasks", "lua:results", default_timeout=5)
+
+    calls = 0
+
+    async def failing_once(kind, payload, timeout):
+        nonlocal calls
+        calls += 1
+        raise LuaError("timeout")
+
+    bus._call_once = failing_once
+
+    with pytest.raises(LuaError):
+        await bus.call("eval", {})
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_call_retries_then_succeeds():
+    """Ошибка на первых попытках, успех на последней — retry вернёт результат."""
+    fake = FakeValkey()
+    bus = LuaBus(
+        fake, "lua:tasks", "lua:results", default_timeout=5, max_retries=2, retry_backoff=0
+    )
+
+    calls = 0
+
+    async def flaky(kind, payload, timeout):
+        nonlocal calls
+        calls += 1
+        if calls < 3:
+            raise LuaError("временная ошибка воркера")
+        return {"result": "ok"}
+
+    bus._call_once = flaky
+
+    result = await bus.call("eval", {})
+    assert result == {"result": "ok"}
+    assert calls == 3
+
+
+@pytest.mark.asyncio
+async def test_call_retries_exhausted_raises_last_error():
+    """Все попытки исчерпаны — пробрасывается последняя ошибка."""
+    fake = FakeValkey()
+    bus = LuaBus(
+        fake, "lua:tasks", "lua:results", default_timeout=5, max_retries=2, retry_backoff=0
+    )
+
+    calls = 0
+
+    async def always_fails(kind, payload, timeout):
+        nonlocal calls
+        calls += 1
+        raise LuaError(f"ошибка #{calls}")
+
+    bus._call_once = always_fails
+
+    with pytest.raises(LuaError, match="ошибка #3"):
+        await bus.call("eval", {})
+    # 1 исходная попытка + 2 ретрая = 3 вызова _call_once.
+    assert calls == 3
+
+
+@pytest.mark.asyncio
+async def test_call_retry_sleeps_backoff_between_attempts(monkeypatch):
+    """Между попытками действительно ждём retry_backoff секунд."""
+    fake = FakeValkey()
+    bus = LuaBus(
+        fake, "lua:tasks", "lua:results", default_timeout=5, max_retries=1, retry_backoff=3
+    )
+
+    calls = 0
+
+    async def flaky(kind, payload, timeout):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise LuaError("timeout")
+        return {"result": "ok"}
+
+    bus._call_once = flaky
+
+    sleeps: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+
+    monkeypatch.setattr("utils.luabus.asyncio.sleep", fake_sleep)
+
+    result = await bus.call("eval", {})
+    assert result == {"result": "ok"}
+    assert sleeps == [3]

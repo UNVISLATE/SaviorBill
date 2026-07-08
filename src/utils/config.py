@@ -172,6 +172,14 @@ class AppConfig(BaseSettings):
     RATE_LIMIT_SENSITIVE_MAX: int = Field(default=20)
     RATE_LIMIT_SENSITIVE_WINDOW: int = Field(default=60)
 
+    # Доверенные reverse-proxy (CSV IP/CIDR). По умолчанию пусто — X-Forwarded-For
+    # полностью игнорируется, идентификатор клиента для rate-limit — только
+    # `request.client.host` (реальный TCP-peer). Если задано — ASGI-миддлварь
+    # уровня Starlette подменяет client host на адрес из X-Forwarded-For, но
+    # **только** когда непосредственный peer входит в этот список (иначе подмена
+    # заголовка клиентом напрямую не даёт обойти лимит).
+    TRUSTED_PROXIES: str = Field(default="")
+
     # Наблюдаемость: метрики Prometheus (/metrics) и трейсинг OpenTelemetry.
     # Метрики: эндпоинт /metrics включён по умолчанию (METRICS_ENABLED=false — снят).
     METRICS_ENABLED: bool = Field(default=True)
@@ -210,6 +218,7 @@ class AppConfig(BaseSettings):
     ROLE_ADMIN: str = Field(default="admin")
     ROLE_MANAGER: str = Field(default="manager")
     ROLE_SUPPORT: str = Field(default="support")
+    ROLE_MEDIA: str = Field(default="media")
     # Роль обычного (верифицированного) пользователя.
     ROLE_USER: str = Field(default="user")
     # Роль только что зарегистрированного пользователя (email не подтверждён).
@@ -244,6 +253,11 @@ class AppConfig(BaseSettings):
                 Path(self.DATA_DIR) / "keys" / "lua_service.token"
             )
         return self
+
+    @property
+    def trusted_proxies_list(self) -> list[str]:
+        """`TRUSTED_PROXIES` как список непустых IP/CIDR (CSV → list)."""
+        return [p.strip() for p in self.TRUSTED_PROXIES.split(",") if p.strip()]
 
     @property
     def media_docs_url(self) -> str:

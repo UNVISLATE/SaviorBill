@@ -65,6 +65,13 @@ SETTINGS: tuple[SettingDef, ...] = (
         group="mail",
         desc="TTL кода подтверждения email и сброса пароля, секунды",
     ),
+    SettingDef(
+        "mail.code_digits",
+        None,
+        type="int",
+        group="mail",
+        desc="Длина числового кода подтверждения email, цифр",
+    ),
     # Имена базовых ролей
     SettingDef("role.owner", "ROLE_OWNER", group="role", desc="Имя роли владельца"),
     SettingDef(
@@ -72,6 +79,7 @@ SETTINGS: tuple[SettingDef, ...] = (
     ),
     SettingDef("role.manager", "ROLE_MANAGER", group="role", desc="Имя роли менеджера"),
     SettingDef("role.support", "ROLE_SUPPORT", group="role", desc="Имя роли поддержки"),
+    SettingDef("role.media", "ROLE_MEDIA", group="role", desc="Имя роли медиа-модерации (резерв)"),
     SettingDef("role.user", "ROLE_USER", group="role", desc="Имя роли пользователя"),
     SettingDef("role.guest", "ROLE_GUEST", group="role", desc="Имя роли гостя"),
     SettingDef("role.banned", "ROLE_BANNED", group="role", desc="Имя роли блокировки"),
@@ -90,6 +98,83 @@ SETTINGS: tuple[SettingDef, ...] = (
         type="bool",
         group="system",
         desc="Небезопасные права на файлы data/* (выставляется access-проверкой)",
+    ),
+    # Триггеры: анти-петля и повторные попытки
+    SettingDef(
+        "triggers.max_retries",
+        None,
+        type="int",
+        group="triggers",
+        desc="Максимум попыток выполнения одного действия триггера",
+    ),
+    SettingDef(
+        "triggers.max_fires_per_event_per_minute",
+        None,
+        type="int",
+        group="triggers",
+        desc="Анти-петля: лимит срабатываний одного события в минуту",
+    ),
+    # Анти-брутфорс логина (доп. блокировка поверх общего rate_limit)
+    SettingDef(
+        "auth.lockout.max_attempts",
+        None,
+        type="int",
+        group="auth",
+        desc="Порог неудачных попыток входа (по логину/IP) до временной блокировки",
+    ),
+    SettingDef(
+        "auth.lockout.window_sec",
+        None,
+        type="int",
+        group="auth",
+        desc="Длительность блокировки/окна счётчика неудачных попыток входа, секунды",
+    ),
+    # Lua: таймаут вызова и ретраи (мягкая, настраиваемая изоляция вызовов воркера)
+    SettingDef(
+        "lua.call_timeout_sec",
+        "LUA_CALL_TIMEOUT",
+        type="int",
+        group="lua",
+        desc="Таймаут одного вызова к LuaWorker, секунды",
+    ),
+    SettingDef(
+        "lua.max_retries",
+        None,
+        type="int",
+        group="lua",
+        desc="Сколько раз повторить вызов LuaWorker при таймауте, прежде чем "
+        "вернуть ошибку",
+    ),
+    SettingDef(
+        "lua.retry_backoff_sec",
+        None,
+        type="int",
+        group="lua",
+        desc="Пауза перед повтором вызова LuaWorker, секунды",
+    ),
+    # Медиа: грейс-период очистки "осиротевших" записей (анти-TOCTOU)
+    SettingDef(
+        "media.cleanup_grace_sec",
+        None,
+        type="int",
+        group="media",
+        desc="Не удалять при очистке медиа-записи младше этого возраста, секунды "
+        "(защита от удаления только что загруженного, ещё не привязанного файла)",
+    ),
+    # Аналитика: продвинутый уровень (Polars) — кэш и параметры расчётов
+    SettingDef(
+        "analytics.advanced.cache_ttl_sec",
+        None,
+        type="int",
+        group="analytics",
+        desc="TTL кэша сводки продвинутой аналитики в Valkey, секунды",
+    ),
+    SettingDef(
+        "analytics.churn.inactive_days",
+        None,
+        type="int",
+        group="analytics",
+        desc="Порог неактивности (дней без paid-платежа) для расчёта churn-rate",
     ),
 )
 

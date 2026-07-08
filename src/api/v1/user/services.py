@@ -9,9 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.auth import get_current_acc
 from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.db import get_db_session
+from dependencies.rbac import require_perm
 from dependencies.ratelimit import LimitKind, rate_limit
+from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
 from enums import UsvcStatus
+from integrations.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderCreate, Order
@@ -22,7 +25,12 @@ from utils.pagination import PageParams, page_params, paginate
 router = APIRouter()
 
 
-@router.get("/services", response_model=Page[Order], summary="Мои услуги")
+@router.get(
+    "/services",
+    response_model=Page[Order],
+    summary="Мои услуги",
+    dependencies=[Depends(require_perm("user.services.read"))],
+)
 async def my_services(
     pp: PageParams = Depends(page_params),
     acc: UserModel = Depends(get_current_acc),
@@ -52,7 +60,10 @@ async def my_services(
         "выдаёт. Для оплаты через платёжку используйте /user/purchases/create.",
         OrderCreate,
     ),
-    dependencies=[Depends(rate_limit("services.create", LimitKind.SENSITIVE))],
+    dependencies=[
+        Depends(require_perm("user.services.create")),
+        Depends(rate_limit("services.create", LimitKind.SENSITIVE)),
+    ],
 )
 async def create_service(
     body: OrderCreate,
@@ -60,6 +71,7 @@ async def create_service(
     acc: UserModel = Depends(get_current_acc),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
     usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
+    triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> Order:
     service = await svc_mngr.get_active(body.service_id)
     usvc = await usvc_mngr.create(acc, service)
@@ -69,6 +81,13 @@ async def create_service(
             status.HTTP_502_BAD_GATEWAY, f"не удалось выдать услугу: {usvc.error}"
         )
     await usvc_mngr.s.commit()
+    await triggers.fire(
+        TriggerEvent.ORDER_CREATED,
+        {
+            "order": {"id": usvc.id, "service_id": service.id, "via": "balance"},
+            "user": {"id": acc.id, "login": acc.login},
+        },
+    )
     # Запланировать истечение (если срочная услуга) — планировщик подхватит и сам.
     loop = getattr(request.app.state, "billing_loop", None)
     if loop is not None and usvc.expires_at is not None:

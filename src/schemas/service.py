@@ -4,9 +4,24 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from integrations.services import known_delivery_kinds
 from schemas.media import Attachment
+
+
+def _check_delivery(v: str) -> str:
+    """Валидировать способ доставки по реестру зарегистрированных issuer'ов.
+
+    Не хардкод-``Enum`` — новый способ доставки добавляется регистрацией
+    issuer'а в ``integrations/services/__init__.py`` без правки схем.
+    """
+    known = known_delivery_kinds()
+    if v not in known:
+        raise ValueError(
+            f"неизвестный способ доставки: {v!r} (доступны: {', '.join(known)})"
+        )
+    return v
 
 
 class Service(BaseModel):
@@ -26,10 +41,21 @@ class Service(BaseModel):
         default_factory=list, description="Медиа-вложения товара (фото/видео)"
     )
     is_active: bool
+    out_of_stock: bool | None = Field(
+        default=None,
+        description=(
+            "Только для delivery=key: закончились ли свободные ключи. "
+            "Вычисляется на лету, не хранится в БД. null для delivery=lua."
+        ),
+    )
 
     @classmethod
     def from_model(cls, m) -> "Service":  # noqa: ANN001 — ServiceModel
-        """Явное преобразование ORM-услуги в публичную схему ответа."""
+        """Явное преобразование ORM-услуги в публичную схему ответа.
+
+        ``out_of_stock`` не заполняется здесь (требует отдельного запроса к
+        пулу ключей) — прокидывается роутером через :meth:`with_stock`.
+        """
         return cls(
             id=m.id,
             slug=m.slug,
@@ -43,6 +69,10 @@ class Service(BaseModel):
             is_active=m.is_active,
         )
 
+    def with_stock(self, out_of_stock: bool | None) -> "Service":
+        """Вернуть копию с проставленным ``out_of_stock`` (для delivery=key)."""
+        return self.model_copy(update={"out_of_stock": out_of_stock})
+
 
 class ServiceAdmin(Service):
     """Услуга с административными полями (ответ)."""
@@ -50,9 +80,18 @@ class ServiceAdmin(Service):
     lua_script_id: int | None = None
     params: dict
     settings: dict
+    warnings: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Некритичные предупреждения операции (например, деактивация услуги "
+            "с активными выдачами) — не блокируют выполнение."
+        ),
+    )
 
     @classmethod
-    def from_model(cls, m) -> "ServiceAdmin":  # noqa: ANN001 — ServiceModel
+    def from_model(
+        cls, m, warnings: list[str] | None = None
+    ) -> "ServiceAdmin":  # noqa: ANN001 — ServiceModel
         """Явное преобразование ORM-услуги в админ-схему ответа."""
         return cls(
             id=m.id,
@@ -68,6 +107,7 @@ class ServiceAdmin(Service):
             lua_script_id=m.lua_script_id,
             params=m.params,
             settings=m.settings,
+            warnings=warnings or [],
         )
 
 
@@ -104,6 +144,11 @@ class ServiceCreate(BaseModel):
     )
     is_active: bool = Field(default=True, description="Активна ли услуга (опционально)")
 
+    @field_validator("delivery")
+    @classmethod
+    def _validate_delivery(cls, v: str) -> str:
+        return _check_delivery(v)
+
 
 class ServicePatch(BaseModel):
     """Частичное изменение услуги (только переданные поля)."""
@@ -118,6 +163,11 @@ class ServicePatch(BaseModel):
     params: dict | None = Field(default=None, description="Параметры выдачи")
     settings: dict | None = Field(default=None, description="Настройки услуги")
     is_active: bool | None = Field(default=None, description="Активна ли услуга")
+
+    @field_validator("delivery")
+    @classmethod
+    def _validate_delivery(cls, v: str | None) -> str | None:
+        return _check_delivery(v) if v is not None else v
 
 
 __all__ = [

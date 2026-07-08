@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
-from dependencies.lua import get_lua_bus
+from dependencies.lua import get_lua_bus_configured
 from dependencies.sec import get_secbox
 from dependencies.valkey import get_valkey_client
 from enums import AuthAction
@@ -115,6 +115,12 @@ class OAuthSvc:
         prov = await self._provider(slug)
         script = await self._script(prov, AuthAction.START)
         state = generate_base_token()
+        # Nonce — чисто транспортная роль платформы: сгенерировать и надёжно
+        # сохранить между start/callback (это может сделать только платформа,
+        # т.к. именно она хранит state между двумя разными HTTP-запросами).
+        # Содержательную проверку (сверку с claim id_token) делает сам скрипт —
+        # не все провайдеры используют OIDC/nonce.
+        nonce = generate_base_token()
 
         res = await self.runner.run_auth(
             script,
@@ -123,6 +129,7 @@ class OAuthSvc:
             self._secrets(prov),
             redirect_uri=self.redirect_uri(slug),
             state=state,
+            nonce=nonce,
         )
         pub = res.get("public") or {}
         authorize_url = pub.get("authorize_url")
@@ -131,7 +138,7 @@ class OAuthSvc:
                 status.HTTP_502_BAD_GATEWAY, "скрипт не вернул authorize_url"
             )
 
-        payload = {"slug": slug, "account_id": account_id}
+        payload = {"slug": slug, "account_id": account_id, "nonce": nonce}
         await self.vk.set(_STATE + state, json.dumps(payload), ex=_STATE_TTL)
         return OAuthStart(authorize_url=authorize_url, state=state)
 
@@ -172,6 +179,7 @@ class OAuthSvc:
             redirect_uri=self.redirect_uri(slug),
             state=state,
             code=code,
+            expected_nonce=payload.get("nonce"),
             request=request,
         )
         priv = res.get("private") or {}
@@ -282,8 +290,9 @@ def get_oauth_svc(
     session: AsyncSession = Depends(get_db_session),
     vk: valkey.Valkey = Depends(get_valkey_client),
     box: SecBox = Depends(get_secbox),
+    bus: LuaBus = Depends(get_lua_bus_configured),
 ) -> OAuthSvc:
-    return OAuthSvc(session, vk, get_lua_bus(request), request.app.state.settings, box)
+    return OAuthSvc(session, vk, bus, request.app.state.settings, box)
 
 
 __all__ = ["OAuthSvc", "get_secbox", "get_oauth_svc"]

@@ -145,7 +145,15 @@ class PromoCodesMngr:
         return f"{prefix}{body}"[:64]
 
     async def load_valid(self, code: str, acc) -> PromoCodesModel:
-        """Найти код и проверить активность, срок и лимиты (общий + per-user).
+        """Найти код, заблокировать строку и проверить активность/срок/лимиты.
+
+        Строка промокода блокируется (``SELECT ... FOR UPDATE``) до конца
+        текущей транзакции — вызывающий код обязан вызвать
+        :meth:`record_use` и закоммитить в этой же транзакции, не отпуская
+        лок между проверкой и записью. Это сериализует конкурентные
+        погашения одного и того же кода и исключает превышение
+        ``max_uses``/``catalog.per_user`` под нагрузкой (гонка при
+        одновременных активациях).
 
         :arg code: символы промокода.
         :arg acc: аккаунт, активирующий код.
@@ -154,7 +162,9 @@ class PromoCodesMngr:
         from models.promo_use import PromoUseModel
 
         promo = await self.s.scalar(
-            select(PromoCodesModel).where(PromoCodesModel.code == code)
+            select(PromoCodesModel)
+            .where(PromoCodesModel.code == code)
+            .with_for_update()
         )
         if promo is None or not promo.is_active:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "промокод недействителен")

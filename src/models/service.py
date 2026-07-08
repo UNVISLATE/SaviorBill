@@ -23,8 +23,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
-from enums import Delivery
+from enums import Delivery, UsvcStatus
+from models.service_catalogs import ServiceCatalogsModel
+from models.system_scripts import SystemScriptsModel
 from utils.datetime_utils import utc_now
+
+# Статусы выданных услуг, которые считаются "активными" (не завершёнными) —
+# для мягкого предупреждения при деактивации услуги с такими заказами.
+_ACTIVE_USVC_STATUSES = (UsvcStatus.PENDING, UsvcStatus.ACTIVE, UsvcStatus.FROZEN)
 
 
 class ServiceModel(Base):
@@ -143,24 +149,90 @@ class ServiceMngr:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "услуга не найдена")
         return svc
 
+    async def _validate_catalog(self, catalog_id: int | None) -> None:
+        """404, если указанный каталог не существует."""
+        if catalog_id is None:
+            return
+        if await self.s.get(ServiceCatalogsModel, catalog_id) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "каталог не найден")
+
+    async def _validate_lua_script(
+        self, delivery: str | None, lua_script_id: int | None
+    ) -> None:
+        """400, если для lua-доставки скрипт не задан/не найден/неактивен."""
+        if delivery != Delivery.LUA:
+            return
+        if lua_script_id is None:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "для delivery=lua необходимо указать lua_script_id",
+            )
+        script = await self.s.get(SystemScriptsModel, lua_script_id)
+        if script is None:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "lua_script_id: скрипт не найден"
+            )
+        if not script.is_active:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "lua_script_id: скрипт неактивен"
+            )
+
+    async def _active_orders_warning(self, service_id: int) -> list[str]:
+        """Мягкое предупреждение: у услуги есть незавершённые выдачи.
+
+        Не блокирует деактивацию (soft-warning, не 409) — по решению
+        пользователя это некритичная ситуация.
+        """
+        from models.user_services import UserServicesModel  # разрыв цикла импорта
+
+        count = await self.s.scalar(
+            select(func.count())
+            .select_from(UserServicesModel)
+            .where(
+                UserServicesModel.service_id == service_id,
+                UserServicesModel.status.in_(_ACTIVE_USVC_STATUSES),
+            )
+        )
+        if count:
+            return [
+                f"у услуги есть {count} незавершённых выдач(и) — "
+                "они продолжат обслуживаться штатно, но новые заказы больше не создать"
+            ]
+        return []
+
     async def create(self, data: dict) -> ServiceModel:
         if await self.s.scalar(
             select(ServiceModel).where(ServiceModel.slug == data["slug"])
         ):
             raise HTTPException(status.HTTP_409_CONFLICT, "slug услуги занят")
+        await self._validate_catalog(data.get("catalog_id"))
+        await self._validate_lua_script(
+            data.get("delivery", Delivery.KEY), data.get("lua_script_id")
+        )
         svc = ServiceModel(**data)
         self.s.add(svc)
         await self.s.flush()
         return svc
 
-    async def update(self, service_id: int, data: dict) -> ServiceModel:
+    async def update(self, service_id: int, data: dict) -> tuple[ServiceModel, list[str]]:
         svc = await self.by_id(service_id)
         if svc is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "услуга не найдена")
+        if "catalog_id" in data:
+            await self._validate_catalog(data["catalog_id"])
+        if "delivery" in data or "lua_script_id" in data:
+            delivery = data.get("delivery", svc.delivery)
+            lua_script_id = data.get("lua_script_id", svc.lua_script_id)
+            await self._validate_lua_script(delivery, lua_script_id)
+
+        warnings: list[str] = []
+        if data.get("is_active") is False and svc.is_active:
+            warnings = await self._active_orders_warning(service_id)
+
         for field, value in data.items():
             setattr(svc, field, value)
         await self.s.flush()
-        return svc
+        return svc, warnings
 
 
 __all__ = ["ServiceModel", "ServiceMngr"]

@@ -22,3 +22,7 @@ opentelemetry-sdk==1.43.0
 opentelemetry-exporter-otlp==1.43.0
 opentelemetry-instrumentation-fastapi==0.64b0
 opentelemetry-instrumentation-sqlalchemy==0.64b0
+# Advanced-аналитика (analytics/advanced.py): LTV/retention/churn на Polars.
+# lts-cpu вариант — совместимость с виртуалками без AVX2 (безопаснее для
+# произвольного облачного окружения, чем обычный polars).
+polars-lts-cpu==1.33.1

@@ -40,8 +40,8 @@ async def bootstrap(
         await session.commit()
         if not ok:
             log.critical(
-                "проверка целостности шифрования не пройдена — "
-                "секреты могут быть нечитаемы"
+                "encryption integrity check failed - "
+                "secrets can be unreadable"
             )
     # Сид ENV-дефолтов лимитов частоты в Valkey (не перетирая ручные правки).
     await seed_rate_limits(vk, cfg)

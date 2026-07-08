@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.auth import get_current_acc
 from dependencies.db import get_db_session
 from dependencies.oauth import OAuthSvc, get_oauth_svc
+from dependencies.rbac import require_perm
 from models.user import UserModel
 from models.user_oauth import UserOauthModel
 from schemas.oauth import Conn, OAuthStart
@@ -16,7 +17,12 @@ from schemas.oauth import Conn, OAuthStart
 router = APIRouter()
 
 
-@router.get("/oauth", response_model=list[Conn], summary="Мои OAuth-привязки")
+@router.get(
+    "/oauth",
+    response_model=list[Conn],
+    summary="Мои OAuth-привязки",
+    dependencies=[Depends(require_perm("user.oauth.read"))],
+)
 async def my_connections(
     acc: UserModel = Depends(get_current_acc),
     session: AsyncSession = Depends(get_db_session),
@@ -38,6 +44,7 @@ async def my_connections(
         "Старт OAuth для привязки внешней учётки к ТЕКУЩЕМУ аккаунту. Возвращает "
         "authorize_url для редиректа; после колбэка учётка привяжется к вам."
     ),
+    dependencies=[Depends(require_perm("user.oauth.edit"))],
 )
 async def link_start(
     provider: str,
@@ -52,6 +59,7 @@ async def link_start(
     "/oauth/{provider}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Отвязать провайдера",
+    dependencies=[Depends(require_perm("user.oauth.edit"))],
 )
 async def unlink(
     provider: str,

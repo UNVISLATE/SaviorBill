@@ -6,14 +6,19 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
-from dependencies.lua import get_lua_bus
+from dependencies.lua import get_lua_bus_configured
+from dependencies.sec import make_secbox
 from models.user_services import UserServicesMngr
+from utils.luabus import LuaBus
 
 
-def get_usersvc_mngr(
-    request: Request, session: AsyncSession = Depends(get_db_session)
+async def get_usersvc_mngr(
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+    bus: LuaBus = Depends(get_lua_bus_configured),
 ) -> UserServicesMngr:
-    return UserServicesMngr(session, get_lua_bus(request))
+    cfg = request.app.state.settings
+    return UserServicesMngr(session, bus, make_secbox(cfg))
 
 
 __all__ = ["UserServicesMngr", "get_usersvc_mngr"]

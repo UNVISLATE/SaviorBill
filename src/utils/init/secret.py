@@ -38,7 +38,7 @@ def harden_secret(cfg: AppConfig) -> None:
     :arg cfg: конфигурация приложения.
     """
     if os.name != "posix":
-        log.info("не-POSIX ОС: права файлов секретов не меняются")
+        log.info("no-POSIX OS: secret file permissions are not changed")
         return
 
     for path in _secret_files(cfg):
@@ -46,9 +46,9 @@ def harden_secret(cfg: AppConfig) -> None:
             continue
         try:
             os.chmod(path, _KEY_MODE)
-            log.info("права файла секрета %s ужесточены до 0o600", path)
+            log.info("%s secret file rights tightened to 0o600", path)
         except OSError as exc:  # pragma: no cover - зависит от ФС/ОС
-            log.warning("не удалось изменить права файла секрета %s: %s", path, exc)
+            log.warning("couldn't change %s secret file permissions: %s", path, exc)
 
 
 __all__ = ["harden_secret"]

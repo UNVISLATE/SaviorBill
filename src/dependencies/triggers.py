@@ -6,7 +6,7 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
-from dependencies.lua import get_lua_bus
+from dependencies.lua import get_lua_bus_configured
 from dependencies.mail import build_mail_svc
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from integrations.email import EmailSender
@@ -32,7 +32,7 @@ async def get_dispatcher(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
-    bus: LuaBus = Depends(get_lua_bus),
+    bus: LuaBus = Depends(get_lua_bus_configured),
 ) -> TriggerDispatcher:
     """Собрать диспетчер триггеров со всеми действиями.
 
@@ -49,7 +49,7 @@ async def get_dispatcher(
         EmailAction.key: EmailAction(EmailSender(mail, templates), templates),
         LuaAction.key: LuaAction(bus, session),
     }
-    return TriggerDispatcher(TriggerMngr(session), actions)
+    return TriggerDispatcher(TriggerMngr(session), actions, settings)
 
 
 __all__ = ["get_trigger_mngr", "get_dispatcher"]

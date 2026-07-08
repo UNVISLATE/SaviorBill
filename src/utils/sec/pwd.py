@@ -6,6 +6,12 @@ from argon2.exceptions import InvalidHashError, VerifyMismatchError
 # Параметры по умолчанию у argon2-cffi — argon2id, разумные для веб-нагрузки.
 _ph = PasswordHasher()
 
+# Константный "балластный" хэш для анти-тайминг проверки логина: когда
+# аккаунт не найден, всё равно гоняем полный verify() против этого хэша,
+# чтобы время ответа не отличалось от случая "аккаунт найден, пароль неверен"
+# (см. IMPLEMENTATION_PLAN.md §6.2 — тайминг-атака user enumeration).
+_DUMMY_HASH = _ph.hash("dummy-password-for-constant-time-login-check")
+
 
 def hash_pass(raw: str) -> str:
     """Вернуть argon2id-хэш пароля (соль внутри строки хэша)."""
@@ -28,4 +34,9 @@ def needs_rehash(pass_hash: str) -> bool:
         return True
 
 
-__all__ = ["hash_pass", "verify_pass", "needs_rehash"]
+def dummy_hash() -> str:
+    """Балластный argon2-хэш для анти-тайминг проверки при отсутствии аккаунта."""
+    return _DUMMY_HASH
+
+
+__all__ = ["hash_pass", "verify_pass", "needs_rehash", "dummy_hash"]
