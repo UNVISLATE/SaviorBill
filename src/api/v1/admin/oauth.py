@@ -13,10 +13,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
+from dependencies.media import get_media_mngr
 from dependencies.oauth import get_secbox
 from dependencies.rbac import require_perm
 from enums import ScriptKind
 from models.oauth_providers import OAuthProvidersModel
+from models.system_media import SystemMediaMngr
 from models.system_scripts import SystemScriptsModel
 from schemas.oauth_provider import (
     OAuthProviderCreate,
@@ -38,6 +40,12 @@ async def _require_auth_script(session: AsyncSession, script_id: int) -> None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "скрипт должен быть вида auth")
 
 
+async def _require_media(mngr: SystemMediaMngr, media_id: int) -> None:
+    """Проверить, что медиа для иконки провайдера существует."""
+    if await mngr.by_id(media_id) is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "медиа не найдено")
+
+
 @router.get(
     "/oauth",
     response_model=list[OAuthProvider],
@@ -51,6 +59,22 @@ async def list_providers(
         select(OAuthProvidersModel).order_by(OAuthProvidersModel.id)
     )
     return [OAuthProvider.from_model(r) for r in rows]
+
+
+@router.get(
+    "/oauth/{provider_id}",
+    response_model=OAuthProvider,
+    dependencies=[Depends(require_perm("oauth.read"))],
+    summary="Получить один OAuth-провайдер",
+)
+async def get_provider(
+    provider_id: int,
+    session: AsyncSession = Depends(get_db_session),
+) -> OAuthProvider:
+    cfg = await session.get(OAuthProvidersModel, provider_id)
+    if cfg is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "провайдер не найден")
+    return OAuthProvider.from_model(cfg)
 
 
 @router.post(
@@ -68,18 +92,22 @@ async def create_provider(
     body: OAuthProviderCreate,
     session: AsyncSession = Depends(get_db_session),
     box: SecBox = Depends(get_secbox),
+    media: SystemMediaMngr = Depends(get_media_mngr),
 ) -> OAuthProvider:
     if await session.scalar(
         select(OAuthProvidersModel).where(OAuthProvidersModel.slug == body.slug)
     ):
         raise HTTPException(status.HTTP_409_CONFLICT, "slug провайдера занят")
     await _require_auth_script(session, body.script_id)
+    if body.icon_media_id is not None:
+        await _require_media(media, body.icon_media_id)
     cfg = OAuthProvidersModel(
         slug=body.slug,
         title=body.title,
         enabled=body.enabled,
         script_id=body.script_id,
         secrets_enc=box.seal(json.dumps(body.secrets)),
+        icon_media_id=body.icon_media_id,
         scopes=body.scopes,
         extra=body.extra,
     )
@@ -103,6 +131,7 @@ async def update_provider(
     body: OAuthProviderPatch,
     session: AsyncSession = Depends(get_db_session),
     box: SecBox = Depends(get_secbox),
+    media: SystemMediaMngr = Depends(get_media_mngr),
 ) -> OAuthProvider:
     cfg = await session.get(OAuthProvidersModel, provider_id)
     if cfg is None:
@@ -110,6 +139,8 @@ async def update_provider(
     data = body.model_dump(exclude_unset=True)
     if data.get("script_id") is not None:
         await _require_auth_script(session, data["script_id"])
+    if data.get("icon_media_id") is not None:
+        await _require_media(media, data["icon_media_id"])
     if "secrets" in data:
         cfg.secrets_enc = box.seal(json.dumps(data.pop("secrets") or {}))
     for field, value in data.items():

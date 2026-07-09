@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,10 @@ from models.oauth_providers import OAuthProvidersModel
 from schemas.oauth import OAuthStart, Provider
 
 router = APIRouter(prefix="/api/v1/oauth", tags=["oauth"])
+
+
+def _icon_url(token: str | None) -> str | None:
+    return f"/media/{token}" if token else None
 
 
 @router.get(
@@ -28,7 +32,10 @@ async def providers(
         .where(OAuthProvidersModel.enabled.is_(True))
         .order_by(OAuthProvidersModel.id)
     )
-    return [Provider(slug=r.slug, title=r.title) for r in rows]
+    return [
+        Provider(slug=r.slug, title=r.title, icon_url=_icon_url(r.icon.token if r.icon else None))
+        for r in rows
+    ]
 
 
 @router.get(
@@ -37,8 +44,10 @@ async def providers(
     summary="Старт OAuth-авторизации",
     description="Готовит state и возвращает authorize_url для редиректа на провайдера.",
 )
-async def start(provider: str, svc: OAuthSvc = Depends(get_oauth_svc)) -> OAuthStart:
-    return await svc.start(provider)
+async def start(
+    provider: str, request: Request, svc: OAuthSvc = Depends(get_oauth_svc)
+) -> OAuthStart:
+    return await svc.start(provider, request=request)
 
 
 __all__ = ["router"]

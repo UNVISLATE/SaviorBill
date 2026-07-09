@@ -5,23 +5,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from dependencies.auth import TokenSvc, get_token_svc
-from dependencies.oauth import OAuthSvc, get_oauth_svc
+from dependencies.oauth import OAuthSvc, build_lua_request, get_oauth_svc
 from models.user import UserModel
 from schemas.auth import TokenPair
-from schemas.lua import LuaRequest
 
 router = APIRouter(prefix="/api/v1/callback/oauth", tags=["callback"])
-
-
-def _build_request(request: Request) -> LuaRequest:
-    """Собрать :class:`LuaRequest` из редиректа провайдера (метод/ip/query)."""
-    return LuaRequest.build(
-        method=request.method,
-        ip=request.client.host if request.client else None,
-        headers={k.lower(): v for k, v in request.headers.items()},
-        query=dict(request.query_params),
-        body={},
-    )
 
 
 @router.get(
@@ -45,7 +33,9 @@ async def oauth_callback(
     svc: OAuthSvc = Depends(get_oauth_svc),
     tokens: TokenSvc = Depends(get_token_svc),
 ) -> TokenPair:
-    user, account_id = await svc.finish(provider, code, state, _build_request(request))
+    user, account_id = await svc.finish(
+        provider, code, state, build_lua_request(request)
+    )
     if account_id is not None:
         acc = await svc.s.get(UserModel, account_id)
         if acc is None:

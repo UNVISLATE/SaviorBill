@@ -16,7 +16,7 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
 from utils.datetime_utils import utc_now
@@ -54,22 +54,26 @@ class OAuthProvidersModel(Base):
         ForeignKey("lua_scripts.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     # Зашифрованный JSON секретов/доп-данных провайдера (client_id/secret и пр.),
-    # прокидывается в скрипт как ctx.secrets.*.
+    # прокидывается в скрипт как ctx.secrets.*. Единственный источник кредов —
+    # легаси-поля (client_id/authorize_url/…) удалены, весь Lua-флоу action-driven
+    # и получает полные данные запроса/секреты через ctx, а не через отдельные
+    # именованные колонки конфигурации.
     secrets_enc: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
-    client_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    client_secret_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
-
-    issuer: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    authorize_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    token_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    userinfo_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    jwks_uri: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Иконка провайдера для UI (ровно одно вложение — прямой FK, отдельная
+    # таблица вложений тут избыточна, в отличие от товаров с несколькими медиа).
+    icon_media_id: Mapped[int | None] = mapped_column(
+        ForeignKey("system_media.id", ondelete="SET NULL"), nullable=True
+    )
 
     scopes: Mapped[str] = mapped_column(
         String(255), default="openid email profile", nullable=False
     )
     extra: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+
+    icon: Mapped["SystemMediaModel | None"] = relationship(  # noqa: F821
+        "SystemMediaModel", lazy="joined"
+    )
 
 
 class OAuthProvidersMngr:

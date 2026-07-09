@@ -36,6 +36,22 @@ _STATE = "oauth:state:"
 _STATE_TTL = 600
 
 
+def build_lua_request(request: Request) -> LuaRequest:
+    """Собрать :class:`LuaRequest` из FastAPI-запроса (метод/ip/заголовки/query).
+
+    Общий хелпер для всех action'ов (``start``, ``callback``) — скрипту всегда
+    доступны полные данные входящего HTTP-запроса, а не только то, что платформа
+    явно вынесла в отдельные поля контекста (state/code/nonce и т.п.).
+    """
+    return LuaRequest.build(
+        method=request.method,
+        ip=request.client.host if request.client else None,
+        headers={k.lower(): v for k, v in request.headers.items()},
+        query=dict(request.query_params),
+        body={},
+    )
+
+
 class OAuthSvc:
     """Высокоуровневые операции OAuth-флоу через Lua-скрипты провайдеров."""
 
@@ -104,12 +120,22 @@ class OAuthSvc:
         return script
 
     # --- старт авторизации ------------------------------------------------
-    async def start(self, slug: str, *, account_id: int | None = None) -> OAuthStart:
+    async def start(
+        self,
+        slug: str,
+        *,
+        account_id: int | None = None,
+        request: Request | None = None,
+    ) -> OAuthStart:
         """Собрать authorize_url через скрипт (action=start) и запомнить state.
 
         :arg slug: провайдер.
         :arg account_id: если задан — привязываем к уже вошедшему аккаунту
             (флоу «привязать провайдера»), иначе — вход/регистрация.
+        :arg request: исходный HTTP-запрос — прокидывается скрипту целиком
+            (метод/ip/заголовки/query), как и в callback, чтобы скрипт мог
+            читать любые нестандартные данные запроса (не только то, что
+            платформа явно выделила в отдельные поля контекста).
         :return: authorize_url для редиректа + state.
         """
         prov = await self._provider(slug)
@@ -130,6 +156,7 @@ class OAuthSvc:
             redirect_uri=self.redirect_uri(slug),
             state=state,
             nonce=nonce,
+            request=build_lua_request(request) if request is not None else None,
         )
         pub = res.get("public") or {}
         authorize_url = pub.get("authorize_url")
@@ -295,4 +322,4 @@ def get_oauth_svc(
     return OAuthSvc(session, vk, bus, request.app.state.settings, box)
 
 
-__all__ = ["OAuthSvc", "get_secbox", "get_oauth_svc"]
+__all__ = ["OAuthSvc", "get_secbox", "get_oauth_svc", "build_lua_request"]

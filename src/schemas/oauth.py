@@ -10,6 +10,7 @@ class Provider(BaseModel):
 
     slug: str
     title: str | None = None
+    icon_url: str | None = None
 
 
 class OAuthStart(BaseModel):
