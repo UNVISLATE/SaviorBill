@@ -11,29 +11,25 @@ from enums import PayTarget
 
 
 class PaymentCreate(BaseModel):
-    """Создать платёж через провайдера.
+    """Create payment."""
 
-    ``target=balance`` — пополнить баланс; ``target=service`` — оплатить
-    конкретную услугу ``service_id`` (она будет выдана по успешной оплате).
-    """
-
-    amount: Decimal = Field(gt=0, description="Сумма платежа > 0 (обязательно)")
-    provider: str = Field(description="slug платёжного провайдера (обязательно)")
+    amount: Decimal = Field(gt=0, description="Payment amount > 0")
+    provider: str = Field(description="Payment provider slug")
     target: str = Field(
         default=PayTarget.BALANCE,
-        description="Назначение: balance (пополнение) | service (оплата услуги). Опционально",
+        description="Target: balance | service",
     )
     service_id: int | None = Field(
-        default=None, description="ID услуги, обязателен при target=service"
+        default=None, description="Service ID for target=service"
     )
     return_url: str | None = Field(
         default=None,
-        description="URL возврата после оплаты, если провайдер его поддерживает (опционально)",
+        description="Return URL if supported (optional)",
     )
 
 
 class Payment(BaseModel):
-    """Платёж (публичная часть, в т.ч. ссылка на оплату в public_data)."""
+    """Public payment."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -58,7 +54,7 @@ class Payment(BaseModel):
 
 
 class PaymentAdmin(Payment):
-    """Платёж с приватными данными (для администраторов)."""
+    """Payment with private data."""
 
     account_id: int
     external_id: str | None = None
@@ -66,7 +62,7 @@ class PaymentAdmin(Payment):
 
 
 class Balance(BaseModel):
-    """Текущий баланс аккаунта."""
+    """Current account balance."""
 
     balance: Decimal
     bonus_balance: Decimal

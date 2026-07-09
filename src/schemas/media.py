@@ -16,7 +16,7 @@ def _media_url(token: str) -> str:
 
 
 class Media(BaseModel):
-    """Запись медиа (админ-ответ)."""
+    """Media item."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -31,7 +31,7 @@ class Media(BaseModel):
     owner_id: int | None = None
     variants: dict = Field(
         default_factory=dict,
-        description="Варианты файла (main/thumb/preview/…): key, mime, size, url",
+        description="File variants by key, mime, size, url",
     )
 
     @classmethod
@@ -52,28 +52,28 @@ class Media(BaseModel):
 
 
 class MediaTask(BaseModel):
-    """Ответ на приём загрузки (mediaworker)."""
+    """Upload accepted response."""
 
-    token: str = Field(description="Идентификатор медиа/задачи (file_id = task_token)")
-    status: str = Field(description="Статус: processing | ready | failed")
+    token: str = Field(description="Media/task token")
+    status: str = Field(description="Status: processing | ready | failed")
 
 
 class MediaStatus(BaseModel):
-    """Статус конвертации (ответ status-эндпоинта)."""
+    """Conversion status."""
 
-    token: str = Field(description="Идентификатор медиа/задачи")
+    token: str = Field(description="Media/task token")
     state: str = Field(description="processing | ready | failed")
     url: str | None = Field(
-        default=None, description="URL готового файла (опционально)"
+        default=None, description="Ready file URL (optional)"
     )
     mime: str | None = Field(
-        default=None, description="MIME готового файла (опционально)"
+        default=None, description="Ready file MIME (optional)"
     )
-    error: str | None = Field(default=None, description="Текст ошибки (опционально)")
+    error: str | None = Field(default=None, description="Error text (optional)")
 
 
 class Attachment(BaseModel):
-    """Вложение товара (ответ)."""
+    """Service attachment."""
 
     id: int
     media_id: int
@@ -103,15 +103,15 @@ class Attachment(BaseModel):
 
 
 class AttachmentIn(BaseModel):
-    """Добавление вложения к товару (админ)."""
+    """Add service attachment."""
 
-    media_id: int = Field(description="ID медиа из таблицы медиа (обязательно)")
+    media_id: int = Field(description="Media ID")
     tag: str | None = Field(
         default=None,
         max_length=16,
-        description="Тег вложения, ≤16 символов (опционально)",
+        description="Attachment tag, up to 16 chars",
     )
-    position: int = Field(default=0, description="Порядок сортировки (опционально)")
+    position: int = Field(default=0, description="Sort order (optional)")
 
 
 __all__ = [

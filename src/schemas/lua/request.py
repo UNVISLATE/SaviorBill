@@ -6,11 +6,7 @@ from pydantic import BaseModel
 
 
 class LuaRequest(BaseModel):
-    """Полные данные запроса вебхука для callback-скрипта платежа.
-
-    ``body`` — тело запроса, переведённое в объект (обычно распарсенный JSON).
-    Скрипт по нему проверяет подпись и определяет статус платежа.
-    """
+    """Webhook request data for Lua."""
 
     method: str = "POST"
     ip: str | None = None

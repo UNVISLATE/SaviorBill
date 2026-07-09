@@ -146,7 +146,7 @@ class ServiceMngr:
     async def get_active(self, service_id: int) -> ServiceModel:
         svc = await self.by_id(service_id)
         if svc is None or not svc.is_active:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "услуга не найдена")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
         return svc
 
     async def _validate_catalog(self, catalog_id: int | None) -> None:
@@ -154,7 +154,7 @@ class ServiceMngr:
         if catalog_id is None:
             return
         if await self.s.get(ServiceCatalogsModel, catalog_id) is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "каталог не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog not found")
 
     async def _validate_lua_script(
         self, delivery: str | None, lua_script_id: int | None
@@ -165,16 +165,16 @@ class ServiceMngr:
         if lua_script_id is None:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
-                "для delivery=lua необходимо указать lua_script_id",
+                "lua_script_id is required for delivery=lua",
             )
         script = await self.s.get(SystemScriptsModel, lua_script_id)
         if script is None:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "lua_script_id: скрипт не найден"
+                status.HTTP_400_BAD_REQUEST, "lua_script_id: script not found"
             )
         if not script.is_active:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "lua_script_id: скрипт неактивен"
+                status.HTTP_400_BAD_REQUEST, "lua_script_id: script is inactive"
             )
 
     async def _active_orders_warning(self, service_id: int) -> list[str]:
@@ -204,7 +204,7 @@ class ServiceMngr:
         if await self.s.scalar(
             select(ServiceModel).where(ServiceModel.slug == data["slug"])
         ):
-            raise HTTPException(status.HTTP_409_CONFLICT, "slug услуги занят")
+            raise HTTPException(status.HTTP_409_CONFLICT, "service slug already taken")
         await self._validate_catalog(data.get("catalog_id"))
         await self._validate_lua_script(
             data.get("delivery", Delivery.KEY), data.get("lua_script_id")
@@ -217,7 +217,7 @@ class ServiceMngr:
     async def update(self, service_id: int, data: dict) -> tuple[ServiceModel, list[str]]:
         svc = await self.by_id(service_id)
         if svc is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "услуга не найдена")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
         if "catalog_id" in data:
             await self._validate_catalog(data["catalog_id"])
         if "delivery" in data or "lua_script_id" in data:

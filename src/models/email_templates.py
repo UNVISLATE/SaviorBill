@@ -75,13 +75,13 @@ class EmailMngr:
     def _safe_target(self, filename: str) -> Path:
         target = (self.dir / filename).resolve()
         if not str(target).startswith(str(self.dir.resolve())):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "недопустимый путь файла")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid file path")
         return target
 
     async def create(self, data) -> EmailModel:  # noqa: ANN001 — schemas.EmailUpload
         """Сохранить тело шаблона в файл и зарегистрировать запись."""
         if await self.by_slug(data.slug):
-            raise HTTPException(status.HTTP_409_CONFLICT, "slug шаблона занят")
+            raise HTTPException(status.HTTP_409_CONFLICT, "template slug already taken")
 
         filename = self._gen_filename()
         target = self._safe_target(filename)
@@ -105,7 +105,7 @@ class EmailMngr:
         """Перезаписать тело существующего шаблона."""
         row = await self.by_id(tpl_id)
         if row is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "шаблон не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "template not found")
         target = self._safe_target(row.filename)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(body, encoding="utf-8")
@@ -117,7 +117,7 @@ class EmailMngr:
         """Обновить визуальные поля шаблона (без тела)."""
         row = await self.by_id(tpl_id)
         if row is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "шаблон не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "template not found")
         for field in ("name", "subject", "is_html", "description", "is_active"):
             val = getattr(data, field, None)
             if val is not None:
@@ -130,7 +130,7 @@ class EmailMngr:
         target = self._safe_target(row.filename)
         if not target.exists():
             raise HTTPException(
-                status.HTTP_404_NOT_FOUND, "файл тела шаблона отсутствует"
+                status.HTTP_404_NOT_FOUND, "template body file is missing"
             )
         return target.read_text(encoding="utf-8")
 
@@ -138,7 +138,7 @@ class EmailMngr:
         """Удалить запись шаблона и его файл."""
         row = await self.by_id(tpl_id)
         if row is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "шаблон не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "template not found")
         target = self._safe_target(row.filename)
         if target.exists():
             target.unlink()

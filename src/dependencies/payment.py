@@ -61,7 +61,7 @@ class PayMngr:
         prov = await self.s.scalar(stmt)
         if prov is None:
             raise HTTPException(
-                status.HTTP_404_NOT_FOUND, "платёжный провайдер не найден"
+                status.HTTP_404_NOT_FOUND, "payment provider not found"
             )
         return prov
 
@@ -87,18 +87,18 @@ class PayMngr:
         """
         if not prov.script_id:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "у провайдера не задан платёжный скрипт"
+                status.HTTP_400_BAD_REQUEST, "provider has no payment script configured"
             )
         script = await self.s.get(SystemScriptsModel, prov.script_id)
         if script is None or not script.is_active:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "платёжный скрипт провайдера недоступен"
+                status.HTTP_400_BAD_REQUEST, "provider payment script is unavailable"
             )
         supported = script.actions or []
         if supported and action not in supported:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
-                f"скрипт провайдера не поддерживает действие «{action}»",
+                f"provider script does not support action '{action}'",
             )
         return script
 
@@ -179,7 +179,7 @@ class PayMngr:
 
         if not priv.get("ok"):
             raise HTTPException(
-                status.HTTP_401_UNAUTHORIZED, "колбэк не прошёл проверку"
+                status.HTTP_401_UNAUTHORIZED, "callback verification failed"
             )
 
         # Блокируем строку платежа на время мутации: сеть/скрипт уже
@@ -188,7 +188,7 @@ class PayMngr:
         # вебхуком одного и того же платежа.
         payment = await self._locate(priv, provider_slug, for_update=True)
         if payment is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "платёж не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "payment not found")
         if payment.status in (PayStatus.PAID, PayStatus.REFUNDED):
             return payment  # идемпотентность
 
@@ -260,7 +260,7 @@ class PayMngr:
         """
         if payment.status != PayStatus.PAID:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "возврат возможен только для оплаченного"
+                status.HTTP_400_BAD_REQUEST, "refund is only possible for a paid payment"
             )
         prov = await self._provider(payment.provider, enabled=False)
         script = await self._script(prov, PayAction.REFUND)

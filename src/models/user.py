@@ -27,6 +27,7 @@ from utils.datetime_utils import utc_now
 if TYPE_CHECKING:
     from models.user_oauth import UserOauthModel
     from models.roles import Role
+    from models.system_media import SystemMediaModel
 
 
 class UserModel(Base):
@@ -90,6 +91,10 @@ class UserModel(Base):
         back_populates="account",
         cascade="all, delete-orphan",
     )
+    # Аватар — иконка профиля (см. схему media.py::_media_url для готового URL).
+    avatar_media: Mapped["SystemMediaModel | None"] = relationship(
+        "SystemMediaModel", foreign_keys=[avatar_media_id], lazy="joined"
+    )
 
     @property
     def has_pass(self) -> bool:
@@ -128,6 +133,18 @@ class UserMngr:
 
     async def by_email(self, email: str) -> UserModel | None:
         return await self.s.scalar(select(UserModel).where(UserModel.email == email))
+
+    async def by_login_or_email(self, identifier: str) -> UserModel | None:
+        """Найти аккаунт по логину, а если не нашли — по email (для входа).
+
+        Позволяет пользователю логиниться и логином, и email в одном и том же
+        поле формы — без эвристики "похоже на email" на стороне клиента.
+        Проверка последовательная (не единым OR-запросом), т.к. `login` одного
+        аккаунта теоретически может совпасть с `email` другого — OR-запрос дал
+        бы недетерминированный результат при коллизии; последовательный
+        поиск с приоритетом `login` устраняет двусмысленность.
+        """
+        return await self.by_login(identifier) or await self.by_email(identifier)
 
     async def by_ref_code(self, code: str) -> UserModel | None:
         """Найти аккаунт по его реферальному коду."""

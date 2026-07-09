@@ -62,7 +62,7 @@ class ResetSvc:
         """
         if not self.sender.configured:
             raise HTTPException(
-                status.HTTP_404_NOT_FOUND, "отправка почты не настроена"
+                status.HTTP_404_NOT_FOUND, "email sending is not configured"
             )
 
         acc = await UserMngr(self.s).by_email(self._norm(email))
@@ -102,17 +102,17 @@ class ResetSvc:
         stored = await self.vk.get(key)
         if stored is None:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "код не запрошен или истёк"
+                status.HTTP_400_BAD_REQUEST, "code not requested or expired"
             )
         if not hmac.compare_digest(stored, code):
             fails = await self.vk.incr(_RESET_FAIL + norm)
             if fails >= _MAX_FAILS:
                 await self.vk.delete(key)
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "неверный код")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid code")
 
         acc = await UserMngr(self.s).by_email(norm)
         if acc is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "аккаунт не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
 
         await self.vk.delete(key)
         await self.vk.delete(_RESET_FAIL + norm)

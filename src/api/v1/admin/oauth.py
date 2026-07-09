@@ -25,7 +25,6 @@ from schemas.oauth_provider import (
     OAuthProvider,
     OAuthProviderPatch,
 )
-from utils.apidoc import with_fields
 from utils.sec.box import SecBox
 
 router = APIRouter()
@@ -35,22 +34,22 @@ async def _require_auth_script(session: AsyncSession, script_id: int) -> None:
     """Проверить, что скрипт существует и это активный auth-скрипт."""
     script = await session.get(SystemScriptsModel, script_id)
     if script is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "скрипт не найден")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "script not found")
     if script.kind != ScriptKind.AUTH:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "скрипт должен быть вида auth")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "script must be auth")
 
 
 async def _require_media(mngr: SystemMediaMngr, media_id: int) -> None:
     """Проверить, что медиа для иконки провайдера существует."""
     if await mngr.by_id(media_id) is None:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "медиа не найдено")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "media not found")
 
 
 @router.get(
     "/oauth",
     response_model=list[OAuthProvider],
     dependencies=[Depends(require_perm("oauth.read"))],
-    summary="Список OAuth-провайдеров (вкл. отключённые)",
+    summary="OAuth providers",
 )
 async def list_providers(
     session: AsyncSession = Depends(get_db_session),
@@ -65,7 +64,7 @@ async def list_providers(
     "/oauth/{provider_id}",
     response_model=OAuthProvider,
     dependencies=[Depends(require_perm("oauth.read"))],
-    summary="Получить один OAuth-провайдер",
+    summary="Get OAuth provider",
 )
 async def get_provider(
     provider_id: int,
@@ -73,7 +72,7 @@ async def get_provider(
 ) -> OAuthProvider:
     cfg = await session.get(OAuthProvidersModel, provider_id)
     if cfg is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "провайдер не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "provider not found")
     return OAuthProvider.from_model(cfg)
 
 
@@ -82,11 +81,8 @@ async def get_provider(
     response_model=OAuthProvider,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("oauth.create"))],
-    summary="Добавить OAuth-провайдера",
-    description=with_fields(
-        "Создаёт OAuth-провайдера на auth-скрипте; секреты хранятся зашифрованными.",
-        OAuthProviderCreate,
-    ),
+    summary="Create OAuth provider",
+    description="Create an OAuth provider with encrypted secrets.",
 )
 async def create_provider(
     body: OAuthProviderCreate,
@@ -97,7 +93,7 @@ async def create_provider(
     if await session.scalar(
         select(OAuthProvidersModel).where(OAuthProvidersModel.slug == body.slug)
     ):
-        raise HTTPException(status.HTTP_409_CONFLICT, "slug провайдера занят")
+        raise HTTPException(status.HTTP_409_CONFLICT, "provider slug already exists")
     await _require_auth_script(session, body.script_id)
     if body.icon_media_id is not None:
         await _require_media(media, body.icon_media_id)
@@ -120,11 +116,8 @@ async def create_provider(
     "/oauth/{provider_id}",
     response_model=OAuthProvider,
     dependencies=[Depends(require_perm("oauth.edit"))],
-    summary="Изменить OAuth-провайдера",
-    description=with_fields(
-        "Частично обновляет OAuth-провайдера — передаются только изменяемые поля.",
-        OAuthProviderPatch,
-    ),
+    summary="Update OAuth provider",
+    description="Update an OAuth provider.",
 )
 async def update_provider(
     provider_id: int,
@@ -135,7 +128,7 @@ async def update_provider(
 ) -> OAuthProvider:
     cfg = await session.get(OAuthProvidersModel, provider_id)
     if cfg is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "провайдер не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "provider not found")
     data = body.model_dump(exclude_unset=True)
     if data.get("script_id") is not None:
         await _require_auth_script(session, data["script_id"])
@@ -153,7 +146,7 @@ async def update_provider(
     "/oauth/{provider_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_perm("oauth.delete"))],
-    summary="Удалить OAuth-провайдера",
+    summary="Delete OAuth provider",
 )
 async def delete_provider(
     provider_id: int,
@@ -162,7 +155,7 @@ async def delete_provider(
     """Удалить провайдера. Привязки пользователей (oauth_conns) остаются как есть."""
     cfg = await session.get(OAuthProvidersModel, provider_id)
     if cfg is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "провайдер не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "provider not found")
     await session.delete(cfg)
     await session.commit()
 

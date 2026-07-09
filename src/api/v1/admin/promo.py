@@ -20,7 +20,6 @@ from schemas.promo import (
     PromoCodeBatch,
 )
 from utils.pagination import PageParams, page_params, paginate
-from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -29,7 +28,7 @@ router = APIRouter()
     "/promo/catalogs",
     response_model=list[PromoCatalog],
     dependencies=[Depends(require_perm("promo.catalogs.read"))],
-    summary="Список каталогов промокодов",
+    summary="Promo catalogs",
 )
 async def list_catalogs(
     mngr: PromoCatalogsMngr = Depends(get_promo_catalog_mngr),
@@ -43,11 +42,8 @@ async def list_catalogs(
     response_model=PromoCatalog,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("promo.catalogs.create"))],
-    summary="Создать каталог промокодов",
-    description=with_fields(
-        "Создаёт каталог промокодов с параметрами выпуска.",
-        PromoCatalogCreate,
-    ),
+    summary="Create promo catalog",
+    description="Create a promo catalog.",
 )
 async def create_catalog(
     body: PromoCatalogCreate,
@@ -62,11 +58,8 @@ async def create_catalog(
     "/promo/catalogs/{catalog_id}",
     response_model=PromoCatalog,
     dependencies=[Depends(require_perm("promo.catalogs.edit"))],
-    summary="Изменить каталог промокодов",
-    description=with_fields(
-        "Частично обновляет каталог промокодов — передаются только изменяемые поля.",
-        PromoCatalogPatch,
-    ),
+    summary="Update promo catalog",
+    description="Update a promo catalog.",
 )
 async def update_catalog(
     catalog_id: int,
@@ -75,7 +68,7 @@ async def update_catalog(
 ) -> PromoCatalog:
     cat = await mngr.update(catalog_id, body.model_dump(exclude_unset=True))
     if cat is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "каталог не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog not found")
     await mngr.s.commit()
     return PromoCatalog.from_model(cat)
 
@@ -84,7 +77,7 @@ async def update_catalog(
     "/promo/catalogs/{catalog_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_perm("promo.catalogs.delete"))],
-    summary="Удалить каталог промокодов",
+    summary="Delete promo catalog",
 )
 async def delete_catalog(
     catalog_id: int,
@@ -98,7 +91,7 @@ async def delete_catalog(
     "/promo/catalogs/{catalog_id}/codes",
     response_model=Page[PromoCode],
     dependencies=[Depends(require_perm("promo.codes.read"))],
-    summary="Коды каталога",
+    summary="Promo codes",
 )
 async def list_codes(
     catalog_id: int,
@@ -122,18 +115,15 @@ async def list_codes(
     response_model=list[PromoCode],
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("promo.codes.create"))],
-    summary="Выпустить пачку кодов",
-    description=with_fields(
-        "Выпускает пачку промокодов в каталог (по списку или по количеству).",
-        PromoCodeBatch,
-    ),
+    summary="Issue promo codes",
+    description="Issue promo codes for a catalog.",
 )
 async def create_codes(
     body: PromoCodeBatch,
     mngr: PromoCodesMngr = Depends(get_promo_mngr),
 ) -> list[PromoCode]:
     if not body.codes and body.count <= 0:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "укажите codes или count > 0")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "set codes or count > 0")
     rows = await mngr.create_batch(
         body.catalog_id,
         codes=body.codes,

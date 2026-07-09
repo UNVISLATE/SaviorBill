@@ -9,11 +9,7 @@ from pydantic import BaseModel, ConfigDict, field_serializer
 
 
 class LuaProvider(BaseModel):
-    """Данные платёжного провайдера (``payment.provider``).
-
-    ``secrets`` — расшифрованный JSON секретов/уникальных данных платёжки;
-    именно отсюда скрипт берёт ключи API, shop_id, webhook-секрет и т.п.
-    """
+    """Payment provider data for Lua."""
 
     slug: str
     title: str | None = None
@@ -36,7 +32,7 @@ class LuaProvider(BaseModel):
 
 
 class LuaPayment(BaseModel):
-    """Платёж для Lua-скрипта (все поля платежа)."""
+    """Payment data for Lua."""
 
     model_config = ConfigDict(from_attributes=True)
 

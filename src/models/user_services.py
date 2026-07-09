@@ -128,7 +128,7 @@ class UserServicesMngr:
             return
         if acc.bonus_balance + acc.balance < amount:
             raise HTTPException(
-                status.HTTP_402_PAYMENT_REQUIRED, "недостаточно средств"
+                status.HTTP_402_PAYMENT_REQUIRED, "insufficient funds"
             )
         from_bonus = min(acc.bonus_balance, amount)
         acc.bonus_balance -= from_bonus

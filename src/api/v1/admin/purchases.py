@@ -19,7 +19,6 @@ from schemas.payment_provider import PayProviderCreate, PayProvider, PayProvider
 from schemas.payments import PaymentAdmin
 from schemas.page import Page
 from utils.pagination import PageParams, page_params, paginate
-from utils.apidoc import with_fields
 from utils.sec.box import SecBox
 
 router = APIRouter()
@@ -30,7 +29,7 @@ router = APIRouter()
     "/purchases",
     response_model=Page[PaymentAdmin],
     dependencies=[Depends(require_perm("purchases.read"))],
-    summary="Список платежей",
+    summary="Payments",
 )
 async def list_payments(
     pp: PageParams = Depends(page_params),
@@ -49,7 +48,7 @@ async def list_payments(
     "/purchases/providers",
     response_model=list[PayProvider],
     dependencies=[Depends(require_perm("purchases.providers.read"))],
-    summary="Список платёжных провайдеров",
+    summary="Payment providers",
 )
 async def list_providers(
     session: AsyncSession = Depends(get_db_session),
@@ -66,11 +65,8 @@ async def list_providers(
     response_model=PayProvider,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("purchases.providers.create"))],
-    summary="Создать платёжного провайдера",
-    description=with_fields(
-        "Создаёт платёжного провайдера; секреты хранятся в зашифрованном виде.",
-        PayProviderCreate,
-    ),
+    summary="Create payment provider",
+    description="Create a payment provider with encrypted secrets.",
 )
 async def create_provider(
     body: PayProviderCreate,
@@ -80,7 +76,7 @@ async def create_provider(
     if await session.scalar(
         select(PaymentProvidersModel).where(PaymentProvidersModel.slug == body.slug)
     ):
-        raise HTTPException(status.HTTP_409_CONFLICT, "slug провайдера занят")
+        raise HTTPException(status.HTTP_409_CONFLICT, "provider slug already exists")
     prov = PaymentProvidersModel(
         slug=body.slug,
         title=body.title,
@@ -99,11 +95,8 @@ async def create_provider(
     "/purchases/providers/{provider_id}",
     response_model=PayProvider,
     dependencies=[Depends(require_perm("purchases.providers.edit"))],
-    summary="Изменить платёжного провайдера",
-    description=with_fields(
-        "Частично обновляет платёжного провайдера — передаются только изменяемые поля.",
-        PayProviderPatch,
-    ),
+    summary="Update payment provider",
+    description="Update a payment provider.",
 )
 async def update_provider(
     provider_id: int,
@@ -113,7 +106,7 @@ async def update_provider(
 ) -> PayProvider:
     prov = await session.get(PaymentProvidersModel, provider_id)
     if prov is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "провайдер не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "provider not found")
     data = body.model_dump(exclude_unset=True)
     if "secrets" in data:
         prov.secrets_enc = box.seal(json.dumps(data.pop("secrets")))
@@ -129,14 +122,14 @@ async def update_provider(
     "/purchases/{payment_id}",
     response_model=PaymentAdmin,
     dependencies=[Depends(require_perm("purchases.read"))],
-    summary="Карточка платежа",
+    summary="Payment details",
 )
 async def get_payment(
     payment_id: int, session: AsyncSession = Depends(get_db_session)
 ) -> PaymentAdmin:
     pay = await session.get(UserPaymentsModel, payment_id)
     if pay is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "платёж не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "payment not found")
     return PaymentAdmin.from_model(pay)
 
 
@@ -144,12 +137,8 @@ async def get_payment(
     "/purchases/{payment_id}/recheck",
     response_model=PaymentAdmin,
     dependencies=[Depends(require_perm("purchases.recheck"))],
-    summary="Ручная перепроверка платежа",
-    description=(
-        "Инициировать сверку статуса платежа с провайдером (директива recheck). "
-        "Применимо к платежам в статусах pending/wait; callback-скрипт обращается "
-        "к API провайдера и обновляет статус. Идемпотентно для paid/failed."
-    ),
+    summary="Recheck payment",
+    description="Request a payment status refresh from the provider.",
 )
 async def recheck_payment(
     payment_id: int,
@@ -158,7 +147,7 @@ async def recheck_payment(
 ) -> PaymentAdmin:
     pay = await session.get(UserPaymentsModel, payment_id)
     if pay is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "платёж не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "payment not found")
     # Ручной recheck сбрасывает "тупиковый" wait обратно в pending для сверки.
     if pay.status == PayStatus.WAIT:
         pay.status = PayStatus.PENDING
@@ -171,11 +160,8 @@ async def recheck_payment(
     "/purchases/{payment_id}/refund",
     response_model=PaymentAdmin,
     dependencies=[Depends(require_perm("purchases.refund"))],
-    summary="Возврат средств по платежу",
-    description=(
-        "Инициировать возврат оплаченного платежа (action=refund). Скрипт "
-        "провайдера обращается к API возврата. Применимо только к статусу paid."
-    ),
+    summary="Refund payment",
+    description="Request a refund for a paid payment.",
 )
 async def refund_payment(
     payment_id: int,
@@ -184,7 +170,7 @@ async def refund_payment(
 ) -> PaymentAdmin:
     pay = await session.get(UserPaymentsModel, payment_id)
     if pay is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "платёж не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "payment not found")
     pay = await svc.refund(pay)
     await session.commit()
     return PaymentAdmin.from_model(pay)

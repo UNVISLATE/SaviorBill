@@ -57,7 +57,7 @@ class LoginGuard:
             retry_after = max(ttl_acc or 0, ttl_ip or 0, 1)
             raise HTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="слишком много неудачных попыток входа, попробуйте позже",
+                detail="too many failed login attempts, try again later",
                 headers={"Retry-After": str(retry_after)},
             )
 

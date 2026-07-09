@@ -30,7 +30,7 @@ async def _with_stock(svc: Service, service_id: int, keys_mngr: ServiceKeysMngr)
 
 
 @router.get(
-    "/catalogs", response_model=list[CatalogResponse], summary="Дерево каталогов"
+    "/catalogs", response_model=list[CatalogResponse], summary="Catalog tree"
 )
 async def list_catalogs(
     mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr),
@@ -40,9 +40,9 @@ async def list_catalogs(
     return [CatalogResponse.from_model(c) for c in rows if c.is_active]
 
 
-@router.get("/services", response_model=Page[Service], summary="Список услуг")
+@router.get("/services", response_model=Page[Service], summary="Services")
 async def list_services(
-    catalog_id: int | None = Query(default=None, description="фильтр по каталогу"),
+    catalog_id: int | None = Query(default=None, description="filter by catalog"),
     pp: PageParams = Depends(page_params),
     mngr: ServiceMngr = Depends(get_service_mngr),
     keys_mngr: ServiceKeysMngr = Depends(get_servicekeys_mngr),
@@ -61,7 +61,9 @@ async def list_services(
     )
 
 
-@router.get("/services/{service_id}", response_model=Service, summary="Карточка услуги")
+@router.get(
+    "/services/{service_id}", response_model=Service, summary="Service details"
+)
 async def get_service(
     service_id: int,
     mngr: ServiceMngr = Depends(get_service_mngr),
@@ -73,4 +75,3 @@ async def get_service(
 
 
 __all__ = ["router"]
-

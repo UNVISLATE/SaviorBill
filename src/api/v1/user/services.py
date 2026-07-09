@@ -19,7 +19,6 @@ from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderCreate, Order
 from schemas.page import Page
-from utils.apidoc import with_fields
 from utils.pagination import PageParams, page_params, paginate
 
 router = APIRouter()
@@ -28,7 +27,7 @@ router = APIRouter()
 @router.get(
     "/services",
     response_model=Page[Order],
-    summary="Мои услуги",
+    summary="My services",
     dependencies=[Depends(require_perm("user.services.read"))],
 )
 async def my_services(
@@ -54,11 +53,10 @@ async def my_services(
     "/services/create",
     response_model=Order,
     status_code=status.HTTP_201_CREATED,
-    summary="Заказать услугу с баланса",
-    description=with_fields(
-        "Списывает стоимость услуги с баланса (сначала бонусы) и сразу её "
-        "выдаёт. Для оплаты через платёжку используйте /user/purchases/create.",
-        OrderCreate,
+    summary="Buy service from balance",
+    description=(
+        "Charges the service price from balance and delivers it immediately. "
+        "Use `/user/purchases/create` to pay via a provider."
     ),
     dependencies=[
         Depends(require_perm("user.services.create")),
@@ -78,7 +76,7 @@ async def create_service(
     if usvc.status != UsvcStatus.ACTIVE:
         await usvc_mngr.s.rollback()
         raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY, f"не удалось выдать услугу: {usvc.error}"
+            status.HTTP_502_BAD_GATEWAY, f"service delivery failed: {usvc.error}"
         )
     await usvc_mngr.s.commit()
     await triggers.fire(

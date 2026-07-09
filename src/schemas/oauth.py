@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class Provider(BaseModel):
-    """Краткая инфа о включённом провайдере для фронта."""
+    """Enabled provider for frontend."""
 
     slug: str
     title: str | None = None
@@ -14,22 +14,18 @@ class Provider(BaseModel):
 
 
 class OAuthStart(BaseModel):
-    """Ответ на старт авторизации: куда редиректить пользователя."""
+    """OAuth start response."""
 
     authorize_url: str
     state: str
 
 
 class OAuthUser(BaseModel):
-    """Нормализованный профиль пользователя от провайдера.
-
-    Lua-скрипт провайдера обязан привести ответ платформы к этому контракту и
-    вернуть его в ``private``. ``raw`` — исходные данные.
-    """
+    """Normalized provider user."""
 
     model_config = ConfigDict(extra="ignore")
 
-    sub: str = Field(description="Идентификатор пользователя у провайдера")
+    sub: str = Field(description="Provider user ID")
     email: str | None = None
     email_verified: bool = False
     name: str | None = None
@@ -38,7 +34,7 @@ class OAuthUser(BaseModel):
 
 
 class TokenSet(BaseModel):
-    """Токены, выданные провайдером на этапе обмена кода."""
+    """Provider token set."""
 
     model_config = ConfigDict(extra="ignore")
 
@@ -51,7 +47,7 @@ class TokenSet(BaseModel):
 
 
 class Conn(BaseModel):
-    """Привязка внешней учётки к аккаунту (для /user/oauth)."""
+    """External account link."""
 
     model_config = ConfigDict(from_attributes=True)
 

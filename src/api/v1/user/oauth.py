@@ -20,7 +20,7 @@ router = APIRouter()
 @router.get(
     "/oauth",
     response_model=list[Conn],
-    summary="Мои OAuth-привязки",
+    summary="My OAuth connections",
     dependencies=[Depends(require_perm("user.oauth.read"))],
 )
 async def my_connections(
@@ -39,11 +39,8 @@ async def my_connections(
 @router.get(
     "/oauth/{provider}/link",
     response_model=OAuthStart,
-    summary="Привязать провайдера к моему аккаунту",
-    description=(
-        "Старт OAuth для привязки внешней учётки к ТЕКУЩЕМУ аккаунту. Возвращает "
-        "authorize_url для редиректа; после колбэка учётка привяжется к вам."
-    ),
+    summary="Link OAuth provider",
+    description="Starts OAuth linking for the current account and returns authorize_url.",
     dependencies=[Depends(require_perm("user.oauth.edit"))],
 )
 async def link_start(
@@ -59,7 +56,7 @@ async def link_start(
 @router.delete(
     "/oauth/{provider}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Отвязать провайдера",
+    summary="Unlink OAuth provider",
     dependencies=[Depends(require_perm("user.oauth.edit"))],
 )
 async def unlink(
@@ -74,7 +71,7 @@ async def unlink(
         )
     )
     if conn is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "привязка не найдена")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "connection not found")
     await session.delete(conn)
     await session.commit()
 

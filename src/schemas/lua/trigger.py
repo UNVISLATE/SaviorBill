@@ -6,13 +6,7 @@ from pydantic import BaseModel
 
 
 class LuaTrigger(BaseModel):
-    """Контекст действия триггера для Lua.
-
-    :arg event: идентификатор события (см. :class:`integrations.triggers.TriggerEvent`).
-    :arg config: полный JSON конфигурации действия триггера (как объект).
-    :arg data: унифицированные данные, из-за которых сработал триггер
-        (пользователь/услуга/платёж/…), чтобы скрипт мог с ними работать.
-    """
+    """Trigger action context for Lua."""
 
     event: str
     config: dict = {}

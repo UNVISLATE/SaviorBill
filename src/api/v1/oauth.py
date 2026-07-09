@@ -21,8 +21,8 @@ def _icon_url(token: str | None) -> str | None:
 @router.get(
     "/providers",
     response_model=list[Provider],
-    summary="Доступные OAuth-провайдеры",
-    description="Список включённых провайдеров, которыми можно войти прямо сейчас.",
+    summary="Available OAuth providers",
+    description="Enabled providers available for sign-in.",
 )
 async def providers(
     session: AsyncSession = Depends(get_db_session),
@@ -41,8 +41,8 @@ async def providers(
 @router.get(
     "/{provider}",
     response_model=OAuthStart,
-    summary="Старт OAuth-авторизации",
-    description="Готовит state и возвращает authorize_url для редиректа на провайдера.",
+    summary="Start OAuth sign-in",
+    description="Creates state and returns authorize_url for provider redirect.",
 )
 async def start(
     provider: str, request: Request, svc: OAuthSvc = Depends(get_oauth_svc)

@@ -7,7 +7,6 @@ from dependencies.ratelimit import LimitKind, _kind_keys, _rule_for
 from dependencies.rbac import require_perm
 from dependencies.valkey import get_valkey_client
 from schemas.ratelimit import RateLimitPatch, RateLimitRule
-from utils.apidoc import with_fields
 from utils.config import AppConfig
 
 router = APIRouter()
@@ -17,7 +16,7 @@ router = APIRouter()
     "/settings/ratelimits",
     response_model=list[RateLimitRule],
     dependencies=[Depends(require_perm("settings.ratelimits.read"))],
-    summary="Текущие лимиты частоты запросов",
+    summary="Rate limits",
 )
 async def list_rate_limits(
     request: Request,
@@ -49,12 +48,8 @@ async def list_rate_limits(
     "/settings/ratelimits/{kind}",
     response_model=RateLimitRule,
     dependencies=[Depends(require_perm("settings.ratelimits.edit"))],
-    summary="Переопределить лимит категории",
-    description=with_fields(
-        "Задаёт лимит для категории (default/auth/mail/sensitive) в рантайме без "
-        "рестарта. Применяется сразу ко всем роутам этой категории.",
-        RateLimitPatch,
-    ),
+    summary="Set rate limit",
+    description="Override a rate limit at runtime.",
 )
 async def set_rate_limit(
     kind: LimitKind,
@@ -77,7 +72,7 @@ async def set_rate_limit(
     "/settings/ratelimits/{kind}",
     response_model=RateLimitRule,
     dependencies=[Depends(require_perm("settings.ratelimits.edit"))],
-    summary="Сбросить лимит категории к ENV-дефолту",
+    summary="Reset rate limit",
 )
 async def reset_rate_limit(
     kind: LimitKind,

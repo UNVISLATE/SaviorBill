@@ -14,7 +14,6 @@ from enums import UsvcStatus, PromoKind
 from integrations.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from schemas.promo import PromoRedeem, PromoResult
-from utils.apidoc import with_fields
 
 router = APIRouter(prefix="/api/v1/promocodes", tags=["promocodes"])
 
@@ -22,13 +21,8 @@ router = APIRouter(prefix="/api/v1/promocodes", tags=["promocodes"])
 @router.post(
     "/redeem",
     response_model=PromoResult,
-    summary="Активировать промокод",
-    description=with_fields(
-        "Действие определяет каталог кода: `bonus` — зачисление на бонусный "
-        "баланс; `service` — бесплатная выдача услуги. Скидочный код (`discount`) "
-        "так не активируется — его передают в поле `promocode` при заказе услуги.",
-        PromoRedeem,
-    ),
+    summary="Redeem promo code",
+    description="Redeems `bonus` and `service` promo codes. Use discount codes when ordering a service.",
     dependencies=[Depends(rate_limit("promocodes.redeem", LimitKind.SENSITIVE))],
 )
 async def redeem(
@@ -46,19 +40,19 @@ async def redeem(
         added = await promo_mngr.apply_bonus(catalog, acc)
         await promo_mngr.record_use(promo, acc)
         await promo_mngr.s.commit()
-        return PromoResult(kind="bonus", message="бонусы зачислены", bonus_added=added)
+        return PromoResult(kind="bonus", message="bonus credited", bonus_added=added)
 
     if catalog.kind == PromoKind.SERVICE:
         if not catalog.service_id:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "у каталога не задана услуга"
+                status.HTTP_400_BAD_REQUEST, "catalog service not set"
             )
         service = await svc_mngr.get_active(catalog.service_id)
         order = await usvc_mngr.create(acc, service, discount=service.price)
         if order.status != UsvcStatus.ACTIVE:
             await usvc_mngr.s.rollback()
             raise HTTPException(
-                status.HTTP_502_BAD_GATEWAY, f"не удалось выдать услугу: {order.error}"
+                status.HTTP_502_BAD_GATEWAY, f"service delivery failed: {order.error}"
             )
         await promo_mngr.record_use(promo, acc, order.id)
         await promo_mngr.s.commit()
@@ -69,13 +63,12 @@ async def redeem(
                 "user": {"id": acc.id, "login": acc.login},
             },
         )
-        return PromoResult(kind="service", message="услуга выдана", order_id=order.id)
+        return PromoResult(kind="service", message="service delivered", order_id=order.id)
 
     raise HTTPException(
         status.HTTP_400_BAD_REQUEST,
-        "скидочный промокод применяется при заказе услуги (поле promocode)",
+        "discount promo code must be used when ordering a service",
     )
 
 
 __all__ = ["router"]
-

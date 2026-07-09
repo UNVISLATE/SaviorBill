@@ -26,7 +26,6 @@ from models.user_payments import UserPaymentsModel
 from schemas.page import Page
 from schemas.payment_provider import PayProviderPublic
 from schemas.payments import PaymentCreate, Payment
-from utils.apidoc import with_fields
 from utils.pagination import PageParams, page_params, paginate
 
 router = APIRouter()
@@ -35,11 +34,8 @@ router = APIRouter()
 @router.get(
     "/purchases/providers",
     response_model=list[PayProviderPublic],
-    summary="Доступные платёжные провайдеры",
-    description=(
-        "Список включённых платёжных провайдеров для выбора при создании "
-        "платежа. Требует аутентификации (Bearer)."
-    ),
+    summary="Available payment providers",
+    description="Enabled providers available for creating a payment.",
     dependencies=[Depends(require_perm("user.purchases.read"))],
 )
 async def list_pay_providers(
@@ -54,7 +50,7 @@ async def list_pay_providers(
 @router.get(
     "/purchases",
     response_model=Page[Payment],
-    summary="Мои платежи",
+    summary="My payments",
     dependencies=[Depends(require_perm("user.purchases.read"))],
 )
 async def my_purchases(
@@ -80,13 +76,10 @@ async def my_purchases(
     "/purchases/create",
     response_model=Payment,
     status_code=status.HTTP_201_CREATED,
-    summary="Создать платёж",
-    description=with_fields(
-        "Инициализирует платёж через провайдера. В `public_data` ответа "
-        "обычно лежит ссылка для редиректа на оплату. При `target=service` "
-        "услуга будет выдана автоматически по успешному колбэку (тогда "
-        "обязателен `service_id`).",
-        PaymentCreate,
+    summary="Create payment",
+    description=(
+        "Creates a payment. For `target=service`, `service_id` is required and "
+        "the service is delivered after a successful callback."
     ),
     dependencies=[
         Depends(require_perm("user.purchases.create")),
@@ -106,7 +99,7 @@ async def create_purchase(
     if body.target == PayTarget.SERVICE:
         if not body.service_id:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "для target=service нужен service_id"
+                status.HTTP_400_BAD_REQUEST, "service_id is required for target=service"
             )
         service = await svc_mngr.get_active(body.service_id)
         # Создаём отложенную выдачу (без списания/доставки — доставит колбэк).

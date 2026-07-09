@@ -9,7 +9,6 @@ from dependencies.triggers import get_trigger_mngr
 from integrations.triggers import ACTION_KEYS, ALL_EVENTS
 from models.triggers import TriggerMngr
 from schemas.trigger import Trigger, TriggerCreate, TriggerMeta, TriggerPatch
-from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -18,8 +17,8 @@ router = APIRouter()
     "/triggers/meta",
     response_model=TriggerMeta,
     dependencies=[Depends(require_perm("triggers.read"))],
-    summary="Справочник событий и действий",
-    description="Доступные доменные события и ключи действий для UI.",
+    summary="Trigger metadata",
+    description="Available events and action keys.",
 )
 async def triggers_meta() -> TriggerMeta:
     return TriggerMeta(events=list(ALL_EVENTS), actions=list(ACTION_KEYS))
@@ -29,7 +28,7 @@ async def triggers_meta() -> TriggerMeta:
     "/triggers",
     response_model=list[Trigger],
     dependencies=[Depends(require_perm("triggers.read"))],
-    summary="Список триггеров",
+    summary="Triggers",
 )
 async def list_triggers(
     mngr: TriggerMngr = Depends(get_trigger_mngr),
@@ -42,7 +41,7 @@ async def list_triggers(
     "/triggers/{trig_id}",
     response_model=Trigger,
     dependencies=[Depends(require_perm("triggers.read"))],
-    summary="Получить один триггер",
+    summary="Get trigger",
 )
 async def get_trigger(
     trig_id: int,
@@ -50,7 +49,7 @@ async def get_trigger(
 ) -> Trigger:
     row = await mngr.by_id(trig_id)
     if row is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "триггер не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "trigger not found")
     return Trigger.from_model(row)
 
 
@@ -59,11 +58,8 @@ async def get_trigger(
     response_model=Trigger,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("triggers.create"))],
-    summary="Создать триггер",
-    description=with_fields(
-        "Связывает доменное событие с действием (email/lua) и условием.",
-        TriggerCreate,
-    ),
+    summary="Create trigger",
+    description="Create a trigger.",
 )
 async def create_trigger(
     body: TriggerCreate,
@@ -78,11 +74,8 @@ async def create_trigger(
     "/triggers/{trig_id}",
     response_model=Trigger,
     dependencies=[Depends(require_perm("triggers.edit"))],
-    summary="Изменить триггер",
-    description=with_fields(
-        "Частично обновляет триггер — передаются только изменяемые поля.",
-        TriggerPatch,
-    ),
+    summary="Update trigger",
+    description="Update a trigger.",
 )
 async def patch_trigger(
     trig_id: int,
@@ -98,7 +91,7 @@ async def patch_trigger(
     "/triggers/{trig_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_perm("triggers.delete"))],
-    summary="Удалить триггер",
+    summary="Delete trigger",
 )
 async def delete_trigger(
     trig_id: int,

@@ -75,11 +75,11 @@ class TokenSvc:
         except jwtu.InvalidJWT as exc:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
         if await self.is_revoked(claims.jti):
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "токен отозван")
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token revoked")
 
         acc = await mngr.by_id(int(claims.sub))
         if acc is None or not acc.is_active:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "аккаунт недоступен")
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "account unavailable")
 
         await self.revoke(claims)  # ротация: старый refresh больше не валиден
         return acc, self.issue(acc)

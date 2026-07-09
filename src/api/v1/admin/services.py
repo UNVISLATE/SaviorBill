@@ -15,7 +15,6 @@ from schemas.media import Attachment, AttachmentIn
 from schemas.page import Page
 from schemas.service import ServiceAdmin, ServiceCreate, ServicePatch
 from utils.pagination import PageParams, page_params, paginate
-from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -24,7 +23,7 @@ router = APIRouter()
     "/services",
     response_model=Page[ServiceAdmin],
     dependencies=[Depends(require_perm("services.read"))],
-    summary="Список услуг (все)",
+    summary="Services",
 )
 async def list_services(
     pp: PageParams = Depends(page_params),
@@ -47,11 +46,8 @@ async def list_services(
     response_model=ServiceAdmin,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("services.create"))],
-    summary="Создать услугу",
-    description=with_fields(
-        "Создаёт услугу каталога.",
-        ServiceCreate,
-    ),
+    summary="Create service",
+    description="Create a service.",
 )
 async def create_service(
     body: ServiceCreate, mngr: ServiceMngr = Depends(get_service_mngr)
@@ -65,11 +61,8 @@ async def create_service(
     "/services/{service_id}",
     response_model=ServiceAdmin,
     dependencies=[Depends(require_perm("services.edit"))],
-    summary="Изменить услугу",
-    description=with_fields(
-        "Частично обновляет услугу — передаются только изменяемые поля.",
-        ServicePatch,
-    ),
+    summary="Update service",
+    description="Update a service.",
 )
 async def update_service(
     service_id: int,
@@ -85,7 +78,7 @@ async def update_service(
     "/services/{service_id}/attachments",
     response_model=list[Attachment],
     dependencies=[Depends(require_perm("services.attachments.read"))],
-    summary="Вложения товара",
+    summary="Service attachments",
 )
 async def list_attachments(
     service_id: int,
@@ -100,11 +93,8 @@ async def list_attachments(
     response_model=Attachment,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("services.attachments.create"))],
-    summary="Добавить вложение товара",
-    description=with_fields(
-        "Привязывает загруженное медиа к товару с тегом и позицией.",
-        AttachmentIn,
-    ),
+    summary="Add attachment",
+    description="Attach uploaded media to a service.",
 )
 async def add_attachment(
     service_id: int,
@@ -113,7 +103,7 @@ async def add_attachment(
     mngr: ServiceAttachmentMngr = Depends(get_attachment_mngr),
 ) -> Attachment:
     if await svc_mngr.by_id(service_id) is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "услуга не найдена")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
     att = await mngr.add(
         service_id, body.media_id, tag=body.tag, position=body.position
     )
@@ -126,7 +116,7 @@ async def add_attachment(
     "/services/{service_id}/attachments/{att_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_perm("services.attachments.delete"))],
-    summary="Удалить вложение товара",
+    summary="Delete attachment",
 )
 async def remove_attachment(
     service_id: int,

@@ -32,7 +32,7 @@ def _bus(request: Request, vk: valkey.Valkey) -> MediaBus:
     "/media",
     response_model=list[Media],
     dependencies=[Depends(require_perm("media.read"))],
-    summary="Список медиа",
+    summary="Media",
 )
 async def list_media(
     limit: int = Query(100, ge=1, le=500),
@@ -52,7 +52,7 @@ async def _drop(mngr: SystemMediaMngr, bus: MediaBus, media: SystemMediaModel) -
 @router.delete(
     "/media/{media_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Удалить медиа",
+    summary="Delete media",
 )
 async def delete_media(
     request: Request,
@@ -63,7 +63,7 @@ async def delete_media(
 ) -> None:
     media = await mngr.by_id(media_id)
     if media is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "медиа не найдено")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
     await _drop(mngr, _bus(request, vk), media)
     await audit(
         mngr.s,
@@ -81,15 +81,8 @@ async def delete_media(
 @router.post(
     "/media/cleanup",
     dependencies=[Depends(require_perm("media.cleanup"))],
-    summary="Удалить неиспользуемые медиа",
-    description=(
-        "Удаляет все медиа, не привязанные ни к товарам (вложения), ни к аватаркам "
-        "пользователей. Файлы удаляет mediaworker. Записи младше "
-        "`media.cleanup_grace_sec` (по умолчанию 1 час) не рассматриваются "
-        "кандидатами — грейс-период защищает от удаления только что "
-        "загруженного, ещё не привязанного к сущности файла (TOCTOU). "
-        "Возвращает число удалённых."
-    ),
+    summary="Cleanup media",
+    description="Delete unused media older than the grace period and queue file cleanup.",
 )
 async def cleanup_media(
     request: Request,

@@ -9,10 +9,7 @@ from pydantic import BaseModel, ConfigDict, field_serializer
 
 
 class LuaUsvc(BaseModel):
-    """Данные активированной услуги пользователя (``user.service``).
-
-    Отдаётся в скрипт услуги, чтобы он знал текущее состояние своей выдачи.
-    """
+    """Activated service data for Lua user."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -42,11 +39,7 @@ class LuaUsvc(BaseModel):
 
 
 class LuaUser(BaseModel):
-    """Пользователь для контекста Lua (все поля схемы учётки).
-
-    ``service`` заполняется только для скриптов услуг (данные активированной
-    услуги этого пользователя).
-    """
+    """User data for Lua."""
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, status
 from dependencies.password import ResetSvc, get_reset_svc
 from dependencies.ratelimit import LimitKind, rate_limit
 from schemas.auth import PassResetConfirm, PassResetRequest
-from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -15,13 +14,8 @@ router = APIRouter()
 @router.post(
     "/password/reset/request",
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Запросить сброс пароля",
-    description=with_fields(
-        "Отправляет на email 6-значный код сброса, если аккаунт существует. "
-        "Ответ всегда 202 (не раскрывает наличие аккаунта). Если SMTP не "
-        "настроен — возвращает 404.",
-        PassResetRequest,
-    ),
+    summary="Request password reset",
+    description="Sends a 6-digit reset code if the account exists. Always returns 202.",
     dependencies=[Depends(rate_limit("password.reset.request", LimitKind.MAIL))],
 )
 async def request_reset(
@@ -41,11 +35,8 @@ async def request_reset(
 @router.post(
     "/password/reset/confirm",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Подтвердить сброс пароля",
-    description=with_fields(
-        "Устанавливает новый пароль по email + 6-значному коду из письма.",
-        PassResetConfirm,
-    ),
+    summary="Confirm password reset",
+    description="Sets a new password using email and the reset code.",
     dependencies=[Depends(rate_limit("password.reset.confirm", LimitKind.MAIL))],
 )
 async def confirm_reset(

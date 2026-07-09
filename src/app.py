@@ -18,50 +18,46 @@ install_access_log_filter()
 
 
 DESCRIPTION = (
-    "**SaviorBill** — событийная биллинг-система.\n\n"
-    f"Медиа-подсистема (загрузка/конвертация/отдача файлов) вынесена в отдельный "
-    f"сервис **mediaworker** — его OpenAPI-документация (форматы загрузки и "
-    f"ответов) доступна по адресу [{settings.media_docs_url}]({settings.media_docs_url})."
+    "**SaviorBill** is an event-driven billing service.\n\n"
+    f"Media uploads, conversion, and file delivery are handled by **mediaworker**. "
+    f"Its OpenAPI docs are available at [{settings.media_docs_url}]({settings.media_docs_url})."
     if settings.DOCS_ENABLED
-    else "**SaviorBill** — событийная биллинг-система."
+    else "**SaviorBill** is an event-driven billing service."
 )
 
 TAGS_META = [
-    {"name": "auth", "description": "Регистрация, вход, JWT-токены, выход."},
-    {"name": "oauth", "description": "Вход через внешних OAuth-провайдеров (Lua)."},
-    {"name": "catalog", "description": "Публичный каталог услуг и дерево каталогов."},
+    {"name": "auth", "description": "Registration, login, JWT tokens, logout."},
+    {"name": "oauth", "description": "Sign-in via external OAuth providers."},
+    {"name": "catalog", "description": "Public service catalog and catalog tree."},
     {
         "name": "user",
-        "description": "Профиль, услуги, платежи и привязки пользователя.",
+        "description": "User profile, services, payments, and connections.",
     },
     {
         "name": "promocodes",
-        "description": "Активация промокодов (бонус/скидка/услуга).",
+        "description": "Promo code redemption.",
     },
-    {"name": "callback", "description": "Колбэки платёжных систем и OAuth."},
-    {"name": "media", "description": "Загрузка медиа-файлов (изображения, аватарки)."},
-    {"name": "admin: me", "description": "Профиль текущего администратора."},
-    {"name": "admin: users", "description": "Список и редактирование пользователей."},
-    {"name": "admin: roles", "description": "Роли и каталог прав (RBAC)."},
-    {"name": "admin: services", "description": "Управление услугами каталога."},
-    {"name": "admin: catalogs", "description": "Управление каталогами услуг."},
-    {"name": "admin: orders", "description": "Выданные услуги и ручная выдача."},
-    {"name": "admin: purchases", "description": "Платежи и платёжные провайдеры."},
-    {"name": "admin: promo", "description": "Каталоги промокодов и выпуск кодов."},
-    {"name": "admin: oauth", "description": "Управление OAuth-провайдерами."},
-    {"name": "admin: lua", "description": "Загрузка/редактирование Lua-скриптов."},
-    {"name": "admin: email", "description": "Email-шаблоны рассылок."},
+    {"name": "callback", "description": "Payment and OAuth callbacks."},
+    {"name": "media", "description": "Media upload and processing status."},
+    {"name": "admin: me", "description": "Current admin profile."},
+    {"name": "admin: users", "description": "User list and editing."},
+    {"name": "admin: roles", "description": "Roles and RBAC permissions."},
+    {"name": "admin: services", "description": "Catalog service management."},
+    {"name": "admin: catalogs", "description": "Service catalog management."},
+    {"name": "admin: orders", "description": "Issued services and manual delivery."},
+    {"name": "admin: purchases", "description": "Payments and providers."},
+    {"name": "admin: promo", "description": "Promo catalogs and code issuance."},
+    {"name": "admin: oauth", "description": "OAuth provider management."},
+    {"name": "admin: lua", "description": "Lua script upload and editing."},
+    {"name": "admin: email", "description": "Email templates."},
     {
         "name": "admin: triggers",
-        "description": "Триггеры: событие → действие (email/lua).",
+        "description": "Triggers: event to action.",
     },
-    {"name": "admin: audit", "description": "Аудит финансовых и админ-действий."},
+    {"name": "admin: audit", "description": "Financial and admin audit log."},
     {
         "name": "admin: analytics",
-        "description": (
-            "Аналитика: базовый уровень (промокоды/платежи/услуги) и "
-            "продвинутый (Polars: LTV/retention/churn)."
-        ),
+        "description": "Basic and advanced analytics.",
     },
 ]
 

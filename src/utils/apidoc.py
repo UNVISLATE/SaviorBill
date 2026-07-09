@@ -1,8 +1,12 @@
 """Генерация markdown-описания полей тела запроса для Swagger.
 
 Строит булет-список полей pydantic-схемы (имя + описание из ``Field(description=)``
-+ пометка обязательности), чтобы вставлять его в ``description`` роутов. Так
-описание каждого параметра видно прямо в описании ручки, а не только в схеме.
++ пометка обязательности), чтобы вставлять его в ``description`` роутов.
+
+NOTE: по решению владельца проекта этот helper больше НЕ используется в роутах
+(дублировал то, что и так видно в схеме тела запроса в Swagger UI) — оставлен
+только как утилита на случай точечной необходимости, вызывать без явной нужды
+не стоит.
 """
 
 from __future__ import annotations
@@ -10,8 +14,8 @@ from __future__ import annotations
 from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
-_OPTIONAL_MARK = "`опционально`"
-_REQUIRED_MARK = "`обязательно`"
+_OPTIONAL_MARK = "`optional`"
+_REQUIRED_MARK = "`required`"
 
 
 def _field_line(name: str, field: FieldInfo) -> str:
@@ -26,7 +30,7 @@ def _field_line(name: str, field: FieldInfo) -> str:
     return f"- `{name}`: {desc}"
 
 
-def fields_doc(model: type[BaseModel], title: str = "Тело запроса (JSON)") -> str:
+def fields_doc(model: type[BaseModel], title: str = "Request body (JSON)") -> str:
     """Markdown-описание полей схемы для вставки в ``description`` роута.
 
     :arg model: pydantic-схема тела запроса.
@@ -39,7 +43,7 @@ def fields_doc(model: type[BaseModel], title: str = "Тело запроса (JS
 
 
 def with_fields(
-    prose: str, model: type[BaseModel], title: str = "Тело запроса (JSON)"
+    prose: str, model: type[BaseModel], title: str = "Request body (JSON)"
 ) -> str:
     """Склеить прозу описания роута с булет-списком полей схемы.
 

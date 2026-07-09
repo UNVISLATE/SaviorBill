@@ -11,26 +11,16 @@ from utils.settings_def import SettingDef
 
 
 class SettingRawOut(BaseModel):
-    """Строка таблицы ``settings`` в raw-представлении.
+    """Raw settings row."""
 
-    :arg key: ключ настройки.
-    :arg value: значение (``None`` для зашифрованных — не раскрываем содержимое).
-    :arg is_secret: хранится ли значение зашифрованным (SecBox).
-    :arg editable: можно ли редактировать/удалять через raw-роуты (``False`` для секретов).
-    :arg group: логическая группа из каталога настроек (если ключ зарегистрирован).
-    :arg desc: описание из каталога настроек (если ключ зарегистрирован).
-    :arg created_at: время создания записи.
-    :arg updated_at: время последнего изменения записи.
-    """
-
-    key: str = Field(description="Ключ настройки (обязательно)")
-    value: str | None = Field(description="Значение (null для секретов)")
-    is_secret: bool = Field(description="Хранится ли значение зашифрованным")
-    editable: bool = Field(description="Доступно ли редактирование через raw-роуты")
-    group: str | None = Field(default=None, description="Группа из каталога настроек")
-    desc: str | None = Field(default=None, description="Описание из каталога настроек")
-    created_at: datetime = Field(description="Время создания записи")
-    updated_at: datetime = Field(description="Время последнего изменения записи")
+    key: str = Field(description="Setting key")
+    value: str | None = Field(description="Value; null for secrets")
+    is_secret: bool = Field(description="Stored encrypted")
+    editable: bool = Field(description="Editable via raw routes")
+    group: str | None = Field(default=None, description="Settings catalog group")
+    desc: str | None = Field(default=None, description="Settings catalog description")
+    created_at: datetime = Field(description="Created at")
+    updated_at: datetime = Field(description="Updated at")
 
     @classmethod
     def from_model(
@@ -49,12 +39,9 @@ class SettingRawOut(BaseModel):
 
 
 class SettingRawUpsert(BaseModel):
-    """Тело записи/обновления значения настройки через raw-редактор.
+    """Upsert raw setting."""
 
-    - `value`: новое значение (строка или `null`, чтобы очистить)
-    """
-
-    value: str | None = Field(description="Новое значение (или null)")
+    value: str | None = Field(description="New value or null")
 
 
 __all__ = ["SettingRawOut", "SettingRawUpsert"]

@@ -83,7 +83,7 @@ class OAuthSvc:
         row = await self.s.scalar(stmt)
         if row is None:
             raise HTTPException(
-                status.HTTP_404_NOT_FOUND, f"провайдер {slug} недоступен"
+                status.HTTP_404_NOT_FOUND, f"provider {slug} is unavailable"
             )
         return row
 
@@ -104,18 +104,18 @@ class OAuthSvc:
         """Получить auth-скрипт провайдера и проверить поддержку действия."""
         if not prov.script_id:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "у провайдера не задан auth-скрипт"
+                status.HTTP_400_BAD_REQUEST, "provider has no auth script configured"
             )
         script = await self.s.get(SystemScriptsModel, prov.script_id)
         if script is None or not script.is_active:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "auth-скрипт провайдера недоступен"
+                status.HTTP_400_BAD_REQUEST, "provider auth script is unavailable"
             )
         supported = script.actions or []
         if supported and action not in supported:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
-                f"auth-скрипт не поддерживает действие «{action}»",
+                f"auth script does not support action '{action}'",
             )
         return script
 
@@ -162,7 +162,7 @@ class OAuthSvc:
         authorize_url = pub.get("authorize_url")
         if not authorize_url:
             raise HTTPException(
-                status.HTTP_502_BAD_GATEWAY, "скрипт не вернул authorize_url"
+                status.HTTP_502_BAD_GATEWAY, "script did not return authorize_url"
             )
 
         payload = {"slug": slug, "account_id": account_id, "nonce": nonce}
@@ -174,7 +174,7 @@ class OAuthSvc:
         saved = await self.vk.get(_STATE + state)
         if not saved:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "неверный или истёкший state"
+                status.HTTP_400_BAD_REQUEST, "invalid or expired state"
             )
         try:
             payload = json.loads(saved)
@@ -182,7 +182,7 @@ class OAuthSvc:
             payload = {"slug": saved}
         if payload.get("slug") != slug:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "неверный или истёкший state"
+                status.HTTP_400_BAD_REQUEST, "invalid or expired state"
             )
         await self.vk.delete(_STATE + state)
         return payload
@@ -213,7 +213,7 @@ class OAuthSvc:
         if not priv.get("ok") or not priv.get("sub"):
             raise HTTPException(
                 status.HTTP_401_UNAUTHORIZED,
-                "не удалось получить профиль пользователя",
+                "failed to fetch user profile",
             )
         user = OAuthUser(
             sub=str(priv["sub"]),
@@ -294,7 +294,7 @@ class OAuthSvc:
         if conn is not None and conn.account_id != acc.id:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
-                "эта внешняя учётка уже привязана к другому аккаунту",
+                "this external account is already linked to another account",
             )
         if conn is None:
             conn = UserOauthModel(

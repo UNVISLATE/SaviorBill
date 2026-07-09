@@ -116,7 +116,7 @@ class PromoCodesMngr:
         """
         catalog = await self.s.get(PromoCatalogsModel, catalog_id)
         if catalog is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "каталог не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog not found")
 
         values = list(codes) if codes else [self._gen(prefix) for _ in range(count)]
         created: list[PromoCodesModel] = []
@@ -175,14 +175,14 @@ class PromoCodesMngr:
             .with_for_update()
         )
         if promo is None or not promo.is_active:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "промокод недействителен")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "promo code is invalid")
 
         now = utc_now()
         if promo.valid_to and now > promo.valid_to:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "срок промокода истёк")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "promo code has expired")
         if promo.max_uses is not None and promo.used_count >= promo.max_uses:
             raise HTTPException(
-                status.HTTP_409_CONFLICT, "лимит использований исчерпан"
+                status.HTTP_409_CONFLICT, "usage limit reached"
             )
 
         catalog = await self.catalog_of(promo)
@@ -198,7 +198,7 @@ class PromoCodesMngr:
             )
         )
         if used_this_code >= 1:
-            raise HTTPException(status.HTTP_409_CONFLICT, "промокод уже использован")
+            raise HTTPException(status.HTTP_409_CONFLICT, "promo code already used")
 
         # Правило 2: лимит каталога на количество РАЗНЫХ погашенных кодов.
         if catalog.per_user is not None:
@@ -214,7 +214,7 @@ class PromoCodesMngr:
             if distinct_codes_used >= catalog.per_user:
                 raise HTTPException(
                     status.HTTP_409_CONFLICT,
-                    "лимит активаций каталога промокодов исчерпан",
+                    "promo catalog activation limit reached",
                 )
         return promo
 
@@ -227,7 +227,7 @@ class PromoCodesMngr:
         catalog = await self.s.get(PromoCatalogsModel, promo.catalog_id)
         if catalog is None or not catalog.is_active:
             raise HTTPException(
-                status.HTTP_409_CONFLICT, "каталог промокода недоступен"
+                status.HTTP_409_CONFLICT, "promo code catalog unavailable"
             )
         return catalog
 
@@ -257,7 +257,7 @@ class PromoCodesMngr:
         """
         if catalog.kind != PromoKind.DISCOUNT:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "промокод не является скидочным"
+                status.HTTP_400_BAD_REQUEST, "promo code is not a discount code"
             )
         if catalog.discount_type == DiscountType.PERCENT:
             disc = (service.price * catalog.value / Decimal("100")).quantize(
@@ -275,7 +275,7 @@ class PromoCodesMngr:
         :return: сумма зачисленного бонуса.
         """
         if catalog.kind != PromoKind.BONUS:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "промокод не бонусный")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "promo code is not a bonus code")
         acc.bonus_balance += catalog.value
         await self.s.flush()
         return catalog.value

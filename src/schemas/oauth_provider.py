@@ -15,7 +15,7 @@ def _icon_url(token: str | None) -> str | None:
 
 
 class OAuthProvider(BaseModel):
-    """OAuth-провайдер в админке (ответ, без секретов)."""
+    """OAuth provider."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -46,74 +46,58 @@ class OAuthProvider(BaseModel):
 
 
 class OAuthProviderCreate(BaseModel):
-    """Создание OAuth-провайдера.
-
-    - `slug`: уникальный идентификатор провайдера (обязательно)
-    - `script_id`: id auth-скрипта (start/callback) — обязателен для работы
-    - `secrets`: секреты/endpoints провайдера, шифруются (опционально)
-    - `title`: отображаемое имя (опционально)
-    - `enabled`: включён ли провайдер (опционально)
-    - `icon_media_id`: ID медиа-иконки провайдера (опционально)
-    - `scopes`: запрашиваемые scope (опционально)
-    - `extra`: несекретные доп-параметры для скрипта (опционально)
-    """
+    """Create OAuth provider."""
 
     slug: str = Field(
         min_length=2,
         max_length=32,
-        description="Уникальный slug провайдера (обязательно)",
+        description="Unique provider slug",
     )
-    script_id: int = Field(description="ID auth-скрипта провайдера (обязательно)")
+    script_id: int = Field(description="Auth script ID")
     secrets: dict = Field(
         default_factory=dict,
-        description="Секреты/endpoints провайдера, шифруются (опционально)",
+        description="Provider secrets/endpoints (optional)",
     )
     title: str | None = Field(
-        default=None, description="Отображаемое имя (опционально)"
+        default=None, description="Display name (optional)"
     )
     enabled: bool = Field(
-        default=False, description="Включён ли провайдер (опционально)"
+        default=False, description="Enabled (optional)"
     )
     icon_media_id: int | None = Field(
-        default=None, description="ID медиа-иконки провайдера (опционально)"
+        default=None, description="Provider icon media ID (optional)"
     )
     scopes: str = Field(
         default="openid email profile",
-        description="Запрашиваемые scope (опционально)",
+        description="Requested scopes (optional)",
     )
-    extra: dict = Field(default_factory=dict, description="Доп-параметры (опционально)")
+    extra: dict = Field(default_factory=dict, description="Extra params (optional)")
 
 
 class OAuthProviderPatch(BaseModel):
-    """Изменение OAuth-провайдера (только переданные поля).
-
-    - `script_id`: id auth-скрипта (опционально)
-    - `secrets`: новые секреты, перешифровываются (опционально)
-    - `icon_media_id`: ID медиа-иконки, `null` — снять иконку (опционально)
-    - `title`/`enabled`/`scopes`/`extra`: опционально
-    """
+    """Update OAuth provider."""
 
     title: str | None = Field(
-        default=None, description="Отображаемое имя (опционально)"
+        default=None, description="Display name (optional)"
     )
     enabled: bool | None = Field(
-        default=None, description="Включён ли провайдер (опционально)"
+        default=None, description="Enabled (optional)"
     )
     script_id: int | None = Field(
-        default=None, description="ID auth-скрипта провайдера (опционально)"
+        default=None, description="Auth script ID (optional)"
     )
     secrets: dict | None = Field(
         default=None,
-        description="Секреты провайдера, перешифровываются (опционально)",
+        description="Provider secrets (optional)",
     )
     icon_media_id: int | None = Field(
         default=None,
-        description="ID медиа-иконки провайдера; null — снять иконку (опционально)",
+        description="Provider icon media ID; null removes icon",
     )
     scopes: str | None = Field(
-        default=None, description="Запрашиваемые scope (опционально)"
+        default=None, description="Requested scopes (optional)"
     )
-    extra: dict | None = Field(default=None, description="Доп-параметры (опционально)")
+    extra: dict | None = Field(default=None, description="Extra params (optional)")
 
 
 __all__ = ["OAuthProvider", "OAuthProviderCreate", "OAuthProviderPatch"]

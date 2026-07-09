@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class LuaScript(BaseModel):
-    """Зарегистрированный Lua-скрипт (ответ)."""
+    """Registered Lua script."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -21,11 +21,11 @@ class LuaScript(BaseModel):
     filename: str
     actions: list = Field(
         default_factory=list,
-        description="Поддерживаемые действия скрипта (для payment: create/callback/…)",
+        description="Supported script actions",
     )
     settings: dict = Field(
         default_factory=dict,
-        description="Настройки шаблона (ctx.lua.settings.*), общие для всех услуг/провайдеров скрипта",
+        description="Shared script settings",
     )
     is_active: bool
 
@@ -36,13 +36,9 @@ class LuaScript(BaseModel):
 
 
 class LuaScriptDetail(LuaScript):
-    """Зарегистрированный Lua-скрипт с телом (ответ на `GET /lua/{id}`).
+    """Lua script with body."""
 
-    Отдельная схема от списка (`GET /lua`), чтобы список не тянул тела всех
-    скриптов из файлов лишний раз — тело читается только при запросе одного.
-    """
-
-    code: str = Field(description="Тело Lua-скрипта (модуль с функцией handle(ctx))")
+    code: str = Field(description="Lua script body")
 
     @classmethod
     def from_model_with_code(cls, m, code: str) -> "LuaScriptDetail":  # noqa: ANN001
@@ -61,56 +57,45 @@ class LuaScriptDetail(LuaScript):
 
 
 class LuaScriptUpload(BaseModel):
-    """Регистрация нового Lua-скрипта.
-
-    Имя файла на диске генерируется системой (клиент его не задаёт). ``name`` —
-    только для отображения в админке.
-    """
+    """Create Lua script."""
 
     slug: str = Field(
-        min_length=2, max_length=64, description="Уникальный slug скрипта (обязательно)"
+        min_length=2, max_length=64, description="Unique script slug"
     )
     name: str | None = Field(
-        default=None, max_length=128, description="Отображаемое имя (опционально)"
+        default=None, max_length=128, description="Display name (optional)"
     )
     kind: str = Field(default="service", description="service | payment | generic")
     actions: list[str] = Field(
         default_factory=list,
-        description=(
-            "Поддерживаемые действия скрипта. Для payment обязательны "
-            "create и callback; для service — минимум create (опционально)"
-        ),
+        description="Supported script actions",
     )
     code: str = Field(
         min_length=1,
         max_length=100_000,
-        description="Тело Lua-скрипта (модуль с функцией handle(ctx)), обязательно",
+        description="Lua script body",
     )
     settings: dict = Field(
         default_factory=dict,
-        description=(
-            "Настройки шаблона (ctx.lua.settings.*): общий JSON, разделяемый всеми "
-            "услугами/провайдерами скрипта — напр. учётные данные внешней панели "
-            "(опционально)"
-        ),
+        description="Shared script settings (optional)",
     )
     description: str | None = Field(
-        default=None, max_length=2048, description="Описание (опционально)"
+        default=None, max_length=2048, description="Description (optional)"
     )
 
 
 class LuaScriptPatch(BaseModel):
-    """Обновление существующего Lua-скрипта (передавайте только изменяемые поля)."""
+    """Update Lua script."""
 
     code: str | None = Field(
         default=None,
         min_length=1,
         max_length=100_000,
-        description="Новое тело Lua-скрипта (опционально)",
+        description="New Lua script body (optional)",
     )
     settings: dict | None = Field(
         default=None,
-        description="Новые настройки шаблона (ctx.lua.settings.*), заменяют целиком (опционально)",
+        description="New script settings; replaces all",
     )
 
 

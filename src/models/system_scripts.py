@@ -98,7 +98,7 @@ class SystemScriptsMngr:
     async def create(self, data) -> SystemScriptsModel:
         """Записать тело скрипта в файл со сгенерированным именем и сохранить карту."""
         if await self.by_slug(data.slug):
-            raise HTTPException(status.HTTP_409_CONFLICT, "slug скрипта занят")
+            raise HTTPException(status.HTTP_409_CONFLICT, "script slug already taken")
 
         actions = list(getattr(data, "actions", None) or [])
         self._check_actions(data.kind, actions)
@@ -135,20 +135,20 @@ class SystemScriptsMngr:
             if missing:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
-                    f"payment-скрипт обязан поддерживать: {', '.join(missing)}",
+                    f"payment script must support: {', '.join(missing)}",
                 )
         elif kind == ScriptKind.AUTH:
             missing = [a for a in AuthAction.MANDATORY if a not in actions]
             if missing:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
-                    f"auth-скрипт обязан поддерживать: {', '.join(missing)}",
+                    f"auth script must support: {', '.join(missing)}",
                 )
         elif kind == ScriptKind.SERVICE:
             if actions and ServiceAction.CREATE not in actions:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
-                    "service-скрипт обязан поддерживать действие create",
+                    "service script must support create",
                 )
 
     async def by_id(self, script_id: int) -> SystemScriptsModel | None:
@@ -159,14 +159,14 @@ class SystemScriptsMngr:
         target = self._safe_target(row.filename)
         if not target.exists():
             raise HTTPException(
-                status.HTTP_404_NOT_FOUND, "файл тела скрипта отсутствует"
+                status.HTTP_404_NOT_FOUND, "script body file is missing"
             )
         return target.read_text(encoding="utf-8")
 
     def _safe_target(self, filename: str) -> Path:
         target = (self.dir / filename).resolve()
         if not str(target).startswith(str(self.dir.resolve())):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "недопустимый путь файла")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid file path")
         return target
 
     async def patch(self, script_id: int, data) -> SystemScriptsModel:
@@ -178,7 +178,7 @@ class SystemScriptsMngr:
         """
         row = await self.by_id(script_id)
         if row is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "скрипт не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "script not found")
 
         code = getattr(data, "code", None)
         if code is not None:
@@ -235,12 +235,12 @@ class SystemScriptsMngr:
         """
         row = await self.by_id(script_id)
         if row is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "скрипт не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "script not found")
         refs = await self._references(script_id)
         if refs:
             raise HTTPException(
                 status.HTTP_409_CONFLICT,
-                "скрипт используется и не может быть удалён: " + ", ".join(refs),
+                "script is in use and cannot be deleted: " + ", ".join(refs),
             )
         target = self._safe_target(row.filename)
         if target.exists():

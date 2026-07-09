@@ -15,7 +15,6 @@ from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
 from integrations.triggers import TriggerDispatcher, TriggerEvent
 from schemas.auth import Login, Refresh, Reg, TokenPair
-from utils.apidoc import with_fields
 from utils.sec import jwt as jwtu
 from utils.sec.pwd import dummy_hash, hash_pass, needs_rehash, verify_pass
 
@@ -26,13 +25,10 @@ router = APIRouter()
     "/register",
     response_model=TokenPair,
     status_code=status.HTTP_201_CREATED,
-    summary="Регистрация локального аккаунта",
-    description=with_fields(
-        "Создаёт локальный аккаунт и сразу выдаёт пару токенов (access/refresh). "
-        "Логин и email должны быть свободны. Если передан реферальный код "
-        "существующего пользователя — новый аккаунт привязывается к нему как "
-        "приглашённый.",
-        Reg,
+    summary="Register local account",
+    description=(
+        "Creates a local account and returns access and refresh tokens. If "
+        "`ref_code` matches an existing user, the new account is linked as referred."
     ),
     dependencies=[Depends(rate_limit("auth.register", LimitKind.AUTH))],
 )
@@ -48,7 +44,7 @@ async def register(
         body.email and await mngr.by_email(body.email)
     ):
         raise HTTPException(
-            status.HTTP_409_CONFLICT, "аккаунт с такими данными уже существует"
+            status.HTTP_409_CONFLICT, "account already exists"
         )
 
     acc = await mngr.create(
@@ -67,12 +63,10 @@ async def register(
 @router.post(
     "/login",
     response_model=TokenPair,
-    summary="Вход по логину и паролю",
-    description=with_fields(
-        "Проверяет логин/пароль и выдаёт новую пару токенов. Заблокированный "
-        "(забаненный) аккаунт получает токены как обычно — см. поле "
-        "`is_active` в ответе; доступ к защищённым ручкам ограничивается RBAC.",
-        Login,
+    summary="Login with password",
+    description=(
+        "Checks login and password and returns access and refresh tokens. "
+        "Blocked accounts can still log in but remain restricted by RBAC."
     ),
     dependencies=[Depends(rate_limit("auth.login", LimitKind.AUTH))],
 )
@@ -88,7 +82,7 @@ async def login(
     # Доп. анти-брутфорс поверх общего rate_limit — блокировка по логину и IP.
     await guard.check(body.login, ip)
 
-    acc = await mngr.by_login(body.login)
+    acc = await mngr.by_login_or_email(body.login)
     # Анти-тайминг: путь исполнения (и его длительность) одинаков независимо
     # от существования аккаунта — иначе раннее замыкание раскрывает через
     # разницу во времени ответа, что логин занят (user enumeration).
@@ -96,7 +90,7 @@ async def login(
     pass_ok = verify_pass(pass_hash, body.password)
     if acc is None or not acc.has_pass or not pass_ok:
         await guard.record_fail(body.login, ip)
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "неверный логин или пароль")
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid login or password")
 
     # is_active (бан) больше не блокирует вход — роль banned и так лишена
     # прав через RBAC; клиент получает токены + флаг is_active=false.
@@ -111,12 +105,8 @@ async def login(
 @router.post(
     "/refresh",
     response_model=TokenPair,
-    summary="Ротация пары токенов",
-    description=with_fields(
-        "Выдаёт новую пару токенов по действующему refresh-токену; старый "
-        "refresh-токен отзывается.",
-        Refresh,
-    ),
+    summary="Refresh tokens",
+    description="Rotates the refresh token and returns a new token pair.",
     dependencies=[Depends(rate_limit("auth.refresh", LimitKind.AUTH))],
 )
 async def refresh(
@@ -132,12 +122,8 @@ async def refresh(
 @router.post(
     "/logout",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Выход (отзыв refresh-токена)",
-    description=with_fields(
-        "Отзывает переданный refresh-токен. Возвращает 204 даже если токен уже "
-        "недействителен (идемпотентно).",
-        Refresh,
-    ),
+    summary="Logout",
+    description="Revokes the provided refresh token. Returns 204 even if it is already invalid.",
 )
 async def logout(
     body: Refresh,

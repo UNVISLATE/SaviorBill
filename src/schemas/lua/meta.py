@@ -13,7 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class LuaMeta(BaseModel):
-    """Метаданные и настройки шаблона (``ctx.lua``)."""
+    """Script metadata and settings."""
 
     model_config = ConfigDict(from_attributes=True)
 

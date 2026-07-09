@@ -22,13 +22,8 @@ router = APIRouter(prefix="/api/v1/media", tags=["media"])
 @router.get(
     "/status/{token}",
     response_model=MediaStatus,
-    summary="Статус конвертации медиа",
-    description=(
-        "Опрос статуса обработки загруженного медиа по токену.\n\n"
-        "- `token`: идентификатор медиа/задачи, полученный при загрузке (в пути)\n"
-        "- ответ `state`: `processing` — в обработке; `ready` — готово (есть `url`); "
-        "`failed` — ошибка (см. `error`)."
-    ),
+    summary="Media status",
+    description="Returns the processing status for uploaded media by token.",
 )
 async def media_status(
     request: Request,
@@ -52,7 +47,7 @@ async def media_status(
     # Статус в Valkey мог истечь — источник истины по готовым медиа это БД.
     media = await mngr.by_token(token)
     if media is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "медиа не найдено")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
     return MediaStatus(
         token=token,
         state=media.status,

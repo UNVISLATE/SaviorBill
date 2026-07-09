@@ -103,7 +103,7 @@ class TriggerMngr:
         """
         row = await self.by_id(trig_id)
         if row is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "триггер не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "trigger not found")
         for field, val in data.items():
             setattr(row, field, val)
         await self.s.flush()
@@ -116,7 +116,7 @@ class TriggerMngr:
         """
         row = await self.by_id(trig_id)
         if row is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "триггер не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "trigger not found")
         await self.s.delete(row)
         await self.s.flush()
 

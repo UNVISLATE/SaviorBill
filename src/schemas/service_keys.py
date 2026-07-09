@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class ServiceKeyOut(BaseModel):
-    """Ключ в списке — значение всегда замаскировано (право ``services.keys.read``)."""
+    """Service key (masked)."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -20,7 +20,7 @@ class ServiceKeyOut(BaseModel):
     created_at: datetime
     value: str = Field(
         default="***",
-        description="Всегда замаскировано; реальное значение — через /reveal",
+        description="Always masked; use /reveal",
     )
 
     @classmethod
@@ -37,32 +37,32 @@ class ServiceKeyOut(BaseModel):
 
 
 class ServiceKeyRevealOut(BaseModel):
-    """Раскрытое значение ключа (право ``ownersec.servicekeys.read``)."""
+    """Revealed service key."""
 
     id: int
     value: str
 
 
 class ServiceKeysImportIn(BaseModel):
-    """Массовый импорт ключей — готовый список, без парсинга свободного текста."""
+    """Bulk import service keys."""
 
     values: list[str] = Field(
         min_length=1,
         max_length=5000,
-        description="Готовый список открытых значений ключей (фронт уже разбил текст)",
+        description="Ready list of key values",
     )
 
 
 class ServiceKeysImportOut(BaseModel):
-    """Результат массового импорта."""
+    """Bulk import result."""
 
     added: int
-    skipped: int = Field(description="Пропущено дублей внутри присланного списка")
+    skipped: int = Field(description="Skipped duplicates in request")
     keys: list[ServiceKeyOut]
 
 
 class ServiceStockOut(BaseModel):
-    """Остаток цифровых ключей услуги — вычисляемый статус, не колонка БД."""
+    """Service key stock."""
 
     service_id: int
     available: int

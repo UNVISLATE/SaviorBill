@@ -3,46 +3,56 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
+def _media_url(token: str | None) -> str | None:
+    """Относительный URL медиа (см. ``schemas.media``)."""
+    return f"/media/{token}" if token else None
+
+
 class Reg(BaseModel):
-    """Регистрация локального аккаунта."""
+    """Local account registration."""
 
     login: str = Field(
-        min_length=3, max_length=64, description="Логин (обязательно), 3–64 символа"
+        min_length=3, max_length=64, description="Login (3–64 chars)"
     )
     password: str = Field(
-        min_length=8, max_length=128, description="Пароль (обязательно), 8–128 символов"
+        min_length=8, max_length=128, description="Password (8–128 chars)"
     )
     email: str | None = Field(
-        default=None, max_length=255, description="Email (опционально)"
+        default=None, max_length=255, description="Email (optional)"
     )
     ref_code: str | None = Field(
         default=None,
         max_length=16,
-        description="Реферальный код пригласившего (опционально)",
+        description="Referrer code (optional)",
     )
 
 
 class Login(BaseModel):
-    """Вход по логину и паролю."""
+    """Login by username or email."""
 
-    login: str = Field(min_length=3, max_length=64, description="Логин (обязательно)")
+    login: str = Field(
+        min_length=3,
+        max_length=64,
+        description="Login or email",
+    )
     password: str = Field(
-        min_length=1, max_length=128, description="Пароль (обязательно)"
+        min_length=1, max_length=128, description="Password"
     )
 
 
 class Refresh(BaseModel):
-    """Обновление пары токенов по refresh-токену."""
+    """Refresh token pair."""
 
-    refresh_token: str = Field(description="Refresh-токен (обязательно)")
+    refresh_token: str = Field(description="Refresh token")
 
 
 class TokenPair(BaseModel):
-    """Выданная пара токенов."""
+    """Issued token pair."""
 
     access_token: str
     refresh_token: str
@@ -52,40 +62,39 @@ class TokenPair(BaseModel):
 
 
 class PassResetRequest(BaseModel):
-    """Запрос сброса пароля (по email)."""
+    """Password reset request."""
 
-    email: str = Field(max_length=255, description="Email аккаунта (обязательно)")
+    email: str = Field(max_length=255, description="Account email")
 
 
 class PassResetConfirm(BaseModel):
-    """Подтверждение сброса пароля кодом из письма."""
+    """Confirm password reset."""
 
-    email: str = Field(max_length=255, description="Email аккаунта (обязательно)")
+    email: str = Field(max_length=255, description="Account email")
     code: str = Field(
-        min_length=6, max_length=6, description="6-значный код из письма (обязательно)"
+        min_length=6, max_length=6, description="Email code (6 digits)"
     )
     password: str = Field(
         min_length=8,
         max_length=128,
-        description="Новый пароль (обязательно), 8–128 символов",
+        description="New password (8–128 chars)",
     )
 
 
 class EmailVerifyConfirm(BaseModel):
-    """Подтверждение email числовым кодом из письма."""
+    """Confirm email by code."""
 
     code: str = Field(
         min_length=4,
         max_length=10,
         description=(
-            "Числовой код из письма (длина настраивается через `mail.code_digits`, "
-            "по умолчанию 4 цифры)"
+            "Email code (`mail.code_digits`, default 4)"
         ),
     )
 
 
 class Account(BaseModel):
-    """Публичное представление аккаунта."""
+    """Current account profile."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -97,10 +106,28 @@ class Account(BaseModel):
     role: str | None = None
     ref_code: str | None = None
     created_at: datetime
+    last_login: datetime | None = None
+    balance: Decimal
+    bonus_balance: Decimal
+    avatar_media_id: int | None = None
+    avatar_url: str | None = None
+    oauth_providers: list[str] = Field(
+        default_factory=list,
+        description="Linked OAuth provider slugs",
+    )
 
     @classmethod
-    def from_account(cls, acc) -> "Account":  # noqa: ANN001 — models.UserModel
-        """Собрать DTO из ORM-аккаунта (роль — по имени)."""
+    def from_account(
+        cls, acc, *, oauth_providers: list[str] | None = None
+    ) -> "Account":  # noqa: ANN001 — models.UserModel
+        """Собрать DTO из ORM-аккаунта (роль — по имени).
+
+        :arg acc: ORM-аккаунт (``avatar_media`` должен быть подгружен — это
+            обеспечивает ``lazy="joined"`` на модели, доп. запрос не нужен).
+        :arg oauth_providers: slugs привязанных провайдеров (передаются
+            отдельно — требуют отдельного запроса к ``oauth_conns``, схема
+            их сама не запрашивает).
+        """
         return cls(
             id=acc.id,
             login=acc.login,
@@ -110,11 +137,53 @@ class Account(BaseModel):
             role=acc.role.name if acc.role else None,
             ref_code=acc.ref_code,
             created_at=acc.created_at,
+            last_login=acc.last_login,
+            balance=acc.balance,
+            bonus_balance=acc.bonus_balance,
+            avatar_media_id=acc.avatar_media_id,
+            avatar_url=_media_url(acc.avatar_media.token if acc.avatar_media else None),
+            oauth_providers=list(oauth_providers or []),
         )
 
 
+class MePatch(BaseModel):
+    """Update current account."""
+
+    login: str | None = Field(
+        default=None, min_length=3, max_length=64, description="New login (optional)"
+    )
+    email: str | None = Field(
+        default=None,
+        max_length=255,
+        description="New email; may reset verification",
+    )
+
+
+class PasswordChange(BaseModel):
+    """Change password."""
+
+    current_password: str | None = Field(
+        default=None,
+        max_length=128,
+        description="Current password (required if set)",
+    )
+    new_password: str = Field(
+        min_length=8, max_length=128, description="New password (8–128 chars)"
+    )
+
+
+class AvatarSet(BaseModel):
+    """Set avatar."""
+
+    media_id: int | None = Field(
+        description=(
+            "Uploaded media ID; null removes avatar"
+        )
+    )
+
+
 class AdminMe(BaseModel):
-    """Профиль текущего администратора с правами (для админ-панели)."""
+    """Current admin profile."""
 
     id: int
     login: str
@@ -143,5 +212,8 @@ __all__ = [
     "PassResetConfirm",
     "EmailVerifyConfirm",
     "Account",
+    "MePatch",
+    "PasswordChange",
+    "AvatarSet",
     "AdminMe",
 ]

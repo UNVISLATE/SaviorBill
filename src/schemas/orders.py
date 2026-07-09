@@ -9,16 +9,16 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class OrderCreate(BaseModel):
-    """Заказ услуги. ``promocode`` — опциональная скидка (kind=discount)."""
+    """Create service order."""
 
-    service_id: int = Field(description="ID заказываемой услуги (обязательно)")
+    service_id: int = Field(description="Service ID")
     promocode: str | None = Field(
-        default=None, max_length=64, description="Промокод-скидка (опционально)"
+        default=None, max_length=64, description="Discount promo code (optional)"
     )
 
 
 class Order(BaseModel):
-    """Публичное представление заказа (без приватных данных)."""
+    """Public order."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -26,25 +26,25 @@ class Order(BaseModel):
     service_id: int
     payment_id: int | None = None
     status: str = Field(
-        description="Единый статус услуги: pending/active/frozen/stopped/expired/failed"
+        description="Service status"
     )
     price: Decimal
     discount: Decimal
     public_data: dict
     product_key: str | None = Field(
         default=None,
-        description="Ключ в public_data, отрисовываемый фронтендом как выданный продукт",
+        description="public_data key for issued product",
     )
     product_kind: str | None = Field(
         default=None,
-        description="Тип отображения продукта (напр. text/url) — интерпретирует фронтенд",
+        description="Product display type",
     )
     actions: list = Field(
         default_factory=list,
-        description="Поддерживаемые действия услуги (create/renew/stop/delete/freeze)",
+        description="Supported service actions",
     )
     expires_at: datetime | None = Field(
-        default=None, description="Момент истечения (null — бессрочная)"
+        default=None, description="Expiration time; null = no expiry"
     )
     error: str | None = None
     created_at: datetime
@@ -61,23 +61,23 @@ class Order(BaseModel):
 
 
 class OrderAdmin(Order):
-    """Заказ с приватными данными (для администраторов)."""
+    """Order with private data."""
 
     account_id: int
     private_data: dict
 
 
 class OrderGrant(BaseModel):
-    """Ручная выдача услуги пользователю админом (без оплаты)."""
+    """Grant service manually."""
 
-    account_id: int = Field(description="ID аккаунта-получателя (обязательно)")
-    service_id: int = Field(description="ID выдаваемой услуги (обязательно)")
+    account_id: int = Field(description="Recipient account ID")
+    service_id: int = Field(description="Service ID")
     params: dict | None = Field(
-        default=None, description="Доп. параметры услуги (опционально)"
+        default=None, description="Service params (optional)"
     )
     charge: bool = Field(
         default=False,
-        description="Списать стоимость с баланса пользователя; по умолчанию — дарим (опционально)",
+        description="Charge user balance (optional)",
     )
 
 

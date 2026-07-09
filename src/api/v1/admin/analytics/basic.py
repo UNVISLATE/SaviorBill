@@ -36,7 +36,7 @@ def _mngr(session: AsyncSession = Depends(get_db_session)) -> BasicAnalytics:
     return BasicAnalytics(session)
 
 
-@router.get("/promo", response_model=PromoSummary, summary="Сводка по промокодам")
+@router.get("/promo", response_model=PromoSummary, summary="Promo summary")
 async def promo_summary(mngr: BasicAnalytics = Depends(_mngr)) -> PromoSummary:
     total = await mngr.promo_summary()
     return PromoSummary(total_redemptions=total)
@@ -45,7 +45,7 @@ async def promo_summary(mngr: BasicAnalytics = Depends(_mngr)) -> PromoSummary:
 @router.get(
     "/promo/top",
     response_model=Page[PromoCodeStat],
-    summary="Топ промокодов по числу погашений",
+    summary="Top promo codes",
 )
 async def promo_top(
     pp: PageParams = Depends(page_params),
@@ -64,11 +64,11 @@ async def promo_top(
 
 
 @router.get(
-    "/payments", response_model=PaymentsSummary, summary="Revenue и статусы платежей за период"
+    "/payments", response_model=PaymentsSummary, summary="Payment revenue and statuses"
 )
 async def payments_summary(
-    since: datetime | None = Query(None, description="Начало периода (включительно)"),
-    until: datetime | None = Query(None, description="Конец периода (исключая)"),
+    since: datetime | None = Query(None, description="Period start"),
+    until: datetime | None = Query(None, description="Period end"),
     mngr: BasicAnalytics = Depends(_mngr),
 ) -> PaymentsSummary:
     data = await mngr.payments_summary(since=since, until=until)
@@ -78,11 +78,11 @@ async def payments_summary(
 @router.get(
     "/payments/by-provider",
     response_model=Page[ProviderRevenue],
-    summary="Revenue по платёжному провайдеру",
+    summary="Revenue by provider",
 )
 async def payments_by_provider(
-    since: datetime | None = Query(None, description="Начало периода (включительно)"),
-    until: datetime | None = Query(None, description="Конец периода (исключая)"),
+    since: datetime | None = Query(None, description="Period start"),
+    until: datetime | None = Query(None, description="Period end"),
     pp: PageParams = Depends(page_params),
     mngr: BasicAnalytics = Depends(_mngr),
 ) -> Page[ProviderRevenue]:
@@ -102,7 +102,7 @@ async def payments_by_provider(
 @router.get(
     "/services/top",
     response_model=Page[ServiceSales],
-    summary="Продажи услуг + остаток цифровых ключей",
+    summary="Top services and key stock",
 )
 async def services_top(
     pp: PageParams = Depends(page_params),

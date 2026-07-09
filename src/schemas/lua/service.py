@@ -8,12 +8,7 @@ from pydantic import BaseModel, ConfigDict, field_serializer
 
 
 class LuaService(BaseModel):
-    """Эталонная услуга для Lua-скрипта.
-
-    ``duration`` — первоклассный атрибут услуги (срок действия в секундах), а не
-    настройка. ``settings`` — JSON эталонной услуги (``service.settings.*``),
-    ``params`` — кастом-параметры услуги.
-    """
+    """Reference service for Lua."""
 
     model_config = ConfigDict(from_attributes=True)
 

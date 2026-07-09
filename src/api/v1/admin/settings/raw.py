@@ -21,7 +21,6 @@ from models.user import UserModel
 from schemas.page import Page
 from schemas.settings_raw import SettingRawOut, SettingRawUpsert
 from services.audit import audit
-from utils.apidoc import with_fields
 from utils.pagination import PageParams, page_params, paginate
 from utils.settings_def import by_key
 
@@ -41,12 +40,8 @@ def _is_locked(row: SystemSettingsModel | None, key: str) -> bool:
     "/settings/raw",
     response_model=Page[SettingRawOut],
     dependencies=[Depends(require_perm("settings.raw.read"))],
-    summary="Все строки таблицы settings (raw)",
-    description=(
-        "Постраничный список настроек как есть в БД. Значения зашифрованных "
-        "(`is_secret=true`) записей не раскрываются (`value: null`, "
-        "`editable: false`)."
-    ),
+    summary="Raw settings",
+    description="Paginated settings rows. Secret values are hidden.",
 )
 async def list_settings_raw(
     pp: PageParams = Depends(page_params),
@@ -69,7 +64,7 @@ async def list_settings_raw(
     "/settings/raw/{key}",
     response_model=SettingRawOut,
     dependencies=[Depends(require_perm("settings.raw.read"))],
-    summary="Одна строка таблицы settings (raw)",
+    summary="Get raw setting",
 )
 async def get_setting_raw(
     key: str,
@@ -77,20 +72,15 @@ async def get_setting_raw(
 ) -> SettingRawOut:
     row = await session.get(SystemSettingsModel, key)
     if row is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "настройка не найдена")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "setting not found")
     return SettingRawOut.from_model(row, by_key(key))
 
 
 @router.put(
     "/settings/raw/{key}",
     response_model=SettingRawOut,
-    summary="Создать/изменить значение настройки (raw)",
-    description=with_fields(
-        "Создаёт запись, если ключа ещё нет, либо обновляет значение "
-        "существующей. Запрещено для зашифрованных системных ключей "
-        "(`is_secret=true` в БД или в каталоге настроек) — вернёт 403.",
-        SettingRawUpsert,
-    ),
+    summary="Upsert raw setting",
+    description="Create or update a non-secret setting value.",
 )
 async def upsert_setting_raw(
     request: Request,
@@ -104,7 +94,7 @@ async def upsert_setting_raw(
     if _is_locked(existing, key):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
-            "зашифрованную системную настройку нельзя менять через raw-редактор",
+            "secret system settings cannot be edited here",
         )
     await mngr.set(key, body.value, is_secret=False)
     await audit(
@@ -126,11 +116,8 @@ async def upsert_setting_raw(
 @router.delete(
     "/settings/raw/{key}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Удалить значение (raw)",
-    description=(
-        "Удаляет строку из таблицы settings. Запрещено для зашифрованных "
-        "системных ключей — вернёт 403."
-    ),
+    summary="Delete raw setting",
+    description="Delete a non-secret setting row.",
 )
 async def delete_setting_raw(
     request: Request,
@@ -141,11 +128,11 @@ async def delete_setting_raw(
 ) -> None:
     row = await session.get(SystemSettingsModel, key)
     if row is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "настройка не найдена")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "setting not found")
     if _is_locked(row, key):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
-            "зашифрованную системную настройку нельзя удалить через raw-редактор",
+            "secret system settings cannot be deleted here",
         )
     await session.delete(row)
     await mngr.invalidate(key)

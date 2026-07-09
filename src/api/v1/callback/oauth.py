@@ -15,21 +15,14 @@ router = APIRouter(prefix="/api/v1/callback/oauth", tags=["callback"])
 @router.get(
     "/{provider}",
     response_model=TokenPair,
-    summary="Колбэк OAuth",
-    description=(
-        "Принимает редирект провайдера (code + state). auth-скрипт провайдера "
-        "обменивает код на профиль. Если старт был инициирован вошедшим "
-        "пользователем — учётка привязывается к его аккаунту; иначе аккаунт "
-        "находится/создаётся. Подтверждённый email провайдера верифицирует аккаунт.\n\n"
-        "- `code`: код авторизации от провайдера (обязательно)\n"
-        "- `state`: антифрод-метка, выданная на старте (обязательно)"
-    ),
+    summary="OAuth callback",
+    description="Completes OAuth for the provider redirect and returns tokens for the linked or created account.",
 )
 async def oauth_callback(
     provider: str,
     request: Request,
-    code: str = Query(..., description="Код авторизации от провайдера (обязательно)"),
-    state: str = Query(..., description="Антифрод-метка со старта (обязательно)"),
+    code: str = Query(..., description="provider auth code"),
+    state: str = Query(..., description="request state"),
     svc: OAuthSvc = Depends(get_oauth_svc),
     tokens: TokenSvc = Depends(get_token_svc),
 ) -> TokenPair:
@@ -39,7 +32,7 @@ async def oauth_callback(
     if account_id is not None:
         acc = await svc.s.get(UserModel, account_id)
         if acc is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "аккаунт не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
         await svc.link_to_existing(acc, provider, user)
     else:
         acc = await svc.link_account(provider, user)

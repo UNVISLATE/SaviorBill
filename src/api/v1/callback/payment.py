@@ -84,12 +84,8 @@ async def _notify(svc: PayMngr, triggers: TriggerDispatcher, payment) -> None:
 @router.post(
     "/{provider}",
     response_model=Payment,
-    summary="Колбэк оплаты (webhook)",
-    description=(
-        "Точка вебхука платёжки. Данные запроса (query + тело) передаются в "
-        "callback-скрипт провайдера, который проверяет подпись/секреты и "
-        "определяет результат. Идемпотентно."
-    ),
+    summary="Payment callback",
+    description="Provider webhook endpoint. Passes the request to the provider callback script and handles it idempotently.",
 )
 async def payment_callback(
     provider: str,

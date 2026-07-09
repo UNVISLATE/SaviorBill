@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class CatalogResponse(BaseModel):
-    """Каталог услуг (ответ)."""
+    """Service catalog."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -26,37 +26,37 @@ class CatalogResponse(BaseModel):
 
 
 class CatalogRequest(BaseModel):
-    """Создание каталога (админ)."""
+    """Create catalog."""
 
     name: str = Field(
-        min_length=1, max_length=128, description="Имя каталога (обязательно)"
+        min_length=1, max_length=128, description="Catalog name"
     )
     slug: str = Field(
-        min_length=2, max_length=64, description="Уникальный slug (обязательно)"
+        min_length=2, max_length=64, description="Unique slug"
     )
     parent_id: int | None = Field(
         default=None,
-        description="ID родительского каталога; null — корневой (опционально)",
+        description="Parent catalog ID; null = root",
     )
     description: str | None = Field(
-        default=None, max_length=512, description="Описание (опционально)"
+        default=None, max_length=512, description="Description (optional)"
     )
-    icon: str | None = Field(default=None, description="URL/путь иконки (опционально)")
-    sort: int = Field(default=0, description="Порядок сортировки (опционально)")
+    icon: str | None = Field(default=None, description="Icon URL/path (optional)")
+    sort: int = Field(default=0, description="Sort order (optional)")
     is_active: bool = Field(
-        default=True, description="Активен ли каталог (опционально)"
+        default=True, description="Active (optional)"
     )
 
 
 class CatalogPatch(BaseModel):
-    """Частичное изменение каталога (только переданные поля)."""
+    """Update catalog."""
 
-    name: str | None = Field(default=None, description="Имя каталога")
-    parent_id: int | None = Field(default=None, description="ID родительского каталога")
-    description: str | None = Field(default=None, description="Описание")
-    icon: str | None = Field(default=None, description="URL/путь иконки")
-    sort: int | None = Field(default=None, description="Порядок сортировки")
-    is_active: bool | None = Field(default=None, description="Активен ли каталог")
+    name: str | None = Field(default=None, description="Catalog name")
+    parent_id: int | None = Field(default=None, description="Parent catalog ID")
+    description: str | None = Field(default=None, description="Description")
+    icon: str | None = Field(default=None, description="Icon URL/path")
+    sort: int | None = Field(default=None, description="Sort order")
+    is_active: bool | None = Field(default=None, description="Active")
 
 
 __all__ = [

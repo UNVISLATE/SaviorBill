@@ -6,12 +6,7 @@ from pydantic import BaseModel
 
 
 class LuaAuthProvider(BaseModel):
-    """Данные OAuth-провайдера, прокидываемые в auth-скрипт (``provider.*``).
-
-    ``secrets`` — расшифрованный JSON секретов/уникальных данных провайдера
-    (client_id/secret, endpoints и т.п.); именно отсюда скрипт берёт всё нужное
-    для построения authorize_url и обмена кода. ``extra`` — несекретные настройки.
-    """
+    """OAuth provider data for Lua auth."""
 
     slug: str
     title: str | None = None

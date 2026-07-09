@@ -85,13 +85,13 @@ class VerifySvc:
         :arg acc: аккаунт, запросивший подтверждение email.
         """
         if not acc.email:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "email не задан")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "email not set")
         if acc.is_verified:
-            raise HTTPException(status.HTTP_409_CONFLICT, "email уже подтверждён")
+            raise HTTPException(status.HTTP_409_CONFLICT, "email already verified")
         if not self.sender.configured:
             # По требованию: отсутствие настроенного SMTP — 404 с пояснением.
             raise HTTPException(
-                status.HTTP_404_NOT_FOUND, "отправка почты не настроена"
+                status.HTTP_404_NOT_FOUND, "email sending is not configured"
             )
 
         code = generate_numeric_code(await self._digits())
@@ -120,19 +120,19 @@ class VerifySvc:
         :return: обновлённый аккаунт (``is_verified=True``).
         """
         if acc.is_verified:
-            raise HTTPException(status.HTTP_409_CONFLICT, "email уже подтверждён")
+            raise HTTPException(status.HTTP_409_CONFLICT, "email already verified")
 
         key = _VERIFY + str(acc.id)
         stored = await self.vk.get(key)
         if stored is None:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "код не запрошен или истёк"
+                status.HTTP_400_BAD_REQUEST, "code not requested or expired"
             )
         if not _const_eq(stored, code):
             fails = await self.vk.incr(_VERIFY_FAIL + str(acc.id))
             if fails >= _MAX_FAILS:
                 await self.vk.delete(key)
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "неверный код")
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid code")
 
         await self.vk.delete(key)
         await self.vk.delete(_VERIFY_FAIL + str(acc.id))

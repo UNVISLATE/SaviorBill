@@ -14,7 +14,6 @@ from schemas.email import (
     EmailTemplatePatch,
     EmailTemplateUpload,
 )
-from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -23,7 +22,7 @@ router = APIRouter()
     "/email/templates",
     response_model=list[EmailTemplate],
     dependencies=[Depends(require_perm("email.read"))],
-    summary="Список email-шаблонов",
+    summary="Email templates",
 )
 async def list_templates(
     mngr: EmailMngr = Depends(get_email_templates_mngr),
@@ -36,7 +35,7 @@ async def list_templates(
     "/email/templates/{tpl_id}",
     response_model=EmailTemplateDetail,
     dependencies=[Depends(require_perm("email.read"))],
-    summary="Получить один email-шаблон (с телом)",
+    summary="Get email template",
 )
 async def get_template(
     tpl_id: int,
@@ -44,7 +43,7 @@ async def get_template(
 ) -> EmailTemplateDetail:
     row = await mngr.by_id(tpl_id)
     if row is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "шаблон не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "template not found")
     body = await mngr.read_body(row)
     return EmailTemplateDetail.from_model_with_body(row, body)
 
@@ -54,14 +53,8 @@ async def get_template(
     response_model=EmailTemplate,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("email.create"))],
-    summary="Создать email-шаблон",
-    description=with_fields(
-        (
-            "Сохраняет тело письма (jinja2) в монтируемую папку под сгенерированным "
-            "именем и регистрирует шаблон в БД."
-        ),
-        EmailTemplateUpload,
-    ),
+    summary="Create email template",
+    description="Create an email template and store its body.",
 )
 async def create_template(
     body: EmailTemplateUpload,
@@ -76,11 +69,8 @@ async def create_template(
     "/email/templates/{tpl_id}",
     response_model=EmailTemplate,
     dependencies=[Depends(require_perm("email.edit"))],
-    summary="Изменить поля email-шаблона",
-    description=with_fields(
-        "Частично обновляет email-шаблон — передаются только изменяемые поля.",
-        EmailTemplatePatch,
-    ),
+    summary="Update email template",
+    description="Update template fields.",
 )
 async def patch_template(
     tpl_id: int,
@@ -96,11 +86,8 @@ async def patch_template(
     "/email/templates/{tpl_id}/body",
     response_model=EmailTemplate,
     dependencies=[Depends(require_perm("email.edit"))],
-    summary="Заменить тело email-шаблона",
-    description=with_fields(
-        "Заменяет тело (jinja2) существующего email-шаблона.",
-        EmailBodyPatch,
-    ),
+    summary="Replace email body",
+    description="Replace the template body.",
 )
 async def replace_body(
     tpl_id: int,
@@ -116,7 +103,7 @@ async def replace_body(
     "/email/templates/{tpl_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_perm("email.delete"))],
-    summary="Удалить email-шаблон",
+    summary="Delete email template",
 )
 async def delete_template(
     tpl_id: int, mngr: EmailMngr = Depends(get_email_templates_mngr)

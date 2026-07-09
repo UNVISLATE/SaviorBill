@@ -17,7 +17,6 @@ from schemas.page import Page
 from schemas.payments import PaymentAdmin
 from schemas.user import OAuthConnAdmin, User, UserDetail, UserPatch
 from utils.pagination import PageParams, page_params, paginate
-from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -30,7 +29,7 @@ async def _get_user(session: AsyncSession, user_id: int) -> UserModel:
     """
     acc = await session.get(UserModel, user_id)
     if acc is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "пользователь не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
     return acc
 
 
@@ -38,8 +37,8 @@ async def _get_user(session: AsyncSession, user_id: int) -> UserModel:
     "/users",
     response_model=Page[User],
     dependencies=[Depends(require_perm("users.read"))],
-    summary="Список пользователей",
-    description="Постранично. Требует право users.read.",
+    summary="Users",
+    description="Paginated user list.",
 )
 async def list_users(
     pp: PageParams = Depends(page_params),
@@ -59,11 +58,8 @@ async def list_users(
     "/users/{user_id}",
     response_model=UserDetail,
     dependencies=[Depends(require_perm("users.read"))],
-    summary="Карточка пользователя",
-    description=(
-        "Полная информация о пользователе: профиль, роль, OAuth-привязки и "
-        "счётчики услуг/платежей. Требует право users.read."
-    ),
+    summary="User details",
+    description="Profile, role, OAuth links, and usage counters.",
 )
 async def user_detail(
     user_id: int, session: AsyncSession = Depends(get_db_session)
@@ -90,11 +86,8 @@ async def user_detail(
     "/users/{user_id}",
     response_model=User,
     dependencies=[Depends(require_perm("users.edit"))],
-    summary="Редактировать пользователя",
-    description=with_fields(
-        "Меняет только переданные поля (email, активность, роль, балансы).",
-        UserPatch,
-    ),
+    summary="Update user",
+    description="Update the provided user fields.",
 )
 async def edit_user(
     user_id: int,
@@ -117,8 +110,8 @@ async def edit_user(
     "/users/{user_id}/services",
     response_model=Page[OrderAdmin],
     dependencies=[Depends(require_perm("orders.read"))],
-    summary="Услуги пользователя",
-    description="Выданные услуги пользователя с приватными данными. Право orders.read.",
+    summary="User services",
+    description="User orders with private data.",
 )
 async def user_services(
     user_id: int,
@@ -144,8 +137,8 @@ async def user_services(
     "/users/{user_id}/orders",
     response_model=Page[OrderAdmin],
     dependencies=[Depends(require_perm("orders.read"))],
-    summary="Заказы пользователя",
-    description="Алиас услуг пользователя (для поддержки). Право orders.read.",
+    summary="User orders",
+    description="Alias of user services.",
 )
 async def user_orders(
     user_id: int,
@@ -160,8 +153,8 @@ async def user_orders(
     "/users/{user_id}/payments",
     response_model=Page[PaymentAdmin],
     dependencies=[Depends(require_perm("purchases.read"))],
-    summary="Платежи пользователя",
-    description="Все платежи пользователя с приватными данными. Право purchases.read.",
+    summary="User payments",
+    description="User payments with private data.",
 )
 async def user_payments(
     user_id: int,
@@ -187,8 +180,8 @@ async def user_payments(
     "/users/{user_id}/oauth",
     response_model=list[OAuthConnAdmin],
     dependencies=[Depends(require_perm("users.read"))],
-    summary="OAuth-привязки пользователя",
-    description="Внешние OAuth-учётки, привязанные к аккаунту. Право users.read.",
+    summary="User OAuth links",
+    description="OAuth accounts linked to the user.",
 )
 async def user_oauth(
     user_id: int, session: AsyncSession = Depends(get_db_session)

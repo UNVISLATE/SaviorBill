@@ -24,7 +24,7 @@ def require_perm(path: str) -> Callable:
         perms = acc.role.perms if acc.role else None
         if not has_perm(perms, path):
             raise HTTPException(
-                status.HTTP_403_FORBIDDEN, detail=f"недостаточно прав: {path}"
+                status.HTTP_403_FORBIDDEN, detail=f"insufficient permissions: {path}"
             )
         return acc
 

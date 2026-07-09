@@ -19,21 +19,21 @@ def _check_kind_discount(kind: str, discount_type: str | None) -> None:
     уже сохранённое состояние).
     """
     if kind == PromoKind.DISCOUNT and discount_type is None:
-        raise ValueError("для kind=discount обязателен discount_type")
+        raise ValueError("discount_type is required for kind=discount")
     if kind != PromoKind.DISCOUNT and discount_type is not None:
-        raise ValueError("discount_type допустим только при kind=discount")
+        raise ValueError("discount_type is only allowed for kind=discount")
 
 
 class PromoRedeem(BaseModel):
-    """Активация промокода (bonus или service)."""
+    """Redeem promo code."""
 
     code: str = Field(
-        min_length=2, max_length=64, description="Промокод для активации (обязательно)"
+        min_length=2, max_length=64, description="Promo code"
     )
 
 
 class PromoResult(BaseModel):
-    """Результат активации промокода."""
+    """Promo redemption result."""
 
     kind: str
     message: str
@@ -42,7 +42,7 @@ class PromoResult(BaseModel):
 
 
 class PromoCatalog(BaseModel):
-    """Каталог промокодов (ответ)."""
+    """Promo catalog."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -68,45 +68,38 @@ class PromoCatalog(BaseModel):
 
 
 class PromoCatalogCreate(BaseModel):
-    """Создание каталога промокодов (админ)."""
+    """Create promo catalog."""
 
     name: str = Field(
-        min_length=1, max_length=128, description="Имя каталога (обязательно)"
+        min_length=1, max_length=128, description="Catalog name"
     )
     slug: str = Field(
-        min_length=2, max_length=64, description="Уникальный slug (обязательно)"
+        min_length=2, max_length=64, description="Unique slug"
     )
     kind: str = Field(
         default=PromoKind.BONUS,
-        description="Тип действия: bonus | discount | service (опционально)",
+        description="Action type: bonus | discount | service",
     )
     value: Decimal = Field(
-        default=Decimal("0"), description="Размер бонуса/скидки (опционально)"
+        default=Decimal("0"), description="Bonus/discount value"
     )
     discount_type: str | None = Field(
         default=None,
-        description=(
-            "percent | fixed — обязателен при kind=discount, для остальных "
-            "kind указывать нельзя (опционально)"
-        ),
+        description="Discount type: percent | fixed",
     )
     service_id: int | None = Field(
-        default=None, description="ID услуги для kind=service (опционально)"
+        default=None, description="Service ID for kind=service"
     )
     per_user: int | None = Field(
         default=None,
         ge=1,
-        description=(
-            "Лимит на количество РАЗНЫХ кодов каталога, которые может "
-            "погасить один пользователь; null — без лимита (опционально). "
-            "0 и отрицательные значения запрещены."
-        ),
+        description="Redeem limit per user; null = unlimited",
     )
     conditions: dict = Field(
-        default_factory=dict, description="Условия активации, зарезервировано (опционально)"
+        default_factory=dict, description="Activation conditions (reserved)"
     )
     is_active: bool = Field(
-        default=True, description="Активен ли каталог (опционально)"
+        default=True, description="Active (optional)"
     )
 
     @model_validator(mode="after")
@@ -116,39 +109,30 @@ class PromoCatalogCreate(BaseModel):
 
 
 class PromoCatalogPatch(BaseModel):
-    """Частичное изменение каталога (только переданные поля).
+    """Update promo catalog."""
 
-    Согласованность ``kind``/``discount_type`` при частичном обновлении
-    проверяется не здесь (схема не знает текущее состояние строки), а в
-    :meth:`models.promo_catalogs.PromoCatalogsMngr.update` — по итоговому
-    состоянию (старое значение + патч).
-    """
-
-    name: str | None = Field(default=None, description="Имя каталога")
+    name: str | None = Field(default=None, description="Catalog name")
     kind: str | None = Field(
-        default=None, description="Тип действия: bonus | discount | service"
+        default=None, description="Action type: bonus | discount | service"
     )
-    value: Decimal | None = Field(default=None, description="Размер бонуса/скидки")
+    value: Decimal | None = Field(default=None, description="Bonus/discount value")
     discount_type: str | None = Field(default=None, description="percent | fixed")
     service_id: int | None = Field(
-        default=None, description="ID услуги для kind=service"
+        default=None, description="Service ID for kind=service"
     )
     per_user: int | None = Field(
         default=None,
         ge=1,
-        description=(
-            "Лимит на количество РАЗНЫХ кодов каталога на пользователя; "
-            "null — без лимита. 0 и отрицательные значения запрещены."
-        ),
+        description="Redeem limit per user; null = unlimited",
     )
     conditions: dict | None = Field(
-        default=None, description="Условия активации, зарезервировано"
+        default=None, description="Activation conditions (reserved)"
     )
-    is_active: bool | None = Field(default=None, description="Активен ли каталог")
+    is_active: bool | None = Field(default=None, description="Active")
 
 
 class PromoCode(BaseModel):
-    """Промокод (ответ)."""
+    """Promo code."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -171,31 +155,31 @@ class PromoCode(BaseModel):
 
 
 class PromoCodeBatch(BaseModel):
-    """Выпуск пачки кодов в каталоге (каталог обязателен)."""
+    """Create promo code batch."""
 
-    catalog_id: int = Field(description="ID каталога промокодов (обязательно)")
+    catalog_id: int = Field(description="Promo catalog ID")
     codes: list[str] | None = Field(
         default=None,
-        description="Явные коды; если не заданы — генерируется count штук (опционально)",
+        description="Explicit codes; otherwise generate count",
     )
     count: int = Field(
         default=0,
         ge=0,
         le=10_000,
-        description="Сколько кодов сгенерировать (опционально)",
+        description="Number of codes to generate",
     )
     prefix: str = Field(
         default="",
         max_length=16,
-        description="Префикс генерируемых кодов (опционально)",
+        description="Generated code prefix",
     )
     max_uses: int | None = Field(
         default=None,
         ge=1,
-        description="Лимит активаций кода; null — безлимит (опционально)",
+        description="Activation limit; null = unlimited",
     )
     valid_to: datetime | None = Field(
-        default=None, description="Срок действия кодов; null — бессрочно (опционально)"
+        default=None, description="Valid until; null = no expiry"
     )
 
 

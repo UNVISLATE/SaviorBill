@@ -14,11 +14,8 @@ router = APIRouter()
 @router.get(
     "/me",
     response_model=AdminMe,
-    summary="Профиль администратора",
-    description=(
-        "Текущий аккаунт вместе с деревом прав его роли — для отрисовки "
-        "админ-панели (какие разделы доступны)."
-    ),
+    summary="Admin profile",
+    description="Current account with role permissions.",
 )
 async def admin_me(acc: UserModel = Depends(get_current_acc)) -> AdminMe:
     """Вернуть профиль текущего администратора и его права."""

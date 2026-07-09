@@ -17,7 +17,6 @@ from models.user_services import UserServicesModel
 from schemas.orders import OrderAdmin, OrderGrant
 from schemas.page import Page
 from utils.pagination import PageParams, page_params, paginate
-from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -26,7 +25,7 @@ router = APIRouter()
     "/orders",
     response_model=Page[OrderAdmin],
     dependencies=[Depends(require_perm("orders.read"))],
-    summary="Список выдач",
+    summary="Orders",
 )
 async def list_orders(
     pp: PageParams = Depends(page_params),
@@ -45,14 +44,14 @@ async def list_orders(
     "/orders/{order_id}",
     response_model=OrderAdmin,
     dependencies=[Depends(require_perm("orders.read"))],
-    summary="Карточка выдачи",
+    summary="Order details",
 )
 async def get_order(
     order_id: int, session: AsyncSession = Depends(get_db_session)
 ) -> OrderAdmin:
     usvc = await session.get(UserServicesModel, order_id)
     if usvc is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "выдача не найдена")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "order not found")
     return OrderAdmin.from_model(usvc)
 
 
@@ -61,14 +60,8 @@ async def get_order(
     response_model=OrderAdmin,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("orders.create"))],
-    summary="Выдать услугу вручную",
-    description=with_fields(
-        (
-            "Создаёт выдачу без привязки к платежу (`payment_id = NULL`). "
-            "По умолчанию без списания с баланса (подарок)."
-        ),
-        OrderGrant,
-    ),
+    summary="Grant service",
+    description="Create an order without a payment.",
 )
 async def grant(
     body: OrderGrant,
@@ -79,7 +72,7 @@ async def grant(
 ) -> OrderAdmin:
     acc = await session.get(UserModel, body.account_id)
     if acc is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "пользователь не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
     service = await svc_mngr.get_active(body.service_id)
     usvc = await usvc_mngr.create(acc, service, params=body.params, charge=body.charge)
     await usvc_mngr.s.commit()

@@ -11,8 +11,8 @@ from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
 from integrations.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
+from models.user_oauth import UserOauthMngr
 from schemas.auth import Account, EmailVerifyConfirm
-from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -20,12 +20,8 @@ router = APIRouter()
 @router.post(
     "/me/verify/email/request",
     status_code=status.HTTP_202_ACCEPTED,
-    summary="Запросить подтверждение email",
-    description=(
-        "Отправляет на email аккаунта числовой код подтверждения (длина "
-        "настраивается через `mail.code_digits`, по умолчанию 4 цифры) с "
-        "ограниченным временем жизни. Если SMTP не настроен — возвращает 404."
-    ),
+    summary="Request email verification",
+    description="Sends a short-lived verification code to the account email.",
     dependencies=[
         Depends(require_perm("user.profile.edit")),
         Depends(rate_limit("mail.verify.request", LimitKind.MAIL)),
@@ -47,11 +43,8 @@ async def request_email(
 @router.post(
     "/me/verify/email/confirm",
     response_model=Account,
-    summary="Подтвердить email",
-    description=with_fields(
-        "Подтверждает email по числовому коду из письма (код в теле).",
-        EmailVerifyConfirm,
-    ),
+    summary="Confirm email",
+    description="Confirms the account email using the code from the message.",
     dependencies=[
         Depends(require_perm("user.profile.edit")),
         Depends(rate_limit("mail.verify.confirm", LimitKind.MAIL)),
@@ -75,7 +68,8 @@ async def confirm_email(
         TriggerEvent.USER_VERIFIED,
         {"user": {"id": acc.id, "login": acc.login, "email": acc.email}},
     )
-    return Account.from_account(acc)
+    conns = await UserOauthMngr(svc.s).list_for_account(acc.id)
+    return Account.from_account(acc, oauth_providers=[c.provider for c in conns])
 
 
 __all__ = ["router"]

@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 # --- Шаблоны -----------------------------------------------------------------
 class EmailTemplate(BaseModel):
-    """Зарегистрированный email-шаблон (ответ)."""
+    """Email template."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -25,13 +25,9 @@ class EmailTemplate(BaseModel):
 
 
 class EmailTemplateDetail(EmailTemplate):
-    """Зарегистрированный email-шаблон с телом (ответ на `GET /email/templates/{id}`).
+    """Email template with body."""
 
-    Отдельная схема от списка (`GET /email/templates`), чтобы список не тянул
-    тела всех шаблонов из файлов — тело читается только при запросе одного.
-    """
-
-    body: str = Field(description="Тело письма, jinja2-шаблон")
+    body: str = Field(description="Email body (Jinja2 template)")
 
     @classmethod
     def from_model_with_body(cls, m, body: str) -> "EmailTemplateDetail":  # noqa: ANN001
@@ -48,45 +44,42 @@ class EmailTemplateDetail(EmailTemplate):
 
 
 class EmailTemplateUpload(BaseModel):
-    """Регистрация нового шаблона.
-
-    Имя файла тела генерируется системой. ``subject`` и ``body`` — jinja2.
-    """
+    """Create email template."""
 
     slug: str = Field(
-        min_length=2, max_length=64, description="Уникальный slug шаблона (обязательно)"
+        min_length=2, max_length=64, description="Unique template slug"
     )
     name: str | None = Field(
-        default=None, max_length=128, description="Отображаемое имя (опционально)"
+        default=None, max_length=128, description="Display name (optional)"
     )
     subject: str = Field(
-        max_length=255, description="Тема, jinja2-строка (обязательно)"
+        max_length=255, description="Subject (Jinja2)"
     )
-    body: str = Field(description="Тело письма, jinja2-шаблон (обязательно)")
-    is_html: bool = Field(default=True, description="HTML или plain-text (опционально)")
+    body: str = Field(description="Email body (Jinja2 template)")
+    is_html: bool = Field(default=True, description="HTML or plain text (optional)")
     description: str | None = Field(
-        default=None, max_length=2048, description="Описание (опционально)"
+        default=None, max_length=2048, description="Description (optional)"
     )
 
 
 class EmailTemplatePatch(BaseModel):
-    """Изменение визуальных полей шаблона (без тела)."""
+    """Update template fields."""
 
-    name: str | None = Field(default=None, description="Отображаемое имя")
+    name: str | None = Field(default=None, description="Display name")
     subject: str | None = Field(
-        default=None, max_length=255, description="Тема (jinja2)"
+        default=None, max_length=255, description="Subject (Jinja2)"
     )
-    is_html: bool | None = Field(default=None, description="HTML или plain-text")
+    is_html: bool | None = Field(default=None, description="HTML or plain text")
     description: str | None = Field(
-        default=None, max_length=2048, description="Описание"
+        default=None, max_length=2048, description="Description"
     )
-    is_active: bool | None = Field(default=None, description="Активен ли шаблон")
+    is_active: bool | None = Field(default=None, description="Active")
 
 
 class EmailBodyPatch(BaseModel):
-    """Замена тела существующего шаблона."""
+    """Replace template body."""
 
-    body: str = Field(description="Новое тело письма (jinja2-шаблон)")
+    body: str = Field(description="New email body (Jinja2 template)")
 
 
 __all__ = [

@@ -91,7 +91,7 @@ class ServiceAttachmentMngr:
     async def remove(self, att_id: int) -> None:
         att = await self.by_id(att_id)
         if att is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "вложение не найдено")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "attachment not found")
         await self.s.delete(att)
         await self.s.flush()
 

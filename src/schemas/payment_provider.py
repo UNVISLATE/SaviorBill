@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class PayProvider(BaseModel):
-    """Платёжный провайдер (ответ, без секретов)."""
+    """Payment provider."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -25,55 +25,54 @@ class PayProvider(BaseModel):
 
 
 class PayProviderCreate(BaseModel):
-    """Создание платёжного провайдера."""
+    """Create payment provider."""
 
     slug: str = Field(
         min_length=2,
         max_length=64,
-        description="Уникальный slug провайдера (обязательно)",
+        description="Unique provider slug",
     )
     title: str | None = Field(
-        default=None, description="Отображаемое имя (опционально)"
+        default=None, description="Display name (optional)"
     )
     enabled: bool = Field(
-        default=False, description="Включён ли провайдер (опционально)"
+        default=False, description="Enabled (optional)"
     )
     currency: str = Field(
-        default="RUB", max_length=8, description="Валюта по умолчанию (опционально)"
+        default="RUB", max_length=8, description="Default currency (optional)"
     )
     secrets: dict = Field(
         default_factory=dict,
-        description="JSON секретов/доп-данных платёжки, шифруется при сохранении (опционально)",
+        description="Provider secrets JSON (optional)",
     )
     script_id: int | None = Field(
         default=None,
         description=(
-            "ID единого action-driven lua-скрипта провайдера "
-            "(create/callback/check/refund), опционально"
+            "Unified provider Lua script ID (optional)"
         ),
     )
     extra: dict = Field(
-        default_factory=dict, description="Несекретные доп-параметры (опционально)"
+        default_factory=dict, description="Non-secret extra params (optional)"
     )
 
 
 class PayProviderPatch(BaseModel):
-    """Изменение платёжного провайдера (только переданные поля)."""
+    """Update payment provider."""
 
-    title: str | None = Field(default=None, description="Отображаемое имя")
-    enabled: bool | None = Field(default=None, description="Включён ли провайдер")
-    currency: str | None = Field(default=None, description="Валюта по умолчанию")
+    title: str | None = Field(default=None, description="Display name")
+    enabled: bool | None = Field(default=None, description="Enabled")
+    currency: str | None = Field(default=None, description="Default currency")
     secrets: dict | None = Field(
-        default=None, description="Новый JSON секретов (перешифровывается)"
+        default=None, description="New secrets JSON"
     )
     script_id: int | None = Field(
-        default=None, description="ID единого action-driven lua-скрипта провайдера"
+        default=None, description="Unified provider Lua script ID"
     )
-    extra: dict | None = Field(default=None, description="Несекретные доп-параметры")
+    extra: dict | None = Field(default=None, description="Non-secret extra params")
 
 
 class PayProviderPublic(BaseModel):
-    """Платёжный провайдер для выбора пользователем (минимум полей)."""
+    """Public payment provider."""
 
     model_config = ConfigDict(from_attributes=True)
 

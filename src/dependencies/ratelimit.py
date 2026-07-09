@@ -114,7 +114,7 @@ def rate_limit(scope: str, kind: LimitKind = LimitKind.DEFAULT) -> Callable:
         if not res.allowed:
             raise HTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="слишком много запросов, попробуйте позже",
+                detail="too many requests, try again later",
                 headers={"Retry-After": str(res.retry_after)},
             )
         response.headers["X-RateLimit-Remaining"] = str(res.remaining)

@@ -29,7 +29,7 @@ router = APIRouter(
 @router.get(
     "/summary",
     response_model=AdvancedSummary,
-    summary="Сводка: LTV/churn/ROI (кэшируется в Valkey)",
+    summary="Advanced summary",
 )
 async def advanced_summary(
     session: AsyncSession = Depends(get_db_session),
@@ -47,11 +47,11 @@ async def advanced_summary(
 @router.get(
     "/retention",
     response_model=list[RetentionCohort],
-    summary="Когортный retention (по неделе/дню регистрации)",
+    summary="Retention cohorts",
 )
 async def retention(
-    unit: str = Query("week", pattern="^(day|week)$", description="Единица когорты/периода"),
-    periods: int = Query(8, ge=1, le=52, description="Сколько периодов вперёд считать"),
+    unit: str = Query("week", pattern="^(day|week)$", description="Cohort unit"),
+    periods: int = Query(8, ge=1, le=52, description="Periods to calculate"),
     session: AsyncSession = Depends(get_db_session),
 ) -> list[RetentionCohort]:
     frames = await fetch_frames(session)

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class AuditEntry(BaseModel):
-    """Запись аудит-журнала."""
+    """Audit log entry."""
 
     model_config = ConfigDict(from_attributes=True)
 

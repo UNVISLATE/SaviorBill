@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class Role(BaseModel):
-    """Роль с деревом прав (ответ)."""
+    """Role with permission tree."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -23,28 +23,28 @@ class Role(BaseModel):
 
 
 class RoleCreate(BaseModel):
-    """Создание роли."""
+    """Create role."""
 
     name: str = Field(
-        min_length=2, max_length=64, description="Уникальное имя роли (обязательно)"
+        min_length=2, max_length=64, description="Unique role name"
     )
     title: str | None = Field(
-        default=None, description="Отображаемое название (опционально)"
+        default=None, description="Display title (optional)"
     )
     perms: dict = Field(
-        default_factory=dict, description="Дерево прав роли (опционально)"
+        default_factory=dict, description="Role permission tree (optional)"
     )
 
 
 class RolePatch(BaseModel):
-    """Изменение роли (только переданные поля)."""
+    """Update role."""
 
-    title: str | None = Field(default=None, description="Отображаемое название")
-    perms: dict | None = Field(default=None, description="Дерево прав роли")
+    title: str | None = Field(default=None, description="Display title")
+    perms: dict | None = Field(default=None, description="Role permission tree")
 
 
 class PermsCatalog(BaseModel):
-    """Каталог прав для назначения ролям."""
+    """Permission catalog."""
 
     flat: list[str]
     tree: dict

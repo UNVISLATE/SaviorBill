@@ -76,11 +76,11 @@ class ServiceCatalogsMngr:
                 ServiceCatalogsModel.slug == data["slug"]
             )
         ):
-            raise HTTPException(status.HTTP_409_CONFLICT, "slug каталога занят")
+            raise HTTPException(status.HTTP_409_CONFLICT, "catalog slug already taken")
         parent_id = data.get("parent_id")
         if parent_id is not None and await self.by_id(parent_id) is None:
             raise HTTPException(
-                status.HTTP_404_NOT_FOUND, "родительский каталог не найден"
+                status.HTTP_404_NOT_FOUND, "parent catalog not found"
             )
         cat = ServiceCatalogsModel(**data)
         self.s.add(cat)
@@ -90,10 +90,10 @@ class ServiceCatalogsMngr:
     async def update(self, catalog_id: int, data: dict) -> ServiceCatalogsModel:
         cat = await self.by_id(catalog_id)
         if cat is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "каталог не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog not found")
         if data.get("parent_id") == catalog_id:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "каталог не может быть сам себе родителем"
+                status.HTTP_400_BAD_REQUEST, "catalog cannot be its own parent"
             )
         for field, value in data.items():
             setattr(cat, field, value)
@@ -103,7 +103,7 @@ class ServiceCatalogsMngr:
     async def delete(self, catalog_id: int) -> None:
         cat = await self.by_id(catalog_id)
         if cat is None:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "каталог не найден")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog not found")
         await self.s.delete(cat)
         await self.s.flush()
 

@@ -24,16 +24,13 @@ router = APIRouter()
     "/audit",
     response_model=Page[AuditEntry],
     dependencies=[Depends(require_perm("audit.read"))],
-    summary="Аудит-журнал",
-    description=(
-        "Постраничный просмотр append-only журнала аудита. Опциональные фильтры: по действию (`action`) и актору "
-        "(`actor_account_id`)."
-    ),
+    summary="Audit log",
+    description="Paginated audit log with optional action and actor filters.",
 )
 async def list_audit(
-    action: str | None = Query(None, description="Фильтр по действию (опционально)"),
+    action: str | None = Query(None, description="Action filter"),
     actor_account_id: int | None = Query(
-        None, ge=0, description="Фильтр по актору (опционально)"
+        None, ge=0, description="Actor filter"
     ),
     pp: PageParams = Depends(page_params),
     session: AsyncSession = Depends(get_db_session),

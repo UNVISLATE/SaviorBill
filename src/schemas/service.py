@@ -19,13 +19,13 @@ def _check_delivery(v: str) -> str:
     known = known_delivery_kinds()
     if v not in known:
         raise ValueError(
-            f"неизвестный способ доставки: {v!r} (доступны: {', '.join(known)})"
+            f"unknown delivery kind: {v!r} (available: {', '.join(known)})"
         )
     return v
 
 
 class Service(BaseModel):
-    """Услуга в публичном каталоге (ответ)."""
+    """Service in public catalog."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -38,15 +38,12 @@ class Service(BaseModel):
     currency: str
     delivery: str
     attachments: list[Attachment] = Field(
-        default_factory=list, description="Медиа-вложения товара (фото/видео)"
+        default_factory=list, description="Product media attachments"
     )
     is_active: bool
     out_of_stock: bool | None = Field(
         default=None,
-        description=(
-            "Только для delivery=key: закончились ли свободные ключи. "
-            "Вычисляется на лету, не хранится в БД. null для delivery=lua."
-        ),
+        description="Out of stock for key delivery; null = lua delivery",
     )
 
     @classmethod
@@ -75,17 +72,14 @@ class Service(BaseModel):
 
 
 class ServiceAdmin(Service):
-    """Услуга с административными полями (ответ)."""
+    """Service with admin fields."""
 
     lua_script_id: int | None = None
     params: dict
     settings: dict
     warnings: list[str] = Field(
         default_factory=list,
-        description=(
-            "Некритичные предупреждения операции (например, деактивация услуги "
-            "с активными выдачами) — не блокируют выполнение."
-        ),
+        description="Non-blocking warnings",
     )
 
     @classmethod
@@ -112,37 +106,37 @@ class ServiceAdmin(Service):
 
 
 class ServiceCreate(BaseModel):
-    """Создание услуги (админ)."""
+    """Create service."""
 
     slug: str = Field(
-        min_length=2, max_length=64, description="Уникальный slug услуги (обязательно)"
+        min_length=2, max_length=64, description="Unique service slug"
     )
     name: str = Field(
-        min_length=1, max_length=128, description="Название услуги (обязательно)"
+        min_length=1, max_length=128, description="Service name"
     )
-    description: str | None = Field(default=None, description="Описание (опционально)")
+    description: str | None = Field(default=None, description="Description (optional)")
     catalog_id: int | None = Field(
-        default=None, description="ID каталога; null — корневая (опционально)"
+        default=None, description="Catalog ID; null = root"
     )
     price: Decimal = Field(
-        default=Decimal("0"), ge=0, description="Цена ≥ 0 (опционально)"
+        default=Decimal("0"), ge=0, description="Price ≥ 0"
     )
     currency: str = Field(
-        default="RUB", max_length=8, description="Валюта (опционально)"
+        default="RUB", max_length=8, description="Currency"
     )
     delivery: str = Field(
-        default="key", description="Способ выдачи: key | lua (опционально)"
+        default="key", description="Delivery method: key | lua"
     )
     lua_script_id: int | None = Field(
-        default=None, description="ID lua-скрипта для delivery=lua (опционально)"
+        default=None, description="Lua script ID for delivery=lua"
     )
     params: dict = Field(
-        default_factory=dict, description="Параметры выдачи (опционально)"
+        default_factory=dict, description="Delivery params"
     )
     settings: dict = Field(
-        default_factory=dict, description="Настройки услуги (опционально)"
+        default_factory=dict, description="Service settings"
     )
-    is_active: bool = Field(default=True, description="Активна ли услуга (опционально)")
+    is_active: bool = Field(default=True, description="Active")
 
     @field_validator("delivery")
     @classmethod
@@ -151,18 +145,18 @@ class ServiceCreate(BaseModel):
 
 
 class ServicePatch(BaseModel):
-    """Частичное изменение услуги (только переданные поля)."""
+    """Update service."""
 
-    name: str | None = Field(default=None, description="Название услуги")
-    description: str | None = Field(default=None, description="Описание")
-    catalog_id: int | None = Field(default=None, description="ID каталога")
-    price: Decimal | None = Field(default=None, description="Цена")
-    currency: str | None = Field(default=None, description="Валюта")
-    delivery: str | None = Field(default=None, description="Способ выдачи: key | lua")
-    lua_script_id: int | None = Field(default=None, description="ID lua-скрипта")
-    params: dict | None = Field(default=None, description="Параметры выдачи")
-    settings: dict | None = Field(default=None, description="Настройки услуги")
-    is_active: bool | None = Field(default=None, description="Активна ли услуга")
+    name: str | None = Field(default=None, description="Service name")
+    description: str | None = Field(default=None, description="Description")
+    catalog_id: int | None = Field(default=None, description="Catalog ID")
+    price: Decimal | None = Field(default=None, description="Price")
+    currency: str | None = Field(default=None, description="Currency")
+    delivery: str | None = Field(default=None, description="Delivery method: key | lua")
+    lua_script_id: int | None = Field(default=None, description="Lua script ID")
+    params: dict | None = Field(default=None, description="Delivery params")
+    settings: dict | None = Field(default=None, description="Service settings")
+    is_active: bool | None = Field(default=None, description="Active")
 
     @field_validator("delivery")
     @classmethod

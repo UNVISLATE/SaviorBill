@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class User(BaseModel):
-    """Аккаунт пользователя (ответ)."""
+    """User account."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -32,33 +32,25 @@ class User(BaseModel):
 
 
 class UserPatch(BaseModel):
-    """Частичное редактирование аккаунта (только переданные поля).
-
-    Активность/верификация — производные от роли, поэтому меняются через
-    ``role_id`` (напр. назначить роль ``banned`` = заблокировать, ``user`` =
-    верифицировать), а не отдельными флагами.
-    """
+    """Update user account."""
 
     email: str | None = Field(
-        default=None, max_length=255, description="Новый email (опционально)"
+        default=None, max_length=255, description="New email (optional)"
     )
     role_id: int | None = Field(
         default=None,
-        description=(
-            "ID роли (опционально). Управляет активностью/верификацией: "
-            "роль banned = блокировка, user = верификация."
-        ),
+        description="Role ID; controls block/verify",
     )
     balance: Decimal | None = Field(
-        default=None, description="Новый основной баланс (опционально)"
+        default=None, description="New main balance (optional)"
     )
     bonus_balance: Decimal | None = Field(
-        default=None, description="Новый бонусный баланс (опционально)"
+        default=None, description="New bonus balance (optional)"
     )
 
 
 class OAuthConnAdmin(BaseModel):
-    """OAuth-привязка пользователя (для админ-просмотра)."""
+    """User OAuth link."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -75,7 +67,7 @@ class OAuthConnAdmin(BaseModel):
 
 
 class UserDetail(BaseModel):
-    """Полная карточка пользователя для администратора."""
+    """Full user details."""
 
     id: int
     login: str

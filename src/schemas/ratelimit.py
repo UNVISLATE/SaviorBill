@@ -6,31 +6,21 @@ from pydantic import BaseModel, Field
 
 
 class RateLimitRule(BaseModel):
-    """Действующее правило лимита для категории.
+    """Active rate limit rule."""
 
-    :arg kind: категория лимита (default/auth/mail/sensitive).
-    :arg max_hits: максимум обращений в окне.
-    :arg window: размер окна в секундах.
-    :arg overridden: задано ли значение вручную (иначе — ENV-дефолт).
-    """
-
-    kind: str = Field(description="Категория лимита (обязательно)")
-    max_hits: int = Field(description="Максимум обращений в окне (обязательно)")
-    window: int = Field(description="Размер окна в секундах (обязательно)")
+    kind: str = Field(description="Limit category")
+    max_hits: int = Field(description="Max requests in window")
+    window: int = Field(description="Window size in seconds")
     overridden: bool = Field(
-        description="True — значение переопределено админом; False — ENV-дефолт"
+        description="True = admin override; False = ENV default"
     )
 
 
 class RateLimitPatch(BaseModel):
-    """Переопределение правила лимита категории.
+    """Override rate limit rule."""
 
-    - `max_hits`: максимум обращений в окне (обязательно)
-    - `window`: размер окна в секундах (обязательно)
-    """
-
-    max_hits: int = Field(gt=0, description="Максимум обращений в окне (обязательно)")
-    window: int = Field(gt=0, description="Размер окна в секундах (обязательно)")
+    max_hits: int = Field(gt=0, description="Max requests in window")
+    window: int = Field(gt=0, description="Window size in seconds")
 
 
 __all__ = ["RateLimitRule", "RateLimitPatch"]

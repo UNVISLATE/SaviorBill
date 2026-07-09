@@ -33,18 +33,18 @@ def page_params(
         50,
         ge=1,
         le=200,
-        description="Размер страницы — сколько записей отдать (опционально)",
+        description="Page size — how many records to return",
     ),
     offset: int | None = Query(
         None,
         ge=0,
-        description="Приоритетное смещение выборки. Если задан — pass игнорируется (опционально)",
+        description="Explicit offset; if set, `pass` is ignored",
     ),
     skip: int = Query(
         0,
         ge=0,
         alias="pass",
-        description="Сколько записей пропустить, если offset не задан — для динамической подгрузки (опционально)",
+        description="Records to skip when `offset` is not set (for infinite scroll)",
     ),
 ) -> PageParams:
     """FastAPI-зависимость: свести ``limit``/``offset``/``pass`` к :class:`PageParams`.

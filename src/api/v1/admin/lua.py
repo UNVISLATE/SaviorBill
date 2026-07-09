@@ -9,7 +9,6 @@ from dependencies.rbac import require_perm
 from models.user import UserModel
 from schemas.lua import LuaScript, LuaScriptDetail, LuaScriptUpload, LuaScriptPatch
 from services.audit import audit
-from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -27,7 +26,7 @@ def _actor(request: Request, acc: UserModel) -> dict:
     "/lua",
     response_model=list[LuaScript],
     dependencies=[Depends(require_perm("lua.read"))],
-    summary="Список Lua-скриптов",
+    summary="Lua scripts",
 )
 async def list_scripts(
     mngr: SystemScriptsMngr = Depends(get_script_mngr),
@@ -40,7 +39,7 @@ async def list_scripts(
     "/lua/{script_id}",
     response_model=LuaScriptDetail,
     dependencies=[Depends(require_perm("lua.read"))],
-    summary="Получить один Lua-скрипт (с телом)",
+    summary="Get Lua script",
 )
 async def get_script(
     script_id: int,
@@ -48,7 +47,7 @@ async def get_script(
 ) -> LuaScriptDetail:
     row = await mngr.by_id(script_id)
     if row is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "скрипт не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "script not found")
     code = await mngr.read_code(row)
     return LuaScriptDetail.from_model_with_code(row, code)
 
@@ -57,14 +56,8 @@ async def get_script(
     "/lua",
     response_model=LuaScript,
     status_code=status.HTTP_201_CREATED,
-    summary="Загрузить Lua-скрипт",
-    description=with_fields(
-        (
-            "Сохраняет тело скрипта в монтируемую папку под сгенерированным именем "
-            "и регистрирует в БД."
-        ),
-        LuaScriptUpload,
-    ),
+    summary="Upload Lua script",
+    description="Upload a Lua script and register it.",
 )
 async def upload_script(
     request: Request,
@@ -88,11 +81,8 @@ async def upload_script(
 @router.patch(
     "/lua/{script_id}",
     response_model=LuaScript,
-    summary="Изменить Lua-скрипт (тело и/или настройки)",
-    description=with_fields(
-        "Обновляет тело и/или настройки существующего Lua-скрипта.",
-        LuaScriptPatch,
-    ),
+    summary="Update Lua script",
+    description="Update a Lua script.",
 )
 async def edit_script(
     request: Request,
@@ -116,7 +106,7 @@ async def edit_script(
 @router.delete(
     "/lua/{script_id}",
     status_code=status.HTTP_204_NO_CONTENT,
-    summary="Удалить Lua-скрипт",
+    summary="Delete Lua script",
 )
 async def delete_script(
     request: Request,

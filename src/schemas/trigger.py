@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class Trigger(BaseModel):
-    """Триггер (ответ)."""
+    """Trigger."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -29,51 +29,47 @@ class Trigger(BaseModel):
 
 
 class TriggerCreate(BaseModel):
-    """Создание триггера.
-
-    ``action`` — ключ действия (``email``/``lua``). ``config`` — его параметры
-    (email: ``template_id``/``to_field``; lua: ``script_id``).
-    """
+    """Create trigger."""
 
     name: str | None = Field(
-        default=None, max_length=128, description="Имя триггера (опционально)"
+        default=None, max_length=128, description="Trigger name (optional)"
     )
     event: str = Field(
-        min_length=2, max_length=64, description="Событие-условие (обязательно)"
+        min_length=2, max_length=64, description="Event condition"
     )
     action: str = Field(
         min_length=2,
         max_length=32,
-        description="Ключ действия: email | lua (обязательно)",
+        description="Action key: email | lua",
     )
     config: dict = Field(
-        default_factory=dict, description="Параметры действия (опционально)"
+        default_factory=dict, description="Action params (optional)"
     )
     cond: dict = Field(
-        default_factory=dict, description="Доп-условия срабатывания (опционально)"
+        default_factory=dict, description="Extra conditions (optional)"
     )
     is_active: bool = Field(
-        default=True, description="Активен ли триггер (опционально)"
+        default=True, description="Active (optional)"
     )
 
 
 class TriggerPatch(BaseModel):
-    """Изменение триггера (только переданные поля)."""
+    """Update trigger."""
 
-    name: str | None = Field(default=None, description="Имя триггера")
+    name: str | None = Field(default=None, description="Trigger name")
     event: str | None = Field(
-        default=None, min_length=2, max_length=64, description="Событие-условие"
+        default=None, min_length=2, max_length=64, description="Event condition"
     )
     action: str | None = Field(
-        default=None, min_length=2, max_length=32, description="Ключ действия"
+        default=None, min_length=2, max_length=32, description="Action key"
     )
-    config: dict | None = Field(default=None, description="Параметры действия")
-    cond: dict | None = Field(default=None, description="Доп-условия срабатывания")
-    is_active: bool | None = Field(default=None, description="Активен ли триггер")
+    config: dict | None = Field(default=None, description="Action params")
+    cond: dict | None = Field(default=None, description="Extra conditions")
+    is_active: bool | None = Field(default=None, description="Active")
 
 
 class TriggerMeta(BaseModel):
-    """Справочник для UI: доступные события и действия."""
+    """Available events and actions."""
 
     events: list[str]
     actions: list[str]

@@ -12,7 +12,6 @@ from models.roles import Role as RoleModel
 from models.user import UserModel
 from schemas.role import PermsCatalog, RoleCreate, Role, RolePatch
 from services.audit import audit
-from utils.apidoc import with_fields
 from utils.rbac import all_perms, perms_tree
 
 router = APIRouter()
@@ -22,11 +21,8 @@ router = APIRouter()
     "/perms",
     response_model=PermsCatalog,
     dependencies=[Depends(require_perm("roles.read"))],
-    summary="Каталог прав",
-    description=(
-        "Все объявленные в приложении права (плоский список и дерево) — для "
-        "удобного назначения ролям из админ-панели."
-    ),
+    summary="Permissions catalog",
+    description="List all available permissions for roles.",
 )
 async def perms_catalog() -> PermsCatalog:
     return PermsCatalog(flat=all_perms(), tree=perms_tree())
@@ -36,7 +32,7 @@ async def perms_catalog() -> PermsCatalog:
     "/roles",
     response_model=list[Role],
     dependencies=[Depends(require_perm("roles.read"))],
-    summary="Список ролей",
+    summary="Roles",
 )
 async def list_roles(session: AsyncSession = Depends(get_db_session)) -> list[Role]:
     rows = await session.scalars(select(RoleModel).order_by(RoleModel.id))
@@ -47,11 +43,8 @@ async def list_roles(session: AsyncSession = Depends(get_db_session)) -> list[Ro
     "/roles",
     response_model=Role,
     status_code=status.HTTP_201_CREATED,
-    summary="Создать роль",
-    description=with_fields(
-        "Создаёт роль с набором прав.",
-        RoleCreate,
-    ),
+    summary="Create role",
+    description="Create a role.",
 )
 async def create_role(
     request: Request,
@@ -60,7 +53,7 @@ async def create_role(
     acc: UserModel = Depends(require_perm("roles.create")),
 ) -> Role:
     if await session.scalar(select(RoleModel).where(RoleModel.name == body.name)):
-        raise HTTPException(status.HTTP_409_CONFLICT, "роль с таким именем уже есть")
+        raise HTTPException(status.HTTP_409_CONFLICT, "role name already exists")
     role = RoleModel(name=body.name, title=body.title, perms=body.perms)
     session.add(role)
     await session.flush()
@@ -81,14 +74,8 @@ async def create_role(
 @router.patch(
     "/roles/{role_id}",
     response_model=Role,
-    summary="Изменить роль",
-    description=with_fields(
-        "Частично обновляет роль — передаются только изменяемые поля. "
-        "Права (`perms`) системных ролей (`is_system=true`) менять можно так же, "
-        "как и у обычных — системность защищает только сам факт существования "
-        "и стабильный `key` роли, не набор прав.",
-        RolePatch,
-    ),
+    summary="Update role",
+    description="Update a role.",
 )
 async def update_role(
     request: Request,
@@ -99,7 +86,7 @@ async def update_role(
 ) -> Role:
     role = await session.get(RoleModel, role_id)
     if role is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "роль не найдена")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "role not found")
     data = body.model_dump(exclude_unset=True)
     if "title" in data:
         role.title = data["title"]

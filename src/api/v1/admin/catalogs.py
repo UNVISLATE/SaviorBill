@@ -7,7 +7,6 @@ from fastapi import APIRouter, Depends, status
 from dependencies.catalog import ServiceCatalogsMngr, get_catalog_mngr
 from dependencies.rbac import require_perm
 from schemas.catalog import CatalogRequest, CatalogResponse, CatalogPatch
-from utils.apidoc import with_fields
 
 router = APIRouter()
 
@@ -16,7 +15,7 @@ router = APIRouter()
     "/catalogs",
     response_model=list[CatalogResponse],
     dependencies=[Depends(require_perm("catalogs.read"))],
-    summary="Список каталогов",
+    summary="Catalogs",
 )
 async def list_catalogs(
     mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr),
@@ -30,12 +29,8 @@ async def list_catalogs(
     response_model=CatalogResponse,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("catalogs.create"))],
-    summary="Создать каталог",
-    description=with_fields(
-        "Создаёт каталог услуг. Каталог может быть подкаталогом другого "
-        "(`parent_id`) или корневым.",
-        CatalogRequest,
-    ),
+    summary="Create catalog",
+    description="Create a service catalog.",
 )
 async def create_catalog(
     body: CatalogRequest, mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr)
@@ -49,11 +44,8 @@ async def create_catalog(
     "/catalogs/{catalog_id}",
     response_model=CatalogResponse,
     dependencies=[Depends(require_perm("catalogs.edit"))],
-    summary="Изменить каталог",
-    description=with_fields(
-        "Частично обновляет каталог — передаются только изменяемые поля.",
-        CatalogPatch,
-    ),
+    summary="Update catalog",
+    description="Update a service catalog.",
 )
 async def update_catalog(
     catalog_id: int,
@@ -69,7 +61,7 @@ async def update_catalog(
     "/catalogs/{catalog_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_perm("catalogs.delete"))],
-    summary="Удалить каталог",
+    summary="Delete catalog",
 )
 async def delete_catalog(
     catalog_id: int, mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr)

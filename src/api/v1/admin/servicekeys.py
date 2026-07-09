@@ -29,7 +29,6 @@ from schemas.service_keys import (
     ServiceKeysImportOut,
     ServiceStockOut,
 )
-from utils.apidoc import with_fields
 from utils.pagination import PageParams, page_params, paginate
 from sqlalchemy import select
 
@@ -39,7 +38,7 @@ router = APIRouter()
 async def _get_service_or_404(service_id: int, svc_mngr: ServiceMngr):
     service = await svc_mngr.by_id(service_id)
     if service is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "услуга не найдена")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
     return service
 
 
@@ -47,7 +46,7 @@ async def _get_service_or_404(service_id: int, svc_mngr: ServiceMngr):
     "/services/{service_id}/keys",
     response_model=Page[ServiceKeyOut],
     dependencies=[Depends(require_perm("services.keys.read"))],
-    summary="Список ключей услуги (значения замаскированы)",
+    summary="Service keys",
 )
 async def list_keys(
     service_id: int,
@@ -75,7 +74,7 @@ async def list_keys(
     "/services/{service_id}/keys/stock",
     response_model=ServiceStockOut,
     dependencies=[Depends(require_perm("services.keys.read"))],
-    summary="Остаток ключей (вычисляемый, не колонка БД)",
+    summary="Key stock",
 )
 async def keys_stock(
     service_id: int,
@@ -91,12 +90,8 @@ async def keys_stock(
     "/services/{service_id}/keys/{key_id}/reveal",
     response_model=ServiceKeyRevealOut,
     dependencies=[Depends(require_perm("ownersec.servicekeys.read"))],
-    summary="Раскрыть значение ключа (отдельное право)",
-    description=(
-        "Возвращает расшифрованное значение ключа. Требует отдельного права "
-        "`ownersec.servicekeys.read`, не входящего в обычное `services.*` — "
-        "чтобы секрет нельзя было случайно раскрыть выдачей общего read-доступа."
-    ),
+    summary="Reveal key",
+    description="Return the decrypted key value. Requires ownersec.servicekeys.read.",
 )
 async def reveal_key(
     service_id: int,
@@ -107,7 +102,7 @@ async def reveal_key(
     await _get_service_or_404(service_id, svc_mngr)
     key = await mngr.by_id(key_id)
     if key is None or key.service_id != service_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "ключ не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "key not found")
     return ServiceKeyRevealOut(id=key.id, value=mngr.reveal(key))
 
 
@@ -116,13 +111,8 @@ async def reveal_key(
     response_model=ServiceKeysImportOut,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("services.keys.create"))],
-    summary="Массовый импорт ключей",
-    description=with_fields(
-        "Принимает готовый JSON-список открытых значений (разбор свободного "
-        "текста — задача фронтенда, не бэкенда). Дедупликация — только в "
-        "пределах присланного списка.",
-        ServiceKeysImportIn,
-    ),
+    summary="Import keys",
+    description="Import plaintext keys for a service.",
 )
 async def import_keys(
     service_id: int,
@@ -144,7 +134,7 @@ async def import_keys(
     "/services/{service_id}/keys/{key_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_perm("services.keys.delete"))],
-    summary="Удалить ключ из пула",
+    summary="Delete key",
 )
 async def delete_key(
     service_id: int,
@@ -155,7 +145,7 @@ async def delete_key(
     await _get_service_or_404(service_id, svc_mngr)
     key = await mngr.by_id(key_id)
     if key is None or key.service_id != service_id:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "ключ не найден")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "key not found")
     await mngr.delete(key_id)
     await mngr.s.commit()
 

@@ -166,12 +166,12 @@ class PromoCatalogsMngr:
             if discount_type is None:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
-                    "для kind=discount обязателен discount_type",
+                    "discount_type is required for kind=discount",
                 )
         elif discount_type is not None:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
-                "discount_type допустим только при kind=discount",
+                "discount_type is only allowed for kind=discount",
             )
 
     async def delete(self, catalog_id: int) -> None:
