@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from dependencies.rbac import require_perm
 from dependencies.triggers import get_trigger_mngr
@@ -36,6 +36,22 @@ async def list_triggers(
 ) -> list[Trigger]:
     rows = await mngr.list_all()
     return [Trigger.from_model(r) for r in rows]
+
+
+@router.get(
+    "/triggers/{trig_id}",
+    response_model=Trigger,
+    dependencies=[Depends(require_perm("triggers.read"))],
+    summary="Получить один триггер",
+)
+async def get_trigger(
+    trig_id: int,
+    mngr: TriggerMngr = Depends(get_trigger_mngr),
+) -> Trigger:
+    row = await mngr.by_id(trig_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "триггер не найден")
+    return Trigger.from_model(row)
 
 
 @router.post(

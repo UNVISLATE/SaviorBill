@@ -24,6 +24,29 @@ class EmailTemplate(BaseModel):
         return cls.model_validate(m)
 
 
+class EmailTemplateDetail(EmailTemplate):
+    """Зарегистрированный email-шаблон с телом (ответ на `GET /email/templates/{id}`).
+
+    Отдельная схема от списка (`GET /email/templates`), чтобы список не тянул
+    тела всех шаблонов из файлов — тело читается только при запросе одного.
+    """
+
+    body: str = Field(description="Тело письма, jinja2-шаблон")
+
+    @classmethod
+    def from_model_with_body(cls, m, body: str) -> "EmailTemplateDetail":  # noqa: ANN001
+        """Явное преобразование ORM-шаблона + прочитанного тела в схему ответа."""
+        return cls(
+            id=m.id,
+            slug=m.slug,
+            name=m.name,
+            subject=m.subject,
+            is_html=m.is_html,
+            is_active=m.is_active,
+            body=body,
+        )
+
+
 class EmailTemplateUpload(BaseModel):
     """Регистрация нового шаблона.
 
@@ -68,6 +91,7 @@ class EmailBodyPatch(BaseModel):
 
 __all__ = [
     "EmailTemplate",
+    "EmailTemplateDetail",
     "EmailTemplateUpload",
     "EmailTemplatePatch",
     "EmailBodyPatch",

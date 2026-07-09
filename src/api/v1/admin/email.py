@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from dependencies.email import get_email_templates_mngr
 from dependencies.rbac import require_perm
@@ -10,6 +10,7 @@ from models.email_templates import EmailMngr
 from schemas.email import (
     EmailBodyPatch,
     EmailTemplate,
+    EmailTemplateDetail,
     EmailTemplatePatch,
     EmailTemplateUpload,
 )
@@ -29,6 +30,23 @@ async def list_templates(
 ) -> list[EmailTemplate]:
     rows = await mngr.list_all()
     return [EmailTemplate.from_model(r) for r in rows]
+
+
+@router.get(
+    "/email/templates/{tpl_id}",
+    response_model=EmailTemplateDetail,
+    dependencies=[Depends(require_perm("email.read"))],
+    summary="Получить один email-шаблон (с телом)",
+)
+async def get_template(
+    tpl_id: int,
+    mngr: EmailMngr = Depends(get_email_templates_mngr),
+) -> EmailTemplateDetail:
+    row = await mngr.by_id(tpl_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "шаблон не найден")
+    body = await mngr.read_body(row)
+    return EmailTemplateDetail.from_model_with_body(row, body)
 
 
 @router.post(
