@@ -5,9 +5,23 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from enums import DiscountType, PromoKind
+from enums import PromoKind
+
+
+def _check_kind_discount(kind: str, discount_type: str | None) -> None:
+    """Проверить согласованность ``kind``/``discount_type`` на входе.
+
+    Дублирует :meth:`models.promo_catalogs.PromoCatalogsMngr.
+    _validate_kind_discount` — здесь для быстрого отказа на границе API
+    (422 вместо похода в БД), там — источник истины для PATCH (учитывает
+    уже сохранённое состояние).
+    """
+    if kind == PromoKind.DISCOUNT and discount_type is None:
+        raise ValueError("для kind=discount обязателен discount_type")
+    if kind != PromoKind.DISCOUNT and discount_type is not None:
+        raise ValueError("discount_type допустим только при kind=discount")
 
 
 class PromoRedeem(BaseModel):
@@ -35,13 +49,11 @@ class PromoCatalog(BaseModel):
     id: int
     name: str
     slug: str
-    parent_id: int | None = None
     kind: str
     value: Decimal
-    discount_type: str
+    discount_type: str | None = None
     service_id: int | None = None
-    per_user: int
-    settings: dict
+    per_user: int | None = None
     conditions: dict
     is_active: bool
 
@@ -64,52 +76,74 @@ class PromoCatalogCreate(BaseModel):
     slug: str = Field(
         min_length=2, max_length=64, description="Уникальный slug (обязательно)"
     )
-    parent_id: int | None = Field(
-        default=None, description="ID родительского каталога (опционально)"
-    )
     kind: str = Field(
         default=PromoKind.BONUS,
-        description="Тип действия: bonus | service (опционально)",
+        description="Тип действия: bonus | discount | service (опционально)",
     )
     value: Decimal = Field(
         default=Decimal("0"), description="Размер бонуса/скидки (опционально)"
     )
-    discount_type: str = Field(
-        default=DiscountType.PERCENT, description="percent | fixed (опционально)"
+    discount_type: str | None = Field(
+        default=None,
+        description=(
+            "percent | fixed — обязателен при kind=discount, для остальных "
+            "kind указывать нельзя (опционально)"
+        ),
     )
     service_id: int | None = Field(
         default=None, description="ID услуги для kind=service (опционально)"
     )
-    per_user: int = Field(
-        default=1, ge=1, description="Лимит активаций на пользователя (опционально)"
-    )
-    settings: dict = Field(
-        default_factory=dict, description="Доп-настройки (опционально)"
+    per_user: int | None = Field(
+        default=None,
+        ge=1,
+        description=(
+            "Лимит на количество РАЗНЫХ кодов каталога, которые может "
+            "погасить один пользователь; null — без лимита (опционально). "
+            "0 и отрицательные значения запрещены."
+        ),
     )
     conditions: dict = Field(
-        default_factory=dict, description="Условия активации (опционально)"
+        default_factory=dict, description="Условия активации, зарезервировано (опционально)"
     )
     is_active: bool = Field(
         default=True, description="Активен ли каталог (опционально)"
     )
 
+    @model_validator(mode="after")
+    def _validate_kind_discount(self) -> "PromoCatalogCreate":
+        _check_kind_discount(self.kind, self.discount_type)
+        return self
+
 
 class PromoCatalogPatch(BaseModel):
-    """Частичное изменение каталога (только переданные поля)."""
+    """Частичное изменение каталога (только переданные поля).
+
+    Согласованность ``kind``/``discount_type`` при частичном обновлении
+    проверяется не здесь (схема не знает текущее состояние строки), а в
+    :meth:`models.promo_catalogs.PromoCatalogsMngr.update` — по итоговому
+    состоянию (старое значение + патч).
+    """
 
     name: str | None = Field(default=None, description="Имя каталога")
-    parent_id: int | None = Field(default=None, description="ID родительского каталога")
-    kind: str | None = Field(default=None, description="Тип действия: bonus | service")
+    kind: str | None = Field(
+        default=None, description="Тип действия: bonus | discount | service"
+    )
     value: Decimal | None = Field(default=None, description="Размер бонуса/скидки")
     discount_type: str | None = Field(default=None, description="percent | fixed")
     service_id: int | None = Field(
         default=None, description="ID услуги для kind=service"
     )
     per_user: int | None = Field(
-        default=None, ge=1, description="Лимит активаций на пользователя"
+        default=None,
+        ge=1,
+        description=(
+            "Лимит на количество РАЗНЫХ кодов каталога на пользователя; "
+            "null — без лимита. 0 и отрицательные значения запрещены."
+        ),
     )
-    settings: dict | None = Field(default=None, description="Доп-настройки")
-    conditions: dict | None = Field(default=None, description="Условия активации")
+    conditions: dict | None = Field(
+        default=None, description="Условия активации, зарезервировано"
+    )
     is_active: bool | None = Field(default=None, description="Активен ли каталог")
 
 

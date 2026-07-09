@@ -155,6 +155,14 @@ class PromoCodesMngr:
         ``max_uses``/``catalog.per_user`` под нагрузкой (гонка при
         одновременных активациях).
 
+        Действуют два независимых лимита:
+
+        - код нельзя погасить дважды одним и тем же пользователем — это
+          правило безусловное и не зависит от настроек каталога;
+        - ``catalog.per_user`` (если задан) ограничивает количество РАЗНЫХ
+          кодов этого каталога, которые пользователь может погасить всего;
+          ``None`` — без такого лимита.
+
         :arg code: символы промокода.
         :arg acc: аккаунт, активирующий код.
         :return: валидный промокод.
@@ -178,7 +186,10 @@ class PromoCodesMngr:
             )
 
         catalog = await self.catalog_of(promo)
-        used_by_user = await self.s.scalar(
+
+        # Правило 1: этот конкретный код пользователь уже гасил — всегда
+        # запрещено, независимо от per_user каталога.
+        used_this_code = await self.s.scalar(
             select(func.count())
             .select_from(PromoUseModel)
             .where(
@@ -186,8 +197,25 @@ class PromoCodesMngr:
                 PromoUseModel.account_id == acc.id,
             )
         )
-        if used_by_user >= catalog.per_user:
+        if used_this_code >= 1:
             raise HTTPException(status.HTTP_409_CONFLICT, "промокод уже использован")
+
+        # Правило 2: лимит каталога на количество РАЗНЫХ погашенных кодов.
+        if catalog.per_user is not None:
+            distinct_codes_used = await self.s.scalar(
+                select(func.count(func.distinct(PromoUseModel.promocode_id)))
+                .select_from(PromoUseModel)
+                .join(PromoCodesModel, PromoUseModel.promocode_id == PromoCodesModel.id)
+                .where(
+                    PromoCodesModel.catalog_id == catalog.id,
+                    PromoUseModel.account_id == acc.id,
+                )
+            )
+            if distinct_codes_used >= catalog.per_user:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "лимит активаций каталога промокодов исчерпан",
+                )
         return promo
 
     async def catalog_of(self, promo: PromoCodesModel) -> PromoCatalogsModel:
