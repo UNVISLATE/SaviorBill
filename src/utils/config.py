@@ -8,11 +8,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine.url import URL
 
 APP_NAME = "SaviorBill"
-APP_VERSION = "0.1.0dev"
+APP_VERSION = "0.2.0"
 
 
 class AppConfig(BaseSettings):
-    """Конфигурация приложения (постоянные ENV (настройки) + разовые seed -> settings)."""
+    """Конфигурация приложения (постоянные ENV (настройки) + разовые seed4settings)."""
 
     # Настройки
 

@@ -10,7 +10,7 @@ from utils.telemetry import install_access_log_filter, setup_observability
 _cfg = Config()
 
 APP_NAME = "saviormedia"
-APP_VERSION = "0.0.2dev"
+APP_VERSION = "0.2.0"
 
 install_access_log_filter()
 
