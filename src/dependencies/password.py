@@ -1,4 +1,4 @@
-"""Сброс пароля по email (6-значный код в Valkey + письмо)."""
+"""Сброс пароля по email (код или временный токен), с настройкой способа."""
 
 from __future__ import annotations
 
@@ -15,19 +15,45 @@ from dependencies.valkey import get_valkey_client
 from integrations.email import EmailEvent, EmailSender
 from models.user import UserModel, UserMngr
 from utils.config import AppConfig
-from utils.sec.crypt import generate_numeric_code
+from utils.sec.crypt import generate_base_token, generate_numeric_code
 from utils.sec.pwd import hash_pass
 
-# Ключи Valkey: код привязан к email + счётчик неверных попыток.
+# Ключи Valkey: секрет привязан к email + счётчик неверных попыток. Для
+# token-режима дополнительно хранится обратный индекс token -> email (чтобы
+# подтвердить сброс по одной лишь ссылке, без явного email в теле запроса).
 _RESET = "reset:pwd:"
 _RESET_FAIL = "reset:pwd:fail:"
-# Длина кода сброса и потолок неверных попыток на код.
+_RESET_TOKEN_IDX = "reset:pwd:tok:"
+# Длина кода сброса (для режима "code") и потолок неверных попыток на код.
 _CODE_DIGITS = 6
 _MAX_FAILS = 5
 
+# Способы сброса пароля (настройка ``password.reset.method``):
+# - code/token   — сброс по email (числовой код либо ссылка-токен);
+# - authenticated — email-сброс выключен, доступна только смена пароля в
+#   профиле (`PUT /me/password`, знание текущего пароля);
+# - disabled     — сброс пароля недоступен вообще ни одним из способов.
+METHOD_CODE = "code"
+METHOD_TOKEN = "token"
+METHOD_AUTHENTICATED = "authenticated"
+METHOD_DISABLED = "disabled"
+_KNOWN_METHODS = frozenset(
+    {METHOD_CODE, METHOD_TOKEN, METHOD_AUTHENTICATED, METHOD_DISABLED}
+)
+
+
+async def resolve_reset_method(settings: SystemSettingsMngr) -> str:
+    """Прочитать и нормализовать настройку ``password.reset.method``.
+
+    Неизвестное/отсутствующее значение — безопасный дефолт ``code`` (как было
+    до появления настройки).
+    """
+    value = await settings.get("password.reset.method", METHOD_CODE)
+    return value if value in _KNOWN_METHODS else METHOD_CODE
+
 
 class ResetSvc:
-    """Запрос и подтверждение сброса пароля по числовому коду."""
+    """Запрос и подтверждение сброса пароля по коду или временному токену."""
 
     def __init__(
         self,
@@ -53,13 +79,20 @@ class ResetSvc:
         return email.strip().lower()
 
     async def request(self, email: str) -> None:
-        """Сгенерировать код и отправить письмо со сбросом пароля.
+        """Сгенерировать код/токен и отправить письмо со сбросом пароля.
 
         Не раскрывает существование аккаунта: при отсутствии адреса/почты молча
-        выходит. Но при ненастроенном SMTP отвечает 404 (системное состояние).
+        выходит. Но при ненастроенном SMTP или выключенном email-сбросе
+        (``password.reset.method`` = ``authenticated``/``disabled``) отвечает
+        404 (системное состояние, а не факт про конкретный аккаунт).
 
         :arg email: адрес, на который запрошен сброс.
         """
+        method = await resolve_reset_method(self.settings)
+        if method in (METHOD_AUTHENTICATED, METHOD_DISABLED):
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, "password reset by email is disabled"
+            )
         if not self.sender.configured:
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND, "email sending is not configured"
@@ -69,35 +102,59 @@ class ResetSvc:
         if acc is None or not acc.email or not acc.is_active:
             return
 
-        code = generate_numeric_code(_CODE_DIGITS)
+        norm = self._norm(acc.email)
+        secret = (
+            generate_base_token() if method == METHOD_TOKEN
+            else generate_numeric_code(_CODE_DIGITS)
+        )
         ttl = await self._ttl()
-        await self.vk.set(_RESET + self._norm(acc.email), code, ex=ttl)
-        await self.vk.delete(_RESET_FAIL + self._norm(acc.email))
+        await self.vk.set(_RESET + norm, secret, ex=ttl)
+        await self.vk.delete(_RESET_FAIL + norm)
+        if method == METHOD_TOKEN:
+            # Обратный индекс: подтверждение по ссылке без указания email.
+            await self.vk.set(_RESET_TOKEN_IDX + secret, norm, ex=ttl)
 
         ctx = {
             "user": {"id": acc.id, "login": acc.login, "email": acc.email},
-            "code": code,
+            "code": secret if method == METHOD_CODE else None,
+            "token": secret if method == METHOD_TOKEN else None,
             "ttl_minutes": max(1, ttl // 60),
         }
         sent = await self.sender.send_template(
             EmailEvent.PASSWORD_RESET, acc.email, ctx
         )
         if not sent:
+            label = "token" if method == METHOD_TOKEN else "code"
             await self.sender.mail.send(
                 acc.email,
-                "Сброс пароля",
-                f"Код для сброса пароля: {code}",
+                "Password reset",
+                f"Your password reset {label}: {secret}",
             )
 
-    async def confirm(self, email: str, code: str, new_pass: str) -> UserModel:
-        """Установить новый пароль по email + коду сброса.
+    async def confirm(
+        self, code: str, new_pass: str, *, email: str | None = None
+    ) -> UserModel:
+        """Установить новый пароль по коду/токену сброса.
 
-        :arg email: адрес, на который запрашивался сброс.
-        :arg code: 6-значный код из письма.
+        :arg code: код (режим ``code``) или токен (режим ``token``) из письма.
         :arg new_pass: новый пароль.
+        :arg email: адрес, на который запрашивался сброс. Обязателен в режиме
+            ``code``; для ``token`` может быть опущен — тогда аккаунт находится
+            по обратному индексу токена.
         :return: обновлённый аккаунт.
         """
-        norm = self._norm(email)
+        method = await resolve_reset_method(self.settings)
+        if method in (METHOD_AUTHENTICATED, METHOD_DISABLED):
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, "password reset by email is disabled"
+            )
+
+        norm = self._norm(email) if email else None
+        if norm is None:
+            norm = await self.vk.get(_RESET_TOKEN_IDX + code)
+            if norm is None:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid code")
+
         key = _RESET + norm
         stored = await self.vk.get(key)
         if stored is None:
@@ -116,6 +173,7 @@ class ResetSvc:
 
         await self.vk.delete(key)
         await self.vk.delete(_RESET_FAIL + norm)
+        await self.vk.delete(_RESET_TOKEN_IDX + code)
         acc.pass_hash = hash_pass(new_pass)
         await self.s.flush()
         return acc
@@ -132,4 +190,12 @@ async def get_reset_svc(
     return ResetSvc(session, vk, settings, sender, cfg.VERIFY_TOKEN_TTL)
 
 
-__all__ = ["ResetSvc", "get_reset_svc"]
+__all__ = [
+    "ResetSvc",
+    "get_reset_svc",
+    "resolve_reset_method",
+    "METHOD_CODE",
+    "METHOD_TOKEN",
+    "METHOD_AUTHENTICATED",
+    "METHOD_DISABLED",
+]

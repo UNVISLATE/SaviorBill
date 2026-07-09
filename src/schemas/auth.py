@@ -70,9 +70,16 @@ class PassResetRequest(BaseModel):
 class PassResetConfirm(BaseModel):
     """Confirm password reset."""
 
-    email: str = Field(max_length=255, description="Account email")
+    email: str | None = Field(
+        default=None,
+        max_length=255,
+        description="Account email; required for code mode, optional for a token link",
+    )
     code: str = Field(
-        min_length=6, max_length=6, description="Email code (6 digits)"
+        min_length=6,
+        max_length=64,
+        description="Reset code (digits) or token from the email, depending on "
+        "the `password.reset.method` setting",
     )
     password: str = Field(
         min_length=8,

@@ -72,6 +72,15 @@ SETTINGS: tuple[SettingDef, ...] = (
         group="mail",
         desc="Длина числового кода подтверждения email, цифр",
     ),
+    SettingDef(
+        "password.reset.method",
+        None,
+        group="mail",
+        desc="Способ сброса пароля: 'code' (числовой код по email), "
+        "'token' (ссылка с временным токеном по email), 'authenticated' "
+        "(email-сброс выключен, только смена пароля в профиле по старому "
+        "паролю) или 'disabled' (сброс пароля недоступен вообще)",
+    ),
     # Имена базовых ролей
     SettingDef("role.owner", "ROLE_OWNER", group="role", desc="Имя роли владельца"),
     SettingDef(

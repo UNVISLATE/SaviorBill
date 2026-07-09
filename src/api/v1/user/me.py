@@ -10,7 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.auth import UserMngr, get_acc_mngr, get_current_acc
 from dependencies.db import get_db_session
 from dependencies.media import get_media_mngr
+from dependencies.password import METHOD_DISABLED, resolve_reset_method
 from dependencies.rbac import require_perm
+from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
 from enums import BaseRole
 from models.service_attachment import ServiceAttachmentModel
@@ -107,7 +109,8 @@ async def patch_me(
     summary="Change password",
     description=(
         "Requires `current_password` if a password is already set; not "
-        "needed for an OAuth-only account setting a password for the first time."
+        "needed for an OAuth-only account setting a password for the first "
+        "time. Blocked if `password.reset.method` is set to `disabled`."
     ),
     dependencies=[Depends(require_perm("user.profile.edit"))],
 )
@@ -115,7 +118,10 @@ async def change_password(
     body: PasswordChange,
     acc: UserModel = Depends(get_current_acc),
     mngr: UserMngr = Depends(get_acc_mngr),
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> None:
+    if await resolve_reset_method(settings) == METHOD_DISABLED:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "password change is disabled")
     if acc.has_pass:
         if not body.current_password or not verify_pass(
             acc.pass_hash, body.current_password
