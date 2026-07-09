@@ -41,7 +41,7 @@ def upgrade() -> None:
     sa.Column('tenant_id', sa.Integer(), nullable=True),
     sa.Column('profile_id', sa.Integer(), nullable=True),
     sa.Column('action', sa.String(length=100), nullable=False),
-    sa.Column('meta', sa.JSON(), nullable=False),
+    sa.Column('meta', sa.JSON(), server_default='{}', nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
@@ -54,7 +54,7 @@ def upgrade() -> None:
     sa.Column('target_type', sa.String(length=64), nullable=True),
     sa.Column('target_id', sa.String(length=256), nullable=True),
     sa.Column('ip', sa.String(length=64), nullable=True),
-    sa.Column('meta', sa.JSON(), nullable=False),
+    sa.Column('meta', sa.JSON(), server_default='{}', nullable=False),
     sa.Column('result', sa.String(length=16), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
@@ -100,7 +100,7 @@ def upgrade() -> None:
     sa.Column('title', sa.String(length=128), nullable=True),
     sa.Column('key', sa.String(length=32), nullable=True),
     sa.Column('is_system', sa.Boolean(), nullable=False),
-    sa.Column('perms', sa.JSON(), nullable=False),
+    sa.Column('perms', sa.JSON(), server_default='{}', nullable=False),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('name')
     )
@@ -141,8 +141,8 @@ def upgrade() -> None:
     sa.Column('mime', sa.String(length=128), nullable=True),
     sa.Column('size', sa.Integer(), nullable=True),
     sa.Column('owner_id', sa.Integer(), nullable=True),
-    sa.Column('variants', sa.JSON(), nullable=False),
-    sa.Column('meta', sa.JSON(), nullable=False),
+    sa.Column('variants', sa.JSON(), server_default='{}', nullable=False),
+    sa.Column('meta', sa.JSON(), server_default='{}', nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_system_media_owner_id'), 'system_media', ['owner_id'], unique=False)
@@ -154,8 +154,8 @@ def upgrade() -> None:
     sa.Column('name', sa.String(length=128), nullable=True),
     sa.Column('event', sa.String(length=64), nullable=False),
     sa.Column('action', sa.String(length=32), nullable=False),
-    sa.Column('config', sa.JSON(), nullable=False),
-    sa.Column('cond', sa.JSON(), nullable=False),
+    sa.Column('config', sa.JSON(), server_default='{}', nullable=False),
+    sa.Column('cond', sa.JSON(), server_default='{}', nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.PrimaryKeyConstraint('id')
     )
@@ -193,16 +193,11 @@ def upgrade() -> None:
     sa.Column('enabled', sa.Boolean(), nullable=False),
     sa.Column('script_id', sa.Integer(), nullable=True),
     sa.Column('secrets_enc', sa.Text(), nullable=False),
-    sa.Column('client_id', sa.String(length=255), nullable=True),
-    sa.Column('client_secret_enc', sa.Text(), nullable=True),
-    sa.Column('issuer', sa.String(length=255), nullable=True),
-    sa.Column('authorize_url', sa.String(length=512), nullable=True),
-    sa.Column('token_url', sa.String(length=512), nullable=True),
-    sa.Column('userinfo_url', sa.String(length=512), nullable=True),
-    sa.Column('jwks_uri', sa.String(length=512), nullable=True),
     sa.Column('scopes', sa.String(length=255), nullable=False),
-    sa.Column('extra', sa.JSON(), nullable=False),
+    sa.Column('extra', sa.JSON(), server_default='{}', nullable=False),
+    sa.Column('icon_media_id', sa.Integer(), nullable=True),
     sa.ForeignKeyConstraint(['script_id'], ['lua_scripts.id'], ondelete='RESTRICT'),
+    sa.ForeignKeyConstraint(['icon_media_id'], ['system_media.id'], ondelete='SET NULL', name='fk_oauth_cfg_icon_media_id'),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_oauth_cfg_script_id'), 'oauth_cfg', ['script_id'], unique=False)
@@ -217,7 +212,7 @@ def upgrade() -> None:
     sa.Column('secrets_enc', sa.Text(), nullable=False),
     sa.Column('currency', sa.String(length=8), nullable=False),
     sa.Column('script_id', sa.Integer(), nullable=True),
-    sa.Column('extra', sa.JSON(), nullable=False),
+    sa.Column('extra', sa.JSON(), server_default='{}', nullable=False),
     sa.ForeignKeyConstraint(['script_id'], ['lua_scripts.id'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -235,8 +230,8 @@ def upgrade() -> None:
     sa.Column('currency', sa.String(length=8), nullable=False),
     sa.Column('delivery', sa.String(length=8), nullable=False),
     sa.Column('lua_script_id', sa.Integer(), nullable=True),
-    sa.Column('params', sa.JSON(), nullable=False),
-    sa.Column('settings', sa.JSON(), nullable=False),
+    sa.Column('params', sa.JSON(), server_default='{}', nullable=False),
+    sa.Column('settings', sa.JSON(), server_default='{}', nullable=False),
     sa.Column('actions', sa.JSON(), server_default='[]', nullable=False),
     sa.Column('duration', sa.Integer(), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
@@ -268,7 +263,7 @@ def upgrade() -> None:
     sa.Column('provider', sa.String(length=32), nullable=False),
     sa.Column('subject', sa.String(length=255), nullable=False),
     sa.Column('email', sa.String(length=255), nullable=True),
-    sa.Column('raw', sa.JSON(), nullable=False),
+    sa.Column('raw', sa.JSON(), server_default='{}', nullable=False),
     sa.ForeignKeyConstraint(['account_id'], ['accounts.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('provider', 'subject', name='uq_oauth_provider_subject')
@@ -279,8 +274,8 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
     sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
     sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=False),
-    sa.Column('public_data', sa.JSON(), nullable=False),
-    sa.Column('private_data', sa.JSON(), nullable=False),
+    sa.Column('public_data', sa.JSON(), server_default='{}', nullable=False),
+    sa.Column('private_data', sa.JSON(), server_default='{}', nullable=False),
     sa.Column('account_id', sa.Integer(), nullable=False),
     sa.Column('provider', sa.String(length=64), nullable=False),
     sa.Column('amount', sa.Numeric(precision=18, scale=2), nullable=False),
@@ -309,7 +304,7 @@ def upgrade() -> None:
     sa.Column('discount_type', sa.String(length=8), nullable=True),
     sa.Column('service_id', sa.Integer(), nullable=True),
     sa.Column('per_user', sa.Integer(), nullable=True),
-    sa.Column('conditions', sa.JSON(), nullable=False),
+    sa.Column('conditions', sa.JSON(), server_default='{}', nullable=False),
     sa.Column('is_active', sa.Boolean(), nullable=False),
     sa.ForeignKeyConstraint(['service_id'], ['services.id'], ondelete='SET NULL'),
     sa.PrimaryKeyConstraint('id'),
@@ -350,8 +345,8 @@ def upgrade() -> None:
     sa.Column('price', sa.Numeric(precision=18, scale=2), server_default='0', nullable=False),
     sa.Column('discount', sa.Numeric(precision=18, scale=2), server_default='0', nullable=False),
     sa.Column('digikey_id', sa.Integer(), nullable=True),
-    sa.Column('public_data', sa.JSON(), nullable=False),
-    sa.Column('private_data', sa.JSON(), nullable=False),
+    sa.Column('public_data', sa.JSON(), server_default='{}', nullable=False),
+    sa.Column('private_data', sa.JSON(), server_default='{}', nullable=False),
     sa.Column('product_key', sa.String(length=64), nullable=True),
     sa.Column('product_kind', sa.String(length=32), nullable=True),
     sa.Column('delivered_at', sa.DateTime(timezone=True), nullable=True),

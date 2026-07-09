@@ -90,8 +90,12 @@ class UserServicesModel(Base):
 
     # Ключ из пула (без FK — циклическая связь с digi_keys).
     digikey_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    public_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    private_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    public_data: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
+    private_data: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
     # Имя ключа внутри public_data, который дефолтный фронтенд отрисует как
     # «выданный продукт» (напр. "product" -> public_data.product). Свободный текст.
     product_key: Mapped[str | None] = mapped_column(String(64), nullable=True)

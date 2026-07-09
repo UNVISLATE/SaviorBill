@@ -42,8 +42,12 @@ class TriggerModel(Base):
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     event: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     action: Mapped[str] = mapped_column(String(32), nullable=False)
-    config: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    cond: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    config: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
+    cond: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 

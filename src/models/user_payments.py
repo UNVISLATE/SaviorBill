@@ -52,8 +52,12 @@ class UserPaymentsModel(Base):
         nullable=False,
     )
 
-    public_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    private_data: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    public_data: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
+    private_data: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
 
     account_id: Mapped[int] = mapped_column(
         ForeignKey("accounts.id", ondelete="CASCADE"), index=True, nullable=False

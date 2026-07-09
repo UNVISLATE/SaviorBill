@@ -69,7 +69,9 @@ class OAuthProvidersModel(Base):
     scopes: Mapped[str] = mapped_column(
         String(255), default="openid email profile", nullable=False
     )
-    extra: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    extra: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
 
     icon: Mapped["SystemMediaModel | None"] = relationship(  # noqa: F821
         "SystemMediaModel", lazy="joined"

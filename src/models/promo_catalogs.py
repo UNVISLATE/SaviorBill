@@ -77,7 +77,9 @@ class PromoCatalogsModel(Base):
 
     # Условия активации (зарезервировано на будущее, формат пока не задан
     # и не проверяется исполняемой логикой).
-    conditions: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    conditions: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
 

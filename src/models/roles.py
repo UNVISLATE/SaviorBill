@@ -48,7 +48,9 @@ class Role(Base):
     )
     # Системные роли нельзя удалять из админки.
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    perms: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    perms: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
 
     accounts: Mapped[list["UserModel"]] = relationship(back_populates="role")
 

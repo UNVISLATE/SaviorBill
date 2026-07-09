@@ -32,7 +32,9 @@ class AuditLogModel(Base):
     target_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     target_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    meta: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    meta: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
     result: Mapped[str] = mapped_column(String(16), default="ok", nullable=False)
 
 

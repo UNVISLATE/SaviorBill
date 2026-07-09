@@ -63,8 +63,12 @@ class SystemMediaModel(Base):
     )  # uploader account id
     # Варианты файла: {"main": {...}, "thumb": {...}, "preview": {...}}.
     # Каждый — {"key", "mime", "size", "url"}. Заполняет mediaworker.
-    variants: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
-    meta: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    variants: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
+    meta: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
 
 
 class SystemMediaMngr:

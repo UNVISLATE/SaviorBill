@@ -55,7 +55,9 @@ class UserOauthModel(Base):
     # Идентификатор пользователя у провайдера (claim ``sub`` / внешний id).
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    raw: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    raw: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
 
     account: Mapped["UserModel"] = relationship(back_populates="oauth_conns")
 

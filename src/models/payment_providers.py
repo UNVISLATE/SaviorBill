@@ -69,7 +69,9 @@ class PaymentProvidersModel(Base):
     )
 
     # Несекретные дополнительные настройки провайдера.
-    extra: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    extra: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
 
 
 class PaymentProvidersMngr:

@@ -3,7 +3,7 @@
 import pytest
 from sqlalchemy import text
 
-from conftest import wait_until
+from conftest import uniq, wait_until
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
@@ -20,6 +20,44 @@ async def test_catalog_lists_seeded_service(http, seed):
     r = await http.get("/api/v1/catalog/services")
     assert r.status_code == 200, r.text
     assert any(s["id"] == sid for s in r.json()["items"])
+
+
+async def test_services_json_columns_default_when_omitted(engine):
+    """Регресс: params/settings должны получать серверный дефолт '{}',
+
+    а не падать NotNullViolationError, если insert их не указывает явно
+    (как это делают часть сидеров/внешних скриптов).
+    """
+    slug = uniq("bare_svc")
+    async with engine.begin() as c:
+        row = await c.execute(
+            text(
+                "INSERT INTO services (slug,name,price,currency,delivery,is_active) "
+                "VALUES (:slug,'Bare svc','1.00','RUB','key',true) "
+                "RETURNING params, settings, actions"
+            ),
+            {"slug": slug},
+        )
+        params, settings, actions = row.one()
+    assert params == {}
+    assert settings == {}
+    assert actions == []
+
+
+async def test_promo_catalog_conditions_defaults_when_omitted(engine):
+    """Регресс: promo_catalogs.conditions тоже должен иметь серверный дефолт."""
+    slug = uniq("bare_cat")
+    async with engine.begin() as c:
+        row = await c.execute(
+            text(
+                "INSERT INTO promo_catalogs (name,slug,kind,value,is_active) "
+                "VALUES ('Bare cat',:slug,'bonus','1.00',true) "
+                "RETURNING conditions"
+            ),
+            {"slug": slug},
+        )
+        (conditions,) = row.one()
+    assert conditions == {}
 
 
 async def test_order_key_delivery(http, new_user, seed, engine):

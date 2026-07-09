@@ -25,7 +25,9 @@ class LogModel(Base):
     profile_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     action: Mapped[str] = mapped_column(String(100), nullable=False)
-    meta: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    meta: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

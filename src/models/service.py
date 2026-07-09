@@ -87,9 +87,13 @@ class ServiceModel(Base):
         ForeignKey("lua_scripts.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     # Кастом-параметры услуги (снимок прокидывается в скрипт как ctx.params).
-    params: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    params: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
     # JSON-настройки эталонной услуги (ctx.service.settings).
-    settings: Mapped[dict] = mapped_column(JSON, default=dict, nullable=False)
+    settings: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
 
     # Поддерживаемые действия ЖЦ (наследуются выданной услугой и отдаются фронту):
     # ["create","renew","stop","delete","freeze"] — см. ServiceAction.
