@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from dependencies.catalog import SystemScriptsMngr, get_script_mngr
 from dependencies.rbac import require_perm
 from models.user import UserModel
-from schemas.lua import LuaScript, LuaScriptUpload, LuaScriptPatch
+from schemas.lua import LuaScript, LuaScriptDetail, LuaScriptUpload, LuaScriptPatch
 from services.audit import audit
 from utils.apidoc import with_fields
 
@@ -34,6 +34,23 @@ async def list_scripts(
 ) -> list[LuaScript]:
     rows = await mngr.list_all()
     return [LuaScript.from_model(r) for r in rows]
+
+
+@router.get(
+    "/lua/{script_id}",
+    response_model=LuaScriptDetail,
+    dependencies=[Depends(require_perm("lua.read"))],
+    summary="Получить один Lua-скрипт (с телом)",
+)
+async def get_script(
+    script_id: int,
+    mngr: SystemScriptsMngr = Depends(get_script_mngr),
+) -> LuaScriptDetail:
+    row = await mngr.by_id(script_id)
+    if row is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "скрипт не найден")
+    code = await mngr.read_code(row)
+    return LuaScriptDetail.from_model_with_code(row, code)
 
 
 @router.post(

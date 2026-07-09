@@ -154,6 +154,15 @@ class SystemScriptsMngr:
     async def by_id(self, script_id: int) -> SystemScriptsModel | None:
         return await self.s.get(SystemScriptsModel, script_id)
 
+    async def read_code(self, row: SystemScriptsModel) -> str:
+        """Прочитать тело скрипта из файла."""
+        target = self._safe_target(row.filename)
+        if not target.exists():
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, "файл тела скрипта отсутствует"
+            )
+        return target.read_text(encoding="utf-8")
+
     def _safe_target(self, filename: str) -> Path:
         target = (self.dir / filename).resolve()
         if not str(target).startswith(str(self.dir.resolve())):

@@ -35,6 +35,31 @@ class LuaScript(BaseModel):
         return cls.model_validate(m)
 
 
+class LuaScriptDetail(LuaScript):
+    """Зарегистрированный Lua-скрипт с телом (ответ на `GET /lua/{id}`).
+
+    Отдельная схема от списка (`GET /lua`), чтобы список не тянул тела всех
+    скриптов из файлов лишний раз — тело читается только при запросе одного.
+    """
+
+    code: str = Field(description="Тело Lua-скрипта (модуль с функцией handle(ctx))")
+
+    @classmethod
+    def from_model_with_code(cls, m, code: str) -> "LuaScriptDetail":  # noqa: ANN001
+        """Явное преобразование ORM-скрипта + прочитанного тела в схему ответа."""
+        return cls(
+            id=m.id,
+            slug=m.slug,
+            name=m.name,
+            kind=m.kind,
+            filename=m.filename,
+            actions=m.actions,
+            settings=m.settings,
+            is_active=m.is_active,
+            code=code,
+        )
+
+
 class LuaScriptUpload(BaseModel):
     """Регистрация нового Lua-скрипта.
 
@@ -91,6 +116,7 @@ class LuaScriptPatch(BaseModel):
 
 __all__ = [
     "LuaScript",
+    "LuaScriptDetail",
     "LuaScriptUpload",
     "LuaScriptPatch",
 ]
