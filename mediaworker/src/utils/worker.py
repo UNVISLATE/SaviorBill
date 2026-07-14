@@ -130,7 +130,7 @@ class Worker:
                 "key": v.key,
                 "mime": v.mime,
                 "size": sizes.get(v.key),
-                "url": f"/media/{base}",
+                "url": f"/api/media/{base}",
             }
         return out
 
@@ -178,7 +178,7 @@ class Worker:
             result["owner_id"] = str(owner_id)
         await self._emit_result(result)
         await self._set_status(
-            token, state="ready", url=f"/media/{token}", mime=main.mime
+            token, state="ready", url=f"/api/media/{token}", mime=main.mime
         )
         await self.vk.delete(f"attempts:media:convert:{token}")
 

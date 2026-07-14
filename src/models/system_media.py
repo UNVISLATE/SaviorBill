@@ -61,7 +61,8 @@ class SystemMediaModel(Base):
     owner_id: Mapped[int | None] = mapped_column(
         Integer, nullable=True, index=True
     )  # uploader account id
-    # Варианты файла: {"main": {...}, "thumb": {...}, "preview": {...}}.
+    # Варианты файла: {"main": {...}, "preview": {...}, "preview_thumb": {...}}
+    # (для фото — только "main", отдельный thumb не генерируется).
     # Каждый — {"key", "mime", "size", "url"}. Заполняет mediaworker.
     variants: Mapped[dict] = mapped_column(
         JSON, default=dict, server_default="{}", nullable=False

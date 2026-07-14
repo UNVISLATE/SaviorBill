@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from utils.config import Config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,11 +10,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from api import router
 from lifespan import lifespan
 from utils.telemetry import install_access_log_filter, setup_observability
+from utils.version import resolve_app_version
 
 _cfg = Config()
 
-APP_NAME = "saviormedia"
-APP_VERSION = "0.2.0"
+# Корень приложения: в Docker-образе — /app (VERSION лежит рядом), в
+# локальном чек-ауте — mediaworker/ (родитель src/, .git — на уровень выше).
+_BASE_DIR = Path(__file__).resolve().parents[1]
+
+APP_NAME = os.environ.get("APP_NAME", "saviormedia")
+APP_VERSION = resolve_app_version(_BASE_DIR)
 
 install_access_log_filter()
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -19,6 +20,7 @@ _CASTERS: dict[str, Callable[[str], Any]] = {
     "str": str,
     "int": _to_int,
     "bool": _to_bool,
+    "json": json.loads,
 }
 
 
@@ -184,6 +186,45 @@ SETTINGS: tuple[SettingDef, ...] = (
         type="int",
         group="analytics",
         desc="Порог неактивности (дней без paid-платежа) для расчёта churn-rate",
+    ),
+    # UI/брендинг: admin-панель и клиентское приложение (см. upd_plan.md, часть 6)
+    SettingDef(
+        "ui.admin.product_name",
+        None,
+        group="ui",
+        desc="Название в шапке/тайтле admin UI",
+    ),
+    SettingDef(
+        "ui.admin.logo", None, group="ui", desc="Токен медиа логотипа admin UI"
+    ),
+    SettingDef(
+        "ui.admin.favicon", None, group="ui", desc="Токен медиа favicon admin UI"
+    ),
+    SettingDef(
+        "ui.admin.theme",
+        None,
+        type="json",
+        group="ui",
+        desc="Произвольная JSON-тема admin UI",
+    ),
+    SettingDef(
+        "ui.client.product_name",
+        None,
+        group="ui",
+        desc="Название клиентского приложения",
+    ),
+    SettingDef(
+        "ui.client.logo", None, group="ui", desc="Токен медиа логотипа клиента"
+    ),
+    SettingDef(
+        "ui.client.favicon", None, group="ui", desc="Токен медиа favicon клиента"
+    ),
+    SettingDef(
+        "ui.client.theme",
+        None,
+        type="json",
+        group="ui",
+        desc="Произвольная JSON-тема клиента",
     ),
 )
 

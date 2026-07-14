@@ -68,9 +68,6 @@ app = FastAPI(
     description=DESCRIPTION,
     openapi_tags=TAGS_META,
     lifespan=lifespan,
-    # Вся HTTP-поверхность billing (включая служебные /health и доку) живёт
-    # под префиксом /api — чтобы на одном домене можно было отдавать
-    # admin/client UI на "/" без риска пересечения путей со статикой SPA.
     docs_url="/api/docs" if settings.DOCS_ENABLED else None,
     redoc_url="/api/redoc" if settings.DOCS_ENABLED else None,
     openapi_url="/api/openapi.json" if settings.DOCS_ENABLED else None,
@@ -79,9 +76,6 @@ app = FastAPI(
 # Метрики Prometheus + трейсинг OpenTelemetry (по флагам METRICS_ENABLED/OTEL_ENABLED).
 setup_observability(app, settings, APP_NAME, APP_VERSION)
 
-# CORS — нужен, только если admin/client UI обращается к billing с другого
-# домена/порта через fetch()/XHR. Пусто по умолчанию -> middleware не
-# подключается вовсе (нулевое изменение поведения для однодоменных деплоев).
 if settings.cors_origins_list:
     app.add_middleware(
         CORSMiddleware,
@@ -93,9 +87,7 @@ if settings.cors_origins_list:
 
 # Доверять X-Forwarded-For/-Proto только если явно сконфигурирован список
 # реверс-прокси — иначе `request.client.host` (реальный TCP-peer) остаётся
-# единственным источником IP клиента (см. dependencies/ratelimit.py,
-# IMPLEMENTATION_PLAN §10). Без этого небезопасный дефолт "доверяем всегда"
-# позволял бы обойти rate-limit по IP подделкой заголовка напрямую.
+# единственным источником IP клиента (см. dependencies/ratelimit.py).
 if settings.trusted_proxies_list:
     app.add_middleware(
         ProxyHeadersMiddleware, trusted_hosts=settings.trusted_proxies_list

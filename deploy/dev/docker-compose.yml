@@ -52,7 +52,7 @@ services:
       EMAIL_TEMPLATES_DIR: /app/data/email
       STORAGE_BACKEND: ${STORAGE_BACKEND:-fs}
       OWNER_LOGIN: ${OWNER_LOGIN:-owner}
-      OWNER_PASS: ${OWNER_PASS:-owner-change-me}
+      OWNER_PASS: ${OWNER_PASS:-ownerpass}
       OWNER_EMAIL: ${OWNER_EMAIL:-owner@example.test}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -63,9 +63,6 @@ services:
       BILLING_LOOP_ENABLED: ${BILLING_LOOP_ENABLED:-true}
     volumes:
       - ../../data:/app/data:rw
-    command: >
-      sh -c "alembic upgrade head &&
-             python src/app.py"
     ports:
       - "8000:8000"
 

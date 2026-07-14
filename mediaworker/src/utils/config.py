@@ -60,7 +60,7 @@ class Config(BaseSettings):
     MEDIA_STATUS_TTL: int = Field(default=3600)
     MEDIA_BAN_SECONDS: int = Field(default=180)
     MEDIA_KEEP_ORIGINAL: bool = Field(default=False)
-    MEDIA_MAX_BYTES: int = Field(default=52_428_800)  # 50 MiB
+    MEDIA_MAX_BYTES: int = Field(default=524_288_000)  # 500 MiB (media.uploadlarge)
     MEDIA_SMALL_MAX_BYTES: int = Field(default=1_048_576)  # 1 MiB
     MEDIA_UPLOADS_PER_HOUR: int = Field(default=30)
 

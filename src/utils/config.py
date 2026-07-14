@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from pydantic import Field, model_validator
@@ -7,8 +8,15 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from sqlalchemy.engine.url import URL
 
-APP_NAME = "SaviorBill"
-APP_VERSION = "0.2.0"
+from utils.version import resolve_app_version
+
+# Корень приложения: в Docker-образе — /app (VERSION лежит рядом), в
+# локальном чек-ауте — корень репозитория (.git лежит рядом). Этот файл —
+# src/utils/config.py, поэтому корень — на два уровня выше src/.
+_BASE_DIR = Path(__file__).resolve().parents[2]
+
+APP_NAME = os.environ.get("APP_NAME", "SaviorBill")
+APP_VERSION = resolve_app_version(_BASE_DIR)
 
 
 class AppConfig(BaseSettings):
@@ -21,6 +29,17 @@ class AppConfig(BaseSettings):
     PORT: int = Field(default=8000)
     DEBUG: bool = Field(default=False)
     DOCS_ENABLED: bool = Field(default=True)
+
+    # Публичные домены проекта
+    DOMAIN: str | None = Field(default=None)
+    MEDIA_DOMAIN: str | None = Field(default=None)
+
+    # Публичный URL (редиректы OAuth, ссылки в письмах и т.п)
+    PUBLIC_URL: str = Field(default="http://localhost:8000")
+    MEDIA_PUBLIC_URL: str | None = Field(default=None)
+
+    # URL сервиса mediaworker (внутренняя сеть) для служебных обращений billing.
+    MEDIAWORKER_URL: str = Field(default="http://mediaworker:8001")
 
     # БД
     DB_DRIVER: str = Field(default="postgresql+asyncpg")
@@ -59,8 +78,7 @@ class AppConfig(BaseSettings):
     SECRETS_VAULT_TOKEN: str | None = Field(default=None)
     SECRETS_VAULT_MOUNT: str = Field(default="secret")
 
-    # Публичный URL (редиректы OAuth, ссылки в письмах)
-    PUBLIC_URL: str = Field(default="http://localhost:8000")
+
 
     # Монтируемая папка данных (lua-скрипты, ключи, загрузки)
     DATA_DIR: str = Field(default="data")
@@ -132,15 +150,7 @@ class AppConfig(BaseSettings):
     # выше - нужно право media.uploadlarge.
     MEDIA_SMALL_MAX_BYTES: int = Field(default=1_048_576)  # 1 MiB
     # Жёсткий потолок размера любого загружаемого файла.
-    MEDIA_MAX_BYTES: int = Field(default=52_428_800)  # 50 MiB
-    # Публичный домен проекта (для Caddy). Пусто -> localhost.
-    DOMAIN: str | None = Field(default=None)
-    # URL сервиса mediaworker (внутренняя сеть) для служебных обращений billing.
-    MEDIAWORKER_URL: str = Field(default="http://mediaworker:8080")
-    # Публичный базовый URL mediaworker для ссылки на его OpenAPI-документацию в
-    # описании billing. Пусто -> строится из DOMAIN (или MEDIAWORKER_URL как
-    # fallback). Ссылка на доку рисуется только если DOCS_ENABLED=true.
-    MEDIA_PUBLIC_URL: str | None = Field(default=None)
+    MEDIA_MAX_BYTES: int = Field(default=524_288_000)  # 500 MiB (media.uploadlarge)
     # Стрим задач медиа (конвертация/удаление) в Valkey.
     MEDIA_TASK_STREAM: str = Field(default="media:tasks")
     # Стрим результатов конвертации: mediaworker публикует готовое медиа, billing
@@ -274,14 +284,12 @@ class AppConfig(BaseSettings):
     @property
     def media_docs_url(self) -> str:
         """Публичный URL OpenAPI-документации mediaworker.
-
-        Приоритет: явный ``MEDIA_PUBLIC_URL`` -> публичный ``DOMAIN`` (https) ->
-        внутренний ``MEDIAWORKER_URL``. К базе добавляется путь ``/api/media/docs``
-        (весь HTTP-API mediaworker живёт под префиксом ``/api/media``).
         """
         base = self.MEDIA_PUBLIC_URL
         if not base:
-            base = f"https://{self.DOMAIN}" if self.DOMAIN else self.MEDIAWORKER_URL
+            base = f"https://{self.MEDIA_DOMAIN}" if self.MEDIA_DOMAIN \
+                else self.MEDIA_PUBLIC_URL if self.MEDIA_PUBLIC_URL \
+                else self.MEDIAWORKER_URL
         return f"{base.rstrip('/')}/api/media/docs"
 
     @property

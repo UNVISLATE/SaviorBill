@@ -7,12 +7,15 @@
 from __future__ import annotations
 
 import valkey.asyncio as valkey
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Security, status
 from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.security import HTTPAuthorizationCredentials
 
 from utils import ipban
 from utils.config import Config
+from utils.rbac import has_perm
 from utils import security
+from utils.openapi_auth import bearer_scheme
 from utils.storage import Storage
 from utils.telemetry import inject_carrier
 
@@ -20,6 +23,7 @@ router = APIRouter()
 
 _STATUS_PREFIX = "media:status:"
 _FILE_PREFIX = "media:file:"
+_PERM_LARGE = "media.uploadlarge"
 
 
 def _client_ip(request: Request) -> str:
@@ -62,7 +66,9 @@ async def _authorize(request: Request, acc_id: int) -> tuple[dict | None, str | 
 async def serve(request: Request, token: str):
     """Отдать медиа. S3 → presigned redirect; fs → FileResponse.
 
-    ``token`` может нести суффикс варианта: ``{token}.thumb`` / ``{token}.preview``.
+    ``token`` может нести суффикс варианта: ``{token}.preview`` /
+    ``{token}.preview_thumb`` (только для видео — фото не имеет отдельного
+    thumb-варианта, основной webp и так уже оптимизирован).
     """
     import os
 
@@ -71,12 +77,13 @@ async def serve(request: Request, token: str):
     storage: Storage = request.app.state.storage
 
     base, _, suffix = token.partition(".")
-    variant = {
-        "": "main",
-        "thumb": "thumb",
-        "preview": "preview",
-        "preview_thumb": "preview_thumb",
-    }.get(suffix, "main")
+    _KNOWN_VARIANTS = {"": "main", "preview": "preview", "preview_thumb": "preview_thumb"}
+    if suffix not in _KNOWN_VARIANTS:
+        # Неизвестный суффикс (например, случайно указано расширение файла
+        # из поля ``key``, а не ``url`` — ``.thumb.webp`` вместо ``.thumb``) —
+        # раньше здесь молча отдавался main-файл, что вводило в заблуждение.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+    variant = _KNOWN_VARIANTS[suffix]
 
     st = await vk.hgetall(f"{_STATUS_PREFIX}{base}")
     if st and st.get("state") in ("processing", "queued"):
@@ -129,9 +136,33 @@ async def serve(request: Request, token: str):
     raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
 
 
-@router.post("/{token}/preview", status_code=status.HTTP_202_ACCEPTED)
-async def upload_preview(request: Request, token: str) -> dict:
-    """Ручная загрузка превью для видео (только владелец медиа)."""
+@router.post(
+    "/{token}/preview",
+    status_code=status.HTTP_202_ACCEPTED,
+    openapi_extra={
+        # Тело читается сырым потоком (request.stream()) без File()/UploadFile —
+        # см. пояснение в upload.py::upload_file. Описание только для Swagger UI.
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/octet-stream": {
+                    "schema": {"type": "string", "format": "binary"}
+                }
+            },
+        }
+    },
+)
+async def upload_preview(
+    request: Request,
+    token: str,
+    _creds: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
+) -> dict:
+    """Ручная загрузка превью для видео (только владелец медиа).
+
+    ``_creds`` не используется напрямую (реальный разбор — в
+    ``_authenticate()``/``_bearer()`` выше) — параметр только регистрирует
+    HTTP Bearer security scheme в OpenAPI (см. ``utils/openapi_auth.py``).
+    """
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
     storage: Storage = request.app.state.storage
@@ -141,7 +172,9 @@ async def upload_preview(request: Request, token: str) -> dict:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "temporarily banned")
 
     acc_id = await _authenticate(request)
-    await _authorize(request, acc_id)
+    perms, _role = await _authorize(request, acc_id)
+    is_large = has_perm(perms, _PERM_LARGE)
+    max_bytes = cfg.max_bytes if is_large else cfg.small_max_bytes
 
     db = request.app.state.db
     media = await db.media_owner(token)
@@ -154,10 +187,13 @@ async def upload_preview(request: Request, token: str) -> dict:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "превью только для видео")
 
     try:
-        await storage.save_stream(
-            f"{token}.preview", request.stream(), cfg.small_max_bytes
-        )
+        await storage.save_stream(f"{token}.preview", request.stream(), max_bytes)
     except ValueError:
+        if is_large:
+            # Аккаунт с media.uploadlarge соврал про Content-Length — не бан.
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "не надо баловаться XD"
+            )
         await ipban.ban(vk, ip, cfg.ban_seconds)
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
 

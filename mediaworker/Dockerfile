@@ -26,6 +26,8 @@ COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY src/ /app/src/
+# Версия приложения (см. utils/version.py) — та же схема, что и у billing.
+COPY VERSION /app/VERSION
 
 
 FROM base AS tests

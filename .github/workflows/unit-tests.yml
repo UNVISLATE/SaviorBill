@@ -1,0 +1,43 @@
+# Переиспользуемый workflow: юнит-тесты billing + mediaworker.
+#
+# Раньше шаги unit/mediaworker-unit были продублированы дословно в ci.yml и
+# release.yml — при правке одного файла легко забыть про другой, и
+# release.yml мог начать проверять не совсем то же самое, что CI (см.
+# upd_plan.md, часть 1, п.1). Теперь оба workflow вызывают этот файл через
+# `uses: ./.github/workflows/unit-tests.yml`.
+name: Unit tests (reusable)
+
+on:
+  workflow_call:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dev deps
+        run: pip install -r src/requirements-dev.txt
+      - name: Run unit tests
+        env:
+          PYTHONPATH: src
+          DB_PASS: ci
+          JWT_SECRET: ci-secret-ci-secret-ci-secret-32
+        run: pytest -c deploy/test/pytest.ini --rootdir=. -m unit
+
+  mediaworker-unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install mediaworker deps
+        run: pip install -r mediaworker/requirements.txt -r mediaworker/requirements-dev.txt
+      - name: Run mediaworker unit tests
+        working-directory: mediaworker
+        env:
+          PYTHONPATH: src
+        run: pytest -q

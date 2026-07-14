@@ -1,20 +1,9 @@
 # syntax=docker/dockerfile:1
 #
-# Многостадийная сборка billing с авто-прогоном юнит-тестов.
-# Dockerfile и requirements лежат в src/, но КОНТЕКСТ сборки — корень репозитория
-# (нужны migrations/, alembic.ini, tests/, deploy/test/pytest.ini). Поэтому COPY-пути
-# заданы относительно корня. Сборка:
-#   docker build -f src/Dockerfile -t billing .
-# либо через deploy/dev/docker-compose.yml (context: ../.., dockerfile: src/Dockerfile).
-#
 #   base    — прод-зависимости + исходники (общий слой).
 #   tests   — добавляет dev-зависимости и ГОНЯЕТ юнит-тесты прямо во время сборки.
 #             Если хоть один юнит-тест падает — стадия (и весь образ) не собирается.
 #   runtime — финальный образ для прода: БЕЗ тестов и dev-зависимостей.
-#
-# Хитрость: runtime копирует «маркер успешных тестов» из стадии tests
-# (COPY --from=tests). Поэтому обычный `docker build` / `docker compose build`
-# ОБЯЗАН построить стадию tests => юнит-тесты выполняются на каждой сборке.
 
 FROM python:3.12-slim AS base
 
@@ -31,6 +20,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY src/ /app/src/
 COPY alembic.ini /app/alembic.ini
 COPY migrations/ /app/migrations/
+# Версия приложения (см. utils/version.py): по умолчанию — committed
+# заглушка "0.0.0-dev"; CI перезаписывает файл вычисленной через
+# setuptools_scm версией непосредственно перед `docker build` релиза
+COPY VERSION /app/VERSION
 
 
 FROM base AS tests
@@ -41,11 +34,12 @@ RUN pip install --no-cache-dir -r requirements-dev.txt
 COPY deploy/test/pytest.ini /app/pytest.ini
 COPY tests/ /app/tests/
 
-# Конфигу нужны обязательные переменные даже для импорта приложения.
-ENV DB_PASS=build JWT_SECRET=build-secret-build-secret-build
+ENV DB_PASS=build
+ARG JWT_SECRET
 
 # Гоняем ТОЛЬКО юнит-тесты (без внешних сервисов). Падение = сборка падает.
-RUN pytest -m unit && touch /app/.unit-tests-passed
+RUN JWT_SECRET=${JWT_SECRET:-$(head -c 32 /dev/urandom | base64)} \
+    pytest -m unit && touch /app/.unit-tests-passed
 
 
 FROM base AS runtime
@@ -54,6 +48,8 @@ COPY --from=tests /app/.unit-tests-passed /app/.unit-tests-passed
 
 EXPOSE 8000
 
-# host/port берутся из конфигурации (AppConfig.HOST/PORT); запуск идёт через
-# сам модуль app.py (uvicorn.run c host/port из ENV), без дублирования флагов.
-CMD ["python", "src/app.py"]
+# Миграции и старт приложения разнесены на явные шаги с логами и корректными
+# кодами возврата (см. src/entrypoint.sh + upd_plan.md, часть 1, п.2).
+COPY src/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+ENTRYPOINT ["/app/entrypoint.sh"]

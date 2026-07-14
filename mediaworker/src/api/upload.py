@@ -13,12 +13,14 @@ import time
 import uuid
 
 import valkey.asyncio as valkey
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Security, status
+from fastapi.security import HTTPAuthorizationCredentials
 
 from utils import ipban
 from utils.config import Config
 from utils.rbac import has_perm
 from utils import security
+from utils.openapi_auth import bearer_scheme
 from utils.storage import Storage
 from utils.telemetry import inject_carrier
 
@@ -101,8 +103,18 @@ async def _enforce_hourly_limit(
 
 
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
-async def request_upload_token(request: Request, kind: str = "image") -> dict:
-    """Шаг 1: проверить права и выдать одноразовый upload-token."""
+async def request_upload_token(
+    request: Request,
+    kind: str = "image",
+    _creds: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
+) -> dict:
+    """Шаг 1: проверить права и выдать одноразовый upload-token.
+
+    ``_creds`` не используется напрямую (реальный разбор — в
+    ``_authenticate()``/``_bearer()`` ниже) — параметр здесь только чтобы
+    зарегистрировать HTTP Bearer security scheme в OpenAPI (кнопка
+    "Authorize" и замочек в Swagger UI, см. ``utils/openapi_auth.py``).
+    """
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
 
@@ -116,7 +128,8 @@ async def request_upload_token(request: Request, kind: str = "image") -> dict:
     acc_id = await _authenticate(request)
     perms, _role = await _authorize(request, acc_id)
 
-    if has_perm(perms, _PERM_LARGE):
+    is_large = has_perm(perms, _PERM_LARGE)
+    if is_large:
         max_bytes = cfg.max_bytes
     elif has_perm(perms, _PERM_SMALL):
         max_bytes = cfg.small_max_bytes
@@ -131,7 +144,14 @@ async def request_upload_token(request: Request, kind: str = "image") -> dict:
     uptoken_key = f"{_UPTOKEN_PREFIX}{token}"
     await vk.hset(
         uptoken_key,
-        mapping={"owner": str(acc_id), "kind": kind, "max_bytes": str(max_bytes)},
+        mapping={
+            "owner": str(acc_id),
+            "kind": kind,
+            "max_bytes": str(max_bytes),
+            # Флаг права media.uploadlarge — переносим на шаг 2, чтобы решить,
+            # банить ли IP за подложный Content-Length (см. upload_file).
+            "large": "1" if is_large else "0",
+        },
     )
     await vk.expire(uptoken_key, cfg.upload_token_ttl)
     return {
@@ -141,7 +161,23 @@ async def request_upload_token(request: Request, kind: str = "image") -> dict:
     }
 
 
-@router.post("/upload/{upload_token}", status_code=status.HTTP_202_ACCEPTED)
+@router.post(
+    "/upload/{upload_token}",
+    status_code=status.HTTP_202_ACCEPTED,
+    openapi_extra={
+        # Тело читается сырым потоком (request.stream()) без File()/UploadFile,
+        # чтобы не буферизовать файл целиком и соблюсти лимит размера на лету.
+        # Это описание нужно только чтобы Swagger UI показал виджет выбора файла.
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/octet-stream": {
+                    "schema": {"type": "string", "format": "binary"}
+                }
+            },
+        }
+    },
+)
 async def upload_file(request: Request, upload_token: str) -> dict:
     """Шаг 2: принять файл по одноразовому upload-token."""
     cfg: Config = request.app.state.cfg
@@ -170,6 +206,7 @@ async def upload_file(request: Request, upload_token: str) -> dict:
     owner_id = payload.get("owner")
     kind = payload.get("kind", "image")
     max_bytes = int(payload.get("max_bytes", cfg.small_max_bytes))
+    is_large = payload.get("large") == "1"
 
     # Пре-проверка: честно заявленный слишком большой Content-Length → отказ.
     clen = request.headers.get("content-length")
@@ -180,6 +217,12 @@ async def upload_file(request: Request, upload_token: str) -> dict:
     try:
         size = await storage.save_stream(media_token, request.stream(), max_bytes)
     except ValueError:
+        if is_large:
+            # Аккаунт с media.uploadlarge соврал про Content-Length — не бан,
+            # это, скорее всего, свой человек, а не атака: просто отказ.
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "не надо баловаться XD"
+            )
         # Реальный объём превысил лимит — заголовок был фейковым → БАН.
         await ipban.ban(vk, ip, cfg.ban_seconds)
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")

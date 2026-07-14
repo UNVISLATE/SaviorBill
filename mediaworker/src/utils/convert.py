@@ -2,8 +2,8 @@
 
 Из одного оригинала генерируется несколько вариантов:
 
-- изображение → ``main`` (webp, полное качество) + ``thumb`` (webp, обрезанный
-  квадрат минимального качества/размера);
+- изображение → только ``main`` (webp, уже оптимизированный формат — отдельный
+  обрезанный thumb для фото избыточен, т.к. оригинал и так лёгкий webp);
 - видео → ``main`` (webm) + ``preview`` (полный кадр-постер, webp) +
   ``preview_thumb`` (обрезанный мини-постер, webp).
 
@@ -94,7 +94,7 @@ def check_signature(kind: str, header: bytes) -> None:
 class Variant:
     """Один выходной файл конверсии."""
 
-    name: str  # main | thumb | preview | preview_thumb
+    name: str  # main | preview | preview_thumb
     key: str  # имя файла в хранилище
     mime: str
 
@@ -137,19 +137,10 @@ def _webp(src: str, dst: str, quality: int, vf: str | None = None) -> list[str]:
 async def convert_image(
     cfg: Config, src: str, out_dir: str, token: str
 ) -> list[Variant]:
-    """Изображение → полный webp + обрезанный мини-webp."""
+    """Изображение → только полный webp (thumb не генерируется — избыточно)."""
     main = Variant("main", *target_key(token, "image"))
-    thumb = Variant("thumb", f"{token}.thumb.webp", "image/webp")
     await _run(_webp(src, os.path.join(out_dir, main.key), cfg.webp_quality))
-    await _run(
-        _webp(
-            src,
-            os.path.join(out_dir, thumb.key),
-            cfg.thumb_quality,
-            _thumb_vf(cfg.thumb_size),
-        )
-    )
-    return [main, thumb]
+    return [main]
 
 
 async def convert_video(

@@ -3,43 +3,47 @@ name: CI
 on:
   push:
     branches: [main, master]
+    # Чисто документационные/adminui-only изменения не гоняют тяжёлый
+    # docker-стек (см. upd_plan.md, часть 1, п.8). Если правится и код, и
+    # доки в одном PR — фильтр не сработает (это ОК, значит есть что тестить).
+    paths-ignore:
+      - "docs/**"
+      - "adminui/**"
+      - "**/*.md"
   pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "adminui/**"
+      - "**/*.md"
+
+# Отменяем предыдущий незавершённый запуск на том же ref при новом push —
+# экономит CI-минуты и не даёт устаревшему коммиту обогнать актуальный по
+# времени завершения (см. upd_plan.md, часть 1, п.7).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  unit:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install dev deps
-        run: pip install -r src/requirements-dev.txt
-      - name: Run unit tests
-        env:
-          PYTHONPATH: src
-          DB_PASS: ci
-          JWT_SECRET: ci-secret-ci-secret-ci-secret-32
-        run: pytest -c deploy/test/pytest.ini --rootdir=. -m unit
+  unit-tests:
+    uses: ./.github/workflows/unit-tests.yml
 
-  mediaworker-unit:
+  compose-config-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install mediaworker deps
-        run: pip install -r mediaworker/requirements.txt -r mediaworker/requirements-dev.txt
-      - name: Run mediaworker unit tests
-        working-directory: mediaworker
+      - name: Validate prod docker-compose config
+        # Дешёвая защита от опечаток в deploy/docker-compose.yml (то, что
+        # реально получают пользователи через setup.sh) — этот файл раньше
+        # никогда не проверялся в CI (см. upd_plan.md, часть 1, п.6).
+        # `config` только парсит/интерполирует, ничего не запускает.
+        working-directory: deploy
         env:
-          PYTHONPATH: src
-        run: pytest -q
+          DB_PASS: dummy-for-config-validation-only
+        run: docker compose -f docker-compose.yml config -q
 
   integration:
     runs-on: ubuntu-latest
-    needs: [unit, mediaworker-unit]
+    needs: [unit-tests]
     steps:
       - uses: actions/checkout@v4
       - name: Build & run full stack with integration tests

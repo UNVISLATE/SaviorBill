@@ -106,10 +106,10 @@ async def test_admin_media_list_and_cleanup(http, new_user, seed):
     assert lst.status_code == 200, lst.text
     entry = next((m for m in lst.json() if m["token"] == token), None)
     assert entry is not None
-    # mediaworker записал варианты (полный webp + обрезанный мини-webp).
+    # mediaworker записал варианты (только main — для фото thumb больше не
+    # генерируется, т.к. основной webp и так уже оптимизирован).
     assert "main" in entry["variants"]
-    assert "thumb" in entry["variants"]
-    assert entry["variants"]["thumb"]["url"] == f"/api/media/{token}.thumb"
+    assert "thumb" not in entry["variants"]
 
     # чистка орфанов (медиа не привязано ни к товару, ни к аватарке) — грейс-период
     # по умолчанию (1 час) исключил бы только что загруженный файл, обнуляем для теста.

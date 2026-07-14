@@ -11,7 +11,7 @@ services:
       LUA_SCRIPTS_DIR: /app/data/tests/lua
       # В интеграционных тестах много регистраций с одного IP — лимитер отключаем.
       RATE_LIMIT_ENABLED: "false"
-      # Запас по таймауту lua-вызова для медленного CI.
+      # Запас по таймауту lua-вызова при медленном CI.
       LUA_CALL_TIMEOUT: "60"
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')\""]

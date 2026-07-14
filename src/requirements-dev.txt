@@ -2,3 +2,4 @@
 -r requirements.txt
 pytest==8.4.2
 pytest-asyncio==1.2.0
+setuptools_scm==8.3.1

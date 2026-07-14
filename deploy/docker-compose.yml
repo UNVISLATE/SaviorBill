@@ -45,11 +45,15 @@ services:
       DB_PORT: 5432
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-*}
     volumes:
       - ../data:/app/data:rw
-    command: >
-      sh -c "alembic upgrade head &&
-             python src/app.py"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')\""]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
 
   luaworker:
     container_name: saviorlua
@@ -68,6 +72,15 @@ services:
       BILLING_URL: http://billing:8000
     volumes:
       - ../data:/app/data:ro
+    healthcheck:
+      # У luaworker нет HTTP-поверхности — проверяем только, что процесс жив
+      # (liveness, не readiness: не гарантирует, что consumer-group реально
+      # читает поток, но ловит падение/зависание процесса).
+      test: ["CMD-SHELL", "pgrep -f main.lua || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 15s
 
   mediaworker:
     container_name: saviormedia
@@ -90,14 +103,22 @@ services:
       DATA_DIR: /app/data
     volumes:
       - ../data:/app/data:rw
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/api/media/health')\""]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 30s
 
   caddy:
     container_name: saviorcaddy
     image: caddy:2-alpine
     restart: unless-stopped
     depends_on:
-      - billing
-      - mediaworker
+      billing:
+        condition: service_healthy
+      mediaworker:
+        condition: service_healthy
     environment:
       DOMAIN: ${DOMAIN:-localhost:8000}
       MEDIA_DOMAIN: ${MEDIA_DOMAIN:-localhost:8001}
