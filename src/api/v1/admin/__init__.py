@@ -6,6 +6,7 @@ from .catalogs import router as catalogs_router
 from .audit import router as audit_router
 from .analytics import router as analytics_router
 from .email import router as email_router
+from .logs import router as logs_router
 from .lua import router as lua_router
 from .me import router as me_router
 from .media import router as media_router
@@ -17,6 +18,7 @@ from .roles import router as roles_router
 from .services import router as services_router
 from .servicekeys import router as servicekeys_router
 from .settings import router as settings_router
+from .tasks import router as tasks_router
 from .triggers import router as triggers_router
 from .users import router as users_router
 
@@ -29,24 +31,24 @@ router.include_router(me_router, tags=["admin: me"])
 router.include_router(users_router, prefix="/users", tags=["admin: users"])
 router.include_router(roles_router, tags=["admin: roles"])
 router.include_router(services_router, prefix="/services", tags=["admin: services"])
-router.include_router(
-    servicekeys_router, prefix="/services", tags=["admin: services"]
-)
+router.include_router(servicekeys_router, prefix="/services", tags=["admin: services"])
 router.include_router(catalogs_router, prefix="/catalogs", tags=["admin: catalogs"])
 router.include_router(orders_router, prefix="/orders", tags=["admin: orders"])
-router.include_router(
-    purchases_router, prefix="/purchases", tags=["admin: purchases"]
-)
+router.include_router(purchases_router, prefix="/purchases", tags=["admin: purchases"])
 router.include_router(promo_router, prefix="/promo", tags=["admin: promo"])
 router.include_router(oauth_router, prefix="/oauth", tags=["admin: oauth"])
 router.include_router(lua_router, prefix="/lua", tags=["admin: lua"])
-router.include_router(
-    email_router, prefix="/email/templates", tags=["admin: email"]
-)
+router.include_router(email_router, prefix="/email/templates", tags=["admin: email"])
 router.include_router(triggers_router, prefix="/triggers", tags=["admin: triggers"])
 router.include_router(media_router, prefix="/media", tags=["admin: media"])
 router.include_router(settings_router, prefix="/settings", tags=["admin: settings"])
 router.include_router(audit_router, prefix="/audit", tags=["admin: audit"])
+# tasks_router без единого верхнего тега здесь: media.py/lua.py сами задают
+# "admin: tasks/media" и "admin: tasks/lua" при регистрации внутри пакета
+# (см. api/v1/admin/tasks/__init__.py) — тот же паттерн, что у analytics.
+router.include_router(tasks_router, prefix="/tasks")
+# logs_router: media.py сам задаёт "admin: logs/media" (см. api/v1/admin/logs/__init__.py).
+router.include_router(logs_router, prefix="/logs")
 # analytics_router без префикса здесь: basic_router и advanced_router уже
 # сами задают полные "/analytics/basic" и "/analytics/advanced" (см.
 # api/v1/admin/analytics/basic.py и advanced.py) — тот же паттерн, что и у

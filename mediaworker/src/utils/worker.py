@@ -25,41 +25,50 @@ from .convert import (
     make_thumb,
     probe_duration,
 )
+from .keys import file_key, opstatus_key, status_key
+from .proclog import ProcLog
 from .settings import SettingsResolver
 from .storage import Storage
+from .task_log import TaskLog
 from .telemetry import inject_carrier, span_from_carrier
 
-_STATUS_PREFIX = "media:status:"
 # Статус побочных операций (доп. превью/thumb) — НАМЕРЕННО отдельный от
-# _STATUS_PREFIX ключ: раньше _preview() переиспользовал статус ОСНОВНОГО
-# медиа, из-за чего уже готовое видео становилось недоступным (425) на время
-# пересборки превью, а при ошибке конвертации статус оставался "processing"
-# навсегда (ошибка уходила только в stdout). См. implementation_plan.md §3.
-_OPSTATUS_PREFIX = "media:opstatus:"
-_FILE_PREFIX = "media:file:"
+# основного статуса медиа (см. ``keys.opstatus_key``): раньше _preview()
+# переиспользовал статус ОСНОВНОГО медиа, из-за чего уже готовое видео
+# становилось недоступным (425) на время пересборки превью, а при ошибке
+# конвертации статус оставался "processing" навсегда (ошибка уходила только
+# в stdout).
 
 
 class Worker:
     """Обработчик потока медиа-задач."""
 
     def __init__(
-        self, cfg: Config, vk: valkey.Valkey, storage: Storage, settings: SettingsResolver
+        self,
+        cfg: Config,
+        vk: valkey.Valkey,
+        storage: Storage,
+        settings: SettingsResolver,
+        task_log: TaskLog,
+        proc_log: ProcLog,
     ) -> None:
         self.cfg = cfg
         self.vk = vk
         self.storage = storage
         self.settings = settings
+        self.task_log = task_log
+        self.proc_log = proc_log
         # Ограничитель одновременно обрабатываемых задач (backpressure).
         self._sem = asyncio.Semaphore(cfg.task_concurrency)
 
     async def _set_status(self, token: str, **fields: str) -> None:
-        key = f"{_STATUS_PREFIX}{token}"
+        key = status_key(token)
         await self.vk.hset(key, mapping={k: v for k, v in fields.items() if v})
         await self.vk.expire(key, self.cfg.status_ttl)
 
     async def _set_op_status(self, token: str, op: str, **fields: str) -> None:
         """Статус побочной операции (не трогает статус основного медиа)."""
-        key = f"{_OPSTATUS_PREFIX}{token}:{op}"
+        key = opstatus_key(token, op)
         await self.vk.hset(key, mapping={k: v for k, v in fields.items() if v})
         await self.vk.expire(key, self.cfg.status_ttl)
 
@@ -118,16 +127,31 @@ class Worker:
     async def _on_failure(self, data: dict) -> None:
         """Учесть попытку; до исчерпания — вернуть задачу в стрим, иначе — в DLQ."""
         token = data.get("token", "unknown")
+        op = data.get("op", "?")
         key = f"attempts:media:convert:{token}"
         n = await self.vk.incr(key)
         await self.vk.expire(key, self.cfg.status_ttl)
         if int(n) >= self.cfg.task_max_attempts:
-            await self.vk.xadd(self.cfg.task_dlq_stream, {**data, "attempts": str(n)})
+            await self.vk.xadd(
+                self.cfg.task_dlq_stream,
+                {**data, "attempts": str(n)},
+                maxlen=self.cfg.task_stream_maxlen,
+                approximate=True,
+            )
             await self._set_status(token, state="failed", error="max attempts exceeded")
             await self.vk.delete(key)
+            await self.task_log.record(
+                kind="media",
+                op=op,
+                token_or_cid=token,
+                state="failed",
+                detail="max attempts exceeded",
+            )
         else:
             # Ещё есть попытки — кладём задачу обратно в очередь.
-            await self.vk.xadd(self.cfg.task_stream, data)
+            await self.vk.xadd(
+                self.cfg.task_stream, data, maxlen=self.cfg.task_stream_maxlen, approximate=True
+            )
 
     async def _handle(self, data: dict) -> None:
         op = data.get("op")
@@ -163,7 +187,12 @@ class Worker:
 
     async def _emit_result(self, fields: dict) -> None:
         """Опубликовать результат конверсии в стрим (billing запишет в БД)."""
-        await self.vk.xadd(self.cfg.result_stream, inject_carrier(fields))
+        await self.vk.xadd(
+            self.cfg.result_stream,
+            inject_carrier(fields),
+            maxlen=self.cfg.result_stream_maxlen,
+            approximate=True,
+        )
 
     async def _convert(self, data: dict) -> None:
         token = data["token"]
@@ -172,13 +201,30 @@ class Worker:
         src = self.storage.orig_path(token)
 
         await self._set_status(token, state="processing")
+        await self.task_log.record(
+            kind="media", op="convert", token_or_cid=token, state="processing"
+        )
+        job_id = await self.proc_log.start_job(op="convert", token=token)
+
+        async def sink(chunk: str) -> None:
+            await self.proc_log.append(job_id, chunk)
 
         try:
             # Вид медиа (image/video) больше не приходит от клиента — сервер
             # определяет его сам по сигнатуре файла (см. utils/convert.py).
-            kind, variants = await convert(self.cfg, src, self.cfg.uploads_dir, token)
+            kind, variants = await convert(
+                self.cfg, src, self.cfg.uploads_dir, token, on_output=sink
+            )
         except ConvertError as exc:
             await self._set_status(token, state="failed", error=str(exc))
+            await self.task_log.record(
+                kind="media",
+                op="convert",
+                token_or_cid=token,
+                state="failed",
+                detail=str(exc),
+            )
+            await self.proc_log.finish_job(job_id, "failed")
             self.storage._safe_unlink(src)
             return
 
@@ -187,11 +233,10 @@ class Worker:
             key, size = await self._publish(v)
             sizes[key] = size
             # Кэш ключей вариантов для serve() — как для s3, так и для fs.
-            await self.vk.hset(f"{_FILE_PREFIX}{token}", mapping={v.name: v.key})
+            await self.vk.hset(file_key(token), mapping={v.name: v.key})
 
         # Фото тумбим только если результат больше media.small_max_bytes —
-        # маленькое фото и так уже лёгкий webp, отдельный обрезанный thumb
-        # избыточен (см. implementation_plan.md §5).
+        # маленькое фото и так уже лёгкий webp, отдельный обрезанный thumb избыточен
         if kind == "image":
             main = variants[0]
             small_max = await self.settings.small_max_bytes()
@@ -199,7 +244,7 @@ class Worker:
                 thumb = await make_thumb(self.cfg, src, self.cfg.uploads_dir, token)
                 key, size = await self._publish(thumb)
                 sizes[key] = size
-                await self.vk.hset(f"{_FILE_PREFIX}{token}", mapping={thumb.name: thumb.key})
+                await self.vk.hset(file_key(token), mapping={thumb.name: thumb.key})
                 variants.append(thumb)
 
         main = variants[0]
@@ -230,23 +275,27 @@ class Worker:
         await self._set_status(
             token, state="ready", url=f"/api/media/{token}", mime=main.mime, tag=tag
         )
+        await self.task_log.record(
+            kind="media", op="convert", token_or_cid=token, state="ready"
+        )
+        await self.proc_log.finish_job(job_id, "ready")
         await self.vk.delete(f"attempts:media:convert:{token}")
 
         if not self.cfg.keep_original:
             self.storage._safe_unlink(src)
 
     async def _preview_add(self, data: dict) -> None:
-        """Добавить ОДНО новое превью (не трогая уже существующие).
-
-        ``source`` в задаче: ``"upload"`` — клиент прислал конкретный кадр
-        (файл лежит во ``uploads_dir`` под ``{token}.preview_src``);
-        ``"random"`` — сервер сам берёт случайный кадр из уже готового
-        ``main``-файла (оригинал к этому моменту обычно уже удалён —
-        см. implementation_plan.md §5.1.2, поэтому берём из main, не из
-        оригинала — единственный вариант, который работает всегда).
-        """
+        """Добавить ОДНО новое превью (не трогая уже существующие)."""
         token = data["token"]
         source = data.get("source", "random")
+        await self.task_log.record(
+            kind="media", op="preview_add", token_or_cid=token, state="processing"
+        )
+        job_id = await self.proc_log.start_job(op="preview_add", token=token)
+
+        async def sink(chunk: str) -> None:
+            await self.proc_log.append(job_id, chunk)
+
         try:
             if source == "upload":
                 src = self.storage.orig_path(f"{token}.preview_src")
@@ -260,15 +309,25 @@ class Worker:
                 duration = await probe_duration(src)
                 at = random.uniform(0, duration) if duration else None
 
-            preview = await make_preview(self.cfg, src, self.cfg.uploads_dir, token, at=at)
+            preview = await make_preview(
+                self.cfg, src, self.cfg.uploads_dir, token, at=at, on_output=sink
+            )
         except ConvertError as exc:
             await self._set_op_status(token, "preview", state="failed", error=str(exc))
+            await self.task_log.record(
+                kind="media",
+                op="preview_add",
+                token_or_cid=token,
+                state="failed",
+                detail=str(exc),
+            )
+            await self.proc_log.finish_job(job_id, "failed")
             if source == "upload":
                 self.storage._safe_unlink(self.storage.orig_path(f"{token}.preview_src"))
             return
 
         key, size = await self._publish(preview)
-        await self.vk.hset(f"{_FILE_PREFIX}{token}", mapping={preview.name: preview.key})
+        await self.vk.hset(file_key(token), mapping={preview.name: preview.key})
         await self._emit_result(
             {
                 "op": "preview_add",
@@ -277,6 +336,10 @@ class Worker:
             }
         )
         await self._set_op_status(token, "preview", state="ready")
+        await self.task_log.record(
+            kind="media", op="preview_add", token_or_cid=token, state="ready"
+        )
+        await self.proc_log.finish_job(job_id, "ready")
         if source == "upload":
             self.storage._safe_unlink(self.storage.orig_path(f"{token}.preview_src"))
 
@@ -287,19 +350,35 @@ class Worker:
         (кэш ``media:file:{token}`` перезаписывается тем же полем ``thumb``).
         """
         token = data["token"]
+        await self.task_log.record(
+            kind="media", op="thumb_replace", token_or_cid=token, state="processing"
+        )
+        job_id = await self.proc_log.start_job(op="thumb_replace", token=token)
+
+        async def sink(chunk: str) -> None:
+            await self.proc_log.append(job_id, chunk)
+
         src = self.storage.orig_path(f"{token}.thumb_src")
-        old_key = await self.vk.hget(f"{_FILE_PREFIX}{token}", "thumb")
+        old_key = await self.vk.hget(file_key(token), "thumb")
         try:
             if not os.path.exists(src):
                 raise ConvertError("исходный файл для thumb не найден")
-            thumb = await make_thumb(self.cfg, src, self.cfg.uploads_dir, token)
+            thumb = await make_thumb(self.cfg, src, self.cfg.uploads_dir, token, on_output=sink)
         except ConvertError as exc:
             await self._set_op_status(token, "thumb", state="failed", error=str(exc))
+            await self.task_log.record(
+                kind="media",
+                op="thumb_replace",
+                token_or_cid=token,
+                state="failed",
+                detail=str(exc),
+            )
+            await self.proc_log.finish_job(job_id, "failed")
             self.storage._safe_unlink(src)
             return
 
         key, size = await self._publish(thumb)
-        await self.vk.hset(f"{_FILE_PREFIX}{token}", mapping={thumb.name: thumb.key})
+        await self.vk.hset(file_key(token), mapping={thumb.name: thumb.key})
         await self._emit_result(
             {
                 "op": "thumb_replace",
@@ -308,6 +387,10 @@ class Worker:
             }
         )
         await self._set_op_status(token, "thumb", state="ready")
+        await self.task_log.record(
+            kind="media", op="thumb_replace", token_or_cid=token, state="ready"
+        )
+        await self.proc_log.finish_job(job_id, "ready")
         self.storage._safe_unlink(src)
         if old_key and old_key != thumb.key:
             await self.storage.delete([old_key])

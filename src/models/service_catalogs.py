@@ -79,9 +79,7 @@ class ServiceCatalogsMngr:
             raise HTTPException(status.HTTP_409_CONFLICT, "catalog slug already taken")
         parent_id = data.get("parent_id")
         if parent_id is not None and await self.by_id(parent_id) is None:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, "parent catalog not found"
-            )
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "parent catalog not found")
         cat = ServiceCatalogsModel(**data)
         self.s.add(cat)
         await self.s.flush()

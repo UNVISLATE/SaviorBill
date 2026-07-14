@@ -34,23 +34,15 @@ class TriggerCreate(BaseModel):
     name: str | None = Field(
         default=None, max_length=128, description="Trigger name (optional)"
     )
-    event: str = Field(
-        min_length=2, max_length=64, description="Event condition"
-    )
+    event: str = Field(min_length=2, max_length=64, description="Event condition")
     action: str = Field(
         min_length=2,
         max_length=32,
         description="Action key: email | lua",
     )
-    config: dict = Field(
-        default_factory=dict, description="Action params (optional)"
-    )
-    cond: dict = Field(
-        default_factory=dict, description="Extra conditions (optional)"
-    )
-    is_active: bool = Field(
-        default=True, description="Active (optional)"
-    )
+    config: dict = Field(default_factory=dict, description="Action params (optional)")
+    cond: dict = Field(default_factory=dict, description="Extra conditions (optional)")
+    is_active: bool = Field(default=True, description="Active (optional)")
 
 
 class TriggerPatch(BaseModel):

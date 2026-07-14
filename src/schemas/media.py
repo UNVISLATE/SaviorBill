@@ -41,9 +41,7 @@ class Media(BaseModel):
     mime: str | None = None
     size: int | None = None
     owner_id: int | None = None
-    media: MediaVariant | None = Field(
-        default=None, description="Main file variant"
-    )
+    media: MediaVariant | None = Field(default=None, description="Main file variant")
     thumb: MediaVariant | None = Field(
         default=None,
         description="Single square thumbnail (video: always; image: only if "
@@ -87,12 +85,8 @@ class MediaStatus(BaseModel):
 
     token: str = Field(description="Media/task token")
     state: str = Field(description="processing | ready | failed")
-    url: str | None = Field(
-        default=None, description="Ready file URL (optional)"
-    )
-    mime: str | None = Field(
-        default=None, description="Ready file MIME (optional)"
-    )
+    url: str | None = Field(default=None, description="Ready file URL (optional)")
+    mime: str | None = Field(default=None, description="Ready file MIME (optional)")
     tag: str | None = Field(
         default=None, description="Optional UI label (latin+digits, up to 16 chars)"
     )

@@ -44,9 +44,7 @@ async def redeem(
 
     if catalog.kind == PromoKind.SERVICE:
         if not catalog.service_id:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "catalog service not set"
-            )
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "catalog service not set")
         service = await svc_mngr.get_active(catalog.service_id)
         order = await usvc_mngr.create(acc, service, discount=service.price)
         if order.status != UsvcStatus.ACTIVE:
@@ -63,7 +61,9 @@ async def redeem(
                 "user": {"id": acc.id, "login": acc.login},
             },
         )
-        return PromoResult(kind="service", message="service delivered", order_id=order.id)
+        return PromoResult(
+            kind="service", message="service delivered", order_id=order.id
+        )
 
     raise HTTPException(
         status.HTTP_400_BAD_REQUEST,

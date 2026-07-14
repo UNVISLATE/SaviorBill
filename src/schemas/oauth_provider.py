@@ -58,12 +58,8 @@ class OAuthProviderCreate(BaseModel):
         default_factory=dict,
         description="Provider secrets/endpoints (optional)",
     )
-    title: str | None = Field(
-        default=None, description="Display name (optional)"
-    )
-    enabled: bool = Field(
-        default=False, description="Enabled (optional)"
-    )
+    title: str | None = Field(default=None, description="Display name (optional)")
+    enabled: bool = Field(default=False, description="Enabled (optional)")
     icon_media_id: int | None = Field(
         default=None, description="Provider icon media ID (optional)"
     )
@@ -77,15 +73,9 @@ class OAuthProviderCreate(BaseModel):
 class OAuthProviderPatch(BaseModel):
     """Update OAuth provider."""
 
-    title: str | None = Field(
-        default=None, description="Display name (optional)"
-    )
-    enabled: bool | None = Field(
-        default=None, description="Enabled (optional)"
-    )
-    script_id: int | None = Field(
-        default=None, description="Auth script ID (optional)"
-    )
+    title: str | None = Field(default=None, description="Display name (optional)")
+    enabled: bool | None = Field(default=None, description="Enabled (optional)")
+    script_id: int | None = Field(default=None, description="Auth script ID (optional)")
     secrets: dict | None = Field(
         default=None,
         description="Provider secrets (optional)",
@@ -94,9 +84,7 @@ class OAuthProviderPatch(BaseModel):
         default=None,
         description="Provider icon media ID; null removes icon",
     )
-    scopes: str | None = Field(
-        default=None, description="Requested scopes (optional)"
-    )
+    scopes: str | None = Field(default=None, description="Requested scopes (optional)")
     extra: dict | None = Field(default=None, description="Extra params (optional)")
 
 

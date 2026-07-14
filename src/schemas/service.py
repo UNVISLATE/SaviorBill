@@ -108,34 +108,18 @@ class ServiceAdmin(Service):
 class ServiceCreate(BaseModel):
     """Create service."""
 
-    slug: str = Field(
-        min_length=2, max_length=64, description="Unique service slug"
-    )
-    name: str = Field(
-        min_length=1, max_length=128, description="Service name"
-    )
+    slug: str = Field(min_length=2, max_length=64, description="Unique service slug")
+    name: str = Field(min_length=1, max_length=128, description="Service name")
     description: str | None = Field(default=None, description="Description (optional)")
-    catalog_id: int | None = Field(
-        default=None, description="Catalog ID; null = root"
-    )
-    price: Decimal = Field(
-        default=Decimal("0"), ge=0, description="Price ≥ 0"
-    )
-    currency: str = Field(
-        default="RUB", max_length=8, description="Currency"
-    )
-    delivery: str = Field(
-        default="key", description="Delivery method: key | lua"
-    )
+    catalog_id: int | None = Field(default=None, description="Catalog ID; null = root")
+    price: Decimal = Field(default=Decimal("0"), ge=0, description="Price ≥ 0")
+    currency: str = Field(default="RUB", max_length=8, description="Currency")
+    delivery: str = Field(default="key", description="Delivery method: key | lua")
     lua_script_id: int | None = Field(
         default=None, description="Lua script ID for delivery=lua"
     )
-    params: dict = Field(
-        default_factory=dict, description="Delivery params"
-    )
-    settings: dict = Field(
-        default_factory=dict, description="Service settings"
-    )
+    params: dict = Field(default_factory=dict, description="Delivery params")
+    settings: dict = Field(default_factory=dict, description="Service settings")
     is_active: bool = Field(default=True, description="Active")
 
     @field_validator("delivery")

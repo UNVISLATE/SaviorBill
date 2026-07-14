@@ -25,19 +25,18 @@ from fastapi import APIRouter, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials
 
 from utils import ipban
+from utils.authctx import authenticate, authorize, client_ip
 from utils.config import Config
+from utils.keys import rate_key, status_key, uptoken_key
 from utils.rbac import has_perm
-from utils import security
 from utils.openapi_auth import bearer_scheme
 from utils.settings import SettingsResolver
 from utils.storage import Storage
+from utils.task_log import TaskLog
 from utils.telemetry import inject_carrier
 
 router = APIRouter()
 
-_STATUS_PREFIX = "media:status:"
-_UPTOKEN_PREFIX = "media:uptoken:"
-_RATE_PREFIX = "media:uprate:"
 _PERM_SMALL = "media.upload"
 _PERM_LARGE = "media.uploadlarge"
 # До 16 символов, только латиница и цифры — просто метка для UI, не влияет
@@ -53,47 +52,6 @@ return data
 """
 
 
-def _client_ip(request: Request) -> str:
-    """IP клиента с учётом Caddy (X-Forwarded-For)."""
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "0.0.0.0"
-
-
-def _bearer(request: Request) -> str:
-    auth = request.headers.get("authorization", "")
-    if not auth.lower().startswith("bearer "):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bearer token required")
-    return auth.split(" ", 1)[1].strip()
-
-
-async def _authenticate(request: Request) -> int:
-    """Проверить access-JWT и вернуть id аккаунта."""
-    cfg: Config = request.app.state.cfg
-    token = _bearer(request)
-    try:
-        return security.account_id(
-            token, cfg.resolve_jwt_secret(), cfg.jwt_alg, cfg.jwt_iss
-        )
-    except security.InvalidToken as exc:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
-
-
-async def _authorize(
-    request: Request, acc_id: int
-) -> tuple[dict | None, str | None]:
-    """Прочитать права аккаунта; вернуть (perms, role_key). 401, если нет."""
-    cfg: Config = request.app.state.cfg
-    db = request.app.state.db
-    acc = await db.account(acc_id)
-    if acc is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "access denied")
-    if acc.role_key == cfg.role_banned:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "account banned")
-    return acc.perms, acc.role_key
-
-
 async def _enforce_hourly_limit(
     request: Request, acc_id: int, perms: dict | None
 ) -> None:
@@ -103,7 +61,7 @@ async def _enforce_hourly_limit(
     settings: SettingsResolver = request.app.state.settings
     vk: valkey.Valkey = request.app.state.vk
     bucket = int(time.time()) // 3600
-    key = f"{_RATE_PREFIX}{acc_id}:{bucket}"
+    key = rate_key(acc_id, bucket)
     used = await vk.incr(key)
     if used == 1:
         await vk.expire(key, 3600)
@@ -127,15 +85,15 @@ async def request_upload_token(
     сервер определяет сам по содержимому, а не по этой метке.
 
     ``_creds`` не используется напрямую (реальный разбор — в
-    ``_authenticate()``/``_bearer()`` ниже) — параметр здесь только чтобы
-    зарегистрировать HTTP Bearer security scheme в OpenAPI (кнопка
-    "Authorize" и замочек в Swagger UI, см. ``utils/openapi_auth.py``).
+    ``authenticate()``/``bearer()`` из ``utils/authctx.py``) — параметр здесь
+    только чтобы зарегистрировать HTTP Bearer security scheme в OpenAPI
+    (кнопка "Authorize" и замочек в Swagger UI, см. ``utils/openapi_auth.py``).
     """
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
     settings: SettingsResolver = request.app.state.settings
 
-    ip = _client_ip(request)
+    ip = client_ip(request)
     if await ipban.is_banned(vk, ip):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "temporarily banned")
 
@@ -145,8 +103,8 @@ async def request_upload_token(
             "tag: до 16 символов, только латиница и цифры",
         )
 
-    acc_id = await _authenticate(request)
-    perms, _role = await _authorize(request, acc_id)
+    acc_id = await authenticate(request)
+    perms, _role = await authorize(request, acc_id)
 
     is_large = has_perm(perms, _PERM_LARGE)
     if is_large:
@@ -161,9 +119,9 @@ async def request_upload_token(
     await _enforce_hourly_limit(request, acc_id, perms)
 
     token = uuid.uuid4().hex
-    uptoken_key = f"{_UPTOKEN_PREFIX}{token}"
+    uptoken_hkey = uptoken_key(token)
     await vk.hset(
-        uptoken_key,
+        uptoken_hkey,
         mapping={
             "owner": str(acc_id),
             "tag": tag or "",
@@ -173,7 +131,7 @@ async def request_upload_token(
             "large": "1" if is_large else "0",
         },
     )
-    await vk.expire(uptoken_key, cfg.upload_token_ttl)
+    await vk.expire(uptoken_hkey, cfg.upload_token_ttl)
     return {
         "upload_token": token,
         "expires_in": cfg.upload_token_ttl,
@@ -203,14 +161,14 @@ async def upload_file(request: Request, upload_token: str) -> dict:
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
     storage: Storage = request.app.state.storage
+    task_log: TaskLog = request.app.state.task_log
 
-    ip = _client_ip(request)
+    ip = client_ip(request)
     if await ipban.is_banned(vk, ip):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "temporarily banned")
 
     # Атомарно забрать одноразовый токен (Lua HGETALL + DEL).
-    uptoken_key = f"{_UPTOKEN_PREFIX}{upload_token}"
-    raw = await vk.eval(_CLAIM_TOKEN_SCRIPT, 1, uptoken_key)
+    raw = await vk.eval(_CLAIM_TOKEN_SCRIPT, 1, uptoken_key(upload_token))
     if not raw:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, "upload token not found or expired"
@@ -247,9 +205,8 @@ async def upload_file(request: Request, upload_token: str) -> dict:
         await ipban.ban(vk, ip, cfg.ban_seconds)
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
 
-    status_key = f"{_STATUS_PREFIX}{media_token}"
-    await vk.hset(status_key, mapping={"state": "queued"})
-    await vk.expire(status_key, cfg.status_ttl)
+    await vk.hset(status_key(media_token), mapping={"state": "queued"})
+    await vk.expire(status_key(media_token), cfg.status_ttl)
     await vk.xadd(
         cfg.task_stream,
         inject_carrier(
@@ -262,6 +219,11 @@ async def upload_file(request: Request, upload_token: str) -> dict:
                 "size": str(size),
             }
         ),
+        maxlen=cfg.task_stream_maxlen,
+        approximate=True,
+    )
+    await task_log.record(
+        kind="media", op="convert", token_or_cid=media_token, state="queued"
     )
     return {"token": media_token, "status": "queued"}
 

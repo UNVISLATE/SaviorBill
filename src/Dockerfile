@@ -48,8 +48,6 @@ COPY --from=tests /app/.unit-tests-passed /app/.unit-tests-passed
 
 EXPOSE 8000
 
-# Миграции и старт приложения разнесены на явные шаги с логами и корректными
-# кодами возврата (см. src/entrypoint.sh + upd_plan.md, часть 1, п.2).
 COPY src/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 ENTRYPOINT ["/app/entrypoint.sh"]

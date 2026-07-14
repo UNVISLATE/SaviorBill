@@ -43,9 +43,7 @@ async def register(
     if await mngr.by_login(body.login) or (
         body.email and await mngr.by_email(body.email)
     ):
-        raise HTTPException(
-            status.HTTP_409_CONFLICT, "account already exists"
-        )
+        raise HTTPException(status.HTTP_409_CONFLICT, "account already exists")
 
     acc = await mngr.create(
         body.login, hash_pass(body.password), body.email, ref_by=body.ref_code

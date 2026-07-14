@@ -29,9 +29,7 @@ router = APIRouter()
 )
 async def list_audit(
     action: str | None = Query(None, description="Action filter"),
-    actor_account_id: int | None = Query(
-        None, ge=0, description="Actor filter"
-    ),
+    actor_account_id: int | None = Query(None, ge=0, description="Actor filter"),
     pp: PageParams = Depends(page_params),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[AuditEntry]:

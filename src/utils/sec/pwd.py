@@ -1,5 +1,6 @@
 """Хэширование и проверка паролей на argon2id."""
 
+import secrets
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 
@@ -9,8 +10,7 @@ _ph = PasswordHasher()
 # Константный "балластный" хэш для анти-тайминг проверки логина: когда
 # аккаунт не найден, всё равно гоняем полный verify() против этого хэша,
 # чтобы время ответа не отличалось от случая "аккаунт найден, пароль неверен"
-# (см. IMPLEMENTATION_PLAN.md §6.2 — тайминг-атака user enumeration).
-_DUMMY_HASH = _ph.hash("dummy-password-for-constant-time-login-check")
+_DUMMY_HASH = _ph.hash(secrets.token_hex(32))
 
 
 def hash_pass(raw: str) -> str:

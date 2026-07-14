@@ -60,9 +60,7 @@ class PayMngr:
             stmt = stmt.where(PaymentProvidersModel.enabled.is_(True))
         prov = await self.s.scalar(stmt)
         if prov is None:
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, "payment provider not found"
-            )
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "payment provider not found")
         return prov
 
     def _secrets(self, prov: PaymentProvidersModel) -> dict:
@@ -235,9 +233,7 @@ class PayMngr:
         # Перечитываем и блокируем платёж перед мутацией: пока мы ждали
         # ответ скрипта (сеть), его мог обработать параллельный
         # callback/recheck/refund.
-        payment = await self.s.get(
-            UserPaymentsModel, payment.id, with_for_update=True
-        )
+        payment = await self.s.get(UserPaymentsModel, payment.id, with_for_update=True)
         if payment.status in (PayStatus.PAID, PayStatus.FAILED, PayStatus.REFUNDED):
             return payment
 
@@ -260,7 +256,8 @@ class PayMngr:
         """
         if payment.status != PayStatus.PAID:
             raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "refund is only possible for a paid payment"
+                status.HTTP_400_BAD_REQUEST,
+                "refund is only possible for a paid payment",
             )
         prov = await self._provider(payment.provider, enabled=False)
         script = await self._script(prov, PayAction.REFUND)
@@ -278,9 +275,7 @@ class PayMngr:
 
         # Как и в recheck — блокируем и перечитываем статус перед мутацией
         # (сеть к провайдеру уже отработала без удержания лока).
-        payment = await self.s.get(
-            UserPaymentsModel, payment.id, with_for_update=True
-        )
+        payment = await self.s.get(UserPaymentsModel, payment.id, with_for_update=True)
         if payment.status != PayStatus.PAID:
             return payment  # уже обработан конкурентным запросом — идемпотентно
 
@@ -294,7 +289,7 @@ class PayMngr:
 
     async def _apply_refund(self, payment: UserPaymentsModel, priv: dict) -> None:
         """Применить рефанд: пометить ``REFUNDED``, откатить услугу/ключ и
-        списать баланс в пределах суммы этого платежа (см. IMPLEMENTATION_PLAN.md §2).
+        списать баланс в пределах суммы этого платежа.
 
         Рефанд не поддерживает частичные суммы — либо весь платёж возвращён,
         либо нет. Но откат выданного по нему (услуга/ключ/баланс) — не

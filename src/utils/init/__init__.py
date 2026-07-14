@@ -93,7 +93,8 @@ async def _wait_initialized(cfg: AppConfig, sessionmaker, vk: valkey.Valkey) -> 
         await asyncio.sleep(_INIT_WAIT_STEP)
         waited += _INIT_WAIT_STEP
     log.warning(
-        "waiting for initialization has exceeded %ss — we continue without guarantee", _INIT_WAIT_MAX
+        "waiting for initialization has exceeded %ss — we continue without guarantee",
+        _INIT_WAIT_MAX,
     )
 
 

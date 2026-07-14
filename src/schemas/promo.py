@@ -27,9 +27,7 @@ def _check_kind_discount(kind: str, discount_type: str | None) -> None:
 class PromoRedeem(BaseModel):
     """Redeem promo code."""
 
-    code: str = Field(
-        min_length=2, max_length=64, description="Promo code"
-    )
+    code: str = Field(min_length=2, max_length=64, description="Promo code")
 
 
 class PromoResult(BaseModel):
@@ -70,19 +68,13 @@ class PromoCatalog(BaseModel):
 class PromoCatalogCreate(BaseModel):
     """Create promo catalog."""
 
-    name: str = Field(
-        min_length=1, max_length=128, description="Catalog name"
-    )
-    slug: str = Field(
-        min_length=2, max_length=64, description="Unique slug"
-    )
+    name: str = Field(min_length=1, max_length=128, description="Catalog name")
+    slug: str = Field(min_length=2, max_length=64, description="Unique slug")
     kind: str = Field(
         default=PromoKind.BONUS,
         description="Action type: bonus | discount | service",
     )
-    value: Decimal = Field(
-        default=Decimal("0"), description="Bonus/discount value"
-    )
+    value: Decimal = Field(default=Decimal("0"), description="Bonus/discount value")
     discount_type: str | None = Field(
         default=None,
         description="Discount type: percent | fixed",
@@ -98,9 +90,7 @@ class PromoCatalogCreate(BaseModel):
     conditions: dict = Field(
         default_factory=dict, description="Activation conditions (reserved)"
     )
-    is_active: bool = Field(
-        default=True, description="Active (optional)"
-    )
+    is_active: bool = Field(default=True, description="Active (optional)")
 
     @model_validator(mode="after")
     def _validate_kind_discount(self) -> "PromoCatalogCreate":

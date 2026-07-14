@@ -16,9 +16,7 @@ class Page(BaseModel, Generic[T]):
     total: int = Field(description="Total items")
     limit: int = Field(description="Page size")
     offset: int = Field(description="Effective offset")
-    has_more: bool = Field(
-        description="More items available"
-    )
+    has_more: bool = Field(description="More items available")
 
 
 __all__ = ["Page"]

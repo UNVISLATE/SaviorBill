@@ -49,7 +49,10 @@ async def _reencrypt_rows(
     stmt = select(model)
     if where_secret:
         stmt = stmt.where(model.is_secret.is_(True))
-    ids = [row.id if hasattr(row, "id") else getattr(row, "key") for row in await session.scalars(stmt)]
+    ids = [
+        row.id if hasattr(row, "id") else getattr(row, "key")
+        for row in await session.scalars(stmt)
+    ]
 
     done = 0
     for pk in ids:

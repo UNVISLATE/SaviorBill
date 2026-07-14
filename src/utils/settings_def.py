@@ -90,7 +90,12 @@ SETTINGS: tuple[SettingDef, ...] = (
     ),
     SettingDef("role.manager", "ROLE_MANAGER", group="role", desc="Имя роли менеджера"),
     SettingDef("role.support", "ROLE_SUPPORT", group="role", desc="Имя роли поддержки"),
-    SettingDef("role.media", "ROLE_MEDIA", group="role", desc="Имя роли медиа-модерации (резерв)"),
+    SettingDef(
+        "role.media",
+        "ROLE_MEDIA",
+        group="role",
+        desc="Имя роли медиа-модерации (резерв)",
+    ),
     SettingDef("role.user", "ROLE_USER", group="role", desc="Имя роли пользователя"),
     SettingDef("role.guest", "ROLE_GUEST", group="role", desc="Имя роли гостя"),
     SettingDef("role.banned", "ROLE_BANNED", group="role", desc="Имя роли блокировки"),
@@ -212,16 +217,14 @@ SETTINGS: tuple[SettingDef, ...] = (
         group="analytics",
         desc="Порог неактивности (дней без paid-платежа) для расчёта churn-rate",
     ),
-    # UI/брендинг: admin-панель и клиентское приложение (см. upd_plan.md, часть 6)
+    # UI/брендинг: admin-панель и клиентское приложение
     SettingDef(
         "ui.admin.product_name",
         None,
         group="ui",
         desc="Название в шапке/тайтле admin UI",
     ),
-    SettingDef(
-        "ui.admin.logo", None, group="ui", desc="Токен медиа логотипа admin UI"
-    ),
+    SettingDef("ui.admin.logo", None, group="ui", desc="Токен медиа логотипа admin UI"),
     SettingDef(
         "ui.admin.favicon", None, group="ui", desc="Токен медиа favicon admin UI"
     ),
@@ -238,9 +241,7 @@ SETTINGS: tuple[SettingDef, ...] = (
         group="ui",
         desc="Название клиентского приложения",
     ),
-    SettingDef(
-        "ui.client.logo", None, group="ui", desc="Токен медиа логотипа клиента"
-    ),
+    SettingDef("ui.client.logo", None, group="ui", desc="Токен медиа логотипа клиента"),
     SettingDef(
         "ui.client.favicon", None, group="ui", desc="Токен медиа favicon клиента"
     ),

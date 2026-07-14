@@ -25,12 +25,8 @@ class Role(BaseModel):
 class RoleCreate(BaseModel):
     """Create role."""
 
-    name: str = Field(
-        min_length=2, max_length=64, description="Unique role name"
-    )
-    title: str | None = Field(
-        default=None, description="Display title (optional)"
-    )
+    name: str = Field(min_length=2, max_length=64, description="Unique role name")
+    title: str | None = Field(default=None, description="Display title (optional)")
     perms: dict = Field(
         default_factory=dict, description="Role permission tree (optional)"
     )

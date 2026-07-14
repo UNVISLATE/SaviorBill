@@ -21,15 +21,15 @@ from __future__ import annotations
 import valkey.asyncio as valkey
 from fastapi import APIRouter, HTTPException, Request, status
 
-router = APIRouter()
+from utils.keys import status_key
 
-_STATUS_PREFIX = "media:status:"
+router = APIRouter()
 
 
 @router.get("/status/{token}")
 async def media_status(request: Request, token: str) -> dict:
     vk: valkey.Valkey = request.app.state.vk
-    data = await vk.hgetall(f"{_STATUS_PREFIX}{token}")
+    data = await vk.hgetall(status_key(token))
     if not data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
     return {

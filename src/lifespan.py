@@ -11,9 +11,11 @@ from utils.bootstrap import bootstrap
 from utils.init import init_system
 from utils.openapi import document_perms
 from utils.sec.secrets.resolve import resolve_secrets
+from utils.task_log import TaskLog
 from utils.telemetry import instrument_sqlalchemy
 
 from api import api_router
+from apiws import apiws_router
 
 
 def _prepare_storage(config: AppConfig) -> None:
@@ -34,6 +36,9 @@ async def lifespan(app: FastAPI):
     app.state.db_engine = create_db_engine(config.db_url)
     app.state.db_sessionmaker = create_db_sessionmaker(app.state.db_engine)
     app.state.valkey = create_valkey_client(config.valkey_url)
+    app.state.task_log = TaskLog(
+        app.state.valkey, max_len=config.TASKLOG_MAXLEN, ttl=config.TASKLOG_TTL
+    )
 
     # Автоинструментация запросов к БД (no-op, если трейсинг выключен).
     instrument_sqlalchemy(app.state.db_engine, config)
@@ -48,6 +53,7 @@ async def lifespan(app: FastAPI):
         app.state.db_sessionmaker,
         app.state.valkey,
         config,
+        app.state.task_log,
     )
     await app.state.billing_loop.start()
 
@@ -60,6 +66,7 @@ async def lifespan(app: FastAPI):
     await app.state.media_results.start()
 
     app.include_router(api_router)
+    app.include_router(apiws_router)
     # Роуты добавлены — задокументировать требуемые права в OpenAPI.
     document_perms(app)
 

@@ -16,9 +16,7 @@ def _media_url(token: str | None) -> str | None:
 class Reg(BaseModel):
     """Local account registration."""
 
-    login: str = Field(
-        min_length=3, max_length=64, description="Login (3–64 chars)"
-    )
+    login: str = Field(min_length=3, max_length=64, description="Login (3–64 chars)")
     password: str = Field(
         min_length=8, max_length=128, description="Password (8–128 chars)"
     )
@@ -40,9 +38,7 @@ class Login(BaseModel):
         max_length=64,
         description="Login or email",
     )
-    password: str = Field(
-        min_length=1, max_length=128, description="Password"
-    )
+    password: str = Field(min_length=1, max_length=128, description="Password")
 
 
 class Refresh(BaseModel):
@@ -94,9 +90,7 @@ class EmailVerifyConfirm(BaseModel):
     code: str = Field(
         min_length=4,
         max_length=10,
-        description=(
-            "Email code (`mail.code_digits`, default 4)"
-        ),
+        description=("Email code (`mail.code_digits`, default 4)"),
     )
 
 
@@ -182,11 +176,7 @@ class PasswordChange(BaseModel):
 class AvatarSet(BaseModel):
     """Set avatar."""
 
-    media_id: int | None = Field(
-        description=(
-            "Uploaded media ID; null removes avatar"
-        )
-    )
+    media_id: int | None = Field(description=("Uploaded media ID; null removes avatar"))
 
 
 class AdminMe(BaseModel):

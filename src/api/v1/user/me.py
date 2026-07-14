@@ -33,7 +33,9 @@ async def _account_response(acc: UserModel, session: AsyncSession) -> Account:
     return Account.from_account(acc, oauth_providers=[c.provider for c in conns])
 
 
-def _email_confirmed_by_oauth(email: str | None, oauth_emails: list[str | None]) -> bool:
+def _email_confirmed_by_oauth(
+    email: str | None, oauth_emails: list[str | None]
+) -> bool:
     """Подтверждён ли ``email`` какой-либо уже привязанной OAuth-учёткой.
 
     Сравнение регистронезависимое (email по стандарту принято сравнивать без
@@ -126,7 +128,9 @@ async def change_password(
         if not body.current_password or not verify_pass(
             acc.pass_hash, body.current_password
         ):
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid current password")
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED, "invalid current password"
+            )
     acc.pass_hash = hash_pass(body.new_password)
     await mngr.s.commit()
 
@@ -166,10 +170,12 @@ async def _release_old_avatar(
     """
     if old.owner_id != exclude_account_id:
         return
-    if await _is_media_still_used(media.s, old.id, exclude_account_id=exclude_account_id):
+    if await _is_media_still_used(
+        media.s, old.id, exclude_account_id=exclude_account_id
+    ):
         return
     cfg: AppConfig = request.app.state.settings
-    bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM)
+    bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN)
     await bus.enqueue_delete(old.backend, [old.path])
     await media.delete(old)
 
@@ -209,7 +215,9 @@ async def set_avatar(
     if old_media_id is not None and old_media_id != body.media_id:
         old = await media.by_id(old_media_id)
         if old is not None:
-            await _release_old_avatar(request, vk, media, old, exclude_account_id=acc.id)
+            await _release_old_avatar(
+                request, vk, media, old, exclude_account_id=acc.id
+            )
         await mngr.s.commit()
 
     return await _account_response(acc, mngr.s)

@@ -30,7 +30,9 @@ class EmailTemplateDetail(EmailTemplate):
     body: str = Field(description="Email body (Jinja2 template)")
 
     @classmethod
-    def from_model_with_body(cls, m, body: str) -> "EmailTemplateDetail":  # noqa: ANN001
+    def from_model_with_body(
+        cls, m, body: str
+    ) -> "EmailTemplateDetail":  # noqa: ANN001
         """Явное преобразование ORM-шаблона + прочитанного тела в схему ответа."""
         return cls(
             id=m.id,
@@ -46,15 +48,11 @@ class EmailTemplateDetail(EmailTemplate):
 class EmailTemplateUpload(BaseModel):
     """Create email template."""
 
-    slug: str = Field(
-        min_length=2, max_length=64, description="Unique template slug"
-    )
+    slug: str = Field(min_length=2, max_length=64, description="Unique template slug")
     name: str | None = Field(
         default=None, max_length=128, description="Display name (optional)"
     )
-    subject: str = Field(
-        max_length=255, description="Subject (Jinja2)"
-    )
+    subject: str = Field(max_length=255, description="Subject (Jinja2)")
     body: str = Field(description="Email body (Jinja2 template)")
     is_html: bool = Field(default=True, description="HTML or plain text (optional)")
     description: str | None = Field(

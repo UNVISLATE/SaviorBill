@@ -52,7 +52,11 @@ async def promo_top(
     mngr: BasicAnalytics = Depends(_mngr),
 ) -> Page[PromoCodeStat]:
     items, total, has_more = await paginate(
-        mngr.s, mngr.promo_top_stmt(), mngr.promo_code_row, limit=pp.limit, offset=pp.offset
+        mngr.s,
+        mngr.promo_top_stmt(),
+        mngr.promo_code_row,
+        limit=pp.limit,
+        offset=pp.offset,
     )
     return Page(
         items=[PromoCodeStat(**i) for i in items],

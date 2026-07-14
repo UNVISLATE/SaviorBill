@@ -92,15 +92,13 @@ def compute_retention(
             & (pl.col("activity_at") >= window_start)
             & (pl.col("activity_at") < window_end)
         )
-        active_counts = (
-            active_in_period.group_by("cohort")
-            .agg(pl.col("account_id").n_unique().alias(f"active_{n}"))
+        active_counts = active_in_period.group_by("cohort").agg(
+            pl.col("account_id").n_unique().alias(f"active_{n}")
         )
         result = result.join(active_counts, on="cohort", how="left")
         col = f"period_{n}"
         result = result.with_columns(
-            (pl.col(f"active_{n}").fill_null(0) / pl.col("cohort_size"))
-            .alias(col)
+            (pl.col(f"active_{n}").fill_null(0) / pl.col("cohort_size")).alias(col)
         ).drop(f"active_{n}")
         period_cols.append(col)
 
@@ -171,9 +169,7 @@ def compute_avg_days_to_first_payment(
     merged = df_accounts.join(first_paid, on="account_id", how="inner")
     if merged.is_empty():
         return None
-    days = (
-        (merged["first_paid_at"] - merged["created_at"]).dt.total_seconds() / 86400.0
-    )
+    days = (merged["first_paid_at"] - merged["created_at"]).dt.total_seconds() / 86400.0
     return float(days.mean())
 
 
@@ -196,6 +192,7 @@ def roi_stats() -> dict:
 # Тонкий слой чтения из БД (не юнит-тестируется — требует интеграционного теста)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 async def fetch_frames(session: AsyncSession) -> dict[str, pl.DataFrame]:
     """Выгрузить нужные таблицы в Polars DataFrame одним проходом на таблицу.
 
@@ -204,9 +201,7 @@ async def fetch_frames(session: AsyncSession) -> dict[str, pl.DataFrame]:
         при появлении других источников активности (использование услуг и
         т.п.) сюда добавляется объединение с ними.
     """
-    acc_rows = (
-        await session.execute(select(UserModel.id, UserModel.created_at))
-    ).all()
+    acc_rows = (await session.execute(select(UserModel.id, UserModel.created_at))).all()
     pay_rows = (
         await session.execute(
             select(
@@ -219,7 +214,10 @@ async def fetch_frames(session: AsyncSession) -> dict[str, pl.DataFrame]:
     ).all()
 
     accounts = pl.DataFrame(
-        {"account_id": [r.id for r in acc_rows], "created_at": [r.created_at for r in acc_rows]}
+        {
+            "account_id": [r.id for r in acc_rows],
+            "created_at": [r.created_at for r in acc_rows],
+        }
     )
     payments = pl.DataFrame(
         {
@@ -255,7 +253,9 @@ async def get_summary(
     )
 
     result = {
-        "avg_days_to_first_payment": compute_avg_days_to_first_payment(accounts, payments),
+        "avg_days_to_first_payment": compute_avg_days_to_first_payment(
+            accounts, payments
+        ),
         "churn": compute_churn_rate(
             accounts, activity, now=utc_now(), inactive_days=inactive_days
         ),

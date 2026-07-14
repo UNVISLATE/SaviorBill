@@ -2,7 +2,6 @@
 
 Тонкая обёртка над тем же ``settings`` (key-value), что и ``raw.py`` — просто
 избавляет от ручного JSON-квотирования при заполнении ключей ``ui.*``
-(например ``ui.admin.logo``, ``ui.client.theme``, см. upd_plan.md, часть 6).
 Права/аудит/кэш — те же самые, что и у ``raw.py`` (та же таблица), отдельного
 RBAC-права не заводим: кто может редактировать ``settings.raw``, тот может и
 через этот роут — просто эргономичнее для UI-полей и bulk-заполнения.
@@ -149,7 +148,7 @@ async def set_ui_setting(
     "",
     response_model=list[SettingRawOut],
     summary="Bulk-set ui.* settings",
-    description="Body is a flat JSON object {\"key\": value, ...} (or form "
+    description='Body is a flat JSON object {"key": value, ...} (or form '
     "fields); each pair is stored as ui.{key} = value. Keys may contain dots "
     "for scoping, e.g. 'admin.logo' -> ui.admin.logo.",
 )

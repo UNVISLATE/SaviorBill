@@ -78,8 +78,6 @@ class AppConfig(BaseSettings):
     SECRETS_VAULT_TOKEN: str | None = Field(default=None)
     SECRETS_VAULT_MOUNT: str = Field(default="secret")
 
-
-
     # Монтируемая папка данных (lua-скрипты, ключи, загрузки)
     DATA_DIR: str = Field(default="data")
     # Папка lua-скриптов. Если не задана явно - DATA_DIR/lua.
@@ -92,6 +90,11 @@ class AppConfig(BaseSettings):
     LUA_RESP_STREAM: str = Field(default="lua:results")
     LUA_GROUP: str = Field(default="luaworkers")
     LUA_CALL_TIMEOUT: int = Field(default=30)
+    # Приблизительный потолок длины стримов lua/media (XADD ... MAXLEN ~ N) —
+    # без него Valkey Streams растут неограниченно (xack не удаляет записи
+    # физически).
+    LUA_TASK_STREAM_MAXLEN: int = Field(default=10_000)
+    LUA_RESP_STREAM_MAXLEN: int = Field(default=10_000)
     # Сервисный токен LuaWorker - генерируемый секрет (файл LUA_SERVICE_TOKEN_FILE
     # по умолчанию либо облачный менеджер).
     LUA_SERVICE_TOKEN: str | None = Field(default=None)
@@ -145,6 +148,10 @@ class AppConfig(BaseSettings):
     # Лимит строк в самоочищающихся таблицах (логи).
     LOG_ROW_LIMIT: int = Field(default=1_000_000)
 
+    # Журнал фактов о тасках (lua/media) — наблюдаемость, независима от OTEL
+    TASKLOG_MAXLEN: int = Field(default=500)
+    TASKLOG_TTL: int = Field(default=604_800)  # 7 дней
+
     # Загрузка медиа
     # Порог «маленького» файла (аватарки/иконки): до него хватает media.upload,
     # выше - нужно право media.uploadlarge.
@@ -156,6 +163,8 @@ class AppConfig(BaseSettings):
     MEDIA_UPLOADS_PER_HOUR: int = Field(default=30)
     # Стрим задач медиа (конвертация/удаление) в Valkey.
     MEDIA_TASK_STREAM: str = Field(default="media:tasks")
+    # Приблизительный потолок длины media:tasks (см. LUA_TASK_STREAM_MAXLEN выше).
+    MEDIA_TASK_STREAM_MAXLEN: int = Field(default=10_000)
     # Стрим результатов конвертации: mediaworker публикует готовое медиа, billing
     # (владелец схемы БД) его потребляет и записывает. Consumer-группа шардирует
     # нагрузку между инстансами billing (каждый результат обрабатывается один раз).
@@ -286,13 +295,18 @@ class AppConfig(BaseSettings):
 
     @property
     def media_docs_url(self) -> str:
-        """Публичный URL OpenAPI-документации mediaworker.
-        """
+        """Публичный URL OpenAPI-документации mediaworker."""
         base = self.MEDIA_PUBLIC_URL
         if not base:
-            base = f"https://{self.MEDIA_DOMAIN}" if self.MEDIA_DOMAIN \
-                else self.MEDIA_PUBLIC_URL if self.MEDIA_PUBLIC_URL \
-                else self.MEDIAWORKER_URL
+            base = (
+                f"https://{self.MEDIA_DOMAIN}"
+                if self.MEDIA_DOMAIN
+                else (
+                    self.MEDIA_PUBLIC_URL
+                    if self.MEDIA_PUBLIC_URL
+                    else self.MEDIAWORKER_URL
+                )
+            )
         return f"{base.rstrip('/')}/api/media/docs"
 
     @property

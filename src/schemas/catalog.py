@@ -28,12 +28,8 @@ class CatalogResponse(BaseModel):
 class CatalogRequest(BaseModel):
     """Create catalog."""
 
-    name: str = Field(
-        min_length=1, max_length=128, description="Catalog name"
-    )
-    slug: str = Field(
-        min_length=2, max_length=64, description="Unique slug"
-    )
+    name: str = Field(min_length=1, max_length=128, description="Catalog name")
+    slug: str = Field(min_length=2, max_length=64, description="Unique slug")
     parent_id: int | None = Field(
         default=None,
         description="Parent catalog ID; null = root",
@@ -43,9 +39,7 @@ class CatalogRequest(BaseModel):
     )
     icon: str | None = Field(default=None, description="Icon URL/path (optional)")
     sort: int = Field(default=0, description="Sort order (optional)")
-    is_active: bool = Field(
-        default=True, description="Active (optional)"
-    )
+    is_active: bool = Field(default=True, description="Active (optional)")
 
 
 class CatalogPatch(BaseModel):

@@ -33,7 +33,11 @@ async def providers(
         .order_by(OAuthProvidersModel.id)
     )
     return [
-        Provider(slug=r.slug, title=r.title, icon_url=_icon_url(r.icon.token if r.icon else None))
+        Provider(
+            slug=r.slug,
+            title=r.title,
+            icon_url=_icon_url(r.icon.token if r.icon else None),
+        )
         for r in rows
     ]
 

@@ -60,17 +60,9 @@ class SystemMediaModel(Base):
     size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     owner_id: Mapped[int | None] = mapped_column(
         Integer, nullable=True, index=True
-    )  # uploader account id
-    # Метка для UI (админка/клиент) — до 16 символов, латиница+цифры, задаётся
-    # при загрузке (необязательно) и может быть изменена позже. Не влияет на
-    # обработку файла (в отличие от прежнего kind, который клиент заявлял сам).
+    )
+    # Метка для UI (админка/клиент) — до 16 символов, латиница+цифры.
     tag: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    # Варианты файла: {"media": {...}, "thumb": {...}|null, "previews": [...]}.
-    # ``media`` — сам файл (всегда 1); ``thumb`` — маленький значок (для видео
-    # всегда, для фото — только если основной файл больше media.small_max_bytes);
-    # ``previews`` — список полнокадровых постеров (только видео, 0..N, без
-    # лимита по количеству). Каждый элемент — {"key", "mime", "size", "url"}.
-    # Заполняет mediaworker через media_results.py (см. implementation_plan.md §5).
     variants: Mapped[dict] = mapped_column(
         JSON, default=dict, server_default="{}", nullable=False
     )
@@ -206,8 +198,7 @@ class SystemMediaMngr:
 
         Нужно для операций, читающих-модифицирующих-пишущих JSON ``variants``
         (append/replace) — без блокировки два параллельных запроса на
-        добавление превью могут потерять один из результатов (read-modify-write
-        race, см. implementation_plan.md §5.2).
+        добавление превью могут потерять один из результатов.
         """
         return await self.s.scalar(
             select(SystemMediaModel)
@@ -239,9 +230,7 @@ class SystemMediaMngr:
         await self.s.flush()
         return old
 
-    async def remove_preview(
-        self, media: SystemMediaModel, index: int
-    ) -> dict | None:
+    async def remove_preview(self, media: SystemMediaModel, index: int) -> dict | None:
         """Удалить превью по индексу; вернуть удалённый объект (для очистки файла)."""
         variants = dict(media.variants or {})
         previews = list(variants.get("previews") or [])
@@ -253,9 +242,7 @@ class SystemMediaMngr:
         await self.s.flush()
         return removed
 
-    async def reorder_previews(
-        self, media: SystemMediaModel, order: list[int]
-    ) -> bool:
+    async def reorder_previews(self, media: SystemMediaModel, order: list[int]) -> bool:
         """Переставить ``previews[]`` по новому порядку индексов.
 
         :arg order: перестановка индексов текущего списка (та же длина, тот

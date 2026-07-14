@@ -11,6 +11,7 @@ import valkey.asyncio as valkey
 from valkey.exceptions import ResponseError
 
 from utils.datetime_utils import timestamp_now
+from utils.task_log import TaskLog
 
 log = logging.getLogger("saviorbill.luabus")
 
@@ -30,6 +31,8 @@ class LuaBus:
         default_timeout: int = 30,
         max_retries: int = 0,
         retry_backoff: float = 0,
+        task_stream_maxlen: int = 10_000,
+        task_log: TaskLog | None = None,
     ) -> None:
         self.vk = vk
         self.task_stream = task_stream
@@ -40,6 +43,11 @@ class LuaBus:
         # воркера сознательно оставлена администратору инсталляции.
         self.max_retries = max_retries
         self.retry_backoff = retry_backoff
+        # Приблизительный потолок длины стрима задач.
+        self.task_stream_maxlen = task_stream_maxlen
+        # Журнал фактов о тасках (может отсутствовать — например, в тестах);
+        # без него LuaBus работает как раньше, просто без записи в tasklog:lua.
+        self.task_log = task_log
 
     async def _last_id(self) -> str:
         """Текущий конец ответного стрима (база для чтения только новых записей)."""
@@ -49,9 +57,7 @@ class LuaBus:
         except ResponseError:
             return "0-0"  # стрим ещё не создан
 
-    async def _call_once(
-        self, kind: str, payload: dict | None, timeout: int
-    ) -> dict:
+    async def _call_once(self, kind: str, payload: dict | None, timeout: int) -> dict:
         """Одна попытка: отправить задачу и дождаться результата."""
         cid = uuid.uuid4().hex
         deadline = timestamp_now() + timeout
@@ -60,11 +66,25 @@ class LuaBus:
         await self.vk.xadd(
             self.task_stream,
             {"cid": cid, "kind": kind, "payload": json.dumps(payload or {})},
+            maxlen=self.task_stream_maxlen,
+            approximate=True,
         )
+        if self.task_log:
+            await self.task_log.record(
+                kind="lua", op=kind, token_or_cid=cid, state="sent"
+            )
 
         while True:
             remain = deadline - timestamp_now()
             if remain <= 0:
+                if self.task_log:
+                    await self.task_log.record(
+                        kind="lua",
+                        op=kind,
+                        token_or_cid=cid,
+                        state="error",
+                        detail="timeout",
+                    )
                 raise LuaError(f"таймаут ожидания ответа LuaWorker (cid={cid})")
 
             res = await self.vk.xread(
@@ -77,7 +97,19 @@ class LuaBus:
                         continue
                     data = json.loads(fields.get("data") or "null")
                     if fields.get("ok") == "1":
+                        if self.task_log:
+                            await self.task_log.record(
+                                kind="lua", op=kind, token_or_cid=cid, state="ok"
+                            )
                         return data if isinstance(data, dict) else {"result": data}
+                    if self.task_log:
+                        await self.task_log.record(
+                            kind="lua",
+                            op=kind,
+                            token_or_cid=cid,
+                            state="error",
+                            detail=str(data),
+                        )
                     raise LuaError(str(data))
 
     async def call(
@@ -118,9 +150,15 @@ class LuaBus:
         await self.vk.xadd(
             self.task_stream,
             {"cid": cid, "kind": kind, "payload": json.dumps(payload or {})},
+            maxlen=self.task_stream_maxlen,
+            approximate=True,
         )
+        if self.task_log:
+            # fire-and-forget: ответа не ждём никогда, пишем только "sent".
+            await self.task_log.record(
+                kind="lua", op=kind, token_or_cid=cid, state="sent"
+            )
         return cid
 
 
 __all__ = ["LuaBus", "LuaError"]
-

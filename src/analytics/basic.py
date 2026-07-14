@@ -78,7 +78,12 @@ class BasicAnalytics:
             )
         )
         counts: dict[str, int] = {}
-        for st in (PayStatus.PAID, PayStatus.FAILED, PayStatus.REFUNDED, PayStatus.PENDING):
+        for st in (
+            PayStatus.PAID,
+            PayStatus.FAILED,
+            PayStatus.REFUNDED,
+            PayStatus.PENDING,
+        ):
             n = await self.s.scalar(
                 select(func.count()).select_from(
                     base.where(UserPaymentsModel.status == st).subquery()

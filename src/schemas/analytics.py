@@ -7,10 +7,10 @@ from decimal import Decimal
 
 from pydantic import BaseModel, Field
 
-
 # ─────────────────────────────────────────────────────────────────────────────
 # Basic (простые SQL-агрегаты)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class PromoSummary(BaseModel):
     """Promo redemption summary."""
@@ -26,9 +26,7 @@ class PromoCodeStat(BaseModel):
     catalog_id: int
     used_count: int
     max_uses: int | None
-    remaining: int | None = Field(
-        description="Remaining activations; null = unlimited"
-    )
+    remaining: int | None = Field(description="Remaining activations; null = unlimited")
 
 
 class PaymentsSummary(BaseModel):
@@ -66,6 +64,7 @@ class ServiceSales(BaseModel):
 # Advanced (Polars): LTV / retention / churn / ROI
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class AccountLTV(BaseModel):
     """Account lifetime value."""
 
@@ -78,9 +77,7 @@ class RetentionCohort(BaseModel):
 
     cohort: str = Field(description="Cohort label")
     cohort_size: int
-    retention: list[float] = Field(
-        description="Retention by period"
-    )
+    retention: list[float] = Field(description="Retention by period")
 
 
 class ChurnStats(BaseModel):

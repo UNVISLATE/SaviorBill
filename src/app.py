@@ -57,6 +57,18 @@ TAGS_META = [
     },
     {"name": "admin: audit", "description": "Financial and admin audit log."},
     {
+        "name": "admin: tasks/media",
+        "description": "Media task journal tail (mediaworker convert/preview/thumb).",
+    },
+    {
+        "name": "admin: tasks/lua",
+        "description": "LuaWorker task journal tail (sent/ok/error).",
+    },
+    {
+        "name": "admin: logs/media",
+        "description": "Recent ffmpeg/ffprobe job listing (see /apiws/v1/logs/media/{job_id} for realtime output).",
+    },
+    {
         "name": "admin: analytics",
         "description": "Basic and advanced analytics.",
     },

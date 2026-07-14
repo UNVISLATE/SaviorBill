@@ -181,9 +181,7 @@ class PromoCodesMngr:
         if promo.valid_to and now > promo.valid_to:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "promo code has expired")
         if promo.max_uses is not None and promo.used_count >= promo.max_uses:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT, "usage limit reached"
-            )
+            raise HTTPException(status.HTTP_409_CONFLICT, "usage limit reached")
 
         catalog = await self.catalog_of(promo)
 
@@ -275,7 +273,9 @@ class PromoCodesMngr:
         :return: сумма зачисленного бонуса.
         """
         if catalog.kind != PromoKind.BONUS:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "promo code is not a bonus code")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "promo code is not a bonus code"
+            )
         acc.bonus_balance += catalog.value
         await self.s.flush()
         return catalog.value

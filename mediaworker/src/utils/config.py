@@ -55,6 +55,22 @@ class Config(BaseSettings):
     MEDIA_RESULT_STREAM: str = Field(default="media:results")
     MEDIA_GROUP: str = Field(default="mediaworkers")
     MEDIA_CONSUMER: str = Field(default_factory=_default_consumer)
+    # Приблизительный потолок длины стримов (XADD ... MAXLEN ~ N) — без него
+    # Valkey Streams растут неограниченно (xack не удаляет записи физически).
+    MEDIA_TASK_STREAM_MAXLEN: int = Field(default=10_000)
+    MEDIA_RESULT_STREAM_MAXLEN: int = Field(default=10_000)
+
+    # --- Журнал тасков (наблюдаемость, независима от OTEL) ---
+    # Кольцевой буфер записей на kind ("media") + TTL всего списка.
+    MEDIA_TASKLOG_MAXLEN: int = Field(default=500)
+    MEDIA_TASKLOG_TTL: int = Field(default=604_800)  # 7 дней
+
+    # --- Realtime-лог сырого вывода ffmpeg/ffprobe (xterm.js в админке) ---
+    # Сколько последних запусков (job_id) хранить в списке "недавние" и TTL
+    # на метаданные/строки каждого запуска (короткий — это debug-инструмент,
+    # не журнал фактов).
+    MEDIA_PROCLOG_MAX_JOBS: int = Field(default=50)
+    MEDIA_PROCLOG_TTL: int = Field(default=3600)  # 1 час
 
     # --- Квоты и лимиты ---
     MEDIA_STATUS_TTL: int = Field(default=3600)
@@ -235,6 +251,30 @@ class Config(BaseSettings):
     @property
     def task_dlq_stream(self) -> str:
         return self.MEDIA_TASK_DLQ
+
+    @property
+    def task_stream_maxlen(self) -> int:
+        return self.MEDIA_TASK_STREAM_MAXLEN
+
+    @property
+    def result_stream_maxlen(self) -> int:
+        return self.MEDIA_RESULT_STREAM_MAXLEN
+
+    @property
+    def tasklog_maxlen(self) -> int:
+        return self.MEDIA_TASKLOG_MAXLEN
+
+    @property
+    def tasklog_ttl(self) -> int:
+        return self.MEDIA_TASKLOG_TTL
+
+    @property
+    def proclog_max_jobs(self) -> int:
+        return self.MEDIA_PROCLOG_MAX_JOBS
+
+    @property
+    def proclog_ttl(self) -> int:
+        return self.MEDIA_PROCLOG_TTL
 
     @property
     def backend(self) -> str:

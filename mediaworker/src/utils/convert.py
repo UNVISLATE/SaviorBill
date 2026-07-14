@@ -8,9 +8,6 @@
 это только когда обработка провалится). Теперь заявленного вида просто нет —
 нечему быть неверным.
 
-Объект медиа состоит из (см. ``docs/media.md`` и ``implementation_plan.md``
-§5 — согласовано с пользователем):
-
 - ``main`` — сам файл (webp для изображения, webm для видео), всегда один;
 - ``thumb`` — маленький квадратный превью-значок; для видео генерируется
   всегда, для изображения — только если оно больше ``media.small_max_bytes``
@@ -35,9 +32,15 @@ from __future__ import annotations
 import asyncio
 import os
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from utils.config import Config
+
+# Коллбэк для realtime-хвоста сырого вывода ffmpeg/ffprobe. Получает очередной сырой
+# кусок stderr как есть (не построчно — как реальный терминал, чтобы
+# прогресс-строки с ``\r`` тоже воспроизводились в xterm.js один в один).
+OutputSink = Callable[[str], Awaitable[None]]
 
 
 class ConvertError(RuntimeError):
@@ -128,13 +131,28 @@ def _thumb_vf(size: int) -> str:
     )
 
 
-async def _run(args: list[str]) -> None:
+async def _run(args: list[str], *, on_output: OutputSink | None = None) -> None:
     proc = await asyncio.create_subprocess_exec(
         *args,
         stdout=asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
-    _, stderr = await proc.communicate()
+    if on_output is None:
+        _, stderr = await proc.communicate()
+    else:
+        # Читаем сырыми кусками (не readline()) — прогресс ffmpeg обновляет
+        # одну строку через "\r" без "\n", readline() завис бы до конца всей
+        # задачи. Так каждый кусок форвардится в реалтайме, как в терминале.
+        assert proc.stderr is not None
+        chunks: list[bytes] = []
+        while True:
+            chunk = await proc.stderr.read(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            await on_output(chunk.decode("utf-8", "replace"))
+        await proc.wait()
+        stderr = b"".join(chunks)
     dst = args[-1]
     if proc.returncode != 0 or not os.path.exists(dst):
         raise ConvertError(stderr.decode("utf-8", "replace")[-500:] or "ffmpeg failed")
@@ -173,7 +191,7 @@ def _webp(src: str, dst: str, quality: int, vf: str | None = None, at: float | N
 
 
 async def convert_image(
-    cfg: Config, src: str, out_dir: str, token: str
+    cfg: Config, src: str, out_dir: str, token: str, *, on_output: OutputSink | None = None
 ) -> list[Variant]:
     """Изображение → только полный webp.
 
@@ -182,11 +200,13 @@ async def convert_image(
     результата (маленькие фото не тумбятся, см. модуль-докстринг).
     """
     main = Variant("main", *target_key(token, "image"))
-    await _run(_webp(src, os.path.join(out_dir, main.key), cfg.webp_quality))
+    await _run(_webp(src, os.path.join(out_dir, main.key), cfg.webp_quality), on_output=on_output)
     return [main]
 
 
-async def make_thumb(cfg: Config, src: str, out_dir: str, token: str) -> Variant:
+async def make_thumb(
+    cfg: Config, src: str, out_dir: str, token: str, *, on_output: OutputSink | None = None
+) -> Variant:
     """Собрать (или пересобрать) единственный квадратный thumb медиа."""
     thumb = Variant("thumb", f"{token}.thumb.{uuid.uuid4().hex[:8]}.webp", "image/webp")
     await _run(
@@ -195,13 +215,15 @@ async def make_thumb(cfg: Config, src: str, out_dir: str, token: str) -> Variant
             os.path.join(out_dir, thumb.key),
             cfg.thumb_quality,
             _thumb_vf(cfg.thumb_size),
-        )
+        ),
+        on_output=on_output,
     )
     return thumb
 
 
 async def make_preview(
-    cfg: Config, src: str, out_dir: str, token: str, *, at: float | None = None
+    cfg: Config, src: str, out_dir: str, token: str, *, at: float | None = None,
+    on_output: OutputSink | None = None,
 ) -> Variant:
     """Собрать один полнокадровый превью-постер (видео) из кадра ``src``.
 
@@ -215,11 +237,16 @@ async def make_preview(
     """
     suffix = uuid.uuid4().hex[:8]
     preview = Variant(f"preview.{suffix}", f"{token}.preview.{suffix}.webp", "image/webp")
-    await _run(_webp(src, os.path.join(out_dir, preview.key), cfg.webp_quality, at=at))
+    await _run(
+        _webp(src, os.path.join(out_dir, preview.key), cfg.webp_quality, at=at),
+        on_output=on_output,
+    )
     return preview
 
 
-async def convert_video(cfg: Config, src: str, out_dir: str, token: str) -> list[Variant]:
+async def convert_video(
+    cfg: Config, src: str, out_dir: str, token: str, *, on_output: OutputSink | None = None
+) -> list[Variant]:
     """Видео → webm + thumb + один превью-постер по умолчанию."""
     main = Variant("main", *target_key(token, "video"))
     await _run(
@@ -228,15 +255,16 @@ async def convert_video(cfg: Config, src: str, out_dir: str, token: str) -> list
             "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", str(cfg.webm_crf),
             "-c:a", "libopus", "-row-mt", "1",
             os.path.join(out_dir, main.key),
-        ]
+        ],
+        on_output=on_output,
     )
-    thumb = await make_thumb(cfg, src, out_dir, token)
-    preview = await make_preview(cfg, src, out_dir, token)
+    thumb = await make_thumb(cfg, src, out_dir, token, on_output=on_output)
+    preview = await make_preview(cfg, src, out_dir, token, on_output=on_output)
     return [main, thumb, preview]
 
 
 async def convert(
-    cfg: Config, src: str, out_dir: str, token: str
+    cfg: Config, src: str, out_dir: str, token: str, *, on_output: OutputSink | None = None
 ) -> tuple[str, list[Variant]]:
     """Определить вид медиа и сконвертировать оригинал во все варианты.
 
@@ -244,6 +272,9 @@ async def convert(
     :arg src: путь к оригиналу.
     :arg out_dir: каталог для выходных файлов.
     :arg token: идентификатор медиа (префикс имён файлов).
+    :arg on_output: коллбэк сырого вывода ffmpeg/ffprobe для realtime-лога
+        (см. ``utils/proclog.py``); ``None`` — не логировать (например,
+        служебные вызовы без активного WS-слушателя).
     :return: ``(detected_kind, variants)`` — ``detected_kind`` — фактический
         вид медиа (``"image"`` | ``"video"``), определённый по сигнатуре, а
         не заявленный клиентом; ``variants[0]`` всегда ``main``.
@@ -257,8 +288,8 @@ async def convert(
     if kind is None:
         raise SignatureError("файл не распознан: неизвестная сигнатура")
     if kind == "video":
-        return kind, await convert_video(cfg, src, out_dir, token)
-    return kind, await convert_image(cfg, src, out_dir, token)
+        return kind, await convert_video(cfg, src, out_dir, token, on_output=on_output)
+    return kind, await convert_image(cfg, src, out_dir, token, on_output=on_output)
 
 
 __all__ = [

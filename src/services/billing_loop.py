@@ -39,6 +39,7 @@ from utils.config import AppConfig
 from utils.datetime_utils import utc_now
 from utils.luabus import LuaBus
 from utils.retry import attempts, clear_attempts
+from utils.task_log import TaskLog
 
 log = logging.getLogger("saviorbill.billing")
 
@@ -69,11 +70,13 @@ class BillingLoop:
         sessionmaker: async_sessionmaker[AsyncSession],
         vk: valkey.Valkey,
         cfg: AppConfig,
+        task_log: TaskLog | None = None,
     ) -> None:
         self.engine = engine
         self.sm = sessionmaker
         self.vk = vk
         self.cfg = cfg
+        self.task_log = task_log
         self._task: asyncio.Task | None = None
         self._wake = asyncio.Event()
         self._stopped = False
@@ -91,7 +94,9 @@ class BillingLoop:
         settings = SystemSettingsMngr(
             session, self.vk, make_secbox(self.cfg), self.cfg.SETTINGS_CACHE_TTL
         )
-        timeout = await settings.get_int("lua.call_timeout_sec", self.cfg.LUA_CALL_TIMEOUT)
+        timeout = await settings.get_int(
+            "lua.call_timeout_sec", self.cfg.LUA_CALL_TIMEOUT
+        )
         max_retries = await settings.get_int("lua.max_retries", 2)
         backoff = await settings.get_int("lua.retry_backoff_sec", 5)
         return LuaBus(
@@ -101,13 +106,17 @@ class BillingLoop:
             default_timeout=timeout or self.cfg.LUA_CALL_TIMEOUT,
             max_retries=max_retries or 0,
             retry_backoff=backoff or 0,
+            task_stream_maxlen=self.cfg.LUA_TASK_STREAM_MAXLEN,
+            task_log=self.task_log,
         )
 
     async def _pay_mngr(self, session: AsyncSession) -> PayMngr:
         return PayMngr(session, await self._bus(session), make_secbox(self.cfg))
 
     async def _usvc_mngr(self, session: AsyncSession) -> UserServicesMngr:
-        return UserServicesMngr(session, await self._bus(session), make_secbox(self.cfg))
+        return UserServicesMngr(
+            session, await self._bus(session), make_secbox(self.cfg)
+        )
 
     @property
     def _qkey(self) -> str:
@@ -116,9 +125,7 @@ class BillingLoop:
     # --- атомарная выборка созревших задач --------------------------------
     async def _claim_due(self, now: float, limit: int) -> list[str]:
         """Атомарно забрать «созревшие» задачи (ZRANGEBYSCORE + ZREM)."""
-        raw = await self.vk.eval(
-            _CLAIM_SCRIPT, 1, self._qkey, str(now), str(limit)
-        )
+        raw = await self.vk.eval(_CLAIM_SCRIPT, 1, self._qkey, str(now), str(limit))
         return [r.decode() if isinstance(r, bytes) else r for r in (raw or [])]
 
     # --- жизненный цикл ----------------------------------------------------
@@ -254,9 +261,9 @@ class BillingLoop:
     async def _execute(self, session: AsyncSession, member: str) -> None:
         # Член уже извлечён из очереди атомарным claim: повторный zrem не нужен.
         if member.startswith(_SVC):
-            await self._exec_svc_action(session, int(member[len(_SVC):]))
+            await self._exec_svc_action(session, int(member[len(_SVC) :]))
         elif member.startswith(_PAY):
-            await self._exec_pay_recheck(session, int(member[len(_PAY):]))
+            await self._exec_pay_recheck(session, int(member[len(_PAY) :]))
         # неизвестный член — уже удалён claim'ом, делать нечего.
 
     async def _exec_svc_action(self, session: AsyncSession, usvc_id: int) -> None:

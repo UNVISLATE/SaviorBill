@@ -6,7 +6,7 @@ on:
     types: [published]
 
 # На случай повторной публикации/republish того же релиза — не гоняем
-# параллельные пересекающиеся ranы (см. upd_plan.md, часть 1, п.7).
+# параллельные пересекающиеся ranы.
 concurrency:
   group: release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
@@ -14,8 +14,7 @@ concurrency:
 jobs:
   unit-tests:
     # Общий переиспользуемый workflow с ci.yml — один источник правды на
-    # тестовые шаги (см. upd_plan.md, часть 1, п.1: раньше шаги были
-    # продублированы дословно в обоих файлах).
+    # тестовые шаги.
     uses: ./.github/workflows/unit-tests.yml
 
   publish:
@@ -93,7 +92,6 @@ jobs:
     # publish и так гарантирует это через needs, но отдельная джоба даёт
     # понятную точку для последующих уведомлений/тега "released" и защищает
     # от иллюзии "релиз готов", если хотя бы один образ матрицы не собрался
-    # (см. upd_plan.md, часть 1, п.5).
     runs-on: ubuntu-latest
     needs: [publish]
     steps:

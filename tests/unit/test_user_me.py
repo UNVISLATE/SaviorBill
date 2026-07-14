@@ -66,7 +66,9 @@ class TestIsMediaStillUsed:
 
 class TestReleaseOldAvatar:
     def _request(self) -> SimpleNamespace:
-        settings = SimpleNamespace(MEDIA_TASK_STREAM="media:tasks")
+        settings = SimpleNamespace(
+            MEDIA_TASK_STREAM="media:tasks", MEDIA_TASK_STREAM_MAXLEN=10_000
+        )
         return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(settings=settings)))
 
     @pytest.mark.asyncio

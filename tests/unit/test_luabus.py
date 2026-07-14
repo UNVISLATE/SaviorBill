@@ -37,7 +37,7 @@ class FakeValkey:
         last = entries[-1][0] if entries else "0-0"
         return {"last-generated-id": last}
 
-    async def xadd(self, stream: str, fields: dict) -> str:
+    async def xadd(self, stream: str, fields: dict, **_kwargs) -> str:
         entry_id = self._next_id()
         self._stream_entries.setdefault(stream, []).append((entry_id, fields))
         if "kind" in fields:
@@ -122,7 +122,7 @@ async def test_call_returns_dict_on_success():
     captured_cid: list[str] = []
     original_xadd = fake.xadd
 
-    async def capturing_xadd(stream: str, fields: dict) -> str:
+    async def capturing_xadd(stream: str, fields: dict, **_kwargs) -> str:
         entry_id = await original_xadd(stream, fields)
         if "kind" in fields:
             captured_cid.append(fields["cid"])
@@ -147,7 +147,7 @@ async def test_call_wraps_scalar_result():
 
     original_xadd = fake.xadd
 
-    async def capturing_xadd(stream: str, fields: dict) -> str:
+    async def capturing_xadd(stream: str, fields: dict, **_kwargs) -> str:
         entry_id = await original_xadd(stream, fields)
         if "kind" in fields:
             resp_id = fake._next_id()
@@ -170,7 +170,7 @@ async def test_call_raises_lua_error_on_failure():
 
     original_xadd = fake.xadd
 
-    async def capturing_xadd(stream: str, fields: dict) -> str:
+    async def capturing_xadd(stream: str, fields: dict, **_kwargs) -> str:
         entry_id = await original_xadd(stream, fields)
         if "kind" in fields:
             resp_id = fake._next_id()
@@ -193,7 +193,7 @@ async def test_call_ignores_unrelated_entries():
 
     original_xadd = fake.xadd
 
-    async def capturing_xadd(stream: str, fields: dict) -> str:
+    async def capturing_xadd(stream: str, fields: dict, **_kwargs) -> str:
         entry_id = await original_xadd(stream, fields)
         if "kind" in fields:
             # Сначала добавляем чужой ответ.

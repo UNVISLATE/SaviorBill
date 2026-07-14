@@ -42,7 +42,7 @@ class MediaTagIn(BaseModel):
 
 def _bus(request: Request, vk: valkey.Valkey) -> MediaBus:
     cfg: AppConfig = request.app.state.settings
-    return MediaBus(vk, cfg.MEDIA_TASK_STREAM)
+    return MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN)
 
 
 @router.get(

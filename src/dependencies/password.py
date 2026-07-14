@@ -104,7 +104,8 @@ class ResetSvc:
 
         norm = self._norm(acc.email)
         secret = (
-            generate_base_token() if method == METHOD_TOKEN
+            generate_base_token()
+            if method == METHOD_TOKEN
             else generate_numeric_code(_CODE_DIGITS)
         )
         ttl = await self._ttl()

@@ -55,7 +55,9 @@ def build_secret_store(cfg: "AppConfig") -> SecretStore:
 
     if backend == "vault":
         if not (cfg.SECRETS_VAULT_ADDR and cfg.SECRETS_VAULT_TOKEN):
-            raise ValueError("vault: SECRETS_VAULT_ADDR and SECRETS_VAULT_TOKEN are needed")
+            raise ValueError(
+                "vault: SECRETS_VAULT_ADDR and SECRETS_VAULT_TOKEN are needed"
+            )
         from .vault_store import VaultSecretStore
 
         return VaultSecretStore(

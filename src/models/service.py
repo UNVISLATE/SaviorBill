@@ -218,7 +218,9 @@ class ServiceMngr:
         await self.s.flush()
         return svc
 
-    async def update(self, service_id: int, data: dict) -> tuple[ServiceModel, list[str]]:
+    async def update(
+        self, service_id: int, data: dict
+    ) -> tuple[ServiceModel, list[str]]:
         svc = await self.by_id(service_id)
         if svc is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")

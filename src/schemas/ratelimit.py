@@ -11,9 +11,7 @@ class RateLimitRule(BaseModel):
     kind: str = Field(description="Limit category")
     max_hits: int = Field(description="Max requests in window")
     window: int = Field(description="Window size in seconds")
-    overridden: bool = Field(
-        description="True = admin override; False = ENV default"
-    )
+    overridden: bool = Field(description="True = admin override; False = ENV default")
 
 
 class RateLimitPatch(BaseModel):

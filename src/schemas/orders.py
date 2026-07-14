@@ -25,9 +25,7 @@ class Order(BaseModel):
     id: int
     service_id: int
     payment_id: int | None = None
-    status: str = Field(
-        description="Service status"
-    )
+    status: str = Field(description="Service status")
     price: Decimal
     discount: Decimal
     public_data: dict
@@ -72,9 +70,7 @@ class OrderGrant(BaseModel):
 
     account_id: int = Field(description="Recipient account ID")
     service_id: int = Field(description="Service ID")
-    params: dict | None = Field(
-        default=None, description="Service params (optional)"
-    )
+    params: dict | None = Field(default=None, description="Service params (optional)")
     charge: bool = Field(
         default=False,
         description="Charge user balance (optional)",

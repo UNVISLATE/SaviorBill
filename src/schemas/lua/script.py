@@ -59,9 +59,7 @@ class LuaScriptDetail(LuaScript):
 class LuaScriptUpload(BaseModel):
     """Create Lua script."""
 
-    slug: str = Field(
-        min_length=2, max_length=64, description="Unique script slug"
-    )
+    slug: str = Field(min_length=2, max_length=64, description="Unique script slug")
     name: str | None = Field(
         default=None, max_length=128, description="Display name (optional)"
     )

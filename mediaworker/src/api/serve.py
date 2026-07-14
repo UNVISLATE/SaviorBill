@@ -13,55 +13,19 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials
 
 from utils import ipban
+from utils.authctx import authenticate, authorize, client_ip
 from utils.config import Config
+from utils.keys import file_key, status_key
 from utils.rbac import has_perm
-from utils import security
 from utils.openapi_auth import bearer_scheme
 from utils.settings import SettingsResolver
 from utils.storage import Storage
+from utils.task_log import TaskLog
 from utils.telemetry import inject_carrier
 
 router = APIRouter()
 
-_STATUS_PREFIX = "media:status:"
-_FILE_PREFIX = "media:file:"
 _PERM_LARGE = "media.uploadlarge"
-
-
-def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "0.0.0.0"
-
-
-def _bearer(request: Request) -> str:
-    auth = request.headers.get("authorization", "")
-    if not auth.lower().startswith("bearer "):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bearer token required")
-    return auth.split(" ", 1)[1].strip()
-
-
-async def _authenticate(request: Request) -> int:
-    cfg: Config = request.app.state.cfg
-    token = _bearer(request)
-    try:
-        return security.account_id(
-            token, cfg.resolve_jwt_secret(), cfg.jwt_alg, cfg.jwt_iss
-        )
-    except security.InvalidToken as exc:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
-
-
-async def _authorize(request: Request, acc_id: int) -> tuple[dict | None, str | None]:
-    cfg: Config = request.app.state.cfg
-    db = request.app.state.db
-    acc = await db.account(acc_id)
-    if acc is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "access denied")
-    if acc.role_key == cfg.role_banned:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "account banned")
-    return acc.perms, acc.role_key
 
 
 @router.get("/{token}")
@@ -85,14 +49,14 @@ async def serve(request: Request, token: str):
     base, _, suffix = token.partition(".")
     variant_name = suffix or "main"
 
-    st = await vk.hgetall(f"{_STATUS_PREFIX}{base}")
+    st = await vk.hgetall(status_key(base))
     if variant_name == "main":
         if st and st.get("state") in ("processing", "queued"):
             raise HTTPException(status.HTTP_425_TOO_EARLY, "still processing")
         if st and st.get("state") == "failed":
             raise HTTPException(status.HTTP_404_NOT_FOUND, "conversion failed")
 
-    cached = await vk.hgetall(f"{_FILE_PREFIX}{base}")
+    cached = await vk.hgetall(file_key(base))
     key = cached.get(variant_name) if cached else None
     if not key:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
@@ -123,12 +87,12 @@ async def _authorize_media_owner(
     """
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
-    ip = _client_ip(request)
+    ip = client_ip(request)
     if await ipban.is_banned(vk, ip):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "temporarily banned")
 
-    acc_id = await _authenticate(request)
-    perms, _role = await _authorize(request, acc_id)
+    acc_id = await authenticate(request)
+    perms, _role = await authorize(request, acc_id)
     is_large = has_perm(perms, _PERM_LARGE)
     settings: SettingsResolver = request.app.state.settings
     max_bytes = await (settings.max_bytes() if is_large else settings.small_max_bytes())
@@ -175,6 +139,7 @@ async def add_preview(
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
     storage: Storage = request.app.state.storage
+    task_log: TaskLog = request.app.state.task_log
 
     _acc_id, is_large, max_bytes = await _authorize_media_owner(request, token)
 
@@ -183,7 +148,7 @@ async def add_preview(
     source = "upload" if has_body else "random"
 
     if has_body:
-        ip = _client_ip(request)
+        ip = client_ip(request)
         try:
             await storage.save_stream(
                 f"{token}.preview_src", request.stream(), max_bytes
@@ -197,7 +162,13 @@ async def add_preview(
             raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
 
     await vk.xadd(
-        cfg.task_stream, inject_carrier({"op": "preview_add", "token": token, "source": source})
+        cfg.task_stream,
+        inject_carrier({"op": "preview_add", "token": token, "source": source}),
+        maxlen=cfg.task_stream_maxlen,
+        approximate=True,
+    )
+    await task_log.record(
+        kind="media", op="preview_add", token_or_cid=token, state="queued"
     )
     return {"token": token, "status": "processing"}
 
@@ -225,10 +196,11 @@ async def replace_thumb(
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
     storage: Storage = request.app.state.storage
+    task_log: TaskLog = request.app.state.task_log
 
     _acc_id, is_large, max_bytes = await _authorize_media_owner(request, token)
 
-    ip = _client_ip(request)
+    ip = client_ip(request)
     try:
         await storage.save_stream(f"{token}.thumb_src", request.stream(), max_bytes)
     except ValueError:
@@ -239,7 +211,15 @@ async def replace_thumb(
         await ipban.ban(vk, ip, cfg.ban_seconds)
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
 
-    await vk.xadd(cfg.task_stream, inject_carrier({"op": "thumb_replace", "token": token}))
+    await vk.xadd(
+        cfg.task_stream,
+        inject_carrier({"op": "thumb_replace", "token": token}),
+        maxlen=cfg.task_stream_maxlen,
+        approximate=True,
+    )
+    await task_log.record(
+        kind="media", op="thumb_replace", token_or_cid=token, state="queued"
+    )
     return {"token": token, "status": "processing"}
 
 

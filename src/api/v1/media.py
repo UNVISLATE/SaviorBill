@@ -32,12 +32,9 @@ class PreviewOrderIn(BaseModel):
     )
 
 
-async def _owned_media(
-    mngr: SystemMediaMngr, token: str, acc: UserModel
-) -> object:
+async def _owned_media(mngr: SystemMediaMngr, token: str, acc: UserModel) -> object:
     """Найти медиа по токену и проверить, что запрашивающий — владелец либо
-    имеет право ``media.uploadlarge`` (симметрично правилу mediaworker —
-    см. implementation_plan.md §5.1)."""
+    имеет право ``media.uploadlarge``"""
     media = await mngr.by_token(token)
     if media is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
@@ -60,7 +57,7 @@ async def media_status(
     mngr: SystemMediaMngr = Depends(get_media_mngr),
 ) -> MediaStatus:
     cfg: AppConfig = request.app.state.settings
-    bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM)
+    bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN)
 
     data = await bus.status(token)
     if data:
@@ -107,7 +104,7 @@ async def remove_preview(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "preview not found")
     if removed.get("key"):
         cfg: AppConfig = request.app.state.settings
-        bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM)
+        bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN)
         await bus.enqueue_delete(media.backend, [removed["key"]])
         # Убрать осиротевший ключ из кэша вариантов mediaworker (media:file:*)
         # — тот же Valkey, тот же префикс, что и в mediaworker/utils/worker.py.
@@ -132,7 +129,8 @@ async def reorder_previews(
     ok = await mngr.reorder_previews(media, body.order)
     if not ok:
         raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, "order must be a permutation of current indices"
+            status.HTTP_400_BAD_REQUEST,
+            "order must be a permutation of current indices",
         )
     await mngr.s.commit()
     return Media.from_model(media)

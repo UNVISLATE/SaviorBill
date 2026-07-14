@@ -1,10 +1,4 @@
 # Переиспользуемый workflow: юнит-тесты billing + mediaworker.
-#
-# Раньше шаги unit/mediaworker-unit были продублированы дословно в ci.yml и
-# release.yml — при правке одного файла легко забыть про другой, и
-# release.yml мог начать проверять не совсем то же самое, что CI (см.
-# upd_plan.md, часть 1, п.1). Теперь оба workflow вызывают этот файл через
-# `uses: ./.github/workflows/unit-tests.yml`.
 name: Unit tests (reusable)
 
 on:

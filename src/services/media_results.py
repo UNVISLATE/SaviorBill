@@ -113,9 +113,7 @@ class MediaResults:
         token = data.get("token", "unknown")
         op = data.get("op", "convert")
         key = f"media:result:{token}:{op}"
-        n, exhausted = await attempts(
-            self.vk, key, self.cfg.MEDIA_RESULT_MAX_ATTEMPTS
-        )
+        n, exhausted = await attempts(self.vk, key, self.cfg.MEDIA_RESULT_MAX_ATTEMPTS)
         if exhausted:
             await self.vk.xadd(self.cfg.MEDIA_RESULT_DLQ, {**data, "attempts": str(n)})
             await clear_attempts(self.vk, key)
@@ -127,15 +125,12 @@ class MediaResults:
         op = data.get("op")
         token = data.get("token", "")
         # Идемпотентность: один и тот же результат конверсии обрабатываем один раз.
-        if token and not await once(
-            self.vk, f"media:result:{token}:{op}", ttl=3600
-        ):
+        if token and not await once(self.vk, f"media:result:{token}:{op}", ttl=3600):
             return
         async with self.sm() as session:
             mngr = SystemMediaMngr(session)
             if op == "preview_add":
-                # Доп. превью — только добавление в конец previews[], никогда
-                # не трогает уже существующие (см. implementation_plan.md §5).
+                # Доп. превью — только добавление в конец previews[]
                 variant = json.loads(data.get("variant") or "{}")
                 await mngr.append_preview(token, variant)
             elif op == "thumb_replace":
@@ -146,7 +141,11 @@ class MediaResults:
                 if old_thumb and old_thumb.get("key"):
                     media = await mngr.by_token(token)
                     if media is not None:
-                        bus = MediaBus(self.vk, self.cfg.MEDIA_TASK_STREAM)
+                        bus = MediaBus(
+                            self.vk,
+                            self.cfg.MEDIA_TASK_STREAM,
+                            self.cfg.MEDIA_TASK_STREAM_MAXLEN,
+                        )
                         await bus.enqueue_delete(media.backend, [old_thumb["key"]])
             else:  # convert
                 variants = json.loads(data.get("variants") or "{}")

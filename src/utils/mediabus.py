@@ -21,9 +21,15 @@ _STATUS_PREFIX = "media:status:"
 class MediaBus:
     """Продюсер медиа-задач и читатель статусов (Valkey)."""
 
-    def __init__(self, vk: valkey.Valkey, task_stream: str = "media:tasks") -> None:
+    def __init__(
+        self,
+        vk: valkey.Valkey,
+        task_stream: str = "media:tasks",
+        task_stream_maxlen: int = 10_000,
+    ) -> None:
         self.vk = vk
         self.task_stream = task_stream
+        self.task_stream_maxlen = task_stream_maxlen
 
     async def enqueue_delete(self, backend: str, paths: list[str]) -> None:
         """Поставить задачу удаления файлов из хранилища.
@@ -42,6 +48,8 @@ class MediaBus:
                     "payload": json.dumps({"paths": paths}),
                 }
             ),
+            maxlen=self.task_stream_maxlen,
+            approximate=True,
         )
 
     async def status(self, token: str) -> dict | None:

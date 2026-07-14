@@ -21,7 +21,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials
 
-from utils import security
+from utils.authctx import soft_authenticate
 from utils.config import Config
 from utils.openapi_auth import bearer_scheme
 from utils.rbac import has_perm
@@ -37,21 +37,6 @@ _PERM_LARGE = "media.uploadlarge"
 _TAG_PATTERN = "^[A-Za-z0-9]{1,16}$"
 
 
-async def _soft_authenticate(request: Request) -> int | None:
-    """Как ``_authenticate()`` в upload.py/serve.py, но без 401 — просто ``None``."""
-    cfg: Config = request.app.state.cfg
-    auth = request.headers.get("authorization", "")
-    if not auth.lower().startswith("bearer "):
-        return None
-    token = auth.split(" ", 1)[1].strip()
-    try:
-        return security.account_id(
-            token, cfg.resolve_jwt_secret(), cfg.jwt_alg, cfg.jwt_iss
-        )
-    except security.InvalidToken:
-        return None
-
-
 @router.get("/kinds")
 async def list_kinds(
     request: Request,
@@ -61,7 +46,7 @@ async def list_kinds(
 
     ``_creds`` — только для регистрации Bearer security scheme в OpenAPI
     (см. ``utils/openapi_auth.py``); реальная (опциональная) авторизация —
-    в ``_soft_authenticate()`` ниже, токен не обязателен.
+    в ``utils.authctx.soft_authenticate()``, токен не обязателен.
     """
     cfg: Config = request.app.state.cfg
     settings: SettingsResolver = request.app.state.settings
@@ -84,7 +69,7 @@ async def list_kinds(
     ]
 
     limits: dict | None = None
-    acc_id = await _soft_authenticate(request)
+    acc_id = await soft_authenticate(request)
     if acc_id is not None:
         db = request.app.state.db
         acc = await db.account(acc_id)

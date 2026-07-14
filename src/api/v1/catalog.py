@@ -21,7 +21,9 @@ from utils.pagination import PageParams, page_params, paginate
 router = APIRouter(prefix="/api/v1/catalog", tags=["catalog"])
 
 
-async def _with_stock(svc: Service, service_id: int, keys_mngr: ServiceKeysMngr) -> Service:
+async def _with_stock(
+    svc: Service, service_id: int, keys_mngr: ServiceKeysMngr
+) -> Service:
     """Проставить ``out_of_stock`` для delivery=key (вычисляемый статус, §4.2)."""
     if svc.delivery != Delivery.KEY:
         return svc
@@ -29,9 +31,7 @@ async def _with_stock(svc: Service, service_id: int, keys_mngr: ServiceKeysMngr)
     return svc.with_stock(available == 0)
 
 
-@router.get(
-    "/catalogs", response_model=list[CatalogResponse], summary="Catalog tree"
-)
+@router.get("/catalogs", response_model=list[CatalogResponse], summary="Catalog tree")
 async def list_catalogs(
     mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr),
 ) -> list[CatalogResponse]:
@@ -61,9 +61,7 @@ async def list_services(
     )
 
 
-@router.get(
-    "/services/{service_id}", response_model=Service, summary="Service details"
-)
+@router.get("/services/{service_id}", response_model=Service, summary="Service details")
 async def get_service(
     service_id: int,
     mngr: ServiceMngr = Depends(get_service_mngr),

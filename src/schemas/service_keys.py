@@ -70,7 +70,9 @@ class ServiceStockOut(BaseModel):
 
     @classmethod
     def build(cls, service_id: int, available: int) -> "ServiceStockOut":
-        return cls(service_id=service_id, available=available, out_of_stock=available == 0)
+        return cls(
+            service_id=service_id, available=available, out_of_stock=available == 0
+        )
 
 
 __all__ = [

@@ -5,8 +5,10 @@ from __future__ import annotations
 from fastapi import Depends, Request
 
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
+from dependencies.task_log import get_task_log
 from utils.config import AppConfig
 from utils.luabus import LuaBus
+from utils.task_log import TaskLog
 
 
 def get_lua_bus(request: Request) -> LuaBus:
@@ -22,12 +24,15 @@ def get_lua_bus(request: Request) -> LuaBus:
         cfg.LUA_TASK_STREAM,
         cfg.LUA_RESP_STREAM,
         cfg.LUA_CALL_TIMEOUT,
+        task_stream_maxlen=cfg.LUA_TASK_STREAM_MAXLEN,
+        task_log=request.app.state.task_log,
     )
 
 
 async def get_lua_bus_configured(
     request: Request,
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
+    task_log: TaskLog = Depends(get_task_log),
 ) -> LuaBus:
     """`LuaBus` с runtime-настройками таймаута/ретраев (`SystemSettingsMngr`).
 
@@ -47,8 +52,9 @@ async def get_lua_bus_configured(
         default_timeout=timeout or cfg.LUA_CALL_TIMEOUT,
         max_retries=max_retries or 0,
         retry_backoff=backoff or 0,
+        task_stream_maxlen=cfg.LUA_TASK_STREAM_MAXLEN,
+        task_log=task_log,
     )
 
 
 __all__ = ["get_lua_bus", "get_lua_bus_configured"]
-

@@ -173,17 +173,13 @@ class OAuthSvc:
         """Проверить и погасить state, вернуть сохранённую нагрузку."""
         saved = await self.vk.get(_STATE + state)
         if not saved:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "invalid or expired state"
-            )
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid or expired state")
         try:
             payload = json.loads(saved)
         except json.JSONDecodeError:
             payload = {"slug": saved}
         if payload.get("slug") != slug:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "invalid or expired state"
-            )
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid or expired state")
         await self.vk.delete(_STATE + state)
         return payload
 

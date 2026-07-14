@@ -9,8 +9,10 @@ from fastapi import FastAPI
 
 from utils.config import Config
 from utils.db import DB
+from utils.proclog import ProcLog
 from utils.settings import SettingsResolver
 from utils.storage import Storage
+from utils.task_log import TaskLog
 from utils.worker import Worker
 
 log = logging.getLogger("saviorbill.media")
@@ -24,13 +26,17 @@ async def lifespan(app: FastAPI):
     db = DB(cfg.db_dsn)
     await db.connect()
     settings = SettingsResolver(cfg, vk, db)
-    worker = Worker(cfg, vk, storage, settings)
+    task_log = TaskLog(vk, max_len=cfg.tasklog_maxlen, ttl=cfg.tasklog_ttl)
+    proc_log = ProcLog(vk, max_jobs=cfg.proclog_max_jobs, ttl=cfg.proclog_ttl)
+    worker = Worker(cfg, vk, storage, settings, task_log, proc_log)
 
     app.state.cfg = cfg
     app.state.vk = vk
     app.state.storage = storage
     app.state.db = db
     app.state.settings = settings
+    app.state.task_log = task_log
+    app.state.proc_log = proc_log
 
     task = asyncio.create_task(worker.run())
     log.info(
