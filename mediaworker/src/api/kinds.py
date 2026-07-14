@@ -70,13 +70,16 @@ async def list_kinds(
         {
             "kind": "image",
             "target": {"ext": "webp", "mime": "image/webp"},
+            "note": "thumb генерируется только если результат больше "
+            "media.small_max_bytes (маленькое фото и так лёгкий webp)",
         },
         {
             "kind": "video",
             "target": {"ext": "webm", "mime": "video/webm"},
-            # Помимо main видео-конверсия даёт постеры (poster-кадры);
-            # ``preview_thumb`` — обрезанный мини-постер того же кадра.
-            "extra_variants": ["preview", "preview_thumb"],
+            # thumb — один, заменяемый целиком (POST /{token}/thumb);
+            # previews — список, 0..N, без лимита по количеству, пополняемый
+            # через POST /{token}/preview (ручной кадр либо случайный).
+            "extra": {"thumb": "single, replaceable", "previews": "list, unlimited"},
         },
     ]
 

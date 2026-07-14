@@ -65,9 +65,12 @@ class SystemMediaModel(Base):
     # при загрузке (необязательно) и может быть изменена позже. Не влияет на
     # обработку файла (в отличие от прежнего kind, который клиент заявлял сам).
     tag: Mapped[str | None] = mapped_column(String(16), nullable=True)
-    # Варианты файла: {"main": {...}, "preview": {...}, "preview_thumb": {...}}
-    # (для фото — только "main", отдельный thumb не генерируется).
-    # Каждый — {"key", "mime", "size", "url"}. Заполняет mediaworker.
+    # Варианты файла: {"media": {...}, "thumb": {...}|null, "previews": [...]}.
+    # ``media`` — сам файл (всегда 1); ``thumb`` — маленький значок (для видео
+    # всегда, для фото — только если основной файл больше media.small_max_bytes);
+    # ``previews`` — список полнокадровых постеров (только видео, 0..N, без
+    # лимита по количеству). Каждый элемент — {"key", "mime", "size", "url"}.
+    # Заполняет mediaworker через media_results.py (см. implementation_plan.md §5).
     variants: Mapped[dict] = mapped_column(
         JSON, default=dict, server_default="{}", nullable=False
     )
@@ -198,13 +201,74 @@ class SystemMediaMngr:
         media.tag = tag
         await self.s.flush()
 
-    async def merge_variants(self, token: str, variants: dict) -> None:
-        """Домержить набор вариантов к существующей записи (ручное превью)."""
-        media = await self.by_token(token)
+    async def _locked(self, token: str) -> SystemMediaModel | None:
+        """Прочитать запись с блокировкой строки (``FOR UPDATE``).
+
+        Нужно для операций, читающих-модифицирующих-пишущих JSON ``variants``
+        (append/replace) — без блокировки два параллельных запроса на
+        добавление превью могут потерять один из результатов (read-modify-write
+        race, см. implementation_plan.md §5.2).
+        """
+        return await self.s.scalar(
+            select(SystemMediaModel)
+            .where(SystemMediaModel.token == token)
+            .with_for_update()
+        )
+
+    async def append_preview(self, token: str, preview: dict) -> None:
+        """Добавить новое превью в конец ``previews[]`` (не трогая остальные)."""
+        media = await self._locked(token)
         if media is None:
             return
-        media.variants = {**(media.variants or {}), **variants}
+        variants = dict(media.variants or {})
+        previews = list(variants.get("previews") or [])
+        previews.append(preview)
+        variants["previews"] = previews
+        media.variants = variants
         await self.s.flush()
+
+    async def set_thumb(self, token: str, thumb: dict) -> dict | None:
+        """Заменить ``thumb`` целиком; вернуть старый объект (для удаления файла)."""
+        media = await self._locked(token)
+        if media is None:
+            return None
+        variants = dict(media.variants or {})
+        old = variants.get("thumb")
+        variants["thumb"] = thumb
+        media.variants = variants
+        await self.s.flush()
+        return old
+
+    async def remove_preview(
+        self, media: SystemMediaModel, index: int
+    ) -> dict | None:
+        """Удалить превью по индексу; вернуть удалённый объект (для очистки файла)."""
+        variants = dict(media.variants or {})
+        previews = list(variants.get("previews") or [])
+        if index < 0 or index >= len(previews):
+            return None
+        removed = previews.pop(index)
+        variants["previews"] = previews
+        media.variants = variants
+        await self.s.flush()
+        return removed
+
+    async def reorder_previews(
+        self, media: SystemMediaModel, order: list[int]
+    ) -> bool:
+        """Переставить ``previews[]`` по новому порядку индексов.
+
+        :arg order: перестановка индексов текущего списка (та же длина, тот
+            же набор значений — иначе ``False`` без изменений).
+        """
+        variants = dict(media.variants or {})
+        previews = list(variants.get("previews") or [])
+        if sorted(order) != list(range(len(previews))):
+            return False
+        variants["previews"] = [previews[i] for i in order]
+        media.variants = variants
+        await self.s.flush()
+        return True
 
     async def orphans(self, grace_sec: int = 3600) -> list[SystemMediaModel]:
         """Медиа, не привязанные ни к товарам (attachments), ни к аватаркам.

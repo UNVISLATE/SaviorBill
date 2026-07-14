@@ -1,7 +1,8 @@
-"""Отдача медиа и ручная загрузка превью.
+"""Отдача медиа и ручная догрузка thumb/превью.
 
-``GET /api/media/{token}``      — отдать файл: S3 → presigned redirect; fs → FileResponse.
-``POST /api/media/{token}/preview`` — ручная загрузка постера для видео.
+``GET /api/media/{token}``            — отдать файл: S3 → presigned redirect; fs → FileResponse.
+``POST /api/media/{token}/preview``   — добавить ОДНО новое превью (не трогая существующие).
+``POST /api/media/{token}/thumb``     — заменить единственный thumb целиком.
 """
 
 from __future__ import annotations
@@ -67,9 +68,13 @@ async def _authorize(request: Request, acc_id: int) -> tuple[dict | None, str | 
 async def serve(request: Request, token: str):
     """Отдать медиа. S3 → presigned redirect; fs → FileResponse.
 
-    ``token`` может нести суффикс варианта: ``{token}.preview`` /
-    ``{token}.preview_thumb`` (только для видео — фото не имеет отдельного
-    thumb-варианта, основной webp и так уже оптимизирован).
+    ``token`` может нести суффикс варианта: ``{token}.thumb`` /
+    ``{token}.preview.<uuid8>`` — суффикс ищется как есть в кэше вариантов
+    ``media:file:{token}`` (см. ``worker.py::_variant_dict`` — то же имя,
+    под которым воркер публикует вариант). Список превью не ограничен и не
+    завязан на фиксированный набор имён — поэтому суффикс не проверяется по
+    allow-листу, а ищется динамически; неизвестный/ещё не готовый суффикс —
+    404 (раньше здесь молча отдавался main-файл, что вводило в заблуждение).
     """
     import os
 
@@ -78,96 +83,46 @@ async def serve(request: Request, token: str):
     storage: Storage = request.app.state.storage
 
     base, _, suffix = token.partition(".")
-    _KNOWN_VARIANTS = {"": "main", "preview": "preview", "preview_thumb": "preview_thumb"}
-    if suffix not in _KNOWN_VARIANTS:
-        # Неизвестный суффикс (например, случайно указано расширение файла
-        # из поля ``key``, а не ``url`` — ``.thumb.webp`` вместо ``.thumb``) —
-        # раньше здесь молча отдавался main-файл, что вводило в заблуждение.
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
-    variant = _KNOWN_VARIANTS[suffix]
+    variant_name = suffix or "main"
 
     st = await vk.hgetall(f"{_STATUS_PREFIX}{base}")
-    if st and st.get("state") in ("processing", "queued"):
-        raise HTTPException(status.HTTP_425_TOO_EARLY, "still processing")
-    if st and st.get("state") == "failed":
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "conversion failed")
+    if variant_name == "main":
+        if st and st.get("state") in ("processing", "queued"):
+            raise HTTPException(status.HTTP_425_TOO_EARLY, "still processing")
+        if st and st.get("state") == "failed":
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "conversion failed")
+
+    cached = await vk.hgetall(f"{_FILE_PREFIX}{base}")
+    key = cached.get(variant_name) if cached else None
+    if not key:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
 
     if cfg.backend == "s3":
-        cached = await vk.hgetall(f"{_FILE_PREFIX}{base}")
-        key = cached.get(variant) if cached else None
-        if not key:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
         url = await storage.presign(key)
         if not url:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
         return RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
-    # fs-бэкенд: воркер пишет media:file кэш; используем его, иначе — детерминированный fallback.
-    cached = await vk.hgetall(f"{_FILE_PREFIX}{base}")
-    if cached and cached.get(variant):
-        file_key = cached.get(variant)
-        file_path = os.path.join(cfg.media_dir, file_key)
-        if os.path.exists(file_path):
-            mime = st.get("mime") if st else None
-            return FileResponse(
-                file_path,
-                media_type=mime or "application/octet-stream",
-                headers={"Cache-Control": "public, max-age=31536000"},
-            )
-
-    # Детерминированный fallback по соглашению об именах файлов.
-    if variant == "main":
-        for ext, mime in ((".webp", "image/webp"), (".webm", "video/webm")):
-            file_path = os.path.join(cfg.media_dir, f"{base}{ext}")
-            if os.path.exists(file_path):
-                return FileResponse(
-                    file_path,
-                    media_type=mime,
-                    headers={"Cache-Control": "public, max-age=31536000"},
-                )
-    else:
-        file_path = os.path.join(cfg.media_dir, f"{base}.{variant}.webp")
-        if os.path.exists(file_path):
-            return FileResponse(
-                file_path,
-                media_type="image/webp",
-                headers={"Cache-Control": "public, max-age=31536000"},
-            )
-
-    raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+    file_path = os.path.join(cfg.media_dir, key)
+    if not os.path.exists(file_path):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+    mime = st.get("mime") if (variant_name == "main" and st) else None
+    return FileResponse(
+        file_path,
+        media_type=mime or "application/octet-stream",
+        headers={"Cache-Control": "public, max-age=31536000"},
+    )
 
 
-@router.post(
-    "/{token}/preview",
-    status_code=status.HTTP_202_ACCEPTED,
-    openapi_extra={
-        # Тело читается сырым потоком (request.stream()) без File()/UploadFile —
-        # см. пояснение в upload.py::upload_file. Описание только для Swagger UI.
-        "requestBody": {
-            "required": True,
-            "content": {
-                "application/octet-stream": {
-                    "schema": {"type": "string", "format": "binary"}
-                }
-            },
-        }
-    },
-)
-async def upload_preview(
-    request: Request,
-    token: str,
-    _creds: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
-) -> dict:
-    """Ручная загрузка превью для видео (только владелец медиа).
+async def _authorize_media_owner(
+    request: Request, token: str
+) -> tuple[int, bool, str]:
+    """Общая проверка для догрузки thumb/preview: владелец + перм + kind.
 
-    ``_creds`` не используется напрямую (реальный разбор — в
-    ``_authenticate()``/``_bearer()`` выше) — параметр только регистрирует
-    HTTP Bearer security scheme в OpenAPI (см. ``utils/openapi_auth.py``).
+    :return: ``(acc_id, is_large, max_bytes)``.
     """
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
-    storage: Storage = request.app.state.storage
-
     ip = _client_ip(request)
     if await ipban.is_banned(vk, ip):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "temporarily banned")
@@ -183,23 +138,108 @@ async def upload_preview(
     if media is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "медиа не найдено")
     _mid, owner_id, mkind = media
-    if owner_id != acc_id:
+    if owner_id != acc_id and not is_large:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "не владелец медиа")
     if mkind != "video":
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "превью только для видео")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "доступно только для видео")
+    return acc_id, is_large, max_bytes
 
+
+@router.post(
+    "/{token}/preview",
+    status_code=status.HTTP_202_ACCEPTED,
+    openapi_extra={
+        # Тело необязательно: пусто/Content-Length=0 -> сервер сам берёт
+        # случайный кадр из готового видео; непустое тело -> конкретный кадр
+        # от клиента. См. пояснение в upload.py::upload_file про сырой стрим.
+        "requestBody": {
+            "required": False,
+            "content": {
+                "application/octet-stream": {
+                    "schema": {"type": "string", "format": "binary"}
+                }
+            },
+        }
+    },
+)
+async def add_preview(
+    request: Request,
+    token: str,
+    _creds: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
+) -> dict:
+    """Добавить ОДНО новое превью в конец списка ``previews[]`` (только видео).
+
+    Никогда не перезаписывает существующие превью — только добавляет.
+    Пустое тело — сервер сам выбирает случайный кадр из уже готового видео.
+    """
+    cfg: Config = request.app.state.cfg
+    vk: valkey.Valkey = request.app.state.vk
+    storage: Storage = request.app.state.storage
+
+    _acc_id, is_large, max_bytes = await _authorize_media_owner(request, token)
+
+    clen = request.headers.get("content-length")
+    has_body = bool(clen) and clen.isdigit() and int(clen) > 0
+    source = "upload" if has_body else "random"
+
+    if has_body:
+        ip = _client_ip(request)
+        try:
+            await storage.save_stream(
+                f"{token}.preview_src", request.stream(), max_bytes
+            )
+        except ValueError:
+            if is_large:
+                raise HTTPException(
+                    status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "не надо баловаться XD"
+                )
+            await ipban.ban(vk, ip, cfg.ban_seconds)
+            raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
+
+    await vk.xadd(
+        cfg.task_stream, inject_carrier({"op": "preview_add", "token": token, "source": source})
+    )
+    return {"token": token, "status": "processing"}
+
+
+@router.post(
+    "/{token}/thumb",
+    status_code=status.HTTP_202_ACCEPTED,
+    openapi_extra={
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/octet-stream": {
+                    "schema": {"type": "string", "format": "binary"}
+                }
+            },
+        }
+    },
+)
+async def replace_thumb(
+    request: Request,
+    token: str,
+    _creds: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
+) -> dict:
+    """Загрузить новый thumb (заменяет старый целиком, только видео)."""
+    cfg: Config = request.app.state.cfg
+    vk: valkey.Valkey = request.app.state.vk
+    storage: Storage = request.app.state.storage
+
+    _acc_id, is_large, max_bytes = await _authorize_media_owner(request, token)
+
+    ip = _client_ip(request)
     try:
-        await storage.save_stream(f"{token}.preview", request.stream(), max_bytes)
+        await storage.save_stream(f"{token}.thumb_src", request.stream(), max_bytes)
     except ValueError:
         if is_large:
-            # Аккаунт с media.uploadlarge соврал про Content-Length — не бан.
             raise HTTPException(
                 status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "не надо баловаться XD"
             )
         await ipban.ban(vk, ip, cfg.ban_seconds)
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
 
-    await vk.xadd(cfg.task_stream, inject_carrier({"op": "preview", "token": token}))
+    await vk.xadd(cfg.task_stream, inject_carrier({"op": "thumb_replace", "token": token}))
     return {"token": token, "status": "processing"}
 
 

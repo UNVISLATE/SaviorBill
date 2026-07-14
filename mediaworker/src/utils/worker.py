@@ -1,4 +1,4 @@
-"""Consumer задач media:tasks: конвертация, ручное превью и удаление файлов.
+"""Consumer задач media:tasks: конвертация, доп. превью, thumb и удаление файлов.
 
 Слушает поток Valkey ``media:tasks`` (consumer-group), конвертирует оригиналы
 (webp/webm + варианты) и публикует статус в Valkey. Готовое медиа НЕ пишется в
@@ -12,30 +12,54 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import random
 
 import valkey.asyncio as valkey
 
 from .config import Config
-from .convert import ConvertError, Variant, convert, make_video_preview
+from .convert import (
+    ConvertError,
+    Variant,
+    convert,
+    make_preview,
+    make_thumb,
+    probe_duration,
+)
+from .settings import SettingsResolver
 from .storage import Storage
 from .telemetry import inject_carrier, span_from_carrier
 
 _STATUS_PREFIX = "media:status:"
+# Статус побочных операций (доп. превью/thumb) — НАМЕРЕННО отдельный от
+# _STATUS_PREFIX ключ: раньше _preview() переиспользовал статус ОСНОВНОГО
+# медиа, из-за чего уже готовое видео становилось недоступным (425) на время
+# пересборки превью, а при ошибке конвертации статус оставался "processing"
+# навсегда (ошибка уходила только в stdout). См. implementation_plan.md §3.
+_OPSTATUS_PREFIX = "media:opstatus:"
 _FILE_PREFIX = "media:file:"
 
 
 class Worker:
     """Обработчик потока медиа-задач."""
 
-    def __init__(self, cfg: Config, vk: valkey.Valkey, storage: Storage) -> None:
+    def __init__(
+        self, cfg: Config, vk: valkey.Valkey, storage: Storage, settings: SettingsResolver
+    ) -> None:
         self.cfg = cfg
         self.vk = vk
         self.storage = storage
+        self.settings = settings
         # Ограничитель одновременно обрабатываемых задач (backpressure).
         self._sem = asyncio.Semaphore(cfg.task_concurrency)
 
     async def _set_status(self, token: str, **fields: str) -> None:
         key = f"{_STATUS_PREFIX}{token}"
+        await self.vk.hset(key, mapping={k: v for k, v in fields.items() if v})
+        await self.vk.expire(key, self.cfg.status_ttl)
+
+    async def _set_op_status(self, token: str, op: str, **fields: str) -> None:
+        """Статус побочной операции (не трогает статус основного медиа)."""
+        key = f"{_OPSTATUS_PREFIX}{token}:{op}"
         await self.vk.hset(key, mapping={k: v for k, v in fields.items() if v})
         await self.vk.expire(key, self.cfg.status_ttl)
 
@@ -109,8 +133,10 @@ class Worker:
         op = data.get("op")
         if op == "convert":
             await self._convert(data)
-        elif op == "preview":
-            await self._preview(data)
+        elif op == "preview_add":
+            await self._preview_add(data)
+        elif op == "thumb_replace":
+            await self._thumb_replace(data)
         elif op == "delete":
             await self._delete(data)
 
@@ -121,18 +147,19 @@ class Worker:
         await self.storage.put_final(variant.key, tmp, variant.mime)
         return variant.key, size
 
-    def _variant_map(self, token: str, variants: list[Variant], sizes: dict) -> dict:
-        """Собрать словарь вариантов (key/mime/size + относительный url)."""
-        out: dict = {}
-        for v in variants:
-            base = v.key.rsplit(".", 1)[0]  # {token} или {token}.thumb -> url без ext
-            out[v.name] = {
-                "key": v.key,
-                "mime": v.mime,
-                "size": sizes.get(v.key),
-                "url": f"/api/media/{base}",
-            }
-        return out
+    def _variant_dict(self, token: str, v: Variant, size: int | None) -> dict:
+        """Собрать словарь одного варианта (key/mime/size + относительный url)."""
+        base = v.key.rsplit(".", 1)[0]  # {token}.thumb.{uuid}.webp -> без .webp
+        # URL-суффикс = имя варианта ("thumb" | "preview.<uuid8>") — см.
+        # convert.py docstring и serve.py (ключи ищутся по этому же имени
+        # в кэше media:file:{token}).
+        suffix = f".{v.name}" if v.name != "main" else ""
+        return {
+            "key": v.key,
+            "mime": v.mime,
+            "size": size,
+            "url": f"/api/media/{token}{suffix}",
+        }
 
     async def _emit_result(self, fields: dict) -> None:
         """Опубликовать результат конверсии в стрим (billing запишет в БД)."""
@@ -162,8 +189,27 @@ class Worker:
             # Кэш ключей вариантов для serve() — как для s3, так и для fs.
             await self.vk.hset(f"{_FILE_PREFIX}{token}", mapping={v.name: v.key})
 
+        # Фото тумбим только если результат больше media.small_max_bytes —
+        # маленькое фото и так уже лёгкий webp, отдельный обрезанный thumb
+        # избыточен (см. implementation_plan.md §5).
+        if kind == "image":
+            main = variants[0]
+            small_max = await self.settings.small_max_bytes()
+            if sizes.get(main.key, 0) > small_max:
+                thumb = await make_thumb(self.cfg, src, self.cfg.uploads_dir, token)
+                key, size = await self._publish(thumb)
+                sizes[key] = size
+                await self.vk.hset(f"{_FILE_PREFIX}{token}", mapping={thumb.name: thumb.key})
+                variants.append(thumb)
+
         main = variants[0]
-        vmap = self._variant_map(token, variants, sizes)
+        thumb_v = next((v for v in variants if v.name == "thumb"), None)
+        preview_vs = [v for v in variants if v.name.startswith("preview.")]
+        result_variants = {
+            "media": self._variant_dict(token, main, sizes.get(main.key)),
+            "thumb": self._variant_dict(token, thumb_v, sizes.get(thumb_v.key)) if thumb_v else None,
+            "previews": [self._variant_dict(token, v, sizes.get(v.key)) for v in preview_vs],
+        }
         result = {
             "op": "convert",
             "token": token,
@@ -172,7 +218,7 @@ class Worker:
             "backend": self.cfg.backend,
             "mime": main.mime,
             "status": "ready",
-            "variants": json.dumps(vmap),
+            "variants": json.dumps(result_variants),
         }
         if tag:
             result["tag"] = tag
@@ -189,31 +235,82 @@ class Worker:
         if not self.cfg.keep_original:
             self.storage._safe_unlink(src)
 
-    async def _preview(self, data: dict) -> None:
-        """Ручная загрузка превью для видео: пересобрать preview/preview_thumb."""
+    async def _preview_add(self, data: dict) -> None:
+        """Добавить ОДНО новое превью (не трогая уже существующие).
+
+        ``source`` в задаче: ``"upload"`` — клиент прислал конкретный кадр
+        (файл лежит во ``uploads_dir`` под ``{token}.preview_src``);
+        ``"random"`` — сервер сам берёт случайный кадр из уже готового
+        ``main``-файла (оригинал к этому моменту обычно уже удалён —
+        см. implementation_plan.md §5.1.2, поэтому берём из main, не из
+        оригинала — единственный вариант, который работает всегда).
+        """
         token = data["token"]
-        src = self.storage.orig_path(f"{token}.preview")
-        await self._set_status(token, state="processing")
+        source = data.get("source", "random")
         try:
-            variants = await make_video_preview(
-                self.cfg, src, self.cfg.uploads_dir, token
-            )
+            if source == "upload":
+                src = self.storage.orig_path(f"{token}.preview_src")
+                if not os.path.exists(src):
+                    raise ConvertError("исходный кадр для превью не найден")
+                at = None
+            else:
+                src = os.path.join(self.cfg.media_dir, f"{token}.webm")
+                if not os.path.exists(src):
+                    raise ConvertError("main-файл недоступен для случайного кадра")
+                duration = await probe_duration(src)
+                at = random.uniform(0, duration) if duration else None
+
+            preview = await make_preview(self.cfg, src, self.cfg.uploads_dir, token, at=at)
         except ConvertError as exc:
-            print(f"[mediaworker] preview failed {token}: {exc}", flush=True)
+            await self._set_op_status(token, "preview", state="failed", error=str(exc))
+            if source == "upload":
+                self.storage._safe_unlink(self.storage.orig_path(f"{token}.preview_src"))
+            return
+
+        key, size = await self._publish(preview)
+        await self.vk.hset(f"{_FILE_PREFIX}{token}", mapping={preview.name: preview.key})
+        await self._emit_result(
+            {
+                "op": "preview_add",
+                "token": token,
+                "variant": json.dumps(self._variant_dict(token, preview, size)),
+            }
+        )
+        await self._set_op_status(token, "preview", state="ready")
+        if source == "upload":
+            self.storage._safe_unlink(self.storage.orig_path(f"{token}.preview_src"))
+
+    async def _thumb_replace(self, data: dict) -> None:
+        """Перегенерировать (заменить) единственный thumb медиа.
+
+        Старый физический файл удаляется из хранилища после успешной замены
+        (кэш ``media:file:{token}`` перезаписывается тем же полем ``thumb``).
+        """
+        token = data["token"]
+        src = self.storage.orig_path(f"{token}.thumb_src")
+        old_key = await self.vk.hget(f"{_FILE_PREFIX}{token}", "thumb")
+        try:
+            if not os.path.exists(src):
+                raise ConvertError("исходный файл для thumb не найден")
+            thumb = await make_thumb(self.cfg, src, self.cfg.uploads_dir, token)
+        except ConvertError as exc:
+            await self._set_op_status(token, "thumb", state="failed", error=str(exc))
             self.storage._safe_unlink(src)
             return
 
-        sizes: dict = {}
-        for v in variants:
-            key, size = await self._publish(v)
-            sizes[key] = size
-            await self.vk.hset(f"{_FILE_PREFIX}{token}", mapping={v.name: v.key})
-
-        vmap = self._variant_map(token, variants, sizes)
+        key, size = await self._publish(thumb)
+        await self.vk.hset(f"{_FILE_PREFIX}{token}", mapping={thumb.name: thumb.key})
         await self._emit_result(
-            {"op": "preview", "token": token, "variants": json.dumps(vmap)}
+            {
+                "op": "thumb_replace",
+                "token": token,
+                "variant": json.dumps(self._variant_dict(token, thumb, size)),
+            }
         )
+        await self._set_op_status(token, "thumb", state="ready")
         self.storage._safe_unlink(src)
+        if old_key and old_key != thumb.key:
+            await self.storage.delete([old_key])
 
     async def _delete(self, data: dict) -> None:
         payload = json.loads(data.get("payload", "{}"))

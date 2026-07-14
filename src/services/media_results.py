@@ -22,6 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from models.system_media import SystemMediaMngr
 from utils.config import AppConfig
 from utils.idempotency import once, release_once
+from utils.mediabus import MediaBus
 from utils.retry import attempts, clear_attempts
 from utils.telemetry import span_from_carrier
 
@@ -130,12 +131,25 @@ class MediaResults:
             self.vk, f"media:result:{token}:{op}", ttl=3600
         ):
             return
-        variants = json.loads(data.get("variants") or "{}")
         async with self.sm() as session:
             mngr = SystemMediaMngr(session)
-            if op == "preview":
-                await mngr.merge_variants(data["token"], variants)
+            if op == "preview_add":
+                # Доп. превью — только добавление в конец previews[], никогда
+                # не трогает уже существующие (см. implementation_plan.md §5).
+                variant = json.loads(data.get("variant") or "{}")
+                await mngr.append_preview(token, variant)
+            elif op == "thumb_replace":
+                # Замена thumb целиком — старый файл нужно удалить из
+                # хранилища (иначе останется висеть мусором в media_dir/s3).
+                variant = json.loads(data.get("variant") or "{}")
+                old_thumb = await mngr.set_thumb(token, variant)
+                if old_thumb and old_thumb.get("key"):
+                    media = await mngr.by_token(token)
+                    if media is not None:
+                        bus = MediaBus(self.vk, self.cfg.MEDIA_TASK_STREAM)
+                        await bus.enqueue_delete(media.backend, [old_thumb["key"]])
             else:  # convert
+                variants = json.loads(data.get("variants") or "{}")
                 owner = data.get("owner_id")
                 await mngr.upsert(
                     token=data["token"],

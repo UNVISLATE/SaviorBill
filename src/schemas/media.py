@@ -15,6 +15,15 @@ def _media_url(token: str) -> str:
     return f"/api/media/{token}"
 
 
+class MediaVariant(BaseModel):
+    """One physical file variant (main/thumb/preview)."""
+
+    key: str
+    mime: str | None = None
+    size: int | None = None
+    url: str
+
+
 class Media(BaseModel):
     """Media item."""
 
@@ -32,14 +41,23 @@ class Media(BaseModel):
     mime: str | None = None
     size: int | None = None
     owner_id: int | None = None
-    variants: dict = Field(
-        default_factory=dict,
-        description="File variants by key, mime, size, url",
+    media: MediaVariant | None = Field(
+        default=None, description="Main file variant"
+    )
+    thumb: MediaVariant | None = Field(
+        default=None,
+        description="Single square thumbnail (video: always; image: only if "
+        "larger than media.small_max_bytes)",
+    )
+    previews: list[MediaVariant] = Field(
+        default_factory=list,
+        description="Video poster previews, 0..N, unlimited",
     )
 
     @classmethod
     def from_model(cls, m) -> "Media":  # noqa: ANN001 — SystemMediaModel
         """Преобразование ORM-записи медиа в схему ответа."""
+        variants = m.variants or {}
         return cls(
             id=m.id,
             token=m.token,
@@ -51,7 +69,9 @@ class Media(BaseModel):
             mime=m.mime,
             size=m.size,
             owner_id=m.owner_id,
-            variants=m.variants or {},
+            media=variants.get("media"),
+            thumb=variants.get("thumb"),
+            previews=variants.get("previews") or [],
         )
 
 
@@ -123,6 +143,7 @@ class AttachmentIn(BaseModel):
 
 __all__ = [
     "Media",
+    "MediaVariant",
     "MediaTask",
     "MediaStatus",
     "Attachment",

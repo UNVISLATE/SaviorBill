@@ -8,21 +8,33 @@
 это только когда обработка провалится). Теперь заявленного вида просто нет —
 нечему быть неверным.
 
-Из одного оригинала генерируется несколько вариантов:
+Объект медиа состоит из (см. ``docs/media.md`` и ``implementation_plan.md``
+§5 — согласовано с пользователем):
 
-- изображение → только ``main`` (webp, уже оптимизированный формат — отдельный
-  обрезанный thumb для фото избыточен, т.к. оригинал и так лёгкий webp);
-- видео → ``main`` (webm) + ``preview`` (полный кадр-постер, webp) +
-  ``preview_thumb`` (обрезанный мини-постер, webp).
+- ``main`` — сам файл (webp для изображения, webm для видео), всегда один;
+- ``thumb`` — маленький квадратный превью-значок; для видео генерируется
+  всегда, для изображения — только если оно больше ``media.small_max_bytes``
+  (маленькое фото и так уже лёгкий webp, отдельный обрезанный thumb избыточен);
+  заменяется целиком при перезаливке (см. ``worker.py::_thumb_replace``) —
+  никогда не список;
+- ``previews`` — список полнокадровых кадров-постеров (только видео), 0..N;
+  при конвертации сразу создаётся один (``preview.<uuid8>``), далее клиент
+  может добавлять ещё через ``POST /{token}/preview`` (ручной кадр либо
+  случайный, выбранный сервером) — см. ``make_preview()``.
 
-Каждый вариант описывается :class:`Variant` (имя, ключ файла, mime). Размер
-проставляется вызывающей стороной после записи.
+Каждый вариант описывается :class:`Variant` (имя, ключ файла, mime). Имя
+``thumb``/``main`` — фиксированный слот (перезаписываемый), имя вида
+``preview.<uuid8>`` — стабильный уникальный идентификатор конкретного
+превью (не завязан на порядковую позицию в списке — порядок previews[] это
+чисто billing-side JSON-массив, переставляемый без переименования файлов).
+Размер проставляется вызывающей стороной после записи.
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import uuid
 from dataclasses import dataclass
 
 from utils.config import Config
@@ -128,8 +140,32 @@ async def _run(args: list[str]) -> None:
         raise ConvertError(stderr.decode("utf-8", "replace")[-500:] or "ffmpeg failed")
 
 
-def _webp(src: str, dst: str, quality: int, vf: str | None = None) -> list[str]:
-    args = ["ffmpeg", "-y", "-i", src]
+async def probe_duration(src: str) -> float | None:
+    """Длительность видео в секундах (``ffprobe``) либо ``None``, если не узнать.
+
+    Нужно для выбора случайного кадра при автогенерации доп. превью
+    (``POST /{token}/preview`` с пустым телом — см. ``worker.py::_preview_add``).
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe", "-v", "error",
+        "-show_entries", "format=duration",
+        "-of", "csv=p=0",
+        src,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    out, _ = await proc.communicate()
+    try:
+        return float(out.decode().strip())
+    except (ValueError, UnicodeDecodeError):
+        return None
+
+
+def _webp(src: str, dst: str, quality: int, vf: str | None = None, at: float | None = None) -> list[str]:
+    args = ["ffmpeg", "-y"]
+    if at is not None:
+        args += ["-ss", f"{at:.3f}"]
+    args += ["-i", src]
     if vf:
         args += ["-vf", vf]
     args += ["-frames:v", "1", "-c:v", "libwebp", "-quality", str(quality), dst]
@@ -139,16 +175,52 @@ def _webp(src: str, dst: str, quality: int, vf: str | None = None) -> list[str]:
 async def convert_image(
     cfg: Config, src: str, out_dir: str, token: str
 ) -> list[Variant]:
-    """Изображение → только полный webp (thumb не генерируется — избыточно)."""
+    """Изображение → только полный webp.
+
+    ``thumb`` для изображения здесь никогда не создаётся — это решает
+    вызывающая сторона (``worker.py::_convert``) по фактическому размеру
+    результата (маленькие фото не тумбятся, см. модуль-докстринг).
+    """
     main = Variant("main", *target_key(token, "image"))
     await _run(_webp(src, os.path.join(out_dir, main.key), cfg.webp_quality))
     return [main]
 
 
-async def convert_video(
-    cfg: Config, src: str, out_dir: str, token: str, *, make_preview: bool = True
-) -> list[Variant]:
-    """Видео → webm + (опционально) полный и мини-постеры."""
+async def make_thumb(cfg: Config, src: str, out_dir: str, token: str) -> Variant:
+    """Собрать (или пересобрать) единственный квадратный thumb медиа."""
+    thumb = Variant("thumb", f"{token}.thumb.{uuid.uuid4().hex[:8]}.webp", "image/webp")
+    await _run(
+        _webp(
+            src,
+            os.path.join(out_dir, thumb.key),
+            cfg.thumb_quality,
+            _thumb_vf(cfg.thumb_size),
+        )
+    )
+    return thumb
+
+
+async def make_preview(
+    cfg: Config, src: str, out_dir: str, token: str, *, at: float | None = None
+) -> Variant:
+    """Собрать один полнокадровый превью-постер (видео) из кадра ``src``.
+
+    :arg at: смещение в секундах для выбора кадра (``None`` — первый кадр,
+        как раньше; для случайного кадра вызывающая сторона сама вычисляет
+        и передаёт значение через :func:`probe_duration`).
+    :return: :class:`Variant` с именем вида ``preview.<uuid8>`` — стабильный
+        уникальный идентификатор, не завязанный на порядковую позицию в
+        списке ``previews[]`` (порядок — чисто billing-side JSON, см.
+        модуль-докстринг).
+    """
+    suffix = uuid.uuid4().hex[:8]
+    preview = Variant(f"preview.{suffix}", f"{token}.preview.{suffix}.webp", "image/webp")
+    await _run(_webp(src, os.path.join(out_dir, preview.key), cfg.webp_quality, at=at))
+    return preview
+
+
+async def convert_video(cfg: Config, src: str, out_dir: str, token: str) -> list[Variant]:
+    """Видео → webm + thumb + один превью-постер по умолчанию."""
     main = Variant("main", *target_key(token, "video"))
     await _run(
         [
@@ -158,30 +230,9 @@ async def convert_video(
             os.path.join(out_dir, main.key),
         ]
     )
-    variants = [main]
-    if make_preview:
-        variants += await make_video_preview(cfg, src, out_dir, token)
-    return variants
-
-
-async def make_video_preview(
-    cfg: Config, src: str, out_dir: str, token: str
-) -> list[Variant]:
-    """Собрать полный и мини-постеры из кадра ``src`` (кадр видео или картинка)."""
-    preview = Variant("preview", f"{token}.preview.webp", "image/webp")
-    preview_thumb = Variant(
-        "preview_thumb", f"{token}.preview_thumb.webp", "image/webp"
-    )
-    await _run(_webp(src, os.path.join(out_dir, preview.key), cfg.webp_quality))
-    await _run(
-        _webp(
-            src,
-            os.path.join(out_dir, preview_thumb.key),
-            cfg.thumb_quality,
-            _thumb_vf(cfg.thumb_size),
-        )
-    )
-    return [preview, preview_thumb]
+    thumb = await make_thumb(cfg, src, out_dir, token)
+    preview = await make_preview(cfg, src, out_dir, token)
+    return [main, thumb, preview]
 
 
 async def convert(
@@ -214,7 +265,9 @@ __all__ = [
     "convert",
     "convert_image",
     "convert_video",
-    "make_video_preview",
+    "make_thumb",
+    "make_preview",
+    "probe_duration",
     "detect_kind",
     "target_key",
     "Variant",

@@ -23,13 +23,14 @@ async def lifespan(app: FastAPI):
     storage = Storage(cfg)
     db = DB(cfg.db_dsn)
     await db.connect()
-    worker = Worker(cfg, vk, storage)
+    settings = SettingsResolver(cfg, vk, db)
+    worker = Worker(cfg, vk, storage, settings)
 
     app.state.cfg = cfg
     app.state.vk = vk
     app.state.storage = storage
     app.state.db = db
-    app.state.settings = SettingsResolver(cfg, vk, db)
+    app.state.settings = settings
 
     task = asyncio.create_task(worker.run())
     log.info(
