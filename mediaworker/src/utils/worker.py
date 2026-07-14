@@ -194,6 +194,21 @@ class Worker:
             approximate=True,
         )
 
+    def _cleanup_partial(self, token: str, src: str) -> None:
+        """Удалить оригинал и все недоопубликованные варианты после сбоя конверсии.
+
+        ``convert_video`` — многошаговый (main → thumb → preview): если упал не
+        первый шаг, предыдущие ffmpeg-выходы уже лежат в ``uploads_dir``, но
+        ``variants`` из-за исключения так и не вернулись вызывающей стороне, а
+        значит никогда не попадут в ``_publish``/удаление — без явной чистки по
+        маске ``{token}.*`` они бы оставались мусором в uploads_dir навсегда.
+        """
+        import glob
+
+        for path in glob.glob(os.path.join(self.cfg.uploads_dir, f"{token}.*")):
+            self.storage._safe_unlink(path)
+        self.storage._safe_unlink(src)
+
     async def _convert(self, data: dict) -> None:
         token = data["token"]
         tag = data.get("tag") or None
@@ -225,7 +240,11 @@ class Worker:
                 detail=str(exc),
             )
             await self.proc_log.finish_job(job_id, "failed")
-            self.storage._safe_unlink(src)
+            # Видео конвертируется в несколько шагов (main -> thumb -> preview);
+            # если упал не первый шаг, предыдущие уже созданы в uploads_dir, но
+            # никогда не были опубликованы (put_final) и не попали в variants —
+            # без явной чистки они бы остались висеть мусором навсегда.
+            self._cleanup_partial(token, src)
             return
 
         sizes: dict = {}

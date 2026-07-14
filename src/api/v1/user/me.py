@@ -16,7 +16,7 @@ from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
 from enums import BaseRole
 from models.service_attachment import ServiceAttachmentModel
-from models.system_media import SystemMediaModel, SystemMediaMngr
+from models.system_media import SystemMediaModel, SystemMediaMngr, all_storage_keys
 from models.user import UserModel
 from models.user_oauth import UserOauthMngr
 from schemas.auth import Account, AvatarSet, MePatch, PasswordChange
@@ -176,7 +176,7 @@ async def _release_old_avatar(
         return
     cfg: AppConfig = request.app.state.settings
     bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN)
-    await bus.enqueue_delete(old.backend, [old.path])
+    await bus.enqueue_delete(old.backend, all_storage_keys(old))
     await media.delete(old)
 
 

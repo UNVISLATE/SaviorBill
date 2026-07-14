@@ -286,4 +286,24 @@ class SystemMediaMngr:
         return list(rows)
 
 
-__all__ = ["SystemMediaModel", "SystemMediaMngr"]
+def all_storage_keys(media: SystemMediaModel) -> list[str]:
+    """Ключи ВСЕХ физических файлов медиа: main + thumb + previews[].
+
+    ``media.path`` — это только ключ main-варианта. ``thumb`` и ``previews``
+    — отдельные файлы в хранилище, их ключи лежат в ``media.variants``.
+    Использовать при полном удалении медиа (иначе thumb/previews остаются
+    висеть в хранилище мусором навсегда — запись в БД уже удалена, и
+    ``orphans()`` их найти больше не сможет).
+    """
+    keys = [media.path]
+    variants = media.variants or {}
+    thumb = variants.get("thumb")
+    if thumb and thumb.get("key"):
+        keys.append(thumb["key"])
+    for preview in variants.get("previews") or []:
+        if preview and preview.get("key"):
+            keys.append(preview["key"])
+    return keys
+
+
+__all__ = ["SystemMediaModel", "SystemMediaMngr", "all_storage_keys"]

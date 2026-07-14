@@ -16,7 +16,7 @@ from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
-from models.system_media import SystemMediaMngr, SystemMediaModel
+from models.system_media import SystemMediaMngr, SystemMediaModel, all_storage_keys
 from models.user import UserModel
 from schemas.media import Media
 from services.audit import audit
@@ -61,8 +61,9 @@ async def list_media(
 
 
 async def _drop(mngr: SystemMediaMngr, bus: MediaBus, media: SystemMediaModel) -> None:
-    """Удалить запись медиа и поставить задачу удаления файла из хранилища."""
-    await bus.enqueue_delete(media.backend, [media.path])
+    """Удалить запись медиа и поставить задачу удаления ВСЕХ файлов из хранилища
+    (main + thumb + previews — иначе thumb/previews остаются мусором)."""
+    await bus.enqueue_delete(media.backend, all_storage_keys(media))
     await mngr.delete(media)
 
 
