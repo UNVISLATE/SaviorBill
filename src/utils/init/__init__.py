@@ -49,12 +49,16 @@ _ROLE_ENV: dict[str, str] = {
 }
 
 
-async def _role_names(mngr: SystemSettingsMngr, cfg: AppConfig) -> dict[str, str]:
-    """Собрать имена базовых ролей: из settings, иначе из ENV-дефолта."""
-    names: dict[str, str] = {}
-    for key, env_attr in _ROLE_ENV.items():
-        names[key] = await mngr.get(f"role.{key}") or getattr(cfg, env_attr)
-    return names
+async def _role_names(cfg: AppConfig) -> dict[str, str]:
+    """Собрать имена базовых ролей из ENV (только на момент первого запуска).
+
+    Раньше значение сначала читалось из ``settings`` (``role.{key}``), но эта
+    settings-копия никогда не перечитывалась после инициализации (роль уже
+    существует в БД под этим именем) — только засоряла admin Raw Settings
+    мёртвыми "марками", выглядящими редактируемыми без всякого эффекта.
+    Теперь источник ровно один — ENV, и он нигде не дублируется в БД.
+    """
+    return {key: getattr(cfg, env_attr) for key, env_attr in _ROLE_ENV.items()}
 
 
 async def run_init(
@@ -64,7 +68,7 @@ async def run_init(
     log.info("initial initialization of the system...")
     await seed_settings(mngr, cfg)
     await seed_email_templates(session, cfg)
-    names = await _role_names(mngr, cfg)
+    names = await _role_names(cfg)
     roles = await create_base_roles(session, names)
     await create_owner(session, cfg, roles["owner"])
     harden_secret(cfg)

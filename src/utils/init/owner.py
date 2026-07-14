@@ -22,7 +22,7 @@ async def create_owner(
 ) -> UserModel | None:
     """Создать owner-пользователя (если задан в ENV и ещё не существует)."""
     if not cfg.OWNER_LOGIN or not cfg.OWNER_PASS:
-        log.info("owner не создаётся: OWNER_LOGIN/OWNER_PASS не заданы в ENV")
+        log.info("owner user not created: OWNER_LOGIN or OWNER_PASS not set")
         return None
 
     existing = await session.scalar(

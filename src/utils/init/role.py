@@ -81,7 +81,8 @@ async def create_base_roles(
 ) -> dict[str, Role]:
     """Создать недостающие базовые роли и вернуть их по логическому ключу.
 
-    :arg names: отображение логического ключа роли (``owner`` …) на её имя в БД.
+    :param session: сессия SQLAlchemy (async)
+    :param names: отображение логического ключа роли (``owner`` …) на её имя в БД.
     """
     out: dict[str, Role] = {}
     for key, perms in _BASE_PERMS.items():

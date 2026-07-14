@@ -44,6 +44,29 @@ def test_secret_flag():
 
 
 def test_group_keys():
-    role_keys = group_keys("role")
-    assert "role.owner" in role_keys
-    assert "smtp.host" not in role_keys
+    ui_keys = group_keys("ui")
+    assert "ui.admin.name" in ui_keys
+    assert "smtp.host" not in ui_keys
+
+
+def test_role_names_not_persisted_as_settings():
+    """Имена базовых ролей больше не хранятся как отдельные settings-ключи
+    (были мёртвыми "марками", не перечитываемыми после инициализации)."""
+    assert by_key("role.owner") is None
+    assert not any(d.key.startswith("role.") for d in SETTINGS)
+
+
+def test_system_flags_locked():
+    spec = by_key("system.initialized")
+    assert spec is not None
+    assert spec.system is True
+    assert spec.source is None  # не сидится из ENV, выставляется init-ом вручную
+
+
+def test_ui_name_protected_but_editable():
+    for key in ("ui.admin.name", "ui.client.name"):
+        spec = by_key(key)
+        assert spec is not None
+        assert spec.protected is True
+        assert spec.secret is False
+        assert spec.source is not None  # сидится при первом запуске

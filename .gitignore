@@ -1,14 +1,15 @@
-# Python
+# Python & Vite
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
 .Python
-build/
-dist/
 *.egg-info/
 .eggs/
 *.egg
+build/
+dist/
+node_modules/
 
 # Virtual environments
 .venv/
@@ -67,3 +68,5 @@ data/lua/**
 !data/tests/lua/services/service_lua.lua
 !data/tests/lua/payments/
 !data/tests/lua/payments/demo_payment.lua
+
+llms/

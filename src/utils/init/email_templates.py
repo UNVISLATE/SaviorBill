@@ -56,8 +56,8 @@ _DEFAULTS: tuple[tuple[str, str, str, str], ...] = (
 async def seed_email_templates(session: AsyncSession, cfg: AppConfig) -> list[str]:
     """Создать отсутствующие дефолтные шаблоны писем. Идемпотентно.
 
-    :arg session: активная сессия БД.
-    :arg cfg: конфигурация приложения (путь к папке шаблонов).
+    :param session: активная сессия БД.
+    :param cfg: конфигурация приложения (путь к папке шаблонов).
     :return: список созданных слагов.
     """
     mngr = EmailMngr(session, cfg.EMAIL_TEMPLATES_DIR)

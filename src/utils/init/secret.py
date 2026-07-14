@@ -18,7 +18,7 @@ _KEY_MODE = stat.S_IRUSR | stat.S_IWUSR  # 0o600
 def _secret_files(cfg: AppConfig) -> list[Path]:
     """Список путей файлов секретов, релевантных файловому бэкенду.
 
-    :arg cfg: конфигурация приложения.
+    :param cfg: конфигурация приложения.
     :return: пути к файлам секретов.
     """
     candidates = [
@@ -35,7 +35,7 @@ def _secret_files(cfg: AppConfig) -> list[Path]:
 def harden_secret(cfg: AppConfig) -> None:
     """Ужесточить права файлов секретов (POSIX).
 
-    :arg cfg: конфигурация приложения.
+    :param cfg: конфигурация приложения.
     """
     if os.name != "posix":
         log.info("no-POSIX OS: secret file permissions are not changed")

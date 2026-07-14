@@ -58,7 +58,7 @@ class SystemSettingsMngr:
         self.box = box
         self.cache_ttl = cache_ttl
 
-    # --- чтение -----------------------------------------------------------
+    # чтение
     async def get(self, key: str, default: str | None = None) -> str | None:
         """Получить строковое значение настройки (cache-aside через Valkey)."""
         cached = await self.vk.get(_CACHE + key)
@@ -105,7 +105,7 @@ class SystemSettingsMngr:
             out[row.key] = self.box.open(row.value) if row.is_secret else row.value
         return out
 
-    # --- запись -----------------------------------------------------------
+    # запись
     async def set(
         self, key: str, value: str | None, is_secret: bool | None = None
     ) -> None:
@@ -137,7 +137,7 @@ class SystemSettingsMngr:
         """Сбросить кэш настройки (например, после внешней правки в БД)."""
         await self.vk.delete(_CACHE + key)
 
-    # --- сидинг из окружения ---------------------------------------------
+    # сидинг из окружения
     async def seed_from_env(self, cfg) -> list[str]:
         """Засеять отсутствующие настройки из окружения (первый запуск).
 

@@ -28,12 +28,23 @@ router = APIRouter()
 
 
 def _is_locked(row: SystemSettingsModel | None, key: str) -> bool:
-    """Заблокирован ли ключ для raw-редактирования (уже зашифрован в БД либо
-    зарегистрирован в каталоге настроек как секретный)."""
+    """Заблокирован ли ключ для raw-редактирования/удаления целиком: уже
+    зашифрован в БД, зарегистрирован в каталоге как секретный, либо это
+    внутренний служебный флаг платформы (``system`` — напр.
+    ``system.initialized``), которым админка вообще не должна управлять."""
     if row is not None and row.is_secret:
         return True
     spec = by_key(key)
-    return bool(spec and spec.secret)
+    return bool(spec and (spec.secret or spec.system))
+
+
+def _is_undeletable(row: SystemSettingsModel | None, key: str) -> bool:
+    """Заблокировано ли УДАЛЕНИЕ ключа (редактирование при этом может быть
+    разрешено)"""
+    if _is_locked(row, key):
+        return True
+    spec = by_key(key)
+    return bool(spec and spec.protected)
 
 
 @router.get(
@@ -129,10 +140,10 @@ async def delete_setting_raw(
     row = await session.get(SystemSettingsModel, key)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "setting not found")
-    if _is_locked(row, key):
+    if _is_undeletable(row, key):
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
-            "secret system settings cannot be deleted here",
+            "this setting cannot be deleted (system/secret/protected)",
         )
     await session.delete(row)
     await mngr.invalidate(key)

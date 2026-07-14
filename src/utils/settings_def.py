@@ -28,18 +28,22 @@ _CASTERS: dict[str, Callable[[str], Any]] = {
 class SettingDef:
     """Описание одной настройки в БД.
 
-    :arg key:    ключ настройки (``smtp.host``, ``role.owner`` …).
-    :arg source: имя атрибута ``AppConfig`` — источник для первичного сидинга.
-    :arg type:   тип значения (``str|int|bool``).
-    :arg secret: шифровать ли значение в БД (через SecBox).
-    :arg group:  логическая группа (для админки и ``get_group``).
-    :arg desc:   человекочитаемое описание.
+    :arg key:      ключ настройки (``smtp.host``, ``ui.admin.name`` …).
+    :arg source:   имя атрибута ``AppConfig`` — источник для первичного сидинга.
+    :arg type:     тип значения (``str|int|bool``).
+    :arg secret:   шифровать ли значение в БД (через SecBox).
+    :arg system:   внутренний служебный флаг платформы.
+    :arg protected: значение можно редактировать через админку, но НЕЛЬЗЯ удалить.
+    :arg group:    логическая группа (для админки и ``get_group``).
+    :arg desc:     человекочитаемое описание.
     """
 
     key: str
     source: str | None
     type: str = "str"
     secret: bool = False
+    system: bool = False
+    protected: bool = False
     group: str = "general"
     desc: str = ""
 
@@ -83,22 +87,13 @@ SETTINGS: tuple[SettingDef, ...] = (
         "(email-сброс выключен, только смена пароля в профиле по старому "
         "паролю) или 'disabled' (сброс пароля недоступен вообще)",
     ),
-    # Имена базовых ролей
-    SettingDef("role.owner", "ROLE_OWNER", group="role", desc="Имя роли владельца"),
-    SettingDef(
-        "role.admin", "ROLE_ADMIN", group="role", desc="Имя роли администратора"
-    ),
-    SettingDef("role.manager", "ROLE_MANAGER", group="role", desc="Имя роли менеджера"),
-    SettingDef("role.support", "ROLE_SUPPORT", group="role", desc="Имя роли поддержки"),
-    SettingDef(
-        "role.media",
-        "ROLE_MEDIA",
-        group="role",
-        desc="Имя роли медиа-модерации (резерв)",
-    ),
-    SettingDef("role.user", "ROLE_USER", group="role", desc="Имя роли пользователя"),
-    SettingDef("role.guest", "ROLE_GUEST", group="role", desc="Имя роли гостя"),
-    SettingDef("role.banned", "ROLE_BANNED", group="role", desc="Имя роли блокировки"),
+    # Имена базовых ролей больше НЕ хранятся здесь: Role.name уже пишется в
+    # БД при первом запуске (см. utils/init/role.py), а settings-копия имени
+    # никогда не перечитывается после инициализации — она была мёртвым
+    # "украшением" в admin Raw Settings (выглядит редактируемым, но правка
+    # ни на что не влияет). Имя роли теперь читается только из ENV в момент
+    # инициализации (см. utils/init/__init__.py::_role_names) и нигде не
+    # дублируется в settings.
     # Реферальная программа
     SettingDef(
         "referral.percent",
@@ -107,12 +102,24 @@ SETTINGS: tuple[SettingDef, ...] = (
         group="referral",
         desc="Глобальный процент отчислений рефереру (бонусный баланс), %",
     ),
-    # Флаги состояния системы (выставляются bootstrap-проверками, без сидинга)
+    # Флаги состояния системы (выставляются bootstrap-проверками/инициализацией,
+    # не подлежат ручной правке или удалению через admin settings API — см.
+    # SettingDef.system).
+    SettingDef(
+        "system.initialized",
+        None,
+        type="bool",
+        group="system",
+        system=True,
+        desc="Первичная инициализация уже выполнена (единый флаг; выставляется "
+        "utils/init один раз и больше не должен трогаться вручную)",
+    ),
     SettingDef(
         "system.fs_insecure",
         None,
         type="bool",
         group="system",
+        system=True,
         desc="Небезопасные права на файлы data/* (выставляется access-проверкой)",
     ),
     # Триггеры: анти-петля и повторные попытки
@@ -217,11 +224,18 @@ SETTINGS: tuple[SettingDef, ...] = (
         group="analytics",
         desc="Порог неактивности (дней без paid-платежа) для расчёта churn-rate",
     ),
-    # UI/брендинг: admin-панель и клиентское приложение
+    # UI/брендинг: admin-панель и клиентское приложение.
+    # ``name`` — единственная настройка, которая гарантированно сидится при
+    # первом запуске (см. utils/init/settings.py) — public-роут
+    # api/v1/branding.py читает её как есть, не изобретая дефолт "на лету".
+    # ``protected`` — можно менять, но нельзя удалить: без неё branding
+    # эндпоинт остался бы без названия (в таблице кроме name ничего гарантированно
+    # нет — logo/favicon/theme опциональны и заполняются вручную из админки).
     SettingDef(
-        "ui.admin.product_name",
-        None,
+        "ui.admin.name",
+        "UI_ADMIN_NAME",
         group="ui",
+        protected=True,
         desc="Название в шапке/тайтле admin UI",
     ),
     SettingDef("ui.admin.logo", None, group="ui", desc="Токен медиа логотипа admin UI"),
@@ -236,9 +250,10 @@ SETTINGS: tuple[SettingDef, ...] = (
         desc="Произвольная JSON-тема admin UI",
     ),
     SettingDef(
-        "ui.client.product_name",
-        None,
+        "ui.client.name",
+        "UI_CLIENT_NAME",
         group="ui",
+        protected=True,
         desc="Название клиентского приложения",
     ),
     SettingDef("ui.client.logo", None, group="ui", desc="Токен медиа логотипа клиента"),

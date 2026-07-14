@@ -242,18 +242,22 @@ class AppConfig(BaseSettings):
     SMTP_FROM: str | None = Field(default=None)
     SMTP_TLS: bool = Field(default=True)
 
-    # Имена базовых ролей (сидятся в settings, далее берутся из БД)
+    # Имена базовых ролей (seed -> settings)
     ROLE_OWNER: str = Field(default="owner")
     ROLE_ADMIN: str = Field(default="admin")
     ROLE_MANAGER: str = Field(default="manager")
-    ROLE_SUPPORT: str = Field(default="support")
-    ROLE_MEDIA: str = Field(default="media")
+    ROLE_SUPPORT: str = Field(default="support") # зарезервированная роль
+    ROLE_MEDIA: str = Field(default="media") # зарезервированная роль
     # Роль обычного (верифицированного) пользователя.
     ROLE_USER: str = Field(default="user")
     # Роль только что зарегистрированного пользователя (email не подтверждён).
     ROLE_GUEST: str = Field(default="guest")
-    # Роль заблокированного пользователя (только просмотр своего профиля/услуг).
+    # Роль заблокированного пользователя (только просмотр своего профиля/бан-флаг).
     ROLE_BANNED: str = Field(default="banned")
+
+    # Названия UI (seed -> settings)
+    UI_ADMIN_NAME: str = Field(default="SaviorBill Admin")
+    UI_CLIENT_NAME: str = Field(default="SaviorBill Client")
 
     # Bootstrap owner (создаётся при первом запуске)
     OWNER_LOGIN: str | None = Field(default=None)
