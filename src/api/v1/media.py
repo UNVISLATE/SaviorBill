@@ -51,7 +51,7 @@ async def media_status(
     return MediaStatus(
         token=token,
         state=media.status,
-        url=f"/media/{media.token}" if media.status == "ready" else None,
+        url=f"/api/media/{media.token}" if media.status == "ready" else None,
         mime=media.mime,
     )
 

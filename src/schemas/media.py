@@ -1,7 +1,7 @@
 """Схемы медиа: загрузка/статус/регистрация/вложения (Request/Response).
 
 Файлы физически обрабатывает mediaworker; billing хранит метаданные и решает
-права/квоты. Публичный URL готового файла — относительный ``/media/{token}``
+права/квоты. Публичный URL готового файла — относительный ``/api/media/{token}``
 (домен подставляет фронтенд/Caddy).
 """
 
@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 def _media_url(token: str) -> str:
     """Относительный URL отдачи медиа (обслуживает Caddy/mediaworker)."""
-    return f"/media/{token}"
+    return f"/api/media/{token}"
 
 
 class Media(BaseModel):

@@ -180,6 +180,13 @@ class AppConfig(BaseSettings):
     # заголовка клиентом напрямую не даёт обойти лимит).
     TRUSTED_PROXIES: str = Field(default="")
 
+    # Разрешённые CORS origin'ы (CSV, например "https://admin.example.com, https://app.example.com").
+    # Пусто по умолчанию -> CORSMiddleware не
+    # подключается вовсе (поведение как раньше: без явных CORS-заголовков).
+    # Нужно, если admin/client UI обращается к billing с другого домена/порта
+    # через fetch()/XHR (не требуется для простой отдачи `<img>`/`<video>`).
+    CORS_ORIGINS: str = Field(default="")
+
     # Наблюдаемость: метрики Prometheus (/metrics) и трейсинг OpenTelemetry.
     # Метрики: эндпоинт /metrics включён по умолчанию (METRICS_ENABLED=false — снят).
     METRICS_ENABLED: bool = Field(default=True)
@@ -260,16 +267,22 @@ class AppConfig(BaseSettings):
         return [p.strip() for p in self.TRUSTED_PROXIES.split(",") if p.strip()]
 
     @property
+    def cors_origins_list(self) -> list[str]:
+        """`CORS_ORIGINS` как список непустых origin'ов (CSV → list)."""
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    @property
     def media_docs_url(self) -> str:
         """Публичный URL OpenAPI-документации mediaworker.
 
         Приоритет: явный ``MEDIA_PUBLIC_URL`` -> публичный ``DOMAIN`` (https) ->
-        внутренний ``MEDIAWORKER_URL``. К базе добавляется путь ``/docs``.
+        внутренний ``MEDIAWORKER_URL``. К базе добавляется путь ``/api/media/docs``
+        (весь HTTP-API mediaworker живёт под префиксом ``/api/media``).
         """
         base = self.MEDIA_PUBLIC_URL
         if not base:
             base = f"https://{self.DOMAIN}" if self.DOMAIN else self.MEDIAWORKER_URL
-        return f"{base.rstrip('/')}/docs"
+        return f"{base.rstrip('/')}/api/media/docs"
 
     @property
     def data_path(self) -> Path:

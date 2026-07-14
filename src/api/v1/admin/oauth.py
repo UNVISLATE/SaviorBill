@@ -46,7 +46,7 @@ async def _require_media(mngr: SystemMediaMngr, media_id: int) -> None:
 
 
 @router.get(
-    "/oauth",
+    "",
     response_model=list[OAuthProvider],
     dependencies=[Depends(require_perm("oauth.read"))],
     summary="OAuth providers",
@@ -61,7 +61,7 @@ async def list_providers(
 
 
 @router.get(
-    "/oauth/{provider_id}",
+    "/{provider_id}",
     response_model=OAuthProvider,
     dependencies=[Depends(require_perm("oauth.read"))],
     summary="Get OAuth provider",
@@ -77,7 +77,7 @@ async def get_provider(
 
 
 @router.post(
-    "/oauth",
+    "",
     response_model=OAuthProvider,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("oauth.create"))],
@@ -113,7 +113,7 @@ async def create_provider(
 
 
 @router.patch(
-    "/oauth/{provider_id}",
+    "/{provider_id}",
     response_model=OAuthProvider,
     dependencies=[Depends(require_perm("oauth.edit"))],
     summary="Update OAuth provider",
@@ -143,7 +143,7 @@ async def update_provider(
 
 
 @router.delete(
-    "/oauth/{provider_id}",
+    "/{provider_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_perm("oauth.delete"))],
     summary="Delete OAuth provider",

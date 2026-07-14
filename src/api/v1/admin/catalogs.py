@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/catalogs",
+    "",
     response_model=list[CatalogResponse],
     dependencies=[Depends(require_perm("catalogs.read"))],
     summary="Catalogs",
@@ -25,7 +25,7 @@ async def list_catalogs(
 
 
 @router.post(
-    "/catalogs",
+    "",
     response_model=CatalogResponse,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("catalogs.create"))],
@@ -41,7 +41,7 @@ async def create_catalog(
 
 
 @router.patch(
-    "/catalogs/{catalog_id}",
+    "/{catalog_id}",
     response_model=CatalogResponse,
     dependencies=[Depends(require_perm("catalogs.edit"))],
     summary="Update catalog",
@@ -58,7 +58,7 @@ async def update_catalog(
 
 
 @router.delete(
-    "/catalogs/{catalog_id}",
+    "/{catalog_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_perm("catalogs.delete"))],
     summary="Delete catalog",

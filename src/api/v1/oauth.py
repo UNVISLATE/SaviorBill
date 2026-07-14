@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/v1/oauth", tags=["oauth"])
 
 
 def _icon_url(token: str | None) -> str | None:
-    return f"/media/{token}" if token else None
+    return f"/api/media/{token}" if token else None
 
 
 @router.get(

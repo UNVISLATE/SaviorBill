@@ -19,7 +19,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/email/templates",
+    "",
     response_model=list[EmailTemplate],
     dependencies=[Depends(require_perm("email.read"))],
     summary="Email templates",
@@ -32,7 +32,7 @@ async def list_templates(
 
 
 @router.get(
-    "/email/templates/{tpl_id}",
+    "/{tpl_id}",
     response_model=EmailTemplateDetail,
     dependencies=[Depends(require_perm("email.read"))],
     summary="Get email template",
@@ -49,7 +49,7 @@ async def get_template(
 
 
 @router.post(
-    "/email/templates",
+    "",
     response_model=EmailTemplate,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("email.create"))],
@@ -66,7 +66,7 @@ async def create_template(
 
 
 @router.patch(
-    "/email/templates/{tpl_id}",
+    "/{tpl_id}",
     response_model=EmailTemplate,
     dependencies=[Depends(require_perm("email.edit"))],
     summary="Update email template",
@@ -83,7 +83,7 @@ async def patch_template(
 
 
 @router.put(
-    "/email/templates/{tpl_id}/body",
+    "/{tpl_id}/body",
     response_model=EmailTemplate,
     dependencies=[Depends(require_perm("email.edit"))],
     summary="Replace email body",
@@ -100,7 +100,7 @@ async def replace_body(
 
 
 @router.delete(
-    "/email/templates/{tpl_id}",
+    "/{tpl_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_perm("email.delete"))],
     summary="Delete email template",

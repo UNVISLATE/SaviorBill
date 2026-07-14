@@ -11,7 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 def _icon_url(token: str | None) -> str | None:
     """Относительный URL иконки провайдера (см. ``schemas.media``)."""
-    return f"/media/{token}" if token else None
+    return f"/api/media/{token}" if token else None
 
 
 class OAuthProvider(BaseModel):

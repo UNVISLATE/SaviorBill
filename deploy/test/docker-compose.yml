@@ -14,7 +14,7 @@ services:
       # Запас по таймауту lua-вызова для медленного CI.
       LUA_CALL_TIMEOUT: "60"
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')\""]
       interval: 5s
       timeout: 3s
       retries: 30

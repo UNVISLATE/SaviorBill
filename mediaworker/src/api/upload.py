@@ -1,9 +1,9 @@
 """Двухшаговая загрузка медиа.
 
-Шаг 1: ``POST /media/upload?kind=<image|video|icon|avatar>``
+Шаг 1: ``POST /api/media/upload?kind=<image|video|icon|avatar>``
   — проверяет JWT и права, возвращает одноразовый upload-token (TTL 1 мин).
 
-Шаг 2: ``POST /media/upload/{upload_token}``
+Шаг 2: ``POST /api/media/upload/{upload_token}``
   — принимает файл-стрим по токену; в БД не ходит.
 """
 
@@ -100,7 +100,7 @@ async def _enforce_hourly_limit(
         )
 
 
-@router.post("/media/upload", status_code=status.HTTP_201_CREATED)
+@router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def request_upload_token(request: Request, kind: str = "image") -> dict:
     """Шаг 1: проверить права и выдать одноразовый upload-token."""
     cfg: Config = request.app.state.cfg
@@ -137,11 +137,11 @@ async def request_upload_token(request: Request, kind: str = "image") -> dict:
     return {
         "upload_token": token,
         "expires_in": cfg.upload_token_ttl,
-        "upload_url": f"/media/upload/{token}",
+        "upload_url": f"/api/media/upload/{token}",
     }
 
 
-@router.post("/media/upload/{upload_token}", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/upload/{upload_token}", status_code=status.HTTP_202_ACCEPTED)
 async def upload_file(request: Request, upload_token: str) -> dict:
     """Шаг 2: принять файл по одноразовому upload-token."""
     cfg: Config = request.app.state.cfg

@@ -29,7 +29,7 @@ def _bus(request: Request, vk: valkey.Valkey) -> MediaBus:
 
 
 @router.get(
-    "/media",
+    "",
     response_model=list[Media],
     dependencies=[Depends(require_perm("media.read"))],
     summary="Media",
@@ -50,7 +50,7 @@ async def _drop(mngr: SystemMediaMngr, bus: MediaBus, media: SystemMediaModel) -
 
 
 @router.delete(
-    "/media/{media_id}",
+    "/{media_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete media",
 )
@@ -79,7 +79,7 @@ async def delete_media(
 
 
 @router.post(
-    "/media/cleanup",
+    "/cleanup",
     dependencies=[Depends(require_perm("media.cleanup"))],
     summary="Cleanup media",
     description="Delete unused media older than the grace period and queue file cleanup.",

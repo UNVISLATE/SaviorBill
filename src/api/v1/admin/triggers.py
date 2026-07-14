@@ -14,7 +14,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/triggers/meta",
+    "/meta",
     response_model=TriggerMeta,
     dependencies=[Depends(require_perm("triggers.read"))],
     summary="Trigger metadata",
@@ -25,7 +25,7 @@ async def triggers_meta() -> TriggerMeta:
 
 
 @router.get(
-    "/triggers",
+    "",
     response_model=list[Trigger],
     dependencies=[Depends(require_perm("triggers.read"))],
     summary="Triggers",
@@ -38,7 +38,7 @@ async def list_triggers(
 
 
 @router.get(
-    "/triggers/{trig_id}",
+    "/{trig_id}",
     response_model=Trigger,
     dependencies=[Depends(require_perm("triggers.read"))],
     summary="Get trigger",
@@ -54,7 +54,7 @@ async def get_trigger(
 
 
 @router.post(
-    "/triggers",
+    "",
     response_model=Trigger,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("triggers.create"))],
@@ -71,7 +71,7 @@ async def create_trigger(
 
 
 @router.patch(
-    "/triggers/{trig_id}",
+    "/{trig_id}",
     response_model=Trigger,
     dependencies=[Depends(require_perm("triggers.edit"))],
     summary="Update trigger",
@@ -88,7 +88,7 @@ async def patch_trigger(
 
 
 @router.delete(
-    "/triggers/{trig_id}",
+    "/{trig_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_perm("triggers.delete"))],
     summary="Delete trigger",

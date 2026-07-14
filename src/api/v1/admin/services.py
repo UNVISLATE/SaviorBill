@@ -20,7 +20,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/services",
+    "",
     response_model=Page[ServiceAdmin],
     dependencies=[Depends(require_perm("services.read"))],
     summary="Services",
@@ -42,7 +42,7 @@ async def list_services(
 
 
 @router.post(
-    "/services",
+    "",
     response_model=ServiceAdmin,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("services.create"))],
@@ -58,7 +58,7 @@ async def create_service(
 
 
 @router.patch(
-    "/services/{service_id}",
+    "/{service_id}",
     response_model=ServiceAdmin,
     dependencies=[Depends(require_perm("services.edit"))],
     summary="Update service",
@@ -75,7 +75,7 @@ async def update_service(
 
 
 @router.get(
-    "/services/{service_id}/attachments",
+    "/{service_id}/attachments",
     response_model=list[Attachment],
     dependencies=[Depends(require_perm("services.attachments.read"))],
     summary="Service attachments",
@@ -89,7 +89,7 @@ async def list_attachments(
 
 
 @router.post(
-    "/services/{service_id}/attachments",
+    "/{service_id}/attachments",
     response_model=Attachment,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("services.attachments.create"))],
@@ -113,7 +113,7 @@ async def add_attachment(
 
 
 @router.delete(
-    "/services/{service_id}/attachments/{att_id}",
+    "/{service_id}/attachments/{att_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_perm("services.attachments.delete"))],
     summary="Delete attachment",

@@ -43,7 +43,7 @@ async def _get_service_or_404(service_id: int, svc_mngr: ServiceMngr):
 
 
 @router.get(
-    "/services/{service_id}/keys",
+    "/{service_id}/keys",
     response_model=Page[ServiceKeyOut],
     dependencies=[Depends(require_perm("services.keys.read"))],
     summary="Service keys",
@@ -71,7 +71,7 @@ async def list_keys(
 
 
 @router.get(
-    "/services/{service_id}/keys/stock",
+    "/{service_id}/keys/stock",
     response_model=ServiceStockOut,
     dependencies=[Depends(require_perm("services.keys.read"))],
     summary="Key stock",
@@ -87,7 +87,7 @@ async def keys_stock(
 
 
 @router.get(
-    "/services/{service_id}/keys/{key_id}/reveal",
+    "/{service_id}/keys/{key_id}/reveal",
     response_model=ServiceKeyRevealOut,
     dependencies=[Depends(require_perm("ownersec.servicekeys.read"))],
     summary="Reveal key",
@@ -107,7 +107,7 @@ async def reveal_key(
 
 
 @router.post(
-    "/services/{service_id}/keys/import",
+    "/{service_id}/keys/import",
     response_model=ServiceKeysImportOut,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("services.keys.create"))],
@@ -131,7 +131,7 @@ async def import_keys(
 
 
 @router.delete(
-    "/services/{service_id}/keys/{key_id}",
+    "/{service_id}/keys/{key_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_perm("services.keys.delete"))],
     summary="Delete key",

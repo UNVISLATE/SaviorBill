@@ -106,7 +106,7 @@ class TestOAuthProviderSchemas:
         )
         out = OAuthProvider.from_model(m)
         assert out.icon_media_id == 7
-        assert out.icon_url == "/media/tok123"
+        assert out.icon_url == "/api/media/tok123"
 
     def test_from_model_without_icon(self) -> None:
         m = SimpleNamespace(
@@ -127,8 +127,8 @@ class TestOAuthProviderSchemas:
 
 class TestPublicProviderSchema:
     def test_provider_has_icon_url_field(self) -> None:
-        p = Provider(slug="google", title="Google", icon_url="/media/tok123")
-        assert p.icon_url == "/media/tok123"
+        p = Provider(slug="google", title="Google", icon_url="/api/media/tok123")
+        assert p.icon_url == "/api/media/tok123"
 
     def test_provider_icon_url_optional(self) -> None:
         p = Provider(slug="google", title="Google")

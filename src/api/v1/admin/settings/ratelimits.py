@@ -13,7 +13,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/settings/ratelimits",
+    "",
     response_model=list[RateLimitRule],
     dependencies=[Depends(require_perm("settings.ratelimits.read"))],
     summary="Rate limits",
@@ -45,7 +45,7 @@ async def list_rate_limits(
 
 
 @router.put(
-    "/settings/ratelimits/{kind}",
+    "/{kind}",
     response_model=RateLimitRule,
     dependencies=[Depends(require_perm("settings.ratelimits.edit"))],
     summary="Set rate limit",
@@ -69,7 +69,7 @@ async def set_rate_limit(
 
 
 @router.delete(
-    "/settings/ratelimits/{kind}",
+    "/{kind}",
     response_model=RateLimitRule,
     dependencies=[Depends(require_perm("settings.ratelimits.edit"))],
     summary="Reset rate limit",

@@ -21,7 +21,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/audit",
+    "",
     response_model=Page[AuditEntry],
     dependencies=[Depends(require_perm("audit.read"))],
     summary="Audit log",

@@ -26,7 +26,7 @@ router = APIRouter()
 
 # --- платежи -------------------------------------------------------------
 @router.get(
-    "/purchases",
+    "",
     response_model=Page[PaymentAdmin],
     dependencies=[Depends(require_perm("purchases.read"))],
     summary="Payments",
@@ -45,7 +45,7 @@ async def list_payments(
 
 
 @router.get(
-    "/purchases/providers",
+    "/providers",
     response_model=list[PayProvider],
     dependencies=[Depends(require_perm("purchases.providers.read"))],
     summary="Payment providers",
@@ -61,7 +61,7 @@ async def list_providers(
 
 # --- провайдеры ----------------------------------------------------------
 @router.post(
-    "/purchases/providers",
+    "/providers",
     response_model=PayProvider,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("purchases.providers.create"))],
@@ -92,7 +92,7 @@ async def create_provider(
 
 
 @router.patch(
-    "/purchases/providers/{provider_id}",
+    "/providers/{provider_id}",
     response_model=PayProvider,
     dependencies=[Depends(require_perm("purchases.providers.edit"))],
     summary="Update payment provider",
@@ -119,7 +119,7 @@ async def update_provider(
 # Карточка платежа объявлена после /purchases/providers, чтобы "providers"
 # не перехватывался как {payment_id}.
 @router.get(
-    "/purchases/{payment_id}",
+    "/{payment_id}",
     response_model=PaymentAdmin,
     dependencies=[Depends(require_perm("purchases.read"))],
     summary="Payment details",
@@ -134,7 +134,7 @@ async def get_payment(
 
 
 @router.post(
-    "/purchases/{payment_id}/recheck",
+    "/{payment_id}/recheck",
     response_model=PaymentAdmin,
     dependencies=[Depends(require_perm("purchases.recheck"))],
     summary="Recheck payment",
@@ -157,7 +157,7 @@ async def recheck_payment(
 
 
 @router.post(
-    "/purchases/{payment_id}/refund",
+    "/{payment_id}/refund",
     response_model=PaymentAdmin,
     dependencies=[Depends(require_perm("purchases.refund"))],
     summary="Refund payment",

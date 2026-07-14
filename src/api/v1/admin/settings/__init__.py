@@ -13,7 +13,7 @@ from .ratelimits import router as ratelimits_router
 from .raw import router as raw_router
 
 router = APIRouter()
-router.include_router(ratelimits_router)
-router.include_router(raw_router)
+router.include_router(ratelimits_router, prefix="/ratelimits")
+router.include_router(raw_router, prefix="/raw")
 
 __all__ = ["router"]

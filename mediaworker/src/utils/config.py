@@ -92,6 +92,11 @@ class Config(BaseSettings):
     # --- Роли ---
     ROLE_BANNED: str = Field(default="banned")
 
+    # Разрешённые CORS origin'ы (CSV; общее имя переменной с billing —
+    # значение можно переопределить отдельно, если mediaworker живёт на
+    # другом наборе доменов). Пусто -> CORSMiddleware не подключается.
+    CORS_ORIGINS: str = Field(default="")
+
     # --- Наблюдаемость: метрики Prometheus (/metrics) и трейсинг OpenTelemetry ---
     # Имена переменных совпадают с billing-конфигом (общий .env на весь стек).
     METRICS_ENABLED: bool = Field(default=True)
@@ -242,6 +247,11 @@ class Config(BaseSettings):
     @property
     def docs_enabled(self) -> bool:
         return self.MEDIA_DOCS_ENABLED
+
+    @property
+    def cors_origins_list(self) -> list[str]:
+        """`CORS_ORIGINS` как список непустых origin'ов (CSV → list)."""
+        return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
 
     @property
     def jwt_alg(self) -> str:

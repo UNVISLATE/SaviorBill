@@ -37,7 +37,7 @@ def _is_locked(row: SystemSettingsModel | None, key: str) -> bool:
 
 
 @router.get(
-    "/settings/raw",
+    "",
     response_model=Page[SettingRawOut],
     dependencies=[Depends(require_perm("settings.raw.read"))],
     summary="Raw settings",
@@ -61,7 +61,7 @@ async def list_settings_raw(
 
 
 @router.get(
-    "/settings/raw/{key}",
+    "/{key}",
     response_model=SettingRawOut,
     dependencies=[Depends(require_perm("settings.raw.read"))],
     summary="Get raw setting",
@@ -77,7 +77,7 @@ async def get_setting_raw(
 
 
 @router.put(
-    "/settings/raw/{key}",
+    "/{key}",
     response_model=SettingRawOut,
     summary="Upsert raw setting",
     description="Create or update a non-secret setting value.",
@@ -114,7 +114,7 @@ async def upsert_setting_raw(
 
 
 @router.delete(
-    "/settings/raw/{key}",
+    "/{key}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete raw setting",
     description="Delete a non-secret setting row.",

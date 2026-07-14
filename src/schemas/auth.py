@@ -10,7 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 def _media_url(token: str | None) -> str | None:
     """Относительный URL медиа (см. ``schemas.media``)."""
-    return f"/media/{token}" if token else None
+    return f"/api/media/{token}" if token else None
 
 
 class Reg(BaseModel):

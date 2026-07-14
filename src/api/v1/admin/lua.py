@@ -23,7 +23,7 @@ def _actor(request: Request, acc: UserModel) -> dict:
 
 
 @router.get(
-    "/lua",
+    "",
     response_model=list[LuaScript],
     dependencies=[Depends(require_perm("lua.read"))],
     summary="Lua scripts",
@@ -36,7 +36,7 @@ async def list_scripts(
 
 
 @router.get(
-    "/lua/{script_id}",
+    "/{script_id}",
     response_model=LuaScriptDetail,
     dependencies=[Depends(require_perm("lua.read"))],
     summary="Get Lua script",
@@ -53,7 +53,7 @@ async def get_script(
 
 
 @router.post(
-    "/lua",
+    "",
     response_model=LuaScript,
     status_code=status.HTTP_201_CREATED,
     summary="Upload Lua script",
@@ -79,7 +79,7 @@ async def upload_script(
 
 
 @router.patch(
-    "/lua/{script_id}",
+    "/{script_id}",
     response_model=LuaScript,
     summary="Update Lua script",
     description="Update a Lua script.",
@@ -104,7 +104,7 @@ async def edit_script(
 
 
 @router.delete(
-    "/lua/{script_id}",
+    "/{script_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete Lua script",
 )

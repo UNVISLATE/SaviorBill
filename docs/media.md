@@ -20,7 +20,7 @@
 upload-token, затем — сама передача файла. Это отделяет авторизацию от приёма тела
 и позволяет фронтенду получить лимиты заранее.
 
-**Шаг 1 — `POST /media/upload?kind=image`** (`Authorization: Bearer <access-JWT>`,
+**Шаг 1 — `POST /api/media/upload?kind=image`** (`Authorization: Bearer <access-JWT>`,
 тело не нужно). Забаненный IP → `403` сразу.
 
 1. `mediaworker` валидирует access-JWT (общий `JWT_SECRET` / файл
@@ -33,9 +33,9 @@ upload-token, затем — сама передача файла. Это отд
    превышение → `429`.
 3. Выдаётся одноразовый token: `HSET media:uptoken:{token} owner/kind/max_bytes`,
    `EXPIRE MEDIA_UPLOAD_TOKEN_TTL` (по умолчанию 60 c). Ответ `201`:
-   `{upload_token, expires_in, upload_url: "/media/upload/{token}"}`.
+   `{upload_token, expires_in, upload_url: "/api/media/upload/{token}"}`.
 
-**Шаг 2 — `POST /media/upload/{upload_token}`**, тело — файл (стрим). Забаненный IP
+**Шаг 2 — `POST /api/media/upload/{upload_token}`**, тело — файл (стрим). Забаненный IP
 → `403`.
 
 4. Token извлекается **атомарно** (Lua `HGETALL` + `DEL`); отсутствует/истёк →
@@ -90,18 +90,18 @@ upload-token, затем — сама передача файла. Это отд
 
 ### Ручная загрузка превью (видео)
 
-`POST /media/{token}/preview` (владелец медиа, `kind=video`) — стримит картинку,
+`POST /api/media/{token}/preview` (владелец медиа, `kind=video`) — стримит картинку,
 ставит задачу `media:tasks {op:preview}`; воркер пересобирает `preview` и
 `preview_thumb` и публикует результат `media:results {op:preview}`, а billing
 домержит их в `variants` (`SystemMediaMngr.merge_variants`).
 
 ## Отдача
 
-- Локальный бэкенд: файл отдаёт **сам mediaworker** (`GET /media/{token}` →
+- Локальный бэкенд: файл отдаёт **сам mediaworker** (`GET /api/media/{token}` →
   `FileResponse`), находя ключ через кэш `media:file:{token}` либо по соглашению об
-  именах (`{token}.webp` / `{token}.webm`, `/media/{token}.thumb` →
-  `{token}.thumb.webp` и т.д.). Caddy лишь проксирует `/media/*` в mediaworker.
-- S3: `mediaworker` `GET /media/{token}` (и `/media/{token}.<variant>`) → `307` на
+  именах (`{token}.webp` / `{token}.webm`, `/api/media/{token}.thumb` →
+  `{token}.thumb.webp` и т.д.). Caddy лишь проксирует `/api/media/*` в mediaworker.
+- S3: `mediaworker` `GET /api/media/{token}` (и `/api/media/{token}.<variant>`) → `307` на
   presigned-URL.
 - Статус при отдаче: `425 Too Early` пока `media:status` = `queued`/`processing`;
   `404` — конвертация провалилась либо файла/варианта нет.
@@ -109,7 +109,7 @@ upload-token, затем — сама передача файла. Это отд
 
 ### Модель доступа (важно при добавлении новых видов медиа)
 
-`GET /media/{token}` отдаёт файл **любому**, кто знает `token` (128-бит
+`GET /api/media/{token}` отдаёт файл **любому**, кто знает `token` (128-бит
 `uuid4`), без проверки логина/владельца. Это осознанное решение, а не
 недосмотр:
 
@@ -168,15 +168,17 @@ OGG, а также общий RIFF-контейнер WEBP/AVI). При несо
 
 `mediaworker` — самостоятельный FastAPI-сервис со своей интерактивной докой:
 
-- Swagger UI — `GET /docs`, ReDoc — `GET /redoc`, схема — `GET /openapi.json`.
+- Swagger UI — `GET /api/media/docs`, ReDoc — `GET /api/media/redoc`, схема —
+  `GET /api/media/openapi.json`.
 - Описание (`app.description`) содержит форматы загрузки, тела ответов и таблицу
   кодов состояния (`201/202/307/401/403/413/425/429`).
 - Дока включается флагом `MEDIA_DOCS_ENABLED` (по умолчанию `true`); при `false`
   все три эндпоинта отдают `404`.
 
-Аналогично у billing (`DOCS_ENABLED`, по умолчанию `true`): его описание
-(`/docs`) содержит ссылку на доку mediaworker, построенную из ENV-доменов —
-`MEDIA_PUBLIC_URL` → `https://{DOMAIN}` → внутренний `MEDIAWORKER_URL` (+ `/docs`).
+Аналогично у billing (`DOCS_ENABLED`, по умолчанию `true`): его дока
+(`/api/docs`) содержит ссылку на доку mediaworker, построенную из ENV-доменов —
+`MEDIA_PUBLIC_URL` → `https://{DOMAIN}` → внутренний `MEDIAWORKER_URL` (+
+`/api/media/docs`).
 
 ## Конфигурация
 

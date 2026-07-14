@@ -1,7 +1,7 @@
 """Отдача медиа и ручная загрузка превью.
 
-``GET /media/{token}``      — отдать файл: S3 → presigned redirect; fs → FileResponse.
-``POST /media/{token}/preview`` — ручная загрузка постера для видео.
+``GET /api/media/{token}``      — отдать файл: S3 → presigned redirect; fs → FileResponse.
+``POST /api/media/{token}/preview`` — ручная загрузка постера для видео.
 """
 
 from __future__ import annotations
@@ -58,7 +58,7 @@ async def _authorize(request: Request, acc_id: int) -> tuple[dict | None, str | 
     return acc.perms, acc.role_key
 
 
-@router.get("/media/{token}")
+@router.get("/{token}")
 async def serve(request: Request, token: str):
     """Отдать медиа. S3 → presigned redirect; fs → FileResponse.
 
@@ -129,7 +129,7 @@ async def serve(request: Request, token: str):
     raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
 
 
-@router.post("/media/{token}/preview", status_code=status.HTTP_202_ACCEPTED)
+@router.post("/{token}/preview", status_code=status.HTTP_202_ACCEPTED)
 async def upload_preview(request: Request, token: str) -> dict:
     """Ручная загрузка превью для видео (только владелец медиа)."""
     cfg: Config = request.app.state.cfg

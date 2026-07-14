@@ -31,8 +31,8 @@ async def _access(new_user) -> str:
 async def _upload(token_access: str, *, kind: str = "image") -> str:
     """Пройти двухшаговую загрузку и вернуть media-token.
 
-    Шаг 1: ``POST /media/upload`` — проверка прав, выдача одноразового upload-token.
-    Шаг 2: ``POST /media/upload/{upload_token}`` — приём файла, постановка в очередь.
+    Шаг 1: ``POST /api/media/upload`` — проверка прав, выдача одноразового upload-token.
+    Шаг 2: ``POST /api/media/upload/{upload_token}`` — приём файла, постановка в очередь.
 
     :arg token_access: access-JWT загружающего пользователя.
     :arg kind: вид медиа (image|video|icon|avatar).
@@ -40,7 +40,7 @@ async def _upload(token_access: str, *, kind: str = "image") -> str:
     """
     async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=30) as mw:
         r1 = await mw.post(
-            "/media/upload",
+            "/api/media/upload",
             params={"kind": kind},
             headers={"Authorization": f"Bearer {token_access}"},
         )
@@ -48,7 +48,7 @@ async def _upload(token_access: str, *, kind: str = "image") -> str:
         upload_token = r1.json()["upload_token"]
 
         r2 = await mw.post(
-            f"/media/upload/{upload_token}",
+            f"/api/media/upload/{upload_token}",
             content=_PNG,
             headers={
                 "Authorization": f"Bearer {token_access}",
@@ -73,13 +73,13 @@ async def test_media_upload_convert_register(http, new_user):
         _status, lambda d: d.get("state") in ("ready", "failed"), timeout=60
     )
     assert data["state"] == "ready", data
-    assert data["url"] == f"/media/{token}"
+    assert data["url"] == f"/api/media/{token}"
     assert data["mime"] == "image/webp"
 
 
 async def test_media_upload_requires_auth(new_user):
     async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=30) as mw:
-        r = await mw.post("/media/upload", params={"kind": "image"})
+        r = await mw.post("/api/media/upload", params={"kind": "image"})
     assert r.status_code == 401, r.text
 
 
@@ -109,7 +109,7 @@ async def test_admin_media_list_and_cleanup(http, new_user, seed):
     # mediaworker записал варианты (полный webp + обрезанный мини-webp).
     assert "main" in entry["variants"]
     assert "thumb" in entry["variants"]
-    assert entry["variants"]["thumb"]["url"] == f"/media/{token}.thumb"
+    assert entry["variants"]["thumb"]["url"] == f"/api/media/{token}.thumb"
 
     # чистка орфанов (медиа не привязано ни к товару, ни к аватарке) — грейс-период
     # по умолчанию (1 час) исключил бы только что загруженный файл, обнуляем для теста.

@@ -208,7 +208,7 @@ class TestAccountSchema:
         assert acc.bonus_balance == Decimal("2.00")
         assert acc.last_login == datetime(2026, 6, 1)
         assert acc.avatar_media_id == 7
-        assert acc.avatar_url == "/media/tok7"
+        assert acc.avatar_url == "/api/media/tok7"
         assert acc.oauth_providers == ["google", "yandex"]
 
     def test_from_account_no_avatar(self) -> None:

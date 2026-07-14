@@ -34,7 +34,7 @@ async def _get_user(session: AsyncSession, user_id: int) -> UserModel:
 
 
 @router.get(
-    "/users",
+    "",
     response_model=Page[User],
     dependencies=[Depends(require_perm("users.read"))],
     summary="Users",
@@ -55,7 +55,7 @@ async def list_users(
 
 
 @router.get(
-    "/users/{user_id}",
+    "/{user_id}",
     response_model=UserDetail,
     dependencies=[Depends(require_perm("users.read"))],
     summary="User details",
@@ -83,7 +83,7 @@ async def user_detail(
 
 
 @router.patch(
-    "/users/{user_id}",
+    "/{user_id}",
     response_model=User,
     dependencies=[Depends(require_perm("users.edit"))],
     summary="Update user",
@@ -107,7 +107,7 @@ async def edit_user(
 
 
 @router.get(
-    "/users/{user_id}/services",
+    "/{user_id}/services",
     response_model=Page[OrderAdmin],
     dependencies=[Depends(require_perm("orders.read"))],
     summary="User services",
@@ -134,7 +134,7 @@ async def user_services(
 
 
 @router.get(
-    "/users/{user_id}/orders",
+    "/{user_id}/orders",
     response_model=Page[OrderAdmin],
     dependencies=[Depends(require_perm("orders.read"))],
     summary="User orders",
@@ -150,7 +150,7 @@ async def user_orders(
 
 
 @router.get(
-    "/users/{user_id}/payments",
+    "/{user_id}/payments",
     response_model=Page[PaymentAdmin],
     dependencies=[Depends(require_perm("purchases.read"))],
     summary="User payments",
@@ -177,7 +177,7 @@ async def user_payments(
 
 
 @router.get(
-    "/users/{user_id}/oauth",
+    "/{user_id}/oauth",
     response_model=list[OAuthConnAdmin],
     dependencies=[Depends(require_perm("users.read"))],
     summary="User OAuth links",

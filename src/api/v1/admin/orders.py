@@ -22,7 +22,7 @@ router = APIRouter()
 
 
 @router.get(
-    "/orders",
+    "",
     response_model=Page[OrderAdmin],
     dependencies=[Depends(require_perm("orders.read"))],
     summary="Orders",
@@ -41,7 +41,7 @@ async def list_orders(
 
 
 @router.get(
-    "/orders/{order_id}",
+    "/{order_id}",
     response_model=OrderAdmin,
     dependencies=[Depends(require_perm("orders.read"))],
     summary="Order details",
@@ -56,7 +56,7 @@ async def get_order(
 
 
 @router.post(
-    "/orders/grant",
+    "/grant",
     response_model=OrderAdmin,
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_perm("orders.create"))],

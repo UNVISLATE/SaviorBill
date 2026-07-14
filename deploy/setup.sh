@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# SaviorBill — быстрый старт (прод, без клонирования репозитория).
+# SaviorBill — быстрый старт.
 #
 # 1) Устанавливает Docker (если ещё не установлен).
 # 2) Скачивает docker-compose.yml, Caddyfile и .env (из .env.example) в текущую директорию.
 # 3) Просит отредактировать .env.
 # 4) Показывает команды для запуска, просмотра логов и остановки.
 #
-# Использование (запускать ОТ КУДА ХОТИТЕ разместить стек, например ~/saviorbill/):
-#   mkdir ~/saviorbill && cd ~/saviorbill
+# Использование (запускать из репо, в котором хотите разместить стек, например /opt/saviorbill/):
+#   mkdir -p /opt/saviorbill && cd /opt/saviorbill
 #   bash <(curl -fsSL https://raw.githubusercontent.com/UNVISLATE/SaviorBill/main/deploy/setup.sh)
 # или:
 #   bash <(wget -qO- https://raw.githubusercontent.com/UNVISLATE/SaviorBill/main/deploy/setup.sh)
@@ -86,9 +86,9 @@ cat <<'EOF'
 
  После запуска:
    API billing:      https://<DOMAIN>/api/v1/
-   Swagger billing:  https://<DOMAIN>/docs
-   Swagger media:    https://<MEDIA_DOMAIN>/docs
-   Health:           https://<DOMAIN>/health
+   Swagger billing:  https://<DOMAIN>/api/docs
+   Swagger media:    https://<MEDIA_DOMAIN>/api/media/docs
+   Health:           https://<DOMAIN>/api/health
 ============================================================================
 EOF
 
