@@ -1,7 +1,14 @@
 """Двухшаговая загрузка медиа.
 
-Шаг 1: ``POST /api/media/upload?kind=<image|video|icon|avatar>``
+Шаг 1: ``POST /api/media/upload``
   — проверяет JWT и права, возвращает одноразовый upload-token (TTL 1 мин).
+  Вид медиа (image/video) больше не передаётся клиентом — сервер сам
+  определяет его по сигнатуре файла при конвертации (см. ``utils/convert.py``);
+  раньше заявленный клиентом ``kind`` не проверялся при приёме, только в
+  фоновой задаче конвертации — можно было поставить в очередь видео с
+  ``kind=image``. Вместо ``kind`` можно передать необязательный ``tag`` —
+  короткая метка для админки/клиента (см. ``_TAG_RE``), никак не влияющая на
+  обработку файла.
 
 Шаг 2: ``POST /api/media/upload/{upload_token}``
   — принимает файл-стрим по токену; в БД не ходит.
@@ -9,6 +16,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 import uuid
 
@@ -21,6 +29,7 @@ from utils.config import Config
 from utils.rbac import has_perm
 from utils import security
 from utils.openapi_auth import bearer_scheme
+from utils.settings import SettingsResolver
 from utils.storage import Storage
 from utils.telemetry import inject_carrier
 
@@ -29,9 +38,11 @@ router = APIRouter()
 _STATUS_PREFIX = "media:status:"
 _UPTOKEN_PREFIX = "media:uptoken:"
 _RATE_PREFIX = "media:uprate:"
-_KINDS = {"image", "video", "icon", "avatar"}
 _PERM_SMALL = "media.upload"
 _PERM_LARGE = "media.uploadlarge"
+# До 16 символов, только латиница и цифры — просто метка для UI, не влияет
+# на обработку файла (в отличие от прежнего "kind").
+_TAG_RE = re.compile(r"^[A-Za-z0-9]{1,16}$")
 
 # Атомарный claim одноразового upload-token: HGETALL + DEL одним вызовом.
 _CLAIM_TOKEN_SCRIPT = """
@@ -87,16 +98,17 @@ async def _enforce_hourly_limit(
     request: Request, acc_id: int, perms: dict | None
 ) -> None:
     """Лимит загрузок в час для обычных пользователей (кроме media.uploadlarge)."""
-    cfg: Config = request.app.state.cfg
     if has_perm(perms, _PERM_LARGE):
         return
+    settings: SettingsResolver = request.app.state.settings
     vk: valkey.Valkey = request.app.state.vk
     bucket = int(time.time()) // 3600
     key = f"{_RATE_PREFIX}{acc_id}:{bucket}"
     used = await vk.incr(key)
     if used == 1:
         await vk.expire(key, 3600)
-    if used > cfg.uploads_per_hour:
+    limit = await settings.uploads_per_hour()
+    if used > limit:
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS, "upload rate limit exceeded"
         )
@@ -105,10 +117,14 @@ async def _enforce_hourly_limit(
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def request_upload_token(
     request: Request,
-    kind: str = "image",
+    tag: str | None = None,
     _creds: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
 ) -> dict:
     """Шаг 1: проверить права и выдать одноразовый upload-token.
+
+    ``tag`` — необязательная метка (до 16 символов, латиница/цифры) только
+    для удобства UI (сортировка/поиск в админке и у клиента); формат файла
+    сервер определяет сам по содержимому, а не по этой метке.
 
     ``_creds`` не используется напрямую (реальный разбор — в
     ``_authenticate()``/``_bearer()`` ниже) — параметр здесь только чтобы
@@ -117,22 +133,26 @@ async def request_upload_token(
     """
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
+    settings: SettingsResolver = request.app.state.settings
 
     ip = _client_ip(request)
     if await ipban.is_banned(vk, ip):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "temporarily banned")
 
-    if kind not in _KINDS:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "недопустимый вид медиа")
+    if tag is not None and not _TAG_RE.match(tag):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "tag: до 16 символов, только латиница и цифры",
+        )
 
     acc_id = await _authenticate(request)
     perms, _role = await _authorize(request, acc_id)
 
     is_large = has_perm(perms, _PERM_LARGE)
     if is_large:
-        max_bytes = cfg.max_bytes
+        max_bytes = await settings.max_bytes()
     elif has_perm(perms, _PERM_SMALL):
-        max_bytes = cfg.small_max_bytes
+        max_bytes = await settings.small_max_bytes()
     else:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, f"недостаточно прав: {_PERM_SMALL}"
@@ -146,7 +166,7 @@ async def request_upload_token(
         uptoken_key,
         mapping={
             "owner": str(acc_id),
-            "kind": kind,
+            "tag": tag or "",
             "max_bytes": str(max_bytes),
             # Флаг права media.uploadlarge — переносим на шаг 2, чтобы решить,
             # банить ли IP за подложный Content-Length (см. upload_file).
@@ -204,7 +224,7 @@ async def upload_file(request: Request, upload_token: str) -> dict:
         payload[k] = v
 
     owner_id = payload.get("owner")
-    kind = payload.get("kind", "image")
+    tag = payload.get("tag") or ""
     max_bytes = int(payload.get("max_bytes", cfg.small_max_bytes))
     is_large = payload.get("large") == "1"
 
@@ -236,7 +256,7 @@ async def upload_file(request: Request, upload_token: str) -> dict:
             {
                 "op": "convert",
                 "token": media_token,
-                "kind": kind,
+                "tag": tag,
                 "owner_id": str(owner_id) if owner_id else "",
                 "backend": cfg.backend,
                 "size": str(size),

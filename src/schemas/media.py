@@ -23,6 +23,9 @@ class Media(BaseModel):
     id: int
     token: str
     kind: str
+    tag: str | None = Field(
+        default=None, description="Optional UI label (latin+digits, up to 16 chars)"
+    )
     status: str
     url: str
     backend: str
@@ -41,6 +44,7 @@ class Media(BaseModel):
             id=m.id,
             token=m.token,
             kind=m.kind,
+            tag=m.tag,
             status=m.status,
             url=_media_url(m.token),
             backend=m.backend,
@@ -68,6 +72,9 @@ class MediaStatus(BaseModel):
     )
     mime: str | None = Field(
         default=None, description="Ready file MIME (optional)"
+    )
+    tag: str | None = Field(
+        default=None, description="Optional UI label (latin+digits, up to 16 chars)"
     )
     error: str | None = Field(default=None, description="Error text (optional)")
 

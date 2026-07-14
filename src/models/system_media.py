@@ -61,6 +61,10 @@ class SystemMediaModel(Base):
     owner_id: Mapped[int | None] = mapped_column(
         Integer, nullable=True, index=True
     )  # uploader account id
+    # Метка для UI (админка/клиент) — до 16 символов, латиница+цифры, задаётся
+    # при загрузке (необязательно) и может быть изменена позже. Не влияет на
+    # обработку файла (в отличие от прежнего kind, который клиент заявлял сам).
+    tag: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # Варианты файла: {"main": {...}, "preview": {...}, "preview_thumb": {...}}
     # (для фото — только "main", отдельный thumb не генерируется).
     # Каждый — {"key", "mime", "size", "url"}. Заполняет mediaworker.
@@ -118,6 +122,7 @@ class SystemMediaMngr:
         owner_id: int | None = None,
         variants: dict | None = None,
         meta: dict | None = None,
+        tag: str | None = None,
     ) -> SystemMediaModel:
         media = SystemMediaModel(
             kind=kind,
@@ -129,6 +134,7 @@ class SystemMediaMngr:
             variants=variants or {},
             meta=meta or {},
             status=status,
+            tag=tag,
             **({"token": token} if token else {}),
         )
         self.s.add(media)
@@ -152,6 +158,7 @@ class SystemMediaMngr:
         owner_id: int | None = None,
         variants: dict | None = None,
         status: str = "ready",
+        tag: str | None = None,
     ) -> SystemMediaModel:
         """Идемпотентно записать готовое медиа по ``token`` (insert или update).
 
@@ -170,6 +177,7 @@ class SystemMediaMngr:
                 size=size,
                 owner_id=owner_id,
                 variants=variants or {},
+                tag=tag,
             )
         media.kind = kind
         media.path = path
@@ -180,8 +188,15 @@ class SystemMediaMngr:
             media.owner_id = owner_id
         media.variants = variants or {}
         media.status = status
+        if tag is not None:
+            media.tag = tag
         await self.s.flush()
         return media
+
+    async def set_tag(self, media: SystemMediaModel, tag: str | None) -> None:
+        """Изменить метку медиа (админка/клиент) — не влияет на файл/конверсию."""
+        media.tag = tag
+        await self.s.flush()
 
     async def merge_variants(self, token: str, variants: dict) -> None:
         """Домержить набор вариантов к существующей записи (ручное превью)."""

@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from utils.config import Config
 from utils.db import DB
+from utils.settings import SettingsResolver
 from utils.storage import Storage
 from utils.worker import Worker
 
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
     app.state.vk = vk
     app.state.storage = storage
     app.state.db = db
+    app.state.settings = SettingsResolver(cfg, vk, db)
 
     task = asyncio.create_task(worker.run())
     log.info(

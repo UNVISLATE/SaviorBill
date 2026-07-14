@@ -55,6 +55,22 @@ class DB:
             perms = json.loads(perms) if perms else None
         return Account(id=row["id"], perms=perms, role_key=row["role_key"])
 
+    async def setting(self, key: str) -> str | None:
+        """Значение настройки из общей (billing) таблицы ``settings``.
+
+        Только не-секретные значения (``is_secret=false``) — mediaworker не
+        владеет ключом шифрования (``SecBox``), поэтому секретную настройку
+        расшифровать не сможет; в этом случае возвращает ``None`` (fallback
+        на .env — см. ``utils/settings.py::SettingsResolver``).
+        """
+        assert self.pool is not None
+        row = await self.pool.fetchrow(
+            "SELECT value, is_secret FROM settings WHERE key = $1", key
+        )
+        if row is None or row["value"] is None or row["is_secret"]:
+            return None
+        return row["value"]
+
     async def media_owner(self, token: str) -> tuple[int, int | None, str] | None:
         """(id, owner_id, kind) записи медиа по токену или ``None``."""
         assert self.pool is not None

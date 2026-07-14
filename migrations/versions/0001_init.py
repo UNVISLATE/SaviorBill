@@ -141,6 +141,7 @@ def upgrade() -> None:
     sa.Column('mime', sa.String(length=128), nullable=True),
     sa.Column('size', sa.Integer(), nullable=True),
     sa.Column('owner_id', sa.Integer(), nullable=True),
+    sa.Column('tag', sa.String(length=16), nullable=True),
     sa.Column('variants', sa.JSON(), server_default='{}', nullable=False),
     sa.Column('meta', sa.JSON(), server_default='{}', nullable=False),
     sa.PrimaryKeyConstraint('id')

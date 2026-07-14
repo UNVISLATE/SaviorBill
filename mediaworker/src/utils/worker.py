@@ -140,14 +140,16 @@ class Worker:
 
     async def _convert(self, data: dict) -> None:
         token = data["token"]
-        kind = data.get("kind", "image")
+        tag = data.get("tag") or None
         owner_id = data.get("owner_id")
         src = self.storage.orig_path(token)
 
         await self._set_status(token, state="processing")
 
         try:
-            variants = await convert(self.cfg, kind, src, self.cfg.uploads_dir, token)
+            # Вид медиа (image/video) больше не приходит от клиента — сервер
+            # определяет его сам по сигнатуре файла (см. utils/convert.py).
+            kind, variants = await convert(self.cfg, src, self.cfg.uploads_dir, token)
         except ConvertError as exc:
             await self._set_status(token, state="failed", error=str(exc))
             self.storage._safe_unlink(src)
@@ -172,13 +174,15 @@ class Worker:
             "status": "ready",
             "variants": json.dumps(vmap),
         }
+        if tag:
+            result["tag"] = tag
         if main.key in sizes:
             result["size"] = str(sizes[main.key])
         if owner_id:
             result["owner_id"] = str(owner_id)
         await self._emit_result(result)
         await self._set_status(
-            token, state="ready", url=f"/api/media/{token}", mime=main.mime
+            token, state="ready", url=f"/api/media/{token}", mime=main.mime, tag=tag
         )
         await self.vk.delete(f"attempts:media:convert:{token}")
 

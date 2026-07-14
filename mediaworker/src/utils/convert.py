@@ -1,5 +1,13 @@
 """Конвертация медиа через ffmpeg.
 
+Вид медиа (изображение/видео) определяется сервером самостоятельно по
+сигнатуре байт файла (:func:`detect_kind`) — клиент больше не может его
+заявить (раньше был параметр ``kind`` при загрузке, но сигнатура сверялась с
+ним только здесь, в фоновой задаче конвертации, уже после приёма файла:
+можно было поставить в очередь видео с заявленным ``kind=image`` и заметить
+это только когда обработка провалится). Теперь заявленного вида просто нет —
+нечему быть неверным.
+
 Из одного оригинала генерируется несколько вариантов:
 
 - изображение → только ``main`` (webp, уже оптимизированный формат — отдельный
@@ -19,22 +27,20 @@ from dataclasses import dataclass
 
 from utils.config import Config
 
-_IMAGE_KINDS = {"image", "icon", "avatar"}
-_VIDEO_KINDS = {"video"}
-
 
 class ConvertError(RuntimeError):
     """Ошибка конвертации ffmpeg."""
 
 
 class SignatureError(ConvertError):
-    """Сигнатура файла не соответствует заявленному виду медиа."""
+    """Сигнатура файла не распознана ни как один из известных форматов."""
 
 
 # Первые байты (magic bytes) известных форматов — дешёвая проверка перед
-# запуском ffmpeg (IMPLEMENTATION_PLAN §11.1). Не защита от подделки как
-# таковая (легко подделываемая эвристика), а экономия ресурсов на заведомо
-# невалидном/не том файле: сразу отказ без запуска внешнего процесса.
+# запуском ffmpeg (IMPLEMENTATION_PLAN §11.1) и способ определить реальный
+# вид медиа без доверия клиенту. Не защита от подделки как таковая (легко
+# подделываемая эвристика для откровенно вредоносных файлов), а экономия
+# ресурсов на заведомо невалидном файле + автоопределение image/video.
 # Формат записи: (сигнатура, смещение в байтах).
 _IMAGE_SIGNATURES: list[tuple[bytes, int]] = [
     (b"\xff\xd8\xff", 0),  # JPEG
@@ -65,29 +71,25 @@ def _header_matches(header: bytes, signatures: list[tuple[bytes, int]]) -> bool:
     )
 
 
-def check_signature(kind: str, header: bytes) -> None:
-    """Сверить первые байты файла с magic bytes заявленного вида медиа.
+def detect_kind(header: bytes) -> str | None:
+    """Определить реальный вид медиа по сигнатуре байт.
 
-    :arg kind: вид медиа (image|icon|avatar|video).
     :arg header: первые ``SIGNATURE_READ_BYTES`` байт файла.
-    :raises SignatureError: сигнатура не распознана как ни один из известных
-        форматов данного вида — экономим ffmpeg-вызов на заведомо невалидном
-        (или не том) файле.
+    :return: ``"image"`` | ``"video"`` | ``None`` (сигнатура не распознана —
+        значит либо неизвестный формат, либо мусор/подделка).
     """
-    is_video = kind in _VIDEO_KINDS
     if header.startswith(_RIFF_HEADER):
         fourcc = header[_RIFF_FOURCC_OFFSET : _RIFF_FOURCC_OFFSET + 4]
-        expected = _RIFF_VIDEO_FOURCC if is_video else _RIFF_IMAGE_FOURCC
-        if fourcc == expected:
-            return
-        raise SignatureError(
-            f"файл не распознан как {kind}: RIFF-контейнер не того формата"
-        )
-    signatures = _VIDEO_SIGNATURES if is_video else _IMAGE_SIGNATURES
-    if not _header_matches(header, signatures):
-        raise SignatureError(
-            f"файл не распознан как {kind}: неизвестная сигнатура"
-        )
+        if fourcc == _RIFF_IMAGE_FOURCC:
+            return "image"
+        if fourcc == _RIFF_VIDEO_FOURCC:
+            return "video"
+        return None
+    if _header_matches(header, _IMAGE_SIGNATURES):
+        return "image"
+    if _header_matches(header, _VIDEO_SIGNATURES):
+        return "video"
+    return None
 
 
 @dataclass(slots=True)
@@ -100,8 +102,8 @@ class Variant:
 
 
 def target_key(token: str, kind: str) -> tuple[str, str]:
-    """Ключ основного файла и его MIME по виду медиа."""
-    if kind in _VIDEO_KINDS:
+    """Ключ основного файла и его MIME по виду медиа (``image`` | ``video``)."""
+    if kind == "video":
         return f"{token}.webm", "video/webm"
     return f"{token}.webp", "image/webp"
 
@@ -183,25 +185,29 @@ async def make_video_preview(
 
 
 async def convert(
-    cfg: Config, kind: str, src: str, out_dir: str, token: str
-) -> list[Variant]:
-    """Сконвертировать оригинал во все варианты по виду медиа.
+    cfg: Config, src: str, out_dir: str, token: str
+) -> tuple[str, list[Variant]]:
+    """Определить вид медиа и сконвертировать оригинал во все варианты.
 
     :arg cfg: конфигурация (пресеты качества).
-    :arg kind: вид медиа (image|icon|avatar|video).
     :arg src: путь к оригиналу.
     :arg out_dir: каталог для выходных файлов.
     :arg token: идентификатор медиа (префикс имён файлов).
-    :return: список вариантов (``main`` всегда первый).
-    :raises SignatureError: сигнатура файла не соответствует заявленному виду.
+    :return: ``(detected_kind, variants)`` — ``detected_kind`` — фактический
+        вид медиа (``"image"`` | ``"video"``), определённый по сигнатуре, а
+        не заявленный клиентом; ``variants[0]`` всегда ``main``.
+    :raises SignatureError: сигнатура не распознана ни как один из известных
+        форматов (мусор/повреждённый файл/то, что мы не конвертируем).
     :raises ConvertError: при ненулевом коде возврата ffmpeg.
     """
     with open(src, "rb") as fh:
         header = fh.read(SIGNATURE_READ_BYTES)
-    check_signature(kind, header)
-    if kind in _VIDEO_KINDS:
-        return await convert_video(cfg, src, out_dir, token)
-    return await convert_image(cfg, src, out_dir, token)
+    kind = detect_kind(header)
+    if kind is None:
+        raise SignatureError("файл не распознан: неизвестная сигнатура")
+    if kind == "video":
+        return kind, await convert_video(cfg, src, out_dir, token)
+    return kind, await convert_image(cfg, src, out_dir, token)
 
 
 __all__ = [
@@ -209,12 +215,10 @@ __all__ = [
     "convert_image",
     "convert_video",
     "make_video_preview",
+    "detect_kind",
     "target_key",
     "Variant",
     "ConvertError",
     "SignatureError",
-    "check_signature",
     "SIGNATURE_READ_BYTES",
-    "_IMAGE_KINDS",
-    "_VIDEO_KINDS",
 ]

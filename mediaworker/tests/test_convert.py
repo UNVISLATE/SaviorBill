@@ -1,21 +1,14 @@
-"""Юнит-тесты выбора формата/MIME по виду медиа."""
+"""Юнит-тесты автоопределения вида медиа (detect_kind) и выбора формата/MIME."""
 
 import pytest
 
-from utils.convert import (
-    SIGNATURE_READ_BYTES,
-    ConvertError,
-    SignatureError,
-    check_signature,
-    target_key,
-)
+from utils.convert import SIGNATURE_READ_BYTES, detect_kind, target_key
 
 
-def test_image_kinds_go_webp():
-    for kind in ("image", "icon", "avatar"):
-        key, mime = target_key("tok123", kind)
-        assert key == "tok123.webp"
-        assert mime == "image/webp"
+def test_image_kind_goes_webp():
+    key, mime = target_key("tok123", "image")
+    assert key == "tok123.webp"
+    assert mime == "image/webp"
 
 
 def test_video_goes_webm():
@@ -31,21 +24,22 @@ def test_unknown_kind_defaults_to_image():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# check_signature (IMPLEMENTATION_PLAN §11.1 — дешёвая проверка перед ffmpeg)
+# detect_kind (IMPLEMENTATION_PLAN §11.1 — дешёвая проверка перед ffmpeg +
+# автоопределение вида медиа: клиент больше не заявляет ``kind`` сам).
 # ─────────────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize(
-    "kind,header",
+    "header",
     [
-        ("image", b"\xff\xd8\xff\xe0" + b"\x00" * 12),  # JPEG
-        ("icon", b"\x89PNG\r\n\x1a\n" + b"\x00" * 8),  # PNG
-        ("avatar", b"GIF89a" + b"\x00" * 10),  # GIF
-        ("image", b"BM" + b"\x00" * 14),  # BMP
-        ("image", b"RIFF\x00\x00\x00\x00WEBPVP8 "),  # RIFF/WEBP
+        b"\xff\xd8\xff\xe0" + b"\x00" * 12,  # JPEG
+        b"\x89PNG\r\n\x1a\n" + b"\x00" * 8,  # PNG
+        b"GIF89a" + b"\x00" * 10,  # GIF
+        b"BM" + b"\x00" * 14,  # BMP
+        b"RIFF\x00\x00\x00\x00WEBPVP8 ",  # RIFF/WEBP
     ],
 )
-def test_check_signature_accepts_known_image_formats(kind, header):
-    check_signature(kind, header[:SIGNATURE_READ_BYTES])  # не должно бросать
+def test_detect_kind_recognizes_image_formats(header):
+    assert detect_kind(header[:SIGNATURE_READ_BYTES]) == "image"
 
 
 @pytest.mark.parametrize(
@@ -57,26 +51,9 @@ def test_check_signature_accepts_known_image_formats(kind, header):
         b"RIFF\x00\x00\x00\x00AVI LIST",  # RIFF/AVI
     ],
 )
-def test_check_signature_accepts_known_video_formats(header):
-    check_signature("video", header[:SIGNATURE_READ_BYTES])  # не должно бросать
+def test_detect_kind_recognizes_video_formats(header):
+    assert detect_kind(header[:SIGNATURE_READ_BYTES]) == "video"
 
 
-def test_check_signature_rejects_unknown_image():
-    with pytest.raises(SignatureError):
-        check_signature("image", b"not an image!!!!")
-
-
-def test_check_signature_rejects_unknown_video():
-    with pytest.raises(SignatureError):
-        check_signature("video", b"not a video!!!!!")
-
-
-def test_check_signature_rejects_video_disguised_as_image():
-    """Заявлен image, но сигнатура видео (ftyp) — не должна пройти как image."""
-    with pytest.raises(SignatureError):
-        check_signature("image", b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 4)
-
-
-def test_signature_error_is_convert_error():
-    """SignatureError — подкласс ConvertError (существующая обработка ловит обе)."""
-    assert issubclass(SignatureError, ConvertError)
+def test_detect_kind_returns_none_for_garbage():
+    assert detect_kind(b"not a media file!") is None

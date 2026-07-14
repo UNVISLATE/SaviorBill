@@ -147,6 +147,7 @@ class MediaResults:
                     owner_id=int(owner) if owner else None,
                     variants=variants,
                     status=data.get("status", "ready"),
+                    tag=data.get("tag") or None,
                 )
             await session.commit()
         await clear_attempts(self.vk, f"media:result:{token}:{op}")

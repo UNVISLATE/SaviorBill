@@ -1,7 +1,7 @@
-"""Справочник доступных видов медиа (``kind``) и их целевых форматов/лимитов.
+"""Справочник форматов медиа и правил ``tag`` для клиента/админки.
 
-``GET /api/media/kinds`` не требует авторизации для списка ``kind`` (это не
-секрет — просто перечень поддерживаемых форматов), но раздел ``limits``
+``GET /api/media/kinds`` не требует авторизации для описания форматов (не
+секрет — просто перечень поддерживаемых конверсий), но раздел ``limits``
 показывает **только собственный эффективный лимит вызывающего** — если
 передан валидный Bearer-токен. Специально НЕ раскрываем:
 
@@ -9,24 +9,32 @@
   числа — иначе обычный пользователь узнает, до какого размера можно давить
   файлами/сколько раз в час, и легче спланировать обход анти-абьюз защиты;
 - какие-либо лимиты анонимному вызывающему вообще (без токена — ``limits: null``).
+
+Вид медиа (``image``/``video``) клиент больше не выбирает при загрузке —
+сервер определяет его сам по сигнатуре файла (см. ``utils/convert.py``).
+Здесь просто описано, во что конвертируется каждый обнаруженный вид, и
+правило для необязательного ``tag`` (метка для UI, не влияет на обработку).
 """
 
 from __future__ import annotations
 
-import valkey.asyncio as valkey
-from fastapi import APIRouter, Request, Security, status
+from fastapi import APIRouter, Request, Security
 from fastapi.security import HTTPAuthorizationCredentials
 
 from utils import security
 from utils.config import Config
-from utils.convert import _IMAGE_KINDS, _VIDEO_KINDS
 from utils.openapi_auth import bearer_scheme
 from utils.rbac import has_perm
+from utils.settings import SettingsResolver
 
 router = APIRouter()
 
 _PERM_SMALL = "media.upload"
 _PERM_LARGE = "media.uploadlarge"
+
+# Держим в одном месте с upload.py::_TAG_RE (дублирование ради независимости
+# модулей — см. пояснение о дублировании auth-хелперов в upload.py/serve.py).
+_TAG_PATTERN = "^[A-Za-z0-9]{1,16}$"
 
 
 async def _soft_authenticate(request: Request) -> int | None:
@@ -49,26 +57,27 @@ async def list_kinds(
     request: Request,
     _creds: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
 ) -> dict:
-    """Список ``kind`` для загрузки + целевые форматы + лимиты **вызывающего**.
+    """Форматы медиа + правило ``tag`` + лимиты **вызывающего**.
 
     ``_creds`` — только для регистрации Bearer security scheme в OpenAPI
     (см. ``utils/openapi_auth.py``); реальная (опциональная) авторизация —
     в ``_soft_authenticate()`` ниже, токен не обязателен.
     """
     cfg: Config = request.app.state.cfg
+    settings: SettingsResolver = request.app.state.settings
 
     kinds = [
-        {"kind": kind, "target": {"ext": "webp", "mime": "image/webp"}}
-        for kind in sorted(_IMAGE_KINDS)
-    ] + [
         {
-            "kind": kind,
+            "kind": "image",
+            "target": {"ext": "webp", "mime": "image/webp"},
+        },
+        {
+            "kind": "video",
             "target": {"ext": "webm", "mime": "video/webm"},
             # Помимо main видео-конверсия даёт постеры (poster-кадры);
             # ``preview_thumb`` — обрезанный мини-постер того же кадра.
             "extra_variants": ["preview", "preview_thumb"],
-        }
-        for kind in sorted(_VIDEO_KINDS)
+        },
     ]
 
     limits: dict | None = None
@@ -80,18 +89,26 @@ async def list_kinds(
             if has_perm(acc.perms, _PERM_LARGE):
                 limits = {
                     "perm": _PERM_LARGE,
-                    "max_bytes": cfg.max_bytes,
+                    "max_bytes": await settings.max_bytes(),
                     "uploads_per_hour": None,  # без часового лимита
                 }
             elif has_perm(acc.perms, _PERM_SMALL):
                 limits = {
                     "perm": _PERM_SMALL,
-                    "max_bytes": cfg.small_max_bytes,
-                    "uploads_per_hour": cfg.uploads_per_hour,
+                    "max_bytes": await settings.small_max_bytes(),
+                    "uploads_per_hour": await settings.uploads_per_hour(),
                 }
 
-    return {"kinds": kinds, "limits": limits}
+    return {
+        "kinds": kinds,
+        "tag": {
+            "pattern": _TAG_PATTERN,
+            "max_length": 16,
+            "description": "Необязательная метка для UI (латиница+цифры, "
+            "не влияет на обработку файла)",
+        },
+        "limits": limits,
+    }
 
 
 __all__ = ["router"]
-

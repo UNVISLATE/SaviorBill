@@ -41,6 +41,7 @@ async def media_status(
             state=data.get("state", "processing"),
             url=data.get("url") or None,
             mime=data.get("mime") or None,
+            tag=data.get("tag") or None,
             error=data.get("error") or None,
         )
 
@@ -53,6 +54,7 @@ async def media_status(
         state=media.status,
         url=f"/api/media/{media.token}" if media.status == "ready" else None,
         mime=media.mime,
+        tag=media.tag,
     )
 
 

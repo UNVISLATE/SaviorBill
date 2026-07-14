@@ -6,8 +6,11 @@
 
 from __future__ import annotations
 
+import re
+
 import valkey.asyncio as valkey
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
 
 from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
@@ -21,6 +24,20 @@ from utils.config import AppConfig
 from utils.mediabus import MediaBus
 
 router = APIRouter()
+
+# До 16 символов, только латиница и цифры (см. mediaworker/src/api/upload.py::_TAG_RE
+# — то же правило по обе стороны, метка задаётся при загрузке и меняется здесь).
+_TAG_RE = re.compile(r"^[A-Za-z0-9]{1,16}$")
+
+
+class MediaTagIn(BaseModel):
+    """Тело запроса на изменение метки медиа."""
+
+    tag: str | None = Field(
+        default=None,
+        max_length=16,
+        description="Новая метка (латиница+цифры, до 16 символов) или null — снять",
+    )
 
 
 def _bus(request: Request, vk: valkey.Valkey) -> MediaBus:
@@ -76,6 +93,42 @@ async def delete_media(
         meta={"token": media.token, "backend": media.backend},
     )
     await mngr.s.commit()
+
+
+@router.put(
+    "/{media_id}/tag",
+    response_model=Media,
+    summary="Update media tag",
+    description="Изменить UI-метку медиа (латиница+цифры, до 16 символов).",
+)
+async def update_media_tag(
+    request: Request,
+    media_id: int,
+    body: MediaTagIn,
+    mngr: SystemMediaMngr = Depends(get_media_mngr),
+    acc: UserModel = Depends(require_perm("media.write")),
+) -> Media:
+    if body.tag is not None and not _TAG_RE.match(body.tag):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "tag must be 1-16 latin letters/digits",
+        )
+    media = await mngr.by_id(media_id)
+    if media is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
+    await mngr.set_tag(media, body.tag)
+    await audit(
+        mngr.s,
+        action="media.tag",
+        actor_id=acc.id,
+        actor_role=acc.role.name if acc.role else None,
+        target_type="media",
+        target_id=str(media_id),
+        ip=request.client.host if request.client else None,
+        meta={"tag": body.tag},
+    )
+    await mngr.s.commit()
+    return Media.from_model(media)
 
 
 @router.post(

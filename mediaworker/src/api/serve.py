@@ -16,6 +16,7 @@ from utils.config import Config
 from utils.rbac import has_perm
 from utils import security
 from utils.openapi_auth import bearer_scheme
+from utils.settings import SettingsResolver
 from utils.storage import Storage
 from utils.telemetry import inject_carrier
 
@@ -174,7 +175,8 @@ async def upload_preview(
     acc_id = await _authenticate(request)
     perms, _role = await _authorize(request, acc_id)
     is_large = has_perm(perms, _PERM_LARGE)
-    max_bytes = cfg.max_bytes if is_large else cfg.small_max_bytes
+    settings: SettingsResolver = request.app.state.settings
+    max_bytes = await (settings.max_bytes() if is_large else settings.small_max_bytes())
 
     db = request.app.state.db
     media = await db.media_owner(token)

@@ -151,6 +151,9 @@ class AppConfig(BaseSettings):
     MEDIA_SMALL_MAX_BYTES: int = Field(default=1_048_576)  # 1 MiB
     # Жёсткий потолок размера любого загружаемого файла.
     MEDIA_MAX_BYTES: int = Field(default=524_288_000)  # 500 MiB (media.uploadlarge)
+    # Лимит загрузок в час для обычных пользователей (без media.uploadlarge);
+    # у аккаунтов с media.uploadlarge часовой лимит не применяется вовсе.
+    MEDIA_UPLOADS_PER_HOUR: int = Field(default=30)
     # Стрим задач медиа (конвертация/удаление) в Valkey.
     MEDIA_TASK_STREAM: str = Field(default="media:tasks")
     # Стрим результатов конвертации: mediaworker публикует готовое медиа, billing

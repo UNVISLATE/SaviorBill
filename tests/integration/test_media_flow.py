@@ -28,20 +28,20 @@ async def _access(new_user) -> str:
     return tokens["access_token"]
 
 
-async def _upload(token_access: str, *, kind: str = "image") -> str:
+async def _upload(token_access: str, *, tag: str | None = None) -> str:
     """Пройти двухшаговую загрузку и вернуть media-token.
 
     Шаг 1: ``POST /api/media/upload`` — проверка прав, выдача одноразового upload-token.
     Шаг 2: ``POST /api/media/upload/{upload_token}`` — приём файла, постановка в очередь.
 
     :arg token_access: access-JWT загружающего пользователя.
-    :arg kind: вид медиа (image|video|icon|avatar).
+    :arg tag: опциональная UI-метка (латиница+цифры, до 16 символов).
     :return: media-token для опроса статуса/выдачи.
     """
     async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=30) as mw:
         r1 = await mw.post(
             "/api/media/upload",
-            params={"kind": kind},
+            params={"tag": tag} if tag else {},
             headers={"Authorization": f"Bearer {token_access}"},
         )
         assert r1.status_code == 201, r1.text
@@ -63,7 +63,7 @@ async def _upload(token_access: str, *, kind: str = "image") -> str:
 
 async def test_media_upload_convert_register(http, new_user):
     token_access = await _access(new_user)
-    token = await _upload(token_access)
+    token = await _upload(token_access, tag="cover1")
 
     async def _status():
         resp = await http.get(f"/api/v1/media/status/{token}")
@@ -75,11 +75,12 @@ async def test_media_upload_convert_register(http, new_user):
     assert data["state"] == "ready", data
     assert data["url"] == f"/api/media/{token}"
     assert data["mime"] == "image/webp"
+    assert data["tag"] == "cover1"
 
 
 async def test_media_upload_requires_auth(new_user):
     async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=30) as mw:
-        r = await mw.post("/api/media/upload", params={"kind": "image"})
+        r = await mw.post("/api/media/upload")
     assert r.status_code == 401, r.text
 
 

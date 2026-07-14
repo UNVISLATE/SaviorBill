@@ -172,6 +172,31 @@ SETTINGS: tuple[SettingDef, ...] = (
         desc="Не удалять при очистке медиа-записи младше этого возраста, секунды "
         "(защита от удаления только что загруженного, ещё не привязанного файла)",
     ),
+    # Медиа: лимиты загрузки — редактируются из админки без передеплоя
+    # mediaworker (он читает те же ключи из settings/Valkey-кэша, см.
+    # mediaworker/src/utils/settings.py).
+    SettingDef(
+        "media.small_max_bytes",
+        "MEDIA_SMALL_MAX_BYTES",
+        type="int",
+        group="media",
+        desc="Лимит байт для аккаунтов без media.uploadlarge",
+    ),
+    SettingDef(
+        "media.max_bytes",
+        "MEDIA_MAX_BYTES",
+        type="int",
+        group="media",
+        desc="Лимит байт для аккаунтов с media.uploadlarge",
+    ),
+    SettingDef(
+        "media.uploads_per_hour",
+        "MEDIA_UPLOADS_PER_HOUR",
+        type="int",
+        group="media",
+        desc="Загрузок в час для аккаунтов без media.uploadlarge "
+        "(у media.uploadlarge часовой лимит не применяется)",
+    ),
     # Аналитика: продвинутый уровень (Polars) — кэш и параметры расчётов
     SettingDef(
         "analytics.advanced.cache_ttl_sec",
