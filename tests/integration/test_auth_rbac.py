@@ -6,7 +6,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 
 async def test_health(http):
-    r = await http.get("/health")
+    r = await http.get("/api/health")
     assert r.status_code == 200
 
 

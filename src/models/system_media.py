@@ -296,7 +296,10 @@ def all_storage_keys(media: SystemMediaModel) -> list[str]:
     ``orphans()`` их найти больше не сможет).
     """
     keys = [media.path]
-    variants = media.variants or {}
+    # getattr — тесты передают облегчённые SimpleNamespace-заглушки без
+    # variants (старые медиа без вариантов); полноценный ORM-объект тоже
+    # покрыт, ``variants`` там по умолчанию непустой dict, не None.
+    variants = getattr(media, "variants", None) or {}
     thumb = variants.get("thumb")
     if thumb and thumb.get("key"):
         keys.append(thumb["key"])

@@ -30,7 +30,7 @@ jobs:
   compose-config-check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Validate prod docker-compose config
         # Дешёвая защита от опечаток в deploy/docker-compose.yml (то, что
         # реально получают пользователи через setup.sh) — этот файл раньше
@@ -45,7 +45,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [unit-tests]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Build & run full stack with integration tests
         run: |
           docker compose -f deploy/dev/docker-compose.yml -f deploy/test/docker-compose.yml \

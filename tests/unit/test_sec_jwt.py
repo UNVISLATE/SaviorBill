@@ -38,8 +38,11 @@ def test_refresh_has_no_extra():
 
 def test_wrong_secret_rejected():
     tok = make_access("1", SECRET, ALG, ttl=60, iss=ISS)
+    # Тот же размер, что и SECRET (>=32 байт) — иначе PyJWT предупреждает про
+    # короткий HMAC-ключ (InsecureKeyLengthWarning), хотя для теста важен
+    # только сам факт несовпадения секретов, а не его длина.
     with pytest.raises(InvalidJWT):
-        decode_jwt(tok, "other-secret", ALG, ISS)
+        decode_jwt(tok, "other-secret-0123456789-abcdefghij-zzz", ALG, ISS)
 
 
 def test_wrong_issuer_rejected():
