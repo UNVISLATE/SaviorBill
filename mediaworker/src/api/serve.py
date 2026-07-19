@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import mimetypes
 import os
 
 import valkey.asyncio as valkey
@@ -74,7 +75,17 @@ async def serve(request: Request, token: str):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not found") from None
     if not os.path.exists(file_path):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
-    mime = st.get("mime") if (variant_name == "main" and st) else None
+    # ``mime`` из статуса известен только для ``main`` (записан туда самим
+    # воркером при завершении конвертации, см. worker.py::_set_status).
+    # thumb/preview туда никогда не попадали — раньше это давало
+    # ``application/octet-stream`` для них, и браузер вместо превью в теге
+    # <img>/плеере скачивал файл как бинарник. thumb/preview — всегда webp
+    # (см. utils/convert.py::make_thumb/make_preview), но на случай будущих
+    # форматов используем угадывание по расширению, а не хардкод "image/webp".
+    if variant_name == "main" and st:
+        mime = st.get("mime")
+    else:
+        mime, _ = mimetypes.guess_type(file_path)
     return FileResponse(
         file_path,
         media_type=mime or "application/octet-stream",
