@@ -73,9 +73,21 @@ class EmailMngr:
         return f"{uuid.uuid4().hex}.j2"
 
     def _safe_target(self, filename: str) -> Path:
-        target = (self.dir / filename).resolve()
-        if not str(target).startswith(str(self.dir.resolve())):
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid file path")
+        """Разрешить ``filename`` внутри ``self.dir``, отклонить выход за его пределы.
+
+        ``relative_to()`` — не ``startswith()`` на строках путей: у последнего
+        есть sibling-баг (``self.dir=/data/templates``, а
+        ``target=/data/templates_evil/x`` проходит проверку — префикс строки
+        совпадает, хотя это другая директория).
+        """
+        base = self.dir.resolve()
+        target = (base / filename).resolve()
+        try:
+            target.relative_to(base)
+        except ValueError as exc:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "invalid file path"
+            ) from exc
         return target
 
     async def create(self, data) -> EmailModel:  # noqa: ANN001 — schemas.EmailUpload

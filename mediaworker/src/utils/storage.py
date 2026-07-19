@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import AsyncIterator
 
 from utils.config import Config
@@ -20,11 +21,27 @@ class Storage:
         os.makedirs(cfg.uploads_dir, exist_ok=True)
         os.makedirs(cfg.media_dir, exist_ok=True)
 
+    def _safe_fs_path(self, base_dir: str, key: str) -> str:
+        """Разрешить ``key`` внутри ``base_dir``, отклонив выход за его пределы.
+
+        В нормальном потоке ``key``/``token`` всегда server-generated (см.
+        ``convert.py::target_key``, ``upload.py`` — ``uuid4().hex``), но эта
+        проверка — защита в глубину на случай бага/будущего изменения, а не
+        доверие клиентскому вводу (см. AUDIT.md M1).
+        """
+        base = Path(base_dir).resolve()
+        target = (base / key).resolve()
+        try:
+            target.relative_to(base)
+        except ValueError as exc:
+            raise ValueError(f"unsafe storage key: {key!r}") from exc
+        return str(target)
+
     # ---- оригинал (всегда локально, до конвертации) ----
 
     def orig_path(self, token: str) -> str:
         """Путь к оригиналу загрузки."""
-        return os.path.join(self.cfg.uploads_dir, f"{token}.orig")
+        return self._safe_fs_path(self.cfg.uploads_dir, f"{token}.orig")
 
     async def save_stream(
         self, token: str, chunks: AsyncIterator[bytes], max_bytes: int
@@ -55,7 +72,7 @@ class Storage:
 
     def media_fs_path(self, key: str) -> str:
         """Путь к итоговому файлу в локальном media-каталоге."""
-        return os.path.join(self.cfg.media_dir, key)
+        return self._safe_fs_path(self.cfg.media_dir, key)
 
     async def put_final(self, key: str, src_path: str, mime: str) -> None:
         """Разместить итоговый файл в хранилище (fs — переместить, s3 — залить)."""

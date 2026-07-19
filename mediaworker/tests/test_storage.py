@@ -44,3 +44,26 @@ async def test_save_stream_skips_empty_chunks(tmp_path):
     st = _storage(tmp_path)
     size = await st.save_stream("tok", _agen([b"", b"ab", b""]), max_bytes=10)
     assert size == 2
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Path traversal (AUDIT.md M1) — orig_path/media_fs_path должны отклонять
+# попытки выйти за пределы своих каталогов.
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_orig_path_rejects_traversal(tmp_path):
+    st = _storage(tmp_path)
+    with pytest.raises(ValueError):
+        st.orig_path("../../etc/passwd")
+
+
+def test_media_fs_path_rejects_traversal(tmp_path):
+    st = _storage(tmp_path)
+    with pytest.raises(ValueError):
+        st.media_fs_path("../secrets.txt")
+
+
+def test_media_fs_path_allows_normal_key(tmp_path):
+    st = _storage(tmp_path)
+    path = st.media_fs_path("abc123.mp4")
+    assert path.endswith("abc123.mp4")

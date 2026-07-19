@@ -45,7 +45,19 @@ class StorageSvc:
         return f"/uploads/{key}"
 
     def _delete_fs(self, key: str) -> None:
-        target = self.cfg.uploads_dir / key.removeprefix("/uploads/").lstrip("/")
+        """Удалить файл по ключу, отклонив попытку выйти за пределы ``uploads_dir``.
+
+        ``key`` в норме генерируется :func:`_key` (uuid-имя, доверенное), но
+        удаление того же значения, которое когда-то было сохранено, — прямая
+        конкатенация путей без проверки была бы path traversal, если ``key``
+        придёт из повреждённых/чужих данных (см. AUDIT.md M1).
+        """
+        base = self.cfg.uploads_dir.resolve()
+        try:
+            target = (base / key.removeprefix("/uploads/").lstrip("/")).resolve()
+            target.relative_to(base)
+        except ValueError:
+            return  # вне uploads_dir — не удаляем, тихо игнорируем (best-effort delete)
         if target.exists():
             target.unlink()
 

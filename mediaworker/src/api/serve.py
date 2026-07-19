@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import os
+
 import valkey.asyncio as valkey
 from fastapi import APIRouter, HTTPException, Request, Security, status
 from fastapi.responses import FileResponse, RedirectResponse
@@ -40,8 +42,6 @@ async def serve(request: Request, token: str):
     allow-листу, а ищется динамически; неизвестный/ещё не готовый суффикс —
     404 (раньше здесь молча отдавался main-файл, что вводило в заблуждение).
     """
-    import os
-
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
     storage: Storage = request.app.state.storage
@@ -67,7 +67,10 @@ async def serve(request: Request, token: str):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
         return RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
-    file_path = os.path.join(cfg.media_dir, key)
+    try:
+        file_path = storage.media_fs_path(key)
+    except ValueError:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found") from None
     if not os.path.exists(file_path):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
     mime = st.get("mime") if (variant_name == "main" and st) else None
