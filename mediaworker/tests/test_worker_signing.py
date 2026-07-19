@@ -17,15 +17,27 @@ class _FakeCfg:
     task_concurrency = 2
     task_stream = "media:tasks"
     group = "mediaworkers"
+    consumer = "media-1"
     BUS_SIGNING_KEY = "shared-secret"
+    job_lock_ttl_sec = 900
 
 
 class _FakeVk:
     def __init__(self) -> None:
         self.acked: list[str] = []
+        self._locks: set[str] = set()
 
     async def xack(self, *_a, **_kw) -> None:
         self.acked.append(_a[-1])
+
+    async def set(self, key, _value, *, nx=False, ex=None):  # noqa: ANN001
+        if nx and key in self._locks:
+            return None
+        self._locks.add(key)
+        return True
+
+    async def delete(self, key) -> None:  # noqa: ANN001
+        self._locks.discard(key)
 
 
 def _make_worker() -> tuple[Worker, _FakeVk]:

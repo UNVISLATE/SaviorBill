@@ -109,6 +109,12 @@ class Config(BaseSettings):
     # дольше MEDIA_RECLAIM_MIN_IDLE_MS.
     MEDIA_RECLAIM_INTERVAL_SEC: int = Field(default=30)
     MEDIA_RECLAIM_MIN_IDLE_MS: int = Field(default=60_000)
+    # Лок "op+token сейчас в обработке" (media:joblock:*): без него долгая
+    # конвертация видео, не успевшая ack за MEDIA_RECLAIM_MIN_IDLE_MS, была бы
+    # reclaim'нута и обработана ПОВТОРНО конкурентно с ещё живым оригиналом —
+    # см. worker.py::_process_one. TTL должен быть заметно больше самой долгой
+    # ожидаемой конвертации (не самого reclaim-интервала).
+    MEDIA_JOB_LOCK_TTL_SEC: int = Field(default=900)
 
     # --- OpenAPI ---
     MEDIA_DOCS_ENABLED: bool = Field(default=True)
@@ -295,6 +301,10 @@ class Config(BaseSettings):
     @property
     def reclaim_min_idle_ms(self) -> int:
         return self.MEDIA_RECLAIM_MIN_IDLE_MS
+
+    @property
+    def job_lock_ttl_sec(self) -> int:
+        return self.MEDIA_JOB_LOCK_TTL_SEC
 
     @property
     def task_stream_maxlen(self) -> int:

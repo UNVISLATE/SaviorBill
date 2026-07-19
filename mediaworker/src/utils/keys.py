@@ -7,6 +7,7 @@ FILE_PREFIX = "media:file:"
 OPSTATUS_PREFIX = "media:opstatus:"
 UPTOKEN_PREFIX = "media:uptoken:"
 RATE_PREFIX = "media:uprate:"
+JOBLOCK_PREFIX = "media:joblock:"
 
 
 def status_key(token: str) -> str:
@@ -34,15 +35,23 @@ def rate_key(acc_id: int, bucket: int) -> str:
     return f"{RATE_PREFIX}{acc_id}:{bucket}"
 
 
+def job_lock_key(op: str, token: str) -> str:
+    """Лок "op+token сейчас в обработке" — не даёт reclaim запустить дублирующую
+    обработку того же токена, пока оригинальная не закончилась (см. worker.py)."""
+    return f"{JOBLOCK_PREFIX}{op}:{token}"
+
+
 __all__ = [
     "STATUS_PREFIX",
     "FILE_PREFIX",
     "OPSTATUS_PREFIX",
     "UPTOKEN_PREFIX",
     "RATE_PREFIX",
+    "JOBLOCK_PREFIX",
     "status_key",
     "file_key",
     "opstatus_key",
     "uptoken_key",
     "rate_key",
+    "job_lock_key",
 ]

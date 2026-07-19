@@ -26,7 +26,7 @@ from .convert import (
     probe_duration,
 )
 from .bus_sign import sign_fields, verify_fields
-from .keys import file_key, opstatus_key, status_key
+from .keys import file_key, job_lock_key, opstatus_key, status_key
 from .proclog import ProcLog
 from .settings import SettingsResolver
 from .storage import Storage
@@ -114,8 +114,18 @@ class Worker:
                 await asyncio.gather(*tasks)
 
     async def _process_one(self, msg_id: str, data: dict) -> None:
-        """Обработать одну задачу под семафором; при ошибке — повтор/DLQ."""
+        """Обработать одну задачу под семафором; при ошибке — повтор/DLQ.
+
+        Лок ``job_lock_key(op, token)`` — защита от гонки с reclaim: долгая
+        конвертация видео может не успеть ack за ``MEDIA_RECLAIM_MIN_IDLE_MS``,
+        хотя обработка ещё жива; без лока reclaim запустил бы дубликат той же
+        задачи конкурентно с оригиналом (см. ``reclaim_once``), и то, какой из
+        двух результатов "победит" в статусе — гонка. Держатель лока — либо
+        этот же процесс (self-reclaim не создаёт дубликата), либо другая
+        реплика воркера (если их несколько).
+        """
         async with self._sem:
+            lock_key = None
             try:
                 if not verify_fields(self.cfg.BUS_SIGNING_KEY, data):
                     # Задача с неверной/отсутствующей подписью — не исполняем:
@@ -127,12 +137,32 @@ class Worker:
                         flush=True,
                     )
                     return
-                with span_from_carrier(f"media.task.{data.get('op', '?')}", data):
+                op = data.get("op", "?")
+                token = data.get("token", "unknown")
+                lock_key = job_lock_key(op, token)
+                got_lock = bool(
+                    await self.vk.set(
+                        lock_key, self.cfg.consumer, nx=True, ex=self.cfg.job_lock_ttl_sec
+                    )
+                )
+                if not got_lock:
+                    # Уже в обработке (этим же воркером после self-reclaim,
+                    # либо другой репликой) — не трогаем, держатель лока сам
+                    # доведёт задачу до конца и опубликует результат/статус.
+                    print(
+                        f"[mediaworker] task {msg_id} skipped: {op}:{token} already in flight",
+                        flush=True,
+                    )
+                    lock_key = None  # не наш — не освобождать в finally
+                    return
+                with span_from_carrier(f"media.task.{op}", data):
                     await self._handle(data)
             except Exception as exc:  # noqa: BLE001
                 print(f"[mediaworker] task error: {exc}", flush=True)
                 await self._on_failure(data)
             finally:
+                if lock_key is not None:
+                    await self.vk.delete(lock_key)
                 await self.vk.xack(self.cfg.task_stream, self.cfg.group, msg_id)
 
     async def _on_failure(self, data: dict) -> None:
