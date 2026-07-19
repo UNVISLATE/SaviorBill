@@ -65,10 +65,6 @@ TAGS_META = [
         "description": "LuaWorker task journal tail (sent/ok/error).",
     },
     {
-        "name": "admin: logs/media",
-        "description": "Recent ffmpeg/ffprobe job listing (see /apiws/v1/logs/media/{job_id} for realtime output).",
-    },
-    {
         "name": "admin: analytics",
         "description": "Basic and advanced analytics.",
     },

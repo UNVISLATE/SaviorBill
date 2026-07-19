@@ -10,7 +10,11 @@
 - ``proclog:jobs`` — список последних ``max_jobs`` job_id (кольцевой буфер,
   ``LPUSH``+``LTRIM``) — для листинга "какие запуски были недавно".
 - ``proclog:meta:{job_id}`` — hash с метаданными запуска (``op``, ``token``,
-  ``state``, ``started_at``, ``finished_at``), TTL = ``ttl``.
+  ``state``, ``stage``, ``started_at``, ``finished_at``), TTL = ``ttl``.
+  ``stage`` — текущий под-этап многошагового job'а (см. ``set_stage()``):
+  для видео-конвертации это ``encode`` → ``thumb`` → ``preview`` →
+  ``publish`` → финальный ``ready``/``failed``; для одношаговых job'ов
+  (``preview_add``/``thumb_replace``) совпадает с ``op`` до самого конца.
 - ``proclog:lines:{job_id}`` — список кусков сырого вывода в хронологическом
   порядке (``RPUSH``), TTL = ``ttl`` — для отдачи бэклога при подключении.
 - ``proclog:events:{job_id}`` — Pub/Sub канал, каждый кусок публикуется как
@@ -61,7 +65,13 @@ class ProcLog:
         meta_key = f"{_META_PREFIX}{job_id}"
         await self.vk.hset(
             meta_key,
-            mapping={"op": op, "token": token, "state": "running", "started_at": time.time()},
+            mapping={
+                "op": op,
+                "token": token,
+                "state": "running",
+                "stage": op,
+                "started_at": time.time(),
+            },
         )
         await self.vk.expire(meta_key, self.ttl)
         await self.vk.lpush(_JOBS_KEY, job_id)
@@ -71,10 +81,22 @@ class ProcLog:
         await self.vk.expire(token_key, self.ttl)
         return job_id
 
+    async def set_stage(self, job_id: str, stage: str) -> None:
+        """Обновить текущий под-этап многошагового job'а (например, для
+        ``convert`` видео: ``encode`` → ``thumb`` → ``preview`` → ``publish``).
+
+        Без этого поля клиент видел один "running" job без объяснения, чем
+        конкретно он сейчас занят между окончанием прогресса кодирования
+        (percent/eta доходят до 100%) и итоговым ``finish_job`` — генерация
+        thumb/preview/загрузка вариантов в хранилище проходила "невидимо".
+        """
+        await self.vk.hset(f"{_META_PREFIX}{job_id}", mapping={"stage": stage})
+
     async def finish_job(self, job_id: str, state: str) -> None:
         """Отметить итоговое состояние запуска (``ready``/``failed``)."""
         await self.vk.hset(
-            f"{_META_PREFIX}{job_id}", mapping={"state": state, "finished_at": time.time()}
+            f"{_META_PREFIX}{job_id}",
+            mapping={"state": state, "stage": state, "finished_at": time.time()},
         )
 
     def events_channel(self, job_id: str) -> str:
@@ -149,6 +171,7 @@ class ProcLog:
                 "job_id": job_id,
                 "op": meta.get("op"),
                 "status": meta.get("state"),
+                "stage": meta.get("stage"),
                 "percent": progress.get("percent") or None,
                 "eta_sec": progress.get("eta_sec") or None,
             }

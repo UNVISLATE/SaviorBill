@@ -28,11 +28,6 @@ upload-token, затем — сама передача файла. Это отд
    - `media.uploadlarge` → `MEDIA_MAX_BYTES` (по умолчанию 50 MiB);
    - `media.upload` → `MEDIA_SMALL_MAX_BYTES` (по умолчанию 1 MiB);
    - ни одного из двух прав → `403`.
-   - `banned` — обычная системная роль без прав по умолчанию, назначаемая
-     при бане (в т.ч. в будущем автоматически антифрод-системой), а не
-     встроенный флаг блокировки: доступ решает исключительно `has_perm` на
-     правах роли. Если явно выдать роли `banned` право `media.upload`, оно
-     будет работать — никакой отдельной проверки `role_key` в коде нет.
 2. Лимит частоты: для обычных пользователей (без `media.uploadlarge`) —
    `MEDIA_UPLOADS_PER_HOUR` загрузок в час (ключ `media:uprate:{acc}:{hour}`);
    превышение → `429`.
@@ -173,8 +168,20 @@ stderr — формат `key=value`, официально предназначе
 `proclog:*`) — иначе JSON попадал бы в тот же канал, что и терминальный
 текст, и ломал xterm.js.
 
+Раз thumb/preview без собственного процента, у многошагового `convert`
+job'а (видео) есть отдельное поле **`stage`** в метаданных
+(`GET .../jobs`, `GET .../jobs/{job_id}`, `jobs[]` в `status/{token}`) —
+`encode` → `thumb` → `preview` → `publish` → финальный `ready`/`failed`.
+Раньше между тем, как прогресс кодирования доходил до 100%, и итоговым
+`ready` job выглядел как "зависший" `running` без объяснения — на самом
+деле в этот момент шла генерация thumb, затем preview-постера, затем
+публикация вариантов в хранилище (fs/S3), просто это было не видно снаружи.
+Для одношаговых job'ов (`preview_add`/`thumb_replace`) `stage` совпадает
+с `op` (там весь job — один шаг, детализировать нечего).
+
 `GET /api/media/status/{token}` (собственный статус mediaworker, не
-billing) дополнительно отдаёт `jobs: [{job_id, op, status, percent, eta_sec}]`
+billing) дополнительно отдаёт
+`jobs: [{job_id, op, status, stage, percent, eta_sec}]`
 — сводку недавних/активных job'ов этого токена (`proclog.py::jobs_for_token`,
 индекс `proclog:token_jobs:{token}`). Это ephemeral debug-данные самого
 mediaworker, а не часть его "готово/не готово" контракта — `billing` их не

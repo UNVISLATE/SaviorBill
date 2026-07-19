@@ -27,6 +27,13 @@ OutputSink = Callable[[str], Awaitable[None]]
 # ETA/fps, не сырой текст (см. utils/ffprogress.py).
 ProgressSink = Callable[[ProgressSnapshot], Awaitable[None]]
 
+# Коллбэк смены под-этапа многошаговой конвертации (``"encode"``/``"thumb"``/
+# ``"preview"``) — см. ``utils/proclog.py::set_stage``. Отдельно от ``on_output``/
+# ``on_progress``: это не вывод процесса, а факт "какой именно шаг сейчас
+# выполняется", нужный, чтобы период между 100% прогресса кодирования и
+# итоговым ``ready`` не выглядел как "зависший" running-job без объяснения.
+StageSink = Callable[[str], Awaitable[None]]
+
 
 class ConvertError(RuntimeError):
     """Ошибка конвертации ffmpeg."""
@@ -265,15 +272,20 @@ async def convert_video(
     *,
     on_output: OutputSink | None = None,
     on_progress: ProgressSink | None = None,
+    on_stage: StageSink | None = None,
 ) -> list[Variant]:
     """Видео → webm + thumb + один превью-постер по умолчанию.
 
     ``on_progress`` — только для основного кодирования (webm): это единственный
     шаг, который может идти минутами; thumb/preview — вырезка одного кадра,
-    процент/ETA для них не осмыслены.
+    процент/ETA для них не осмыслены. ``on_stage`` уведомляет о переходе между
+    шагами (``encode``/``thumb``/``preview``), чтобы клиент видел, чем занят
+    job, даже когда процент/ETA для текущего шага не публикуются.
     """
     main = Variant("main", *target_key(token, "video"))
     duration = await probe_duration(src) if on_progress is not None else None
+    if on_stage:
+        await on_stage("encode")
     await _run(
         [
             "ffmpeg", "-y", "-i", src,
@@ -285,7 +297,11 @@ async def convert_video(
         on_progress=on_progress,
         total_duration=duration,
     )
+    if on_stage:
+        await on_stage("thumb")
     thumb = await make_thumb(cfg, src, out_dir, token, on_output=on_output)
+    if on_stage:
+        await on_stage("preview")
     preview = await make_preview(cfg, src, out_dir, token, on_output=on_output)
     return [main, thumb, preview]
 
@@ -298,6 +314,7 @@ async def convert(
     *,
     on_output: OutputSink | None = None,
     on_progress: ProgressSink | None = None,
+    on_stage: StageSink | None = None,
 ) -> tuple[str, list[Variant]]:
     """Определить вид медиа и сконвертировать оригинал во все варианты.
 
@@ -311,11 +328,13 @@ async def convert(
     :arg on_progress: коллбэк снимка процента/ETA основного видео-кодирования
         (см. ``utils/ffprogress.py``); для изображений не используется —
         конвертация одним кадром слишком быстрая, чтобы это было осмысленно.
+    :arg on_stage: коллбэк смены под-этапа (``encode``/``thumb``/``preview``
+        для видео); для изображений не вызывается — один шаг, стадия не нужна.
     :return: ``(detected_kind, variants)`` — ``detected_kind`` — фактический
         вид медиа (``"image"`` | ``"video"``), определённый по сигнатуре, а
         не заявленный клиентом; ``variants[0]`` всегда ``main``.
-    :raises SignatureError: сигнатура не распознана ни как один из известных
-        форматов (мусор/повреждённый файл/то, что мы не конвертируем).
+    :raises SignatureError: сигнатура файла не распознана ни как один из
+        известных форматов (мусор/повреждённый файл/то, что мы не конвертируем).
     :raises ConvertError: при ненулевом коде возврата ffmpeg.
     """
     with open(src, "rb") as fh:
@@ -325,7 +344,7 @@ async def convert(
         raise SignatureError("файл не распознан: неизвестная сигнатура")
     if kind == "video":
         return kind, await convert_video(
-            cfg, src, out_dir, token, on_output=on_output, on_progress=on_progress
+            cfg, src, out_dir, token, on_output=on_output, on_progress=on_progress, on_stage=on_stage
         )
     return kind, await convert_image(cfg, src, out_dir, token, on_output=on_output)
 

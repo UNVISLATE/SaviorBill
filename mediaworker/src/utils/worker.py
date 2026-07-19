@@ -355,7 +355,13 @@ class Worker:
             # Вид медиа (image/video) больше не приходит от клиента — сервер
             # определяет его сам по сигнатуре файла (см. utils/convert.py).
             kind, variants = await convert(
-                self.cfg, src, self.cfg.uploads_dir, token, on_output=sink, on_progress=progress_sink
+                self.cfg,
+                src,
+                self.cfg.uploads_dir,
+                token,
+                on_output=sink,
+                on_progress=progress_sink,
+                on_stage=lambda stage: self.proc_log.set_stage(job_id, stage),
             )
         except ConvertError as exc:
             await self._set_status(token, state="failed", error=str(exc))
@@ -375,6 +381,7 @@ class Worker:
             return
 
         sizes: dict = {}
+        await self.proc_log.set_stage(job_id, "publish")
         for v in variants:
             key, size = await self._publish(v)
             sizes[key] = size
@@ -387,6 +394,7 @@ class Worker:
             main = variants[0]
             small_max = await self.settings.small_max_bytes()
             if sizes.get(main.key, 0) > small_max:
+                await self.proc_log.set_stage(job_id, "thumb")
                 thumb = await make_thumb(self.cfg, src, self.cfg.uploads_dir, token)
                 key, size = await self._publish(thumb)
                 sizes[key] = size
