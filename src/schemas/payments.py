@@ -5,15 +5,25 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from enums import PayTarget
 
 
 class PaymentCreate(BaseModel):
-    """Create payment."""
+    """Create payment.
 
-    amount: Decimal = Field(gt=0, description="Payment amount > 0")
+    ``amount`` is required only for ``target=balance`` (arbitrary top-up
+    sum chosen by the user). For ``target=service`` the price is always
+    the server-side ``service.price`` — the client cannot supply/override
+    it, so ``amount`` here is rejected outright rather than validated: a
+    provider that trusts whatever amount it was asked to charge should
+    never see anything but the authoritative price.
+    """
+
+    amount: Decimal | None = Field(
+        default=None, gt=0, description="Payment amount > 0 (target=balance only)"
+    )
     provider: str = Field(description="Payment provider slug")
     target: str = Field(
         default=PayTarget.BALANCE,
@@ -26,6 +36,17 @@ class PaymentCreate(BaseModel):
         default=None,
         description="Return URL if supported (optional)",
     )
+
+    @model_validator(mode="after")
+    def _check_amount(self) -> "PaymentCreate":
+        if self.target == PayTarget.BALANCE and self.amount is None:
+            raise ValueError("amount is required for target=balance")
+        if self.target == PayTarget.SERVICE and self.amount is not None:
+            raise ValueError(
+                "amount must not be supplied for target=service; "
+                "price is taken from the service"
+            )
+        return self
 
 
 class Payment(BaseModel):

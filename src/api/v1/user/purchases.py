@@ -95,6 +95,10 @@ async def create_purchase(
     triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> Payment:
     user_svc_id: int | None = None
+    # Авторитетная сумма: для услуги — только server-side service.price
+    # (body.amount для target=service запрещён самой схемой); для
+    # пополнения баланса — то, что прислал клиент.
+    amount = body.amount
 
     if body.target == PayTarget.SERVICE:
         if not body.service_id:
@@ -102,13 +106,14 @@ async def create_purchase(
                 status.HTTP_400_BAD_REQUEST, "service_id is required for target=service"
             )
         service = await svc_mngr.get_active(body.service_id)
+        amount = service.price
         # Создаём отложенную выдачу (без списания/доставки — доставит колбэк).
         usvc = await usvc_mngr.create(acc, service, charge=False, deliver=False)
         user_svc_id = usvc.id
 
     payment = await pay_mngr.create(
         acc,
-        body.amount,
+        amount,
         body.provider,
         target=body.target,
         user_svc_id=user_svc_id,
