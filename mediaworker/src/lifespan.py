@@ -18,6 +18,27 @@ from utils.worker import Worker
 log = logging.getLogger("saviorbill.media")
 
 
+async def _supervised(name: str, coro_factory) -> None:
+    """Перезапускать фоновую задачу при непойманном исключении (см. AUDIT.md §3.3).
+
+    Раньше ``worker.run()``/``reclaim_loop()`` создавались как одноразовый
+    ``asyncio.create_task`` без надзора: любое необработанное исключение
+    (например, временный обрыв соединения с Valkey) тихо останавливало цикл
+    навсегда — mediaworker выглядел "живым" (HTTP отвечает), но перестал бы
+    забирать задачи из стрима. Обёртка логирует сбой и перезапускает корутину
+    с небольшой паузой, вместо того чтобы дать процессу "притвориться" рабочим.
+    """
+    while True:
+        try:
+            await coro_factory()
+            return  # штатное завершение (отмена/остановка) — не перезапускаем
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            log.exception("[mediaworker] задача %s упала, перезапуск через 2с", name)
+            await asyncio.sleep(2)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = Config()
@@ -47,7 +68,8 @@ async def lifespan(app: FastAPI):
     app.state.task_log = task_log
     app.state.proc_log = proc_log
 
-    task = asyncio.create_task(worker.run())
+    task = asyncio.create_task(_supervised("worker.run", worker.run))
+    reclaim_task = asyncio.create_task(_supervised("worker.reclaim_loop", worker.reclaim_loop))
     log.info(
         "[mediaworker] %s -> %s backend=%s stream=%s",
         cfg.consumer,
@@ -59,10 +81,12 @@ async def lifespan(app: FastAPI):
         yield
     finally:
         task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        reclaim_task.cancel()
+        for t in (task, reclaim_task):
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
         await db.close()
         await vk.aclose()
 

@@ -96,6 +96,13 @@ class Config(BaseSettings):
     MEDIA_TASK_CONCURRENCY: int = Field(default=4)
     MEDIA_TASK_MAX_ATTEMPTS: int = Field(default=5)
     MEDIA_TASK_DLQ: str = Field(default="media:tasks:dead")
+    # Reclaim зависших PEL-записей media:tasks (см. AUDIT.md §3.1): раньше
+    # при крахе процесса посреди задачи сообщение навсегда оставалось
+    # "pending" — никто не подхватывал его повторно. Раз в
+    # MEDIA_RECLAIM_INTERVAL_SEC подхватываем записи, провисевшие без ack
+    # дольше MEDIA_RECLAIM_MIN_IDLE_MS.
+    MEDIA_RECLAIM_INTERVAL_SEC: int = Field(default=30)
+    MEDIA_RECLAIM_MIN_IDLE_MS: int = Field(default=60_000)
 
     # --- OpenAPI ---
     MEDIA_DOCS_ENABLED: bool = Field(default=True)
@@ -272,6 +279,14 @@ class Config(BaseSettings):
     @property
     def task_dlq_stream(self) -> str:
         return self.MEDIA_TASK_DLQ
+
+    @property
+    def reclaim_interval_sec(self) -> int:
+        return self.MEDIA_RECLAIM_INTERVAL_SEC
+
+    @property
+    def reclaim_min_idle_ms(self) -> int:
+        return self.MEDIA_RECLAIM_MIN_IDLE_MS
 
     @property
     def task_stream_maxlen(self) -> int:

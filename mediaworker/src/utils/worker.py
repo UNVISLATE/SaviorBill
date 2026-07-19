@@ -139,26 +139,12 @@ class Worker:
     async def _on_failure(self, data: dict) -> None:
         """Учесть попытку; до исчерпания — вернуть задачу в стрим, иначе — в DLQ."""
         token = data.get("token", "unknown")
-        op = data.get("op", "?")
         key = f"attempts:media:convert:{token}"
         n = await self.vk.incr(key)
         await self.vk.expire(key, self.cfg.status_ttl)
         if int(n) >= self.cfg.task_max_attempts:
-            await self.vk.xadd(
-                self.cfg.task_dlq_stream,
-                {**data, "attempts": str(n)},
-                maxlen=self.cfg.task_stream_maxlen,
-                approximate=True,
-            )
-            await self._set_status(token, state="failed", error="max attempts exceeded")
+            await self._to_dlq(data, attempts=int(n), reason="max attempts exceeded")
             await self.vk.delete(key)
-            await self.task_log.record(
-                kind="media",
-                op=op,
-                token_or_cid=token,
-                state="failed",
-                detail="max attempts exceeded",
-            )
         else:
             # Ещё есть попытки — кладём задачу обратно в очередь. Подпись/ts
             # пересобираются заново (не переносим старые ts/sig): к моменту
@@ -171,6 +157,78 @@ class Worker:
                 maxlen=self.cfg.task_stream_maxlen,
                 approximate=True,
             )
+
+    async def _to_dlq(self, data: dict, *, attempts: int, reason: str) -> None:
+        """Переместить задачу в DLQ и пометить связанный токен как failed.
+
+        Общий хвост для двух путей исчерпания попыток: обычного (счётчик в
+        ``_on_failure``) и через reclaim мёртвых консьюмеров (``times_delivered``
+        из XPENDING, см. ``reclaim_once``).
+        """
+        token = data.get("token", "unknown")
+        op = data.get("op", "?")
+        await self.vk.xadd(
+            self.cfg.task_dlq_stream,
+            {**data, "attempts": str(attempts)},
+            maxlen=self.cfg.task_stream_maxlen,
+            approximate=True,
+        )
+        await self._set_status(token, state="failed", error=reason)
+        await self.task_log.record(
+            kind="media",
+            op=op,
+            token_or_cid=token,
+            state="failed",
+            detail=reason,
+        )
+
+    async def reclaim_once(self) -> None:
+        """Подхватить PEL-записи ``media:tasks``, зависшие у мёртвых консьюмеров.
+
+        См. AUDIT.md §3.1: раньше при крахе процесса посреди обработки
+        сообщение навсегда оставалось "pending" в consumer-group — никто его
+        не переисполнял. ``XPENDING ... IDLE`` отдаёт ``times_delivered`` ДО
+        захвата, поэтому решение "reclaim vs DLQ" принимается заранее (в
+        отличие от XAUTOCLAIM, который такой информации не даёт).
+        """
+        try:
+            pending = await self.vk.xpending_range(
+                self.cfg.task_stream,
+                self.cfg.group,
+                min="-",
+                max="+",
+                count=50,
+                idle=self.cfg.reclaim_min_idle_ms,
+            )
+        except valkey.ResponseError:
+            return  # стрим/группа ещё не созданы — ничего реклеймить
+        for item in pending or []:
+            msg_id = item["message_id"]
+            delivery_count = int(item.get("times_delivered", 1))
+            if delivery_count > self.cfg.task_max_attempts:
+                rows = await self.vk.xrange(self.cfg.task_stream, msg_id, msg_id)
+                data = dict(rows[0][1]) if rows else {}
+                await self.vk.xack(self.cfg.task_stream, self.cfg.group, msg_id)
+                if data:
+                    await self._to_dlq(
+                        data, attempts=delivery_count, reason="max attempts exceeded (reclaim)"
+                    )
+                continue
+            claimed = await self.vk.xclaim(
+                self.cfg.task_stream,
+                self.cfg.group,
+                self.cfg.consumer,
+                min_idle_time=self.cfg.reclaim_min_idle_ms,
+                message_ids=[msg_id],
+            )
+            for claimed_id, fields in claimed:
+                await self._process_one(claimed_id, fields)
+
+    async def reclaim_loop(self) -> None:
+        """Периодический sweep зависших задач (см. ``reclaim_once``)."""
+        while True:
+            await asyncio.sleep(self.cfg.reclaim_interval_sec)
+            await self.reclaim_once()
 
 
     async def _handle(self, data: dict) -> None:

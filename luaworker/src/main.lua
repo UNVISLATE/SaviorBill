@@ -43,9 +43,22 @@ local LOG_PREFIX = env("LUA_LOG_PREFIX", "lua:log:")
 local SIGNING_KEY = env("BUS_SIGNING_KEY", "")
 -- Окно допустимого расхождения времени (anti-replay), см. security/sec/bus_sign.py.
 local MAX_SKEW_SEC = tonumber(env("BUS_SIGN_MAX_SKEW_SEC", "300"))
+-- Приблизительный потолок длины lua:results (см. AUDIT.md §3.3 — раньше не
+-- передавался вообще, стрим ответов рос неограниченно).
+local RESP_MAXLEN = tonumber(env("LUA_RESP_STREAM_MAXLEN", "10000"))
+-- Reclaim зависших задач (см. AUDIT.md §3.1): раз в LUA_RECLAIM_INTERVAL_SEC
+-- проверяем через XPENDING записи, которые провисели в PEL дольше
+-- LUA_RECLAIM_MIN_IDLE_MS без ack (например, консьюмер упал после XREADGROUP,
+-- но до XACK), забираем их себе через XCLAIM и исполняем как обычные задачи.
+local RECLAIM_INTERVAL_SEC = tonumber(env("LUA_RECLAIM_INTERVAL_SEC", "30"))
+local RECLAIM_MIN_IDLE_MS = tonumber(env("LUA_RECLAIM_MIN_IDLE_MS", "60000"))
+-- Лимит попыток исполнения одной задачи (используем родной delivery-count
+-- Redis Streams из XPENDING, отдельный счётчик не нужен) — при превышении
+-- задача не reclaim-ится повторно, а сразу считается провалившейся.
+local MAX_ATTEMPTS = tonumber(env("LUA_TASK_MAX_ATTEMPTS", "5"))
 
 -- redis-lua не знает stream-команды из коробки — регистрируем их.
-for _, cmd in ipairs({ "xadd", "xack", "xgroup", "xreadgroup" }) do
+for _, cmd in ipairs({ "xadd", "xack", "xgroup", "xreadgroup", "xclaim", "xpending", "xrange" }) do
   redis.commands[cmd] = redis.command(cmd:upper())
 end
 
@@ -144,6 +157,12 @@ local function map_to_args(map)
   return args
 end
 
+-- Опубликовать подписанный ответ в RESP с ограничением длины стрима (MAXLEN).
+local function emit_response(client, fields)
+  local resp = sign_fields(fields)
+  client:xadd(RESP, "MAXLEN", "~", tostring(RESP_MAXLEN), "*", table.unpack(map_to_args(resp)))
+end
+
 local function handle(client, entry_id, map)
   local cid = map.cid or ""
 
@@ -152,8 +171,7 @@ local function handle(client, entry_id, map)
     -- AUDIT.md H1), сразу ack (не через reclaim — иначе честно повторяли бы
     -- заведомо поддельное сообщение бесконечно).
     io.stderr:write("[luaworker] rejected task cid=" .. cid .. ": invalid signature\n")
-    local resp = sign_fields({ cid = cid, ok = "0", data = cjson.encode("invalid signature") })
-    client:xadd(RESP, "*", table.unpack(map_to_args(resp)))
+    emit_response(client, { cid = cid, ok = "0", data = cjson.encode("invalid signature") })
     client:xack(TASK, GROUP, entry_id)
     return
   end
@@ -174,26 +192,63 @@ local function handle(client, entry_id, map)
     flag, data = "0", cjson.encode(tostring(result))
   end
 
-  local resp = sign_fields({ cid = cid, ok = flag, data = data })
-  client:xadd(RESP, "*", table.unpack(map_to_args(resp)))
+  emit_response(client, { cid = cid, ok = flag, data = data })
   client:xack(TASK, GROUP, entry_id)
 end
 
-local function run_once(client)
-  -- BLOCK 0 — ждём появления задачи без активного поллинга.
-  local reply = client:xreadgroup(
-    "GROUP", GROUP, CONSUMER,
-    "COUNT", 10, "BLOCK", 0,
-    "STREAMS", TASK, ">"
-  )
-  if not reply then
+-- Раз в RECLAIM_INTERVAL_SEC подхватить зависшие записи PEL (см. AUDIT.md
+-- §3.1): консьюмер мог упасть между XREADGROUP и XACK — сообщение осталось
+-- "pending" навсегда без reclaim. Лимит попыток — родной delivery-count из
+-- XPENDING, при превышении задача не забирается повторно, а сразу считается
+-- провалившейся (ack + failed-результат с причиной max_retries_exceeded).
+local function reclaim_once(client)
+  local ok, pending = pcall(function()
+    return client:xpending(TASK, GROUP, "IDLE", RECLAIM_MIN_IDLE_MS, "-", "+", 50)
+  end)
+  if not ok or not pending then
     return
   end
-  for _, stream in ipairs(reply) do
-    for _, entry in ipairs(stream[2]) do
-      handle(client, entry[1], fields_to_map(entry[2]))
+  for _, item in ipairs(pending) do
+    local id, delivery_count = item[1], tonumber(item[4])
+    if delivery_count and delivery_count > MAX_ATTEMPTS then
+      -- Лимит попыток исчерпан — забираем cid для отчёта, ack без reclaim.
+      local cid = ""
+      local ok_r, rows = pcall(function() return client:xrange(TASK, id, id) end)
+      if ok_r and rows and rows[1] then
+        cid = fields_to_map(rows[1][2]).cid or ""
+      end
+      io.stderr:write("[luaworker] task " .. id .. " (cid=" .. cid .. ") exceeded max attempts\n")
+      client:xack(TASK, GROUP, id)
+      emit_response(client, { cid = cid, ok = "0", data = cjson.encode("max_retries_exceeded") })
+    else
+      local ok_c, claimed = pcall(function()
+        return client:xclaim(TASK, GROUP, CONSUMER, RECLAIM_MIN_IDLE_MS, id)
+      end)
+      if ok_c and claimed then
+        for _, entry in ipairs(claimed) do
+          handle(client, entry[1], fields_to_map(entry[2]))
+        end
+      end
     end
   end
+end
+
+local function run_once(client)
+  -- BLOCK ограничен RECLAIM_INTERVAL_SEC, а не 0 (бесконечно) — иначе при
+  -- отсутствии новых задач reclaim-sweep никогда бы не запускался.
+  local reply = client:xreadgroup(
+    "GROUP", GROUP, CONSUMER,
+    "COUNT", 10, "BLOCK", RECLAIM_INTERVAL_SEC * 1000,
+    "STREAMS", TASK, ">"
+  )
+  if reply then
+    for _, stream in ipairs(reply) do
+      for _, entry in ipairs(stream[2]) do
+        handle(client, entry[1], fields_to_map(entry[2]))
+      end
+    end
+  end
+  reclaim_once(client)
 end
 
 local function main()

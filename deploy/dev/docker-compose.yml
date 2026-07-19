@@ -85,6 +85,9 @@ services:
       LUA_SERVICE_TOKEN: ${LUA_SERVICE_TOKEN:-dev-service-token}
       LUA_SCRIPTS_DIR: /app/data/lua
       BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-}
+      LUA_RECLAIM_INTERVAL_SEC: ${LUA_RECLAIM_INTERVAL_SEC:-30}
+      LUA_RECLAIM_MIN_IDLE_MS: ${LUA_RECLAIM_MIN_IDLE_MS:-60000}
+      LUA_TASK_MAX_ATTEMPTS: ${LUA_TASK_MAX_ATTEMPTS:-5}
     volumes:
       - ../../data:/app/data:ro
 
@@ -122,6 +125,8 @@ services:
       S3_REGION: ${S3_REGION:-}
       S3_KEY: ${S3_KEY:-}
       S3_SECRET: ${S3_SECRET:-}
+      MEDIA_RECLAIM_INTERVAL_SEC: ${MEDIA_RECLAIM_INTERVAL_SEC:-30}
+      MEDIA_RECLAIM_MIN_IDLE_MS: ${MEDIA_RECLAIM_MIN_IDLE_MS:-60000}
     volumes:
       - ../../data:/app/data:rw
     ports:
