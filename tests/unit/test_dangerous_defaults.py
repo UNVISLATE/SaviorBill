@@ -51,3 +51,9 @@ def test_placeholder_owner_creds_rejected():
 def test_owner_login_alone_is_not_enough_to_reject():
     """Только логин совпал с плейсхолдером, но пароль — реальный: не блокируем."""
     check_dangerous_defaults(_cfg(OWNER_LOGIN="admin", OWNER_PASS="a-real-random-password"))
+
+
+def test_cors_wildcard_rejected_at_config_level():
+    """AUDIT.md L3 — CORS_ORIGINS=* невалиден вместе с allow_credentials=True."""
+    with pytest.raises(Exception, match="CORS_ORIGINS"):
+        AppConfig(CORS_ORIGINS="*")

@@ -90,7 +90,7 @@ class EmailVerifyConfirm(BaseModel):
     code: str = Field(
         min_length=4,
         max_length=10,
-        description=("Email code (`mail.code_digits`, default 4)"),
+        description=("Email code (`mail.code_digits`, default 6)"),
     )
 
 

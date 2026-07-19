@@ -141,6 +141,19 @@ class Config(BaseSettings):
             self.JWT_SECRET_FILE = str(Path(self.DATA_DIR) / "keys" / "jwt.key")
         return self
 
+    @model_validator(mode="after")
+    def _validate_cors(self) -> "Config":
+        """Отклонить ``CORS_ORIGINS=*`` — недопустим вместе с ``allow_credentials=True``
+        (всегда включён в ``app.py`` при подключении CORSMiddleware), см. AUDIT.md L3.
+        """
+        origins = [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        if "*" in origins:
+            raise ValueError(
+                "CORS_ORIGINS=* недопустим вместе с allow_credentials=True "
+                "(всегда включён) — укажите конкретные origin'ы"
+            )
+        return self
+
     # ------------------------------------------------------------------ #
     # Вычисляемые свойства (совпадают с атрибутами старого Config).       #
     # ------------------------------------------------------------------ #

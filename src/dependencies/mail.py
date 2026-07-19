@@ -22,7 +22,10 @@ from security.sec.crypt import generate_numeric_code
 _VERIFY = "verify:email:"
 _VERIFY_FAIL = "verify:email:fail:"
 # Длина кода подтверждения email и потолок неверных попыток на код.
-_CODE_DIGITS = 4
+# 4 цифры (10к комбинаций) — слишком короткий код для брутфорса даже с
+# лимитом попыток (см. AUDIT.md L2); 6 цифр — тот же порядок, что уже
+# используется для сброса пароля (dependencies/password.py::_CODE_DIGITS).
+_CODE_DIGITS = 6
 _MAX_FAILS = 5
 
 

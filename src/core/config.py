@@ -287,6 +287,24 @@ class AppConfig(BaseSettings):
             )
         return self
 
+    @model_validator(mode="after")
+    def _validate_cors(self) -> "AppConfig":
+        """Отклонить конфигурацию, невалидную по спецификации CORS.
+
+        ``app.py`` всегда включает ``allow_credentials=True`` при
+        подключении ``CORSMiddleware`` — вместе с ``Access-Control-Allow-Origin: *``
+        это запрещено спецификацией fetch/CORS (браузер сам отбросит такой
+        ответ), а до этой проверки ошибка конфигурации была бы видна только
+        как загадочно не работающий CORS в браузере (см. AUDIT.md L3).
+        """
+        origins = [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+        if "*" in origins:
+            raise ValueError(
+                "CORS_ORIGINS=* недопустим вместе с allow_credentials=True "
+                "(всегда включён) — укажите конкретные origin'ы"
+            )
+        return self
+
     @property
     def trusted_proxies_list(self) -> list[str]:
         """`TRUSTED_PROXIES` как список непустых IP/CIDR (CSV → list)."""
