@@ -27,7 +27,7 @@ class Storage:
         В нормальном потоке ``key``/``token`` всегда server-generated (см.
         ``convert.py::target_key``, ``upload.py`` — ``uuid4().hex``), но эта
         проверка — защита в глубину на случай бага/будущего изменения, а не
-        доверие клиентскому вводу (см. AUDIT.md M1).
+        доверие клиентскому вводу.
         """
         base = Path(base_dir).resolve()
         target = (base / key).resolve()

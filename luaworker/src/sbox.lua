@@ -183,12 +183,12 @@ M.encode_json = cjson.encode
 M.decode_json = cjson.decode
 
 -- HMAC-SHA256(hex) — используется в main.lua для подписи шины lua:tasks/
--- lua:results (см. AUDIT.md H1), а также доступен как sbox.make_crypto()
+-- lua:results, а также доступен как sbox.make_crypto()
 -- внутри пользовательских скриптов.
 function M.hmac_sha256_hex(key, s)
   local ok_h, hmac = pcall(require, "openssl.hmac")
   if not ok_h then
-    error("crypto: openssl.hmac недоступен (нужен для подписи шины, см. AUDIT.md H1)")
+    error("crypto: openssl.hmac недоступен (нужен для подписи шины)")
   end
   return to_hex(hmac.new(key, "sha256"):final(s))
 end

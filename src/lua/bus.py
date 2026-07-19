@@ -16,7 +16,7 @@ from security.sec.bus_sign import sign_fields, verify_fields
 
 log = logging.getLogger("saviorbill.luabus")
 
-# Максимальная длина текста ошибки, попадающего в лог/tasklog (см. AUDIT.md M3).
+# Максимальная длина текста ошибки, попадающего в лог/tasklog.
 # Ошибка скрипта — это `tostring(err)` из Lua, полностью под контролем автора
 # скрипта; обрезка — защита в глубину на случай, если скрипт по ошибке
 # подставит в текст исключения секрет/токен целиком, а не только факт ошибки.
@@ -63,7 +63,7 @@ class LuaBus:
         # Журнал фактов о тасках (может отсутствовать — например, в тестах);
         # без него LuaBus работает как раньше, просто без записи в tasklog:lua.
         self.task_log = task_log
-        # HMAC-ключ подписи lua:tasks/lua:results (см. AUDIT.md H1). Пустой —
+        # HMAC-ключ подписи lua:tasks/lua:results. Пустой —
         # подпись отключена (dev/тесты без настроенного BUS_SIGNING_KEY).
         self.signing_key = signing_key
 
@@ -119,7 +119,7 @@ class LuaBus:
                         continue
                     if not verify_fields(self.signing_key, fields):
                         # Ответ с неверной/отсутствующей подписью — не доверяем
-                        # ему (см. AUDIT.md H1): это либо подделка, либо
+                        # ему: это либо подделка, либо
                         # рассинхронизация BUS_SIGNING_KEY между сервисами.
                         # Продолжаем ждать настоящий ответ до дедлайна.
                         log.warning(

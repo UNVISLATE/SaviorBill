@@ -27,7 +27,7 @@ def client_ip(request: Request) -> str:
     из ``TRUSTED_PROXIES`` (см. ``app.py``); без доверенного прокси в списке
     заголовок полностью игнорируется — раньше он читался напрямую и без
     проверки, что позволяло клиенту подделать свой IP произвольным
-    заголовком (см. AUDIT.md H2).
+    заголовком.
     """
     return request.client.host if request.client else "0.0.0.0"
 

@@ -2,7 +2,7 @@
 
 Зеркало ``billing/src/security/sec/bus_sign.py`` — продублировано по значению
 (не импортом), т.к. mediaworker и billing — отдельные деплойменты без общего
-пакета Python. При правке синхронизировать оба файла (см. AUDIT.md H1).
+пакета Python. При правке синхронизировать оба файла.
 """
 
 from __future__ import annotations

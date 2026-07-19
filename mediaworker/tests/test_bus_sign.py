@@ -1,4 +1,4 @@
-"""Юнит-тесты HMAC-подписи шины Valkey Streams — mediaworker-сторона (AUDIT.md H1)."""
+"""Юнит-тесты HMAC-подписи шины Valkey Streams — mediaworker-сторона."""
 
 from __future__ import annotations
 

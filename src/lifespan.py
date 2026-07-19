@@ -32,7 +32,7 @@ def _prepare_storage(config: AppConfig) -> None:
 async def lifespan(app: FastAPI):
     config = AppConfig()
     # Прежде чем трогать БД/Valkey — убедиться, что не остались опасные
-    # плейсхолдеры из .env.example (см. bootstrap/safety.py, AUDIT.md H3).
+    # плейсхолдеры из .env.example (см. bootstrap/safety.py).
     check_dangerous_defaults(config)
     _prepare_storage(config)
     app.state.settings = config

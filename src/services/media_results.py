@@ -99,7 +99,7 @@ class MediaResults:
                     try:
                         if not verify_fields(self.cfg.BUS_SIGNING_KEY, data):
                             # Результат с неверной/отсутствующей подписью — не
-                            # доверяем содержимому (см. AUDIT.md H1): подделка
+                            # доверяем содержимому: подделка
                             # или рассинхронизация BUS_SIGNING_KEY между
                             # сервисами. Не пишем в БД, просто ack и лог.
                             log.warning(

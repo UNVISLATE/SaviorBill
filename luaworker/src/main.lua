@@ -8,7 +8,7 @@
 --
 -- Если задан BUS_SIGNING_KEY (общий с billing) — задачи/результаты подписываются
 -- HMAC-SHA256 (поля ts+sig, см. verify_signed/sign_fields выше), что закрывает
--- подделку сообщений тем, у кого есть прямой доступ к Valkey (см. AUDIT.md H1).
+-- подделку сообщений тем, у кого есть прямой доступ к Valkey.
 
 local redis = require("redis")
 local cjson = require("cjson")
@@ -38,15 +38,14 @@ local DEFAULT_CONSUMER = (env("HOSTNAME", "worker") .. "-" .. tostring(math.rand
 local CONSUMER = env("LUA_CONSUMER", DEFAULT_CONSUMER)
 local LOG_TTL = tonumber(env("LUA_LOG_TTL", "3600"))
 local LOG_PREFIX = env("LUA_LOG_PREFIX", "lua:log:")
--- HMAC-ключ подписи lua:tasks/lua:results (см. AUDIT.md H1) — общий с
+-- HMAC-ключ подписи lua:tasks/lua:results — общий с
 -- billing. Пустой = подпись отключена (dev-режим, совпадает с Python-стороной).
 local SIGNING_KEY = env("BUS_SIGNING_KEY", "")
 -- Окно допустимого расхождения времени (anti-replay), см. security/sec/bus_sign.py.
 local MAX_SKEW_SEC = tonumber(env("BUS_SIGN_MAX_SKEW_SEC", "300"))
--- Приблизительный потолок длины lua:results (см. AUDIT.md §3.3 — раньше не
--- передавался вообще, стрим ответов рос неограниченно).
+-- Приблизительный потолок длины lua:results.
 local RESP_MAXLEN = tonumber(env("LUA_RESP_STREAM_MAXLEN", "10000"))
--- Reclaim зависших задач (см. AUDIT.md §3.1): раз в LUA_RECLAIM_INTERVAL_SEC
+-- Reclaim зависших задач: раз в LUA_RECLAIM_INTERVAL_SEC
 -- проверяем через XPENDING записи, которые провисели в PEL дольше
 -- LUA_RECLAIM_MIN_IDLE_MS без ack (например, консьюмер упал после XREADGROUP,
 -- но до XACK), забираем их себе через XCLAIM и исполняем как обычные задачи.
@@ -63,7 +62,7 @@ for _, cmd in ipairs({ "xadd", "xack", "xgroup", "xreadgroup", "xclaim", "xpendi
 end
 
 -- Сравнение строк за постоянное время (не выдаёт длину общего префикса через
--- время выполнения) — используется для сверки HMAC-подписи, см. AUDIT.md H1.
+-- время выполнения) — используется для сверки HMAC-подписи.
 local function ct_equal(a, b)
   if type(a) ~= "string" or type(b) ~= "string" or #a ~= #b then
     return false
@@ -167,9 +166,9 @@ local function handle(client, entry_id, map)
   local cid = map.cid or ""
 
   if not verify_signed(map) then
-    -- Задача с неверной/отсутствующей подписью — не исполняем (см.
-    -- AUDIT.md H1), сразу ack (не через reclaim — иначе честно повторяли бы
-    -- заведомо поддельное сообщение бесконечно).
+    -- Задача с неверной/отсутствующей подписью — не исполняем, сразу ack
+    -- (не через reclaim — иначе честно повторяли бы заведомо поддельное
+    -- сообщение бесконечно).
     io.stderr:write("[luaworker] rejected task cid=" .. cid .. ": invalid signature\n")
     emit_response(client, { cid = cid, ok = "0", data = cjson.encode("invalid signature") })
     client:xack(TASK, GROUP, entry_id)
@@ -196,8 +195,8 @@ local function handle(client, entry_id, map)
   client:xack(TASK, GROUP, entry_id)
 end
 
--- Раз в RECLAIM_INTERVAL_SEC подхватить зависшие записи PEL (см. AUDIT.md
--- §3.1): консьюмер мог упасть между XREADGROUP и XACK — сообщение осталось
+-- Раз в RECLAIM_INTERVAL_SEC подхватить зависшие записи PEL: консьюмер мог
+-- упасть между XREADGROUP и XACK — сообщение осталось
 -- "pending" навсегда без reclaim. Лимит попыток — родной delivery-count из
 -- XPENDING, при превышении задача не забирается повторно, а сразу считается
 -- провалившейся (ack + failed-результат с причиной max_retries_exceeded).

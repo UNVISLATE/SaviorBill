@@ -118,11 +118,10 @@ class Worker:
         async with self._sem:
             try:
                 if not verify_fields(self.cfg.BUS_SIGNING_KEY, data):
-                    # Задача с неверной/отсутствующей подписью — не исполняем
-                    # (см. AUDIT.md H1): подделка или рассинхронизация
-                    # BUS_SIGNING_KEY между сервисами. Ack без повтора (не
-                    # через _on_failure/reclaim — иначе честно повторяли бы
-                    # заведомо поддельное сообщение).
+                    # Задача с неверной/отсутствующей подписью — не исполняем:
+                    # подделка или рассинхронизация BUS_SIGNING_KEY между
+                    # сервисами. Ack без повтора (не через _on_failure/reclaim —
+                    # иначе честно повторяли бы заведомо поддельное сообщение).
                     print(
                         f"[mediaworker] task {msg_id} rejected: invalid signature",
                         flush=True,
@@ -149,7 +148,7 @@ class Worker:
             # Ещё есть попытки — кладём задачу обратно в очередь. Подпись/ts
             # пересобираются заново (не переносим старые ts/sig): к моменту
             # повторной обработки исходный ts может выйти за anti-replay-окно
-            # (см. AUDIT.md H1) и задача была бы отклонена как "просроченная".
+            # и задача была бы отклонена как "просроченная".
             fresh = {k: v for k, v in data.items() if k not in ("ts", "sig")}
             await self.vk.xadd(
                 self.cfg.task_stream,
@@ -185,11 +184,11 @@ class Worker:
     async def reclaim_once(self) -> None:
         """Подхватить PEL-записи ``media:tasks``, зависшие у мёртвых консьюмеров.
 
-        См. AUDIT.md §3.1: раньше при крахе процесса посреди обработки
-        сообщение навсегда оставалось "pending" в consumer-group — никто его
-        не переисполнял. ``XPENDING ... IDLE`` отдаёт ``times_delivered`` ДО
-        захвата, поэтому решение "reclaim vs DLQ" принимается заранее (в
-        отличие от XAUTOCLAIM, который такой информации не даёт).
+        Раньше при крахе процесса посреди обработки сообщение навсегда
+        оставалось "pending" в consumer-group — никто его не переисполнял.
+        ``XPENDING ... IDLE`` отдаёт ``times_delivered`` ДО захвата, поэтому
+        решение "reclaim vs DLQ" принимается заранее (в отличие от
+        XAUTOCLAIM, который такой информации не даёт).
         """
         try:
             pending = await self.vk.xpending_range(

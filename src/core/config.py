@@ -100,7 +100,7 @@ class AppConfig(BaseSettings):
     LUA_SERVICE_TOKEN: str | None = Field(default=None)
     LUA_SERVICE_TOKEN_FILE: str | None = Field(default=None)
     # HMAC-ключ подписи сообщений lua:tasks/lua:results/media:tasks/media:results
-    # (см. AUDIT.md H1) — общий с luaworker и mediaworker. Пустой = подпись
+    # — общий с luaworker и mediaworker. Пустой = подпись
     # отключена (dev-режим); в проде (DEBUG=false) пустое значение — fail-fast
     # (bootstrap/safety.py), т.к. без подписи стрим не является trust-boundary.
     BUS_SIGNING_KEY: str = Field(default="")
@@ -300,7 +300,7 @@ class AppConfig(BaseSettings):
         подключении ``CORSMiddleware`` — вместе с ``Access-Control-Allow-Origin: *``
         это запрещено спецификацией fetch/CORS (браузер сам отбросит такой
         ответ), а до этой проверки ошибка конфигурации была бы видна только
-        как загадочно не работающий CORS в браузере (см. AUDIT.md L3).
+        как загадочно не работающий CORS в браузере.
         """
         origins = [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
         if "*" in origins:

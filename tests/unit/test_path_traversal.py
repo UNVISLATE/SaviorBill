@@ -1,4 +1,4 @@
-"""Юнит-тесты защиты от path traversal в файловых менеджерах (AUDIT.md M1/L1).
+"""Юнит-тесты защиты от path traversal в файловых менеджерах.
 
 ``_safe_target()`` в ``SystemScriptsMngr``/``EmailMngr`` раньше использовал
 ``str(target).startswith(str(base))`` — у этой проверки есть sibling-баг:

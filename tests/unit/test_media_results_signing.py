@@ -1,5 +1,5 @@
 """Юнит-тест: MediaResults отклоняет media:results с неверной/отсутствующей
-подписью, не вызывая запись в БД (AUDIT.md H1)."""
+подписью, не вызывая запись в БД."""
 
 from __future__ import annotations
 

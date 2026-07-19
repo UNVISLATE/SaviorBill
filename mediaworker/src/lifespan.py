@@ -19,7 +19,7 @@ log = logging.getLogger("saviorbill.media")
 
 
 async def _supervised(name: str, coro_factory) -> None:
-    """Перезапускать фоновую задачу при непойманном исключении (см. AUDIT.md §3.3).
+    """Перезапускать фоновую задачу при непойманном исключении.
 
     Раньше ``worker.run()``/``reclaim_loop()`` создавались как одноразовый
     ``asyncio.create_task`` без надзора: любое необработанное исключение
@@ -43,13 +43,13 @@ async def _supervised(name: str, coro_factory) -> None:
 async def lifespan(app: FastAPI):
     cfg = Config()
     if not (cfg.BUS_SIGNING_KEY or "").strip():
-        # См. AUDIT.md H1: без общего секрета media:tasks/media:results не
+        # без общего секрета media:tasks/media:results не
         # подписываются — billing (см. bootstrap/safety.py) откажется
         # стартовать в проде без BUS_SIGNING_KEY, здесь — только предупреждение
         # в лог, т.к. у mediaworker нет собственного понятия DEBUG/prod-режима.
         log.warning(
             "[mediaworker] BUS_SIGNING_KEY не задан — media:tasks/media:results "
-            "не подписываются, шина не защищена от подмены сообщений (AUDIT.md H1)"
+            "не подписываются, шина не защищена от подмены сообщений"
         )
     vk = valkey.from_url(cfg.valkey_url, decode_responses=True)
     storage = Storage(cfg)

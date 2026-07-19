@@ -47,7 +47,7 @@ async def test_save_stream_skips_empty_chunks(tmp_path):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Path traversal (AUDIT.md M1) — orig_path/media_fs_path должны отклонять
+# Path traversal — orig_path/media_fs_path должны отклонять
 # попытки выйти за пределы своих каталогов.
 # ─────────────────────────────────────────────────────────────────────────────
 

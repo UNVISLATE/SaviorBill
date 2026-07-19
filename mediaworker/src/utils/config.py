@@ -59,7 +59,7 @@ class Config(BaseSettings):
     # Valkey Streams растут неограниченно (xack не удаляет записи физически).
     MEDIA_TASK_STREAM_MAXLEN: int = Field(default=10_000)
     MEDIA_RESULT_STREAM_MAXLEN: int = Field(default=10_000)
-    # HMAC-ключ подписи сообщений media:tasks/media:results (см. AUDIT.md H1) —
+    # HMAC-ключ подписи сообщений media:tasks/media:results —
     # общий с billing. Пустой = подпись отключена (dev-режим).
     BUS_SIGNING_KEY: str = Field(default="")
 
@@ -96,7 +96,7 @@ class Config(BaseSettings):
     MEDIA_TASK_CONCURRENCY: int = Field(default=4)
     MEDIA_TASK_MAX_ATTEMPTS: int = Field(default=5)
     MEDIA_TASK_DLQ: str = Field(default="media:tasks:dead")
-    # Reclaim зависших PEL-записей media:tasks (см. AUDIT.md §3.1): раньше
+    # Reclaim зависших PEL-записей media:tasks: раньше
     # при крахе процесса посреди задачи сообщение навсегда оставалось
     # "pending" — никто не подхватывал его повторно. Раз в
     # MEDIA_RECLAIM_INTERVAL_SEC подхватываем записи, провисевшие без ack
@@ -154,7 +154,7 @@ class Config(BaseSettings):
     @model_validator(mode="after")
     def _validate_cors(self) -> "Config":
         """Отклонить ``CORS_ORIGINS=*`` — недопустим вместе с ``allow_credentials=True``
-        (всегда включён в ``app.py`` при подключении CORSMiddleware), см. AUDIT.md L3.
+        (всегда включён в ``app.py`` при подключении CORSMiddleware).
         """
         origins = [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
         if "*" in origins:

@@ -32,7 +32,7 @@ class MediaBus:
         self.vk = vk
         self.task_stream = task_stream
         self.task_stream_maxlen = task_stream_maxlen
-        # HMAC-ключ подписи media:tasks (см. AUDIT.md H1) — общий с mediaworker.
+        # HMAC-ключ подписи media:tasks — общий с mediaworker.
         # Пустой = подпись отключена (dev/тесты без BUS_SIGNING_KEY).
         self.signing_key = signing_key
 

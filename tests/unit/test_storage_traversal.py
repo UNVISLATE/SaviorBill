@@ -1,4 +1,4 @@
-"""Юнит-тесты защиты от path traversal в billing ``StorageSvc`` (AUDIT.md M1)."""
+"""Юнит-тесты защиты от path traversal в billing ``StorageSvc``."""
 
 from __future__ import annotations
 

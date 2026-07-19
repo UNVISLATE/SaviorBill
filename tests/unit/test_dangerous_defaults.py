@@ -1,4 +1,4 @@
-"""Юнит-тесты fail-fast проверки опасных ENV-дефолтов (AUDIT.md H3)."""
+"""Юнит-тесты fail-fast проверки опасных ENV-дефолтов."""
 
 from __future__ import annotations
 
@@ -55,12 +55,12 @@ def test_owner_login_alone_is_not_enough_to_reject():
 
 
 def test_cors_wildcard_rejected_at_config_level():
-    """AUDIT.md L3 — CORS_ORIGINS=* невалиден вместе с allow_credentials=True."""
+    """CORS_ORIGINS=* невалиден вместе с allow_credentials=True."""
     with pytest.raises(Exception, match="CORS_ORIGINS"):
         AppConfig(CORS_ORIGINS="*")
 
 
 def test_empty_bus_signing_key_rejected():
-    """AUDIT.md H1 — без общего секрета шина lua/media не защищена от подделки."""
+    """Без общего секрета шина lua/media не защищена от подделки."""
     with pytest.raises(InsecureDefaultsError, match="BUS_SIGNING_KEY"):
         check_dangerous_defaults(_cfg(BUS_SIGNING_KEY=""))

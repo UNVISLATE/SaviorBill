@@ -1,4 +1,4 @@
-"""Юнит-тесты HMAC-подписи шины Valkey Streams (AUDIT.md H1)."""
+"""Юнит-тесты HMAC-подписи шины Valkey Streams."""
 
 from __future__ import annotations
 
