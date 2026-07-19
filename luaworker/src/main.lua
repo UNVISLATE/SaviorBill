@@ -55,10 +55,50 @@ local RECLAIM_MIN_IDLE_MS = tonumber(env("LUA_RECLAIM_MIN_IDLE_MS", "60000"))
 -- Redis Streams из XPENDING, отдельный счётчик не нужен) — при превышении
 -- задача не reclaim-ится повторно, а сразу считается провалившейся.
 local MAX_ATTEMPTS = tonumber(env("LUA_TASK_MAX_ATTEMPTS", "5"))
+-- Метрики воркера (счётчики + last_seen) периодически пушатся в Valkey-хэш
+-- lua:metrics:{CONSUMER} — billing переэкспортирует их как Prometheus Gauge
+-- (см. telemetry/lua_metrics.py). Push, а не pull — у воркера нет своего
+-- HTTP-порта для /metrics, и это не нужно вводить только под один эндпоинт.
+local METRICS_INTERVAL_SEC = tonumber(env("LUA_METRICS_INTERVAL_SEC", "15"))
+local METRICS_PREFIX = env("LUA_METRICS_PREFIX", "lua:metrics:")
+-- TTL хэша метрик — больше интервала пуша, чтобы billing не считал воркер
+-- живым дольше, чем на самом деле (умерший процесс просто не продлит TTL).
+local METRICS_TTL_SEC = tonumber(env("LUA_METRICS_TTL_SEC", "60"))
 
 -- redis-lua не знает stream-команды из коробки — регистрируем их.
-for _, cmd in ipairs({ "xadd", "xack", "xgroup", "xreadgroup", "xclaim", "xpending", "xrange" }) do
+for _, cmd in ipairs({ "xadd", "xack", "xgroup", "xreadgroup", "xclaim", "xpending", "xrange", "hset", "expire" }) do
   redis.commands[cmd] = redis.command(cmd:upper())
+end
+
+-- Накопленные с момента старта процесса счётчики (сбрасываются в 0 при
+-- рестарте воркера — это ожидаемо и видно в Grafana как обрыв графика, а не
+-- ошибка сбора метрик).
+local metrics = { processed_total = 0, errors_total = 0, reclaimed_total = 0, exec_ms_sum = 0 }
+local last_metrics_push = 0
+
+-- Раз в METRICS_INTERVAL_SEC отправить снимок счётчиков в Valkey.
+local function maybe_push_metrics(client)
+  local now = socket.gettime()
+  if now - last_metrics_push < METRICS_INTERVAL_SEC then
+    return
+  end
+  last_metrics_push = now
+  local avg_exec_ms = 0
+  if metrics.processed_total > 0 then
+    avg_exec_ms = metrics.exec_ms_sum / metrics.processed_total
+  end
+  local key = METRICS_PREFIX .. CONSUMER
+  pcall(function()
+    client:hset(
+      key,
+      "processed_total", tostring(metrics.processed_total),
+      "errors_total", tostring(metrics.errors_total),
+      "reclaimed_total", tostring(metrics.reclaimed_total),
+      "avg_exec_ms", string.format("%.2f", avg_exec_ms),
+      "last_seen_at", tostring(os.time())
+    )
+    client:expire(key, METRICS_TTL_SEC)
+  end)
 end
 
 -- Сравнение строк за постоянное время (не выдаёт длину общего префикса через
@@ -164,18 +204,30 @@ end
 
 local function handle(client, entry_id, map)
   local cid = map.cid or ""
+  -- Пробрасываем traceparent из задачи в ответ без интерпретации (симметрично
+  -- media:tasks/media:results, см. messaging/mediabus.py + telemetry/otel.py на
+  -- billing-стороне) — billing открывает span_from_carrier по нему, сам Lua
+  -- не обязан понимать формат W3C traceparent.
+  local traceparent = map.traceparent
 
   if not verify_signed(map) then
     -- Задача с неверной/отсутствующей подписью — не исполняем, сразу ack
     -- (не через reclaim — иначе честно повторяли бы заведомо поддельное
     -- сообщение бесконечно).
+    metrics.errors_total = metrics.errors_total + 1
     io.stderr:write("[luaworker] rejected task cid=" .. cid .. ": invalid signature\n")
-    emit_response(client, { cid = cid, ok = "0", data = cjson.encode("invalid signature") })
+    emit_response(client, { cid = cid, ok = "0", data = cjson.encode("invalid signature"), traceparent = traceparent })
     client:xack(TASK, GROUP, entry_id)
     return
   end
 
+  local t0 = socket.gettime()
   local ok, result = pcall(handlers.dispatch, map.kind, cjson.decode(map.payload or "{}"))
+  metrics.processed_total = metrics.processed_total + 1
+  metrics.exec_ms_sum = metrics.exec_ms_sum + (socket.gettime() - t0) * 1000
+  if not ok then
+    metrics.errors_total = metrics.errors_total + 1
+  end
 
   local data, flag
   if ok then
@@ -191,7 +243,7 @@ local function handle(client, entry_id, map)
     flag, data = "0", cjson.encode(tostring(result))
   end
 
-  emit_response(client, { cid = cid, ok = flag, data = data })
+  emit_response(client, { cid = cid, ok = flag, data = data, traceparent = traceparent })
   client:xack(TASK, GROUP, entry_id)
 end
 
@@ -225,6 +277,7 @@ local function reclaim_once(client)
       end)
       if ok_c and claimed then
         for _, entry in ipairs(claimed) do
+          metrics.reclaimed_total = metrics.reclaimed_total + 1
           handle(client, entry[1], fields_to_map(entry[2]))
         end
       end
@@ -248,6 +301,7 @@ local function run_once(client)
     end
   end
   reclaim_once(client)
+  maybe_push_metrics(client)
 end
 
 local function main()

@@ -12,6 +12,8 @@ from valkey.exceptions import ResponseError
 
 from utils.datetime_utils import timestamp_now
 from telemetry.task_log import TaskLog
+from telemetry.otel import inject_carrier
+from telemetry.metrics import bus_signature_rejected_total, lua_script_duration_seconds
 from security.sec.bus_sign import sign_fields, verify_fields
 
 log = logging.getLogger("saviorbill.luabus")
@@ -77,13 +79,19 @@ class LuaBus:
 
     async def _call_once(self, kind: str, payload: dict | None, timeout: int) -> dict:
         """Одна попытка: отправить задачу и дождаться результата."""
+        with lua_script_duration_seconds.labels(slug=kind).time():
+            return await self._call_once_timed(kind, payload, timeout)
+
+    async def _call_once_timed(self, kind: str, payload: dict | None, timeout: int) -> dict:
         cid = uuid.uuid4().hex
         deadline = timestamp_now() + timeout
 
         last = await self._last_id()
         task_fields = sign_fields(
             self.signing_key,
-            {"cid": cid, "kind": kind, "payload": json.dumps(payload or {})},
+            inject_carrier(
+                {"cid": cid, "kind": kind, "payload": json.dumps(payload or {})}
+            ),
         )
         await self.vk.xadd(
             self.task_stream,
@@ -122,6 +130,7 @@ class LuaBus:
                         # ему: это либо подделка, либо
                         # рассинхронизация BUS_SIGNING_KEY между сервисами.
                         # Продолжаем ждать настоящий ответ до дедлайна.
+                        bus_signature_rejected_total.labels(bus="lua").inc()
                         log.warning(
                             "LuaBus: ответ cid=%s отклонён — неверная подпись",
                             cid,
@@ -182,7 +191,9 @@ class LuaBus:
         cid = uuid.uuid4().hex
         task_fields = sign_fields(
             self.signing_key,
-            {"cid": cid, "kind": kind, "payload": json.dumps(payload or {})},
+            inject_carrier(
+                {"cid": cid, "kind": kind, "payload": json.dumps(payload or {})}
+            ),
         )
         await self.vk.xadd(
             self.task_stream,

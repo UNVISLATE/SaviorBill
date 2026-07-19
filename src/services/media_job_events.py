@@ -25,6 +25,12 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from core.config import AppConfig
 from models.worker_jobs import WorkerJobsMngr
 from security.sec.bus_sign import verify_fields
+from telemetry.metrics import (
+    bus_signature_rejected_total,
+    worker_jobs_failed_total,
+    worker_jobs_pending,
+    worker_jobs_reclaimed_total,
+)
 from telemetry.otel import span_from_carrier
 
 log = logging.getLogger("saviorbill.media")
@@ -101,6 +107,7 @@ class MediaJobEvents:
                 for msg_id, data in entries:
                     try:
                         if not verify_fields(self.cfg.BUS_SIGNING_KEY, data):
+                            bus_signature_rejected_total.labels(bus="media_job_events").inc()
                             log.warning(
                                 "media-job-events: сообщение %s отклонено — "
                                 "неверная подпись",
@@ -132,12 +139,17 @@ class MediaJobEvents:
         self._last_sweep = now
         try:
             async with self.sm() as session:
-                n = await WorkerJobsMngr(session).sweep_stale(
+                mngr = WorkerJobsMngr(session)
+                n = await mngr.sweep_stale(
                     timedelta(seconds=self.cfg.MEDIA_JOB_STALE_AFTER_SEC)
                 )
                 await session.commit()
+                worker_jobs_pending.labels(kind="media").set(
+                    await mngr.count_pending("media")
+                )
             if n:
                 log.warning("media-job-events: %s job(s) marked stale", n)
+                worker_jobs_reclaimed_total.labels(kind="media").inc(n)
         except Exception:  # noqa: BLE001 — sweep не должен ронять консьюмер
             log.exception("media-job-events: sweep_stale error")
 
@@ -158,6 +170,8 @@ class MediaJobEvents:
                 error=detail if state in ("failed", "stale") else None,
             )
             await session.commit()
+        if state == "failed":
+            worker_jobs_failed_total.labels(kind="media", op=op).inc()
 
 
 __all__ = ["MediaJobEvents"]

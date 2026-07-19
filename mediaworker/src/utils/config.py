@@ -138,6 +138,8 @@ class Config(BaseSettings):
     # Имена переменных совпадают с billing-конфигом (общий .env на весь стек).
     METRICS_ENABLED: bool = Field(default=True)
     METRICS_TOKEN: str | None = Field(default=None)
+    METRICS_RATE_LIMIT_MAX: int = Field(default=120)
+    METRICS_RATE_LIMIT_WINDOW: int = Field(default=60)
     OTEL_ENABLED: bool = Field(default=False)
     OTEL_EXPORTER_OTLP_ENDPOINT: str | None = Field(default=None)
     OTEL_EXPORTER_OTLP_PROTOCOL: str = Field(default="grpc")

@@ -13,6 +13,7 @@ from utils.proclog import ProcLog
 from utils.settings import SettingsResolver
 from utils.storage import Storage
 from utils.task_log import TaskLog
+from utils.telemetry import instrument_valkey
 from utils.worker import Worker
 
 log = logging.getLogger("saviorbill.media")
@@ -52,6 +53,7 @@ async def lifespan(app: FastAPI):
             "не подписываются, шина не защищена от подмены сообщений"
         )
     vk = valkey.from_url(cfg.valkey_url, decode_responses=True)
+    instrument_valkey(vk, cfg)
     storage = Storage(cfg)
     db = DB(cfg.db_dsn)
     await db.connect()

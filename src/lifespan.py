@@ -14,7 +14,8 @@ from bootstrap.safety import check_dangerous_defaults
 from utils.openapi import document_perms
 from security.sec.secrets.resolve import resolve_secrets
 from telemetry.task_log import TaskLog
-from telemetry.otel import instrument_sqlalchemy
+from telemetry.otel import instrument_sqlalchemy, instrument_valkey
+from telemetry.lua_metrics import LuaMetricsCollector
 
 from api import api_router
 from apiws import apiws_router
@@ -47,6 +48,7 @@ async def lifespan(app: FastAPI):
 
     # Автоинструментация запросов к БД (no-op, если трейсинг выключен).
     instrument_sqlalchemy(app.state.db_engine, config)
+    instrument_valkey(app.state.valkey, config)
 
     # Первичная инициализация (один раз) и per-run проверки — независимые модули.
     await init_system(config, app.state.db_sessionmaker, app.state.valkey)
@@ -78,6 +80,11 @@ async def lifespan(app: FastAPI):
     )
     await app.state.media_job_events.start()
 
+    # Переэкспорт метрик LuaWorker (push в Valkey -> Prometheus Gauge, см.
+    # telemetry/lua_metrics.py).
+    app.state.lua_metrics = LuaMetricsCollector(app.state.valkey, config)
+    await app.state.lua_metrics.start()
+
     app.include_router(api_router)
     app.include_router(apiws_router)
     # Роуты добавлены — задокументировать требуемые права в OpenAPI.
@@ -86,6 +93,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await app.state.lua_metrics.stop()
         await app.state.media_job_events.stop()
         await app.state.media_results.stop()
         await app.state.billing_loop.stop()

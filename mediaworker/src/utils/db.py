@@ -39,6 +39,11 @@ class DB:
             await self.pool.close()
             self.pool = None
 
+    async def ping(self) -> None:
+        """Проверка готовности для ``/health/ready`` — падает, если пул недоступен."""
+        assert self.pool is not None
+        await self.pool.fetchval("SELECT 1")
+
     async def account(self, acc_id: int) -> Account | None:
         """Аккаунт с правами его роли (или ``None``, если не найден)."""
         assert self.pool is not None

@@ -207,6 +207,16 @@ class WorkerJobsMngr:
         await self._record_event(current.id, state, event_data)
         return current
 
+    async def count_pending(self, kind: str) -> int:
+        """Число задач в queued/processing/retrying — для метрики ``worker_jobs_pending``."""
+        result = await self.s.execute(
+            select(func.count()).where(
+                WorkerJobModel.kind == kind,
+                WorkerJobModel.state.in_(("queued", "processing", "retrying")),
+            )
+        )
+        return int(result.scalar_one())
+
     async def sweep_stale(self, older_than: timedelta) -> int:
         """Пометить `stale` задачи, застрявшие в processing дольше порога.
 

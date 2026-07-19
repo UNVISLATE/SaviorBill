@@ -95,6 +95,11 @@ class AppConfig(BaseSettings):
     # физически).
     LUA_TASK_STREAM_MAXLEN: int = Field(default=10_000)
     LUA_RESP_STREAM_MAXLEN: int = Field(default=10_000)
+    # Метрики воркеров (lua:metrics:{consumer}, см. luaworker/src/main.lua) —
+    # префикс ключей и период опроса billing-стороной для переэкспорта в
+    # Prometheus (см. telemetry/lua_metrics.py).
+    LUA_METRICS_PREFIX: str = Field(default="lua:metrics:")
+    LUA_METRICS_POLL_INTERVAL_SEC: int = Field(default=15)
     # Сервисный токен LuaWorker - генерируемый секрет (файл LUA_SERVICE_TOKEN_FILE
     # по умолчанию либо облачный менеджер).
     LUA_SERVICE_TOKEN: str | None = Field(default=None)
@@ -231,6 +236,11 @@ class AppConfig(BaseSettings):
     # токен — дополнительный рубеж на случай прямого доступа к порту контейнера.
     # Если не задан — эндпоинт не защищён токеном (полагаемся только на сеть).
     METRICS_TOKEN: str | None = Field(default=None)
+    # Лимит частоты обращений к /metrics (та же sliding-window реализация, что и
+    # для остальных лимитов, см. security/ratelimit.py) — не даёт перебирать
+    # METRICS_TOKEN подбором и просто заваливать эндпоинт запросами.
+    METRICS_RATE_LIMIT_MAX: int = Field(default=120)
+    METRICS_RATE_LIMIT_WINDOW: int = Field(default=60)
     # Трейсинг OpenTelemetry. Выключен по умолчанию: включается флагом и требует
     # заданного OTLP-эндпоинта коллектора/Jaeger. Когда выключен — нулевой оверхед
     # (провайдер не ставится, инструментация не применяется).

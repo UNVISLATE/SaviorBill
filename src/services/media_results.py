@@ -25,6 +25,7 @@ from utils.idempotency import once, release_once
 from messaging.mediabus import MediaBus
 from utils.retry import attempts, clear_attempts
 from telemetry.otel import span_from_carrier
+from telemetry.metrics import bus_signature_rejected_total
 from security.sec.bus_sign import verify_fields
 
 log = logging.getLogger("saviorbill.media")
@@ -102,6 +103,7 @@ class MediaResults:
                             # доверяем содержимому: подделка
                             # или рассинхронизация BUS_SIGNING_KEY между
                             # сервисами. Не пишем в БД, просто ack и лог.
+                            bus_signature_rejected_total.labels(bus="media_results").inc()
                             log.warning(
                                 "media-results: сообщение %s отклонено — "
                                 "неверная подпись",

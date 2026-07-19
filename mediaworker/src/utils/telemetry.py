@@ -98,16 +98,38 @@ def _install_error_handlers(app: FastAPI) -> None:
         return JSONResponse(payload, status_code=500, headers=headers)
 
 
-def _install_metrics_auth(app: FastAPI, token: str) -> None:
-    """Требовать заголовок ``X-Metrics-Token`` для GET /metrics (см. billing)."""
+def _install_metrics_guard(app: FastAPI, config) -> None:
+    """Защитить GET /metrics лимитом частоты и (опционально) токеном.
+
+    В отличие от billing здесь лимит — не через Valkey (mediaworker обычно
+    в одном экземпляре, распределённый sliding-window избыточен), а простой
+    process-local счётчик по IP. Если mediaworker когда-нибудь начнёт
+    масштабироваться горизонтально — заменить на тот же
+    ``security.ratelimit.RateLimiter``, что в billing.
+    """
     import hmac
+    import time
+
+    window_sec = config.METRICS_RATE_LIMIT_WINDOW
+    max_hits = config.METRICS_RATE_LIMIT_MAX
+    hits: dict[str, list[float]] = {}
 
     @app.middleware("http")
-    async def _check_metrics_token(request: Request, call_next):
+    async def _guard_metrics(request: Request, call_next):
         if request.url.path == "/metrics":
-            provided = request.headers.get("x-metrics-token", "")
-            if not hmac.compare_digest(provided, token):
-                return JSONResponse({"detail": "not found"}, status_code=404)
+            ident = request.client.host if request.client else "unknown"
+            now = time.monotonic()
+            recent = [t for t in hits.get(ident, []) if now - t < window_sec]
+            recent.append(now)
+            hits[ident] = recent
+            if len(recent) > max_hits:
+                return JSONResponse(
+                    {"detail": "too many requests"}, status_code=429
+                )
+            if config.METRICS_TOKEN:
+                provided = request.headers.get("x-metrics-token", "")
+                if not hmac.compare_digest(provided, config.METRICS_TOKEN):
+                    return JSONResponse({"detail": "not found"}, status_code=404)
         return await call_next(request)
 
 
@@ -121,8 +143,7 @@ def setup_observability(
         Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(
             app, endpoint="/metrics", include_in_schema=False
         )
-        if config.METRICS_TOKEN:
-            _install_metrics_auth(app, config.METRICS_TOKEN)
+        _install_metrics_guard(app, config)
 
     if not config.OTEL_ENABLED:
         return
@@ -166,6 +187,29 @@ def current_trace_id() -> str | None:
     return format(ctx.trace_id, "032x")
 
 
+def instrument_valkey(client, config) -> None:
+    """Открывать спан на каждую команду Valkey (см. billing ``telemetry/otel.py``
+
+    для полного объяснения, почему не годится готовый
+    ``opentelemetry-instrumentation-redis`` — та же причина здесь: клиент
+    ``valkey`` не является классом пакета ``redis``, который патчит
+    инструментатор."""
+    if not config.OTEL_ENABLED:
+        return
+    if getattr(client, "_otel_instrumented", False):
+        return
+    original = client.execute_command
+
+    async def _traced_execute_command(command, *args, **kwargs):
+        with _tracer.start_as_current_span(f"valkey.{str(command).lower()}") as span:
+            span.set_attribute("db.system", "valkey")
+            span.set_attribute("db.operation", str(command))
+            return await original(command, *args, **kwargs)
+
+    client.execute_command = _traced_execute_command
+    client._otel_instrumented = True
+
+
 def inject_carrier(carrier: dict[str, str] | None = None) -> dict[str, str]:
     """Проставить traceparent текущей трассы в carrier (поля сообщения стрима).
 
@@ -191,6 +235,7 @@ def span_from_carrier(name: str, carrier: dict[str, str]) -> Iterator[None]:
 
 __all__ = [
     "setup_observability",
+    "instrument_valkey",
     "current_trace_id",
     "inject_carrier",
     "span_from_carrier",

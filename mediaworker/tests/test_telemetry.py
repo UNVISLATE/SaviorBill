@@ -16,6 +16,8 @@ def _cfg(**over) -> SimpleNamespace:
     base = {
         "METRICS_ENABLED": False,
         "METRICS_TOKEN": None,
+        "METRICS_RATE_LIMIT_MAX": 120,
+        "METRICS_RATE_LIMIT_WINDOW": 60,
         "OTEL_ENABLED": False,
         "OTEL_EXPORTER_OTLP_ENDPOINT": None,
         "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",

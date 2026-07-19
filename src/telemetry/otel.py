@@ -129,22 +129,40 @@ def _install_error_handlers(app: FastAPI) -> None:
         return JSONResponse(payload, status_code=500, headers=headers)
 
 
-def _install_metrics_auth(app: FastAPI, token: str) -> None:
-    """Требовать заголовок ``X-Metrics-Token`` для GET /metrics.
+def _install_metrics_guard(app: FastAPI, config) -> None:
+    """Защитить GET /metrics лимитом частоты и (опционально) токеном.
 
-    Дополнительный (не единственный) рубеж защиты — основной способ закрыть
-    /metrics от внешнего мира — не проксировать его через реверс-прокси
-    (см. deploy/Caddyfile). Несовпадение токена -> 404 (не 401 — эндпоинт не
-    должен выдавать сам факт своего существования постороннему).
+    Основной рубеж защиты — сетевой (реверс-прокси не проксирует /metrics
+    наружу, см. deploy/Caddyfile). Здесь — второй рубеж на случай прямого
+    доступа к порту контейнера: sliding-window лимит по IP (не даёт заваливать
+    эндпоинт и перебирать METRICS_TOKEN подбором) и, если токен задан, его
+    проверка. Несовпадение токена -> 404 (не 401 — эндпоинт не должен выдавать
+    сам факт своего существования постороннему).
     """
     import hmac
 
+    from security.ratelimit import LimitRule, RateLimiter
+
+    rule = LimitRule(config.METRICS_RATE_LIMIT_MAX, config.METRICS_RATE_LIMIT_WINDOW)
+
     @app.middleware("http")
-    async def _check_metrics_token(request: Request, call_next):
+    async def _guard_metrics(request: Request, call_next):
         if request.url.path == "/metrics":
-            provided = request.headers.get("x-metrics-token", "")
-            if not hmac.compare_digest(provided, token):
-                return JSONResponse({"detail": "not found"}, status_code=404)
+            vk = getattr(request.app.state, "valkey", None)
+            if vk is not None:
+                ident = request.client.host if request.client else "unknown"
+                limiter = RateLimiter(vk)
+                res = await limiter.hit("metrics", ident, rule)
+                if not res.allowed:
+                    return JSONResponse(
+                        {"detail": "too many requests"},
+                        status_code=429,
+                        headers={"Retry-After": str(res.retry_after)},
+                    )
+            if config.METRICS_TOKEN:
+                provided = request.headers.get("x-metrics-token", "")
+                if not hmac.compare_digest(provided, config.METRICS_TOKEN):
+                    return JSONResponse({"detail": "not found"}, status_code=404)
         return await call_next(request)
 
 
@@ -167,8 +185,7 @@ def setup_observability(
         Instrumentator(excluded_handlers=["/metrics"]).instrument(app).expose(
             app, endpoint="/metrics", include_in_schema=False
         )
-        if config.METRICS_TOKEN:
-            _install_metrics_auth(app, config.METRICS_TOKEN)
+        _install_metrics_guard(app, config)
 
     if not config.OTEL_ENABLED:
         return
@@ -210,6 +227,35 @@ def instrument_sqlalchemy(engine: AsyncEngine, config) -> None:
         SQLAlchemyInstrumentor().instrument(engine=engine.sync_engine)
 
 
+def instrument_valkey(client, config) -> None:
+    """Открывать спан на каждую команду Valkey (XADD/XREADGROUP/XCLAIM/...).
+
+    Готового авто-инструментатора для клиента ``valkey`` (форк ``redis-py``
+    с независимой иерархией классов, не совпадающей с ``redis``) в
+    OpenTelemetry нет: пакет ``opentelemetry-instrumentation-redis`` патчит
+    классы именно пакета ``redis`` и молча не сработает на нашем клиенте —
+    ставить его было бы ложным чувством покрытия трейсингом, а не реальным
+    инструментированием (см. IMPLEMENTATION_PLAN §5.5). Поэтому здесь —
+    минимальный собственный wrapper поверх ``execute_command`` — единой
+    точки входа всех команд клиента (обычных и Stream), не только no-op,
+    как остальная наблюдаемость в этом модуле.
+    """
+    if not config.OTEL_ENABLED:
+        return
+    if getattr(client, "_otel_instrumented", False):
+        return
+    original = client.execute_command
+
+    async def _traced_execute_command(command, *args, **kwargs):
+        with _tracer.start_as_current_span(f"valkey.{str(command).lower()}") as span:
+            span.set_attribute("db.system", "valkey")
+            span.set_attribute("db.operation", str(command))
+            return await original(command, *args, **kwargs)
+
+    client.execute_command = _traced_execute_command
+    client._otel_instrumented = True
+
+
 def current_trace_id() -> str | None:
     """Hex-идентификатор текущей трассы (ray id) либо ``None``, если её нет."""
     ctx = trace.get_current_span().get_span_context()
@@ -245,6 +291,7 @@ def span_from_carrier(name: str, carrier: dict[str, str]) -> Iterator[None]:
 __all__ = [
     "setup_observability",
     "instrument_sqlalchemy",
+    "instrument_valkey",
     "current_trace_id",
     "inject_carrier",
     "span_from_carrier",
