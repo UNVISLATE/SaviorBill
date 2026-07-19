@@ -7,7 +7,7 @@ import uuid
 
 import pytest
 
-from lua.bus import LuaBus, LuaError
+from lua.bus import LuaBus, LuaError, _MAX_DETAIL_LEN, _safe_detail
 
 pytestmark = pytest.mark.unit
 
@@ -212,6 +212,46 @@ async def test_call_ignores_unrelated_entries():
 
     result = await bus.call("eval", {})
     assert result == {"result": 7}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _safe_detail (AUDIT.md M3) — обрезка длинных сообщений об ошибке
+# ─────────────────────────────────────────────────────────────────────────────
+
+def test_safe_detail_keeps_short_text():
+    assert _safe_detail("short error") == "short error"
+
+
+def test_safe_detail_truncates_long_text():
+    long_text = "x" * (_MAX_DETAIL_LEN + 50)
+    result = _safe_detail(long_text)
+    assert len(result) <= _MAX_DETAIL_LEN + len("…[truncated]")
+    assert result.endswith("…[truncated]")
+
+
+@pytest.mark.asyncio
+async def test_call_error_detail_is_truncated_in_task_log():
+    """Длинный текст ошибки от воркера обрезается до записи в task_log."""
+    fake = FakeValkey()
+    bus = LuaBus(fake, "lua:tasks", "lua:results", default_timeout=5)
+
+    original_xadd = fake.xadd
+    long_error = "leaked-secret-" * 50
+
+    async def capturing_xadd(stream: str, fields: dict, **_kwargs) -> str:
+        entry_id = await original_xadd(stream, fields)
+        if "kind" in fields:
+            resp_id = fake._next_id()
+            fake._stream_entries.setdefault("lua:results", []).append(
+                (resp_id, {"cid": fields["cid"], "ok": "0", "data": json.dumps(long_error)})
+            )
+        return entry_id
+
+    fake.xadd = capturing_xadd
+
+    with pytest.raises(LuaError) as exc_info:
+        await bus.call("eval", {})
+    assert len(str(exc_info.value)) < len(long_error)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

@@ -15,6 +15,19 @@ from observability.task_log import TaskLog
 
 log = logging.getLogger("saviorbill.luabus")
 
+# Максимальная длина текста ошибки, попадающего в лог/tasklog (см. AUDIT.md M3).
+# Ошибка скрипта — это `tostring(err)` из Lua, полностью под контролем автора
+# скрипта; обрезка — защита в глубину на случай, если скрипт по ошибке
+# подставит в текст исключения секрет/токен целиком, а не только факт ошибки.
+_MAX_DETAIL_LEN = 300
+
+
+def _safe_detail(text: str) -> str:
+    """Обрезать текст ошибки до безопасной длины перед логированием."""
+    if len(text) <= _MAX_DETAIL_LEN:
+        return text
+    return text[:_MAX_DETAIL_LEN] + "…[truncated]"
+
 
 class LuaError(RuntimeError):
     """LuaWorker вернул ошибку или не ответил вовремя."""
@@ -102,15 +115,16 @@ class LuaBus:
                                 kind="lua", op=kind, token_or_cid=cid, state="ok"
                             )
                         return data if isinstance(data, dict) else {"result": data}
+                    detail = _safe_detail(str(data))
                     if self.task_log:
                         await self.task_log.record(
                             kind="lua",
                             op=kind,
                             token_or_cid=cid,
                             state="error",
-                            detail=str(data),
+                            detail=detail,
                         )
-                    raise LuaError(str(data))
+                    raise LuaError(detail)
 
     async def call(
         self, kind: str, payload: dict | None = None, timeout: int | None = None

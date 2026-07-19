@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 from enums import ScriptKind
 from lua.schemas import (
     LuaAuthProvider,
@@ -14,6 +16,8 @@ from lua.schemas import (
     LuaUser,
 )
 from lua.bus import LuaBus
+
+log = logging.getLogger("saviorbill.lua.context")
 
 
 def _lua_meta(script) -> dict | None:  # noqa: ANN001 — SystemScriptsModel | None
@@ -166,6 +170,29 @@ class LuaRunner:
     def __init__(self, bus: LuaBus) -> None:
         self.bus = bus
 
+    @staticmethod
+    def _build_ctx_safely(kind: str, builder, *args, **kwargs) -> dict:
+        """Собрать контекст, не давая секретам провайдера утечь в лог/traceback.
+
+        ``build_payment_ctx``/``build_auth_ctx`` принимают расшифрованные
+        секреты провайдера (``payment.provider.secrets``/OAuth
+        client_id/secret) напрямую. Если сборка контекста бросит исключение
+        (например, pydantic ``ValidationError``), его сообщение может
+        содержать сырые входные значения — включая секреты (см. AUDIT.md
+        M3). Ловим здесь и логируем только тип ошибки + вид контекста, не
+        ``str(exc)`` целиком.
+        """
+        try:
+            return builder(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001 — секреты не должны попасть в лог/ответ
+            log.exception(
+                "ошибка сборки Lua-контекста kind=%s (%s) — сообщение скрыто, "
+                "могло содержать секреты провайдера",
+                kind,
+                type(exc).__name__,
+            )
+            raise RuntimeError(f"lua context build failed: {kind}") from None
+
     async def run(self, script_filename: str, kind: str, ctx: dict) -> dict:
         """Отправить скрипт с контекстом в LuaWorker.
 
@@ -202,8 +229,17 @@ class LuaRunner:
         return_url=None,
     ) -> dict:
         """Собрать контекст платежа и исполнить скрипт."""
-        ctx = build_payment_ctx(
-            action, acc, payment, provider, secrets, request, return_url, script
+        ctx = self._build_ctx_safely(
+            ScriptKind.PAYMENT,
+            build_payment_ctx,
+            action,
+            acc,
+            payment,
+            provider,
+            secrets,
+            request,
+            return_url,
+            script,
         )
         return await self.run(script.filename, ScriptKind.PAYMENT, ctx)
 
@@ -229,7 +265,9 @@ class LuaRunner:
         request=None,
     ) -> dict:
         """Собрать контекст OAuth и исполнить скрипт провайдера."""
-        ctx = build_auth_ctx(
+        ctx = self._build_ctx_safely(
+            ScriptKind.AUTH,
+            build_auth_ctx,
             action,
             provider,
             secrets,
