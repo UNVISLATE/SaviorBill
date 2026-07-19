@@ -122,27 +122,109 @@ Bus-подписи (`BUS_SIGNING_KEY`) отражаются в метрике
 `token`, у одного `token` может быть несколько параллельных job'ов (например,
 конвертация + отдельная генерация превью).
 
-- **Сырой вывод** (для xterm.js) — `WS /apiws/v1/logs/media/{job_id}`:
+**Всё это отдаёт сам `mediaworker` — не `billing`.** Раньше логи/прогресс
+проксировались через billing (`apiws/v1/logs/media.py` + `api/v1/admin/logs/media.py`
++ `telemetry/proclog_read.py`), хотя billing ничего не добавлял: та же
+проверка JWT + прав роли из той же Postgres, тот же Valkey-контракт — просто
+лишний сетевой прыжок и два места, которые нужно было держать в синхроне при
+изменении формата. `mediaworker` и так уже умеет проверять JWT/права (см.
+`api/upload.py`), поэтому владеет своими realtime-роутами напрямую
+(`mediaworker/src/api/logs.py`, `mediaworker/src/utils/authws.py`).
+`billing` по-прежнему отдаёт только список загруженных/загружаемых файлов и
+их терминальный статус (`/api/v1/media/status/{token}`, `/api/v1/admin/media`)
+— это единственное, что ему нужно как единому источнику истины по готовым
+медиа (`system_media`/`worker_jobs`).
+
+Роуты `mediaworker` (все требуют право `logs.read`, авторизация — тот же
+access-JWT, что и для upload/status):
+
+- `GET /api/media/logs/jobs` — список последних job'ов.
+- `GET /api/media/logs/jobs/{job_id}` — метаданные одного job'а.
+- `GET /api/media/logs/jobs/{job_id}/progress` — одноразовый снимок percent/eta.
+- `WS /api/media/logs/jobs/{job_id}/tail` — live сырой вывод (для xterm.js):
   бэклог + live-форвардинг терминального текста как есть (включая
   прогресс-строки ffmpeg с `\r` без `\n`).
-- **Структурированный прогресс** (процент/ETA) — `WS
-  /apiws/v1/logs/media/{job_id}/progress` и одноразовый снимок `GET
-  /api/v1/admin/logs/media/jobs/{job_id}/progress`: снимок и live-события —
-  JSON `{percent, eta_sec, fps, speed, frame, out_time_sec, done}`.
-  Публикуется **только** для основного видео-кодирования (webm) — этап,
-  который может идти минутами; thumb/preview — вырезка одного кадра,
-  процент для них не осмыслен, и они его не публикуют.
-  Разобран из machine-readable вывода ffmpeg (`-progress pipe:1 -nostats`,
-  `mediaworker/src/utils/ffprogress.py`), а не regex-парсинга человеческого
-  stderr — формат `key=value`, официально предназначен для программного
-  мониторинга и не меняется между версиями ffmpeg так, как читаемый вывод.
-  `percent`/`eta_sec` вычисляются из `out_time_us` и заранее известной
-  длительности (`probe_duration()`); при отсутствии длительности (не
-  распозналась) поля остаются `null`, но сырые `fps`/`frame`/`speed`
-  публикуются всё равно.
-  Раздельные Valkey-ключи/каналы от сырого лога (`proclog:progress:{job_id}`
-  + `proclog:progress-events:{job_id}`, TTL как у `proclog:*`) — иначе JSON
-  попадал бы в тот же канал, что и терминальный текст, и ломал xterm.js.
+- `WS /api/media/logs/jobs/{job_id}/progress/tail` — live percent/eta: снимок
+  при подключении + JSON-события `{percent, eta_sec, fps, speed, frame,
+  out_time_sec, done}`.
+
+WS не может так же просто передать `Authorization` header из браузера, как
+HTTP — авторизация происходит первым текстовым сообщением
+`{"token": "<access-JWT>"}` сразу после подключения (`utils/authws.py`,
+идентичная схема billing).
+
+Прогресс публикуется **только** для основного видео-кодирования (webm) —
+этап, который может идти минутами; thumb/preview — вырезка одного кадра,
+процент для них не осмыслен, и они его не публикуют. Разобран из
+machine-readable вывода ffmpeg (`-progress pipe:1 -nostats`,
+`mediaworker/src/utils/ffprogress.py`), а не regex-парсинга человеческого
+stderr — формат `key=value`, официально предназначен для программного
+мониторинга и не меняется между версиями ffmpeg так, как читаемый вывод.
+`percent`/`eta_sec` вычисляются из `out_time_us` и заранее известной
+длительности (`probe_duration()`); при отсутствии длительности (не
+распозналась) поля остаются `null`, но сырые `fps`/`frame`/`speed`
+публикуются всё равно. Раздельные Valkey-ключи/каналы от сырого лога
+(`proclog:progress:{job_id}` + `proclog:progress-events:{job_id}`, TTL как у
+`proclog:*`) — иначе JSON попадал бы в тот же канал, что и терминальный
+текст, и ломал xterm.js.
+
+`GET /api/media/status/{token}` (собственный статус mediaworker, не
+billing) дополнительно отдаёт `jobs: [{job_id, op, status, percent, eta_sec}]`
+— сводку недавних/активных job'ов этого токена (`proclog.py::jobs_for_token`,
+индекс `proclog:token_jobs:{token}`). Это ephemeral debug-данные самого
+mediaworker, а не часть его "готово/не готово" контракта — `billing` их не
+дублирует и не обязан.
+
+### Полный путь данных при загрузке фото/видео (кто что пишет и зачем)
+
+Чтобы не путаться, за что отвечает какой сервис и какое хранилище —
+пошагово, что происходит с одним файлом от загрузки до отдачи:
+
+1. **Клиент → mediaworker, шаг 1** (`POST /api/media/upload`): mediaworker
+   сам проверяет JWT и права роли (SELECT в Postgres, той же самой БД, что и
+   billing) — выдаёт одноразовый upload-token в Valkey.
+2. **Клиент → mediaworker, шаг 2** (`POST /api/media/upload/{upload_token}`):
+   потоковый приём файла, `media_token = uuid`, оригинал → `data/uploads/`,
+   `media:status:{media_token} = queued` в Valkey, задача → стрим `media:tasks`.
+   Ответ клиенту сразу: `{token, status: "queued"}`.
+3. **mediaworker (consumer `media:tasks`)** забирает задачу, ставит
+   per-`(op,token)` лок (`media:joblock:*`, см. "Надёжность" выше), запускает
+   ffmpeg:
+   - сырой вывод и (для видео) прогресс идут в `proclog:*` (Valkey,
+     ephemeral, TTL — не БД) — это то, что отдают роуты из раздела выше;
+   - `media:status:{media_token}` обновляется на `processing`, затем на
+     `ready`/`failed` (тоже Valkey, ephemeral — источник для быстрого опроса
+     без похода в БД, но **не** источник истины при долгом хранении).
+4. **mediaworker → billing** (стрим `media:results`, подписан `BUS_SIGNING_KEY`):
+   mediaworker публикует факт результата (`op:convert`, `token`, `kind`,
+   `path`/`variants`, `mime`, `size`, `backend`) — **не пишет в БД сам**.
+5. **billing (consumer `MediaResults`)** читает `media:results` и
+   идемпотентно пишет `system_media` (durable, Postgres) — это и есть
+   единственный источник истины "медиа существует и в каком оно состоянии"
+   для всего, что переживает рестарт/TTL Valkey.
+6. **billing (consumer `MediaJobEvents`)** параллельно читает те же события
+   (`media:results`/`media:tasks`) и пишет `worker_jobs`/`worker_job_events`
+   (durable state machine статусов, см. ниже) — используется и одиночным
+   статусом, и списками в админке, чтобы они не расходились.
+7. **Клиент опрашивает статус** — два варианта, оба легитимны, но с разной
+   ролью:
+   - `GET /api/v1/media/status/{token}` (billing) — единственный "правильный"
+     публичный статус для конечного клиента/фронтенда: `queued`/`processing`/
+     `ready`/`failed`, `url`, `mime` — источник истины (Valkey с фоллбэком на
+     `system_media`/`worker_jobs`, если TTL Valkey истёк).
+   - `GET /api/media/status/{token}` (mediaworker) — то же самое +
+     `jobs: [...]` (см. выше) — для отладки/админки, когда нужно увидеть, что
+     именно происходит с конвертацией *прямо сейчас* (ephemeral, без
+     фоллбэка на БД, см. `api/status.py`).
+8. **Отдача файла** — `GET /api/media/{token}` (mediaworker) — читает
+   `media:file:{token}` (кэш ключа файла) и отдаёт сам (fs напрямую или
+   presigned-редирект на S3); billing файлы не хранит и не отдаёт.
+
+Итого: **Valkey (`media:status:*`, `proclog:*`) — ephemeral, для realtime**;
+**Postgres (`system_media`, `worker_jobs`) — durable, источник истины**;
+mediaworker управляет и тем, и другим (только Valkey — сам, в Postgres —
+только SELECT), billing пишет в Postgres по событиям от mediaworker и не
+трогает Valkey-контракт логов/прогресса напрямую.
 
 ### Ручная загрузка превью (видео)
 

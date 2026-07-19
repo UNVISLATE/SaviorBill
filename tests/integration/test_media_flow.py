@@ -155,3 +155,79 @@ async def test_admin_media_list_and_cleanup(http, new_user, seed):
 async def _state(http, token: str) -> str:
     resp = await http.get(f"/api/v1/media/status/{token}")
     return resp.json().get("state")
+
+
+async def test_mediaworker_status_includes_jobs(new_user):
+    """Собственный (не billing) статус mediaworker отдаёт сводку job'ов —
+    не только терминальный ``ready``/``failed``, но и что именно произошло
+    (какие ffmpeg-запуски, их op/state) — см. ``api/status.py``.
+    """
+    token_access = await _access(new_user)
+    token = await _upload(token_access, tag="jobsfield")
+
+    async def _mw_status():
+        async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=30) as mw:
+            resp = await mw.get(f"/api/media/status/{token}")
+            return resp.json()
+
+    data = await wait_until(
+        _mw_status, lambda d: d.get("state") in ("ready", "failed"), timeout=60
+    )
+    assert data["state"] == "ready", data
+    assert isinstance(data["jobs"], list) and data["jobs"], data
+    job = data["jobs"][0]
+    assert job["op"] == "convert"
+    assert job["status"] == "ready"
+
+
+async def test_mediaworker_logs_requires_perm(new_user):
+    """Обычный пользователь без ``logs.read`` не должен видеть чужие job'ы."""
+    token_access = await _access(new_user)
+    async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=30) as mw:
+        resp = await mw.get(
+            "/api/media/logs/jobs", headers={"Authorization": f"Bearer {token_access}"}
+        )
+    assert resp.status_code == 403, resp.text
+
+
+async def test_mediaworker_logs_admin_can_read_job_and_progress(http, new_user, seed):
+    """Админ (``logs.read``) видит список job'ов, метаданные и снимок прогресса
+    напрямую через mediaworker — без прыжка через billing.
+    """
+    token_access = await _access(new_user)
+    token = await _upload(token_access, tag="logsread")
+
+    await wait_until(
+        lambda: _state(http, token), lambda s: s in ("ready", "failed"), timeout=60
+    )
+
+    admin_login, _pwd, admin_tokens = await new_user()
+    await seed.make_admin(admin_login)
+    r = await http.post(
+        "/api/v1/auth/login",
+        json={"login": admin_login, "password": "secret123"},
+    )
+    hdr = {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=30) as mw:
+        jobs_resp = await mw.get("/api/media/logs/jobs?limit=50", headers=hdr)
+        assert jobs_resp.status_code == 200, jobs_resp.text
+        job = next((j for j in jobs_resp.json() if j.get("token") == token), None)
+        assert job is not None, jobs_resp.json()
+
+        job_resp = await mw.get(f"/api/media/logs/jobs/{job['job_id']}", headers=hdr)
+        assert job_resp.status_code == 200, job_resp.text
+        assert job_resp.json()["token"] == token
+
+        progress_resp = await mw.get(
+            f"/api/media/logs/jobs/{job['job_id']}/progress", headers=hdr
+        )
+        assert progress_resp.status_code == 200, progress_resp.text
+        progress = progress_resp.json()
+        assert progress.get("done") in ("1", None)  # изображение может не публиковать прогресс
+
+        missing_resp = await mw.get(
+            "/api/media/logs/jobs/does-not-exist-job-id", headers=hdr
+        )
+        assert missing_resp.status_code == 404, missing_resp.text
+

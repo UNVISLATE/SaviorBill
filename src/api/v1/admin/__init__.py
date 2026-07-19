@@ -6,7 +6,6 @@ from .catalogs import router as catalogs_router
 from .audit import router as audit_router
 from .analytics import router as analytics_router
 from .email import router as email_router
-from .logs import router as logs_router
 from .lua import router as lua_router
 from .me import router as me_router
 from .media import router as media_router
@@ -47,8 +46,6 @@ router.include_router(audit_router, prefix="/audit", tags=["admin: audit"])
 # "admin: tasks/media" и "admin: tasks/lua" при регистрации внутри пакета
 # (см. api/v1/admin/tasks/__init__.py) — тот же паттерн, что у analytics.
 router.include_router(tasks_router, prefix="/tasks")
-# logs_router: media.py сам задаёт "admin: logs/media" (см. api/v1/admin/logs/__init__.py).
-router.include_router(logs_router, prefix="/logs")
 # analytics_router без префикса здесь: basic_router и advanced_router уже
 # сами задают полные "/analytics/basic" и "/analytics/advanced" (см.
 # api/v1/admin/analytics/basic.py и advanced.py) — тот же паттерн, что и у

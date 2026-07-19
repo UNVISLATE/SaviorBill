@@ -42,6 +42,10 @@ _BASE_PERMS: dict[str, dict] = {
         "audit": True,
         "settings": True,
         "analytics": {"basic": {"read": True}},
+        # Реалтайм-логи/прогресс ffmpeg (сами роуты — на стороне mediaworker,
+        # см. mediaworker/src/api/logs.py) — то же право "logs.read", что и
+        # раньше проверял billing-прокси.
+        "logs": {"read": True},
     },
     # Тоже не системная: удобный дефолт, назначается только вручную.
     "manager": {

@@ -21,6 +21,9 @@
   разобранный machine-readable вывод ffmpeg, не текст терминала).
 - ``proclog:progress-events:{job_id}`` — Pub/Sub канал, каждый снимок
   публикуется как JSON для live-форвардинга через отдельный WS-эндпоинт.
+- ``proclog:token_jobs:{token}`` — список job_id, относящихся к одному
+  media-токену (``RPUSH``), TTL = ``ttl`` — по нему ``/api/media/status/{token}``
+  собирает сводку активных/недавних job'ов без сканирования всех job'ов.
 
 Один job_id — один запуск ffmpeg/ffprobe (не один token медиа): для одного
 token может параллельно идти и конвертация, и генерация доп. превью — у
@@ -41,6 +44,7 @@ _LINES_PREFIX = "proclog:lines:"
 _EVENTS_PREFIX = "proclog:events:"
 _PROGRESS_PREFIX = "proclog:progress:"
 _PROGRESS_EVENTS_PREFIX = "proclog:progress-events:"
+_TOKEN_JOBS_PREFIX = "proclog:token_jobs:"
 
 
 class ProcLog:
@@ -62,6 +66,9 @@ class ProcLog:
         await self.vk.expire(meta_key, self.ttl)
         await self.vk.lpush(_JOBS_KEY, job_id)
         await self.vk.ltrim(_JOBS_KEY, 0, self.max_jobs - 1)
+        token_key = f"{_TOKEN_JOBS_PREFIX}{token}"
+        await self.vk.rpush(token_key, job_id)
+        await self.vk.expire(token_key, self.ttl)
         return job_id
 
     async def finish_job(self, job_id: str, state: str) -> None:
@@ -69,6 +76,14 @@ class ProcLog:
         await self.vk.hset(
             f"{_META_PREFIX}{job_id}", mapping={"state": state, "finished_at": time.time()}
         )
+
+    def events_channel(self, job_id: str) -> str:
+        """Pub/Sub-канал сырого вывода job'а (для WS-форвардинга)."""
+        return f"{_EVENTS_PREFIX}{job_id}"
+
+    def progress_channel(self, job_id: str) -> str:
+        """Pub/Sub-канал JSON-снимков прогресса job'а (для WS-форвардинга)."""
+        return f"{_PROGRESS_EVENTS_PREFIX}{job_id}"
 
     async def append(self, job_id: str, chunk: str) -> None:
         """Добавить кусок сырого вывода + опубликовать для live-подписчиков."""
@@ -100,14 +115,44 @@ class ProcLog:
         """Последний известный снимок прогресса job'а (или ``{}``, если нет)."""
         return await self.vk.hgetall(f"{_PROGRESS_PREFIX}{job_id}")
 
-    async def recent_jobs(self) -> list[dict]:
+    async def get_job(self, job_id: str) -> dict | None:
+        """Метаданные одного запуска (или ``None``, если TTL истёк/не найден)."""
+        meta = await self.vk.hgetall(f"{_META_PREFIX}{job_id}")
+        if not meta:
+            return None
+        return {"job_id": job_id, **meta}
+
+    async def recent_jobs(self, limit: int | None = None) -> list[dict]:
         """Метаданные последних запусков (для листинга в админке)."""
-        ids = await self.vk.lrange(_JOBS_KEY, 0, self.max_jobs - 1)
+        cap = self.max_jobs if limit is None else min(limit, self.max_jobs)
+        ids = await self.vk.lrange(_JOBS_KEY, 0, cap - 1)
         out: list[dict] = []
         for job_id in ids:
             meta = await self.vk.hgetall(f"{_META_PREFIX}{job_id}")
             if meta:
                 out.append({"job_id": job_id, **meta})
+        return out
+
+    async def jobs_for_token(self, token: str) -> list[dict]:
+        """Job'ы (с прогрессом, если есть) одного media-токена — для
+        ``GET /api/media/status/{token}``: сводка "что сейчас происходит с
+        файлом", а не просто финальный ``ready``/``failed``.
+        """
+        ids = await self.vk.lrange(f"{_TOKEN_JOBS_PREFIX}{token}", 0, -1)
+        out: list[dict] = []
+        for job_id in ids:
+            meta = await self.vk.hgetall(f"{_META_PREFIX}{job_id}")
+            if not meta:
+                continue
+            progress = await self.vk.hgetall(f"{_PROGRESS_PREFIX}{job_id}")
+            entry = {
+                "job_id": job_id,
+                "op": meta.get("op"),
+                "status": meta.get("state"),
+                "percent": progress.get("percent") or None,
+                "eta_sec": progress.get("eta_sec") or None,
+            }
+            out.append(entry)
         return out
 
 

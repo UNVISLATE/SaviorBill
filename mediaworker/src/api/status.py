@@ -11,6 +11,12 @@
 ``media:status:{token}`` протух в Valkey (``MEDIA_STATUS_TTL``) — честный 404
 (источник истины по готовым медиа — billing, обращайтесь через него).
 
+``jobs`` — сводка недавних/активных запусков ffmpeg этого токена (см.
+``utils/proclog.py::jobs_for_token``): ``job_id``/``op``/``status``/``percent``/
+``eta_sec``. Billing этого не отдаёт и не обязан — это ephemeral debug-данные
+самого mediaworker, а не часть его контракта "готово/не готово" (см.
+``docs/media.md``, раздел про realtime-лог и прогресс).
+
 Роут зарегистрирован ДО ``serve_router`` (см. ``api/__init__.py``) — иначе
 ``GET /{token}`` (catch-all) перехватил бы ``/status/{token}`` так же, как это
 уже случилось бы с ``/kinds``.
@@ -22,6 +28,7 @@ import valkey.asyncio as valkey
 from fastapi import APIRouter, HTTPException, Request, status
 
 from utils.keys import status_key
+from utils.proclog import ProcLog
 
 router = APIRouter()
 
@@ -32,6 +39,7 @@ async def media_status(request: Request, token: str) -> dict:
     data = await vk.hgetall(status_key(token))
     if not data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
+    proc_log: ProcLog = request.app.state.proc_log
     return {
         "token": token,
         "state": data.get("state", "processing"),
@@ -39,6 +47,7 @@ async def media_status(request: Request, token: str) -> dict:
         "mime": data.get("mime") or None,
         "tag": data.get("tag") or None,
         "error": data.get("error") or None,
+        "jobs": await proc_log.jobs_for_token(token),
     }
 
 
