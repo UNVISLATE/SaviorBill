@@ -7,12 +7,15 @@
 services:
   billing:
     environment:
-      # Тестовые lua-скрипты лежат отдельно от рантайм-папки.
-      LUA_SCRIPTS_DIR: /app/data/tests/lua
+      # Тестовые lua-скрипты лежат в tests/data/lua — отдельно от рантайм-папки
+      # data/lua/ (см. volume ниже).
+      LUA_SCRIPTS_DIR: /app/tests-data/lua
       # В интеграционных тестах много регистраций с одного IP — лимитер отключаем.
       RATE_LIMIT_ENABLED: "false"
       # Запас по таймауту lua-вызова при медленном CI.
       LUA_CALL_TIMEOUT: "60"
+    volumes:
+      - ../../tests/data:/app/tests-data:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')\""]
       interval: 5s
@@ -21,7 +24,9 @@ services:
 
   luaworker:
     environment:
-      LUA_SCRIPTS_DIR: /app/data/tests/lua
+      LUA_SCRIPTS_DIR: /app/tests-data/lua
+    volumes:
+      - ../../tests/data:/app/tests-data:ro
 
   mediaworker:
     environment:

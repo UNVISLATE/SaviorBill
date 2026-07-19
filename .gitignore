@@ -60,18 +60,11 @@ docker-compose.override.yml
 
 # Монтируемая папка данных: рантайм-артефакты не коммитим. Рабочая папка
 # data/lua/ пуста и наполняется вручную в рантайме (примеры — в examples/lua/).
-# Храним только тестовые скрипты (нужны docker-стеку и CI) — в data/tests/lua/.
+# Тестовые lua-скрипты для интеграционных тестов — в tests/data/lua/ (не здесь).
 data/keys/
 data/uploads/
 data/media/
 data/email/
 data/lua/**
-
-!data/tests/
-!data/tests/lua/services/
-!data/tests/lua/services/demo_service.lua
-!data/tests/lua/services/service_lua.lua
-!data/tests/lua/payments/
-!data/tests/lua/payments/demo_payment.lua
 
 llms/
