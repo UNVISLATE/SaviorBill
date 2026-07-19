@@ -7,14 +7,14 @@ from pathlib import Path
 import pytest
 
 from utils.config import AppConfig
-from utils.sec.secrets import (
+from security.sec.secrets import (
     BACKENDS,
     FileSecretStore,
     SecretName,
     SecretResolver,
     build_secret_store,
 )
-from utils.sec.secrets.resolve import resolve_secrets
+from security.sec.secrets.resolve import resolve_secrets
 
 pytestmark = pytest.mark.unit
 

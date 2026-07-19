@@ -13,7 +13,7 @@ from models.service_catalogs import ServiceCatalogsMngr
 from models.service_keys import ServiceKeysMngr
 from models.system_scripts import SystemScriptsMngr
 from utils.config import AppConfig
-from utils.sec.box import SecBox
+from security.sec.box import SecBox
 from utils.storage import StorageSvc
 
 

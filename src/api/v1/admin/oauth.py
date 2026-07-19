@@ -25,7 +25,7 @@ from schemas.oauth_provider import (
     OAuthProvider,
     OAuthProviderPatch,
 )
-from utils.sec.box import SecBox
+from security.sec.box import SecBox
 
 router = APIRouter()
 

@@ -8,7 +8,7 @@ from fastapi import Depends, HTTPException, status
 
 from dependencies.auth import get_current_acc
 from models.user import UserModel
-from utils.rbac import has_perm, reg_perm
+from security.rbac import has_perm, reg_perm
 
 
 def require_perm(path: str) -> Callable:

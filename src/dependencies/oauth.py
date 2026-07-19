@@ -28,8 +28,8 @@ from schemas.oauth import OAuthStart, OAuthUser
 from services.lua_ctx import LuaRunner
 from utils.config import AppConfig
 from utils.luabus import LuaBus
-from utils.sec.box import SecBox
-from utils.sec.crypt import generate_base_token
+from security.sec.box import SecBox
+from security.sec.crypt import generate_base_token
 
 # Ключ state в Valkey и его TTL (антифрод/CSRF на время редиректа).
 _STATE = "oauth:state:"

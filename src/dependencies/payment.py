@@ -32,7 +32,7 @@ from services.audit import audit
 from services.lua_ctx import LuaRunner
 from utils.datetime_utils import utc_now
 from utils.luabus import LuaBus
-from utils.sec.box import SecBox
+from security.sec.box import SecBox
 
 
 class PayMngr:

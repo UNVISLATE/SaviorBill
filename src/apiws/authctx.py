@@ -8,8 +8,8 @@ import json
 from fastapi import WebSocket, WebSocketDisconnect
 
 from models.user import UserMngr
-from utils.rbac import has_perm
-from utils.sec import jwt as jwtu
+from security.rbac import has_perm
+from security.sec import jwt as jwtu
 
 HANDSHAKE_TIMEOUT = 30
 

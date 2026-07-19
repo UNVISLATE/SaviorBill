@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.system_settings import SystemSettingsModel
-from utils.sec.box import SecBox
+from security.sec.box import SecBox
 
 log = logging.getLogger("saviorbill.bootstrap")
 

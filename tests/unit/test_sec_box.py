@@ -2,7 +2,7 @@
 
 import pytest
 
-from utils.sec.box import SecBox
+from security.sec.box import SecBox
 
 pytestmark = pytest.mark.unit
 

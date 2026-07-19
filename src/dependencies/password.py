@@ -15,8 +15,8 @@ from dependencies.valkey import get_valkey_client
 from integrations.email import EmailEvent, EmailSender
 from models.user import UserModel, UserMngr
 from utils.config import AppConfig
-from utils.sec.crypt import generate_base_token, generate_numeric_code
-from utils.sec.pwd import hash_pass
+from security.sec.crypt import generate_base_token, generate_numeric_code
+from security.sec.pwd import hash_pass
 
 # Ключи Valkey: секрет привязан к email + счётчик неверных попыток. Для
 # token-режима дополнительно хранится обратный индекс token -> email (чтобы

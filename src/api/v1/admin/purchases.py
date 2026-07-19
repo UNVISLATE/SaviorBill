@@ -19,7 +19,7 @@ from schemas.payment_provider import PayProviderCreate, PayProvider, PayProvider
 from schemas.payments import PaymentAdmin
 from schemas.page import Page
 from utils.pagination import PageParams, page_params, paginate
-from utils.sec.box import SecBox
+from security.sec.box import SecBox
 
 router = APIRouter()
 

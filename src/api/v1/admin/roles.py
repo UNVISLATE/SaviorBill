@@ -12,7 +12,7 @@ from models.roles import Role as RoleModel
 from models.user import UserModel
 from schemas.role import PermsCatalog, RoleCreate, Role, RolePatch
 from services.audit import audit
-from utils.rbac import all_perms, perms_tree
+from security.rbac import all_perms, perms_tree
 
 router = APIRouter()
 

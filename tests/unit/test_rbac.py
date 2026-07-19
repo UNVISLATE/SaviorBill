@@ -2,7 +2,7 @@
 
 import pytest
 
-from utils.rbac import all_perms, has_perm, perms_tree, reg_perm
+from security.rbac import all_perms, has_perm, perms_tree, reg_perm
 
 pytestmark = pytest.mark.unit
 

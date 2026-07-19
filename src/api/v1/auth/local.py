@@ -15,8 +15,8 @@ from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
 from integrations.triggers import TriggerDispatcher, TriggerEvent
 from schemas.auth import Login, Refresh, Reg, TokenPair
-from utils.sec import jwt as jwtu
-from utils.sec.pwd import dummy_hash, hash_pass, needs_rehash, verify_pass
+from security.sec import jwt as jwtu
+from security.sec.pwd import dummy_hash, hash_pass, needs_rehash, verify_pass
 
 router = APIRouter()
 

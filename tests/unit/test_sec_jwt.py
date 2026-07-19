@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from utils.sec.jwt import (
+from security.sec.jwt import (
     ACCESS,
     REFRESH,
     InvalidJWT,

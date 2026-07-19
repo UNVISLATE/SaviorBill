@@ -282,7 +282,7 @@ class TestChangePasswordBlockedWhenDisabled:
     async def test_change_password_route_allows_when_authenticated_mode(self) -> None:
         from api.v1.user.me import change_password
         from schemas.auth import PasswordChange
-        from utils.sec.pwd import hash_pass
+        from security.sec.pwd import hash_pass
 
         settings = _FakeSettings(method=METHOD_AUTHENTICATED)
         acc = SimpleNamespace(has_pass=True, pass_hash=hash_pass("old12345"))

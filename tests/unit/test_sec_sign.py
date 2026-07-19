@@ -2,7 +2,7 @@
 
 import pytest
 
-from utils.sec.sign import sign_data, verify_signature
+from security.sec.sign import sign_data, verify_signature
 
 pytestmark = pytest.mark.unit
 

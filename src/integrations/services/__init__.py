@@ -8,7 +8,7 @@ from enums import Delivery
 from integrations.services.base import BaseIssuer
 from integrations.services.provider import KeyService, LuaService
 from utils.luabus import LuaBus
-from utils.sec.box import SecBox
+from security.sec.box import SecBox
 
 _ISSUERS: dict[str, type[BaseIssuer]] = {
     Delivery.KEY: KeyService,

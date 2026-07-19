@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from models import Base
 from utils.datetime_utils import utc_now
-from utils.sec.box import SecBox
+from security.sec.box import SecBox
 
 
 class ServiceKeysModel(Base):

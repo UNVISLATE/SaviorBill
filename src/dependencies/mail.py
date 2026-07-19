@@ -16,7 +16,7 @@ from models.email_templates import EmailMngr
 from models.user import UserModel
 from utils.config import AppConfig
 from utils.mail import MailSvc
-from utils.sec.crypt import generate_numeric_code
+from security.sec.crypt import generate_numeric_code
 
 # Ключи Valkey: код привязан к аккаунту (verify) + счётчик неверных попыток.
 _VERIFY = "verify:email:"

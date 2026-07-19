@@ -8,7 +8,7 @@ from models.user import UserModel, UserMngr
 from schemas.auth import TokenPair
 from utils.config import AppConfig
 from utils.datetime_utils import timestamp_now
-from utils.sec import jwt as jwtu
+from security.sec import jwt as jwtu
 
 _bearer = HTTPBearer(auto_error=False)
 

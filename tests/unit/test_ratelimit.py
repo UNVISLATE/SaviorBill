@@ -2,7 +2,7 @@
 
 import pytest
 
-from utils.ratelimit import LimitRule, RateLimiter
+from security.ratelimit import LimitRule, RateLimiter
 
 pytestmark = pytest.mark.unit
 

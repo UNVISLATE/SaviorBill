@@ -2,7 +2,7 @@
 
 import pytest
 
-from utils.sec.pwd import hash_pass, needs_rehash, verify_pass
+from security.sec.pwd import hash_pass, needs_rehash, verify_pass
 
 pytestmark = pytest.mark.unit
 

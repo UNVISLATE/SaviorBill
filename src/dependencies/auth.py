@@ -10,7 +10,7 @@ from dependencies.valkey import get_valkey_client
 from models.user import UserModel, UserMngr
 from services.auth import TokenSvc
 from utils.config import AppConfig
-from utils.sec import jwt as jwtu
+from security.sec import jwt as jwtu
 
 _bearer = HTTPBearer(auto_error=False)
 

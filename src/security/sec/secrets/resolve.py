@@ -11,7 +11,7 @@ import logging
 import secrets as _secrets
 
 from utils.config import AppConfig
-from utils.sec.box import SecBox
+from security.sec.box import SecBox
 
 from .base import SecretName, SecretResolver
 from . import build_secret_store

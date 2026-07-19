@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import Request
 
 from utils.config import AppConfig
-from utils.sec.box import SecBox
+from security.sec.box import SecBox
 
 
 def make_secbox(cfg: AppConfig) -> SecBox:

@@ -23,7 +23,7 @@ from enums import ServiceAction, UsvcStatus
 from integrations.services import get_issuer
 from utils.datetime_utils import utc_now
 from utils.luabus import LuaBus
-from utils.sec.box import SecBox
+from security.sec.box import SecBox
 
 
 class UserServicesModel(Base):

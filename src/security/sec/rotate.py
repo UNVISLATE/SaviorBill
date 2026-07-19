@@ -26,7 +26,7 @@ from models.oauth_providers import OAuthProvidersModel
 from models.payment_providers import PaymentProvidersModel
 from models.service_keys import ServiceKeysModel
 from models.system_settings import SystemSettingsModel
-from utils.sec.box import SecBox
+from security.sec.box import SecBox
 
 log = logging.getLogger("saviorbill.sec.rotate")
 

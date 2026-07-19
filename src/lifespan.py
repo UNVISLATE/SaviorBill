@@ -10,7 +10,7 @@ from utils.config import AppConfig
 from utils.bootstrap import bootstrap
 from utils.init import init_system
 from utils.openapi import document_perms
-from utils.sec.secrets.resolve import resolve_secrets
+from security.sec.secrets.resolve import resolve_secrets
 from utils.task_log import TaskLog
 from utils.telemetry import instrument_sqlalchemy
 
