@@ -22,6 +22,7 @@ from dependencies.usersvc import UserServicesMngr
 from enums import PayAction, PayStatus, PayTarget
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.payment_providers import PaymentProvidersModel, PaymentProvidersMngr
+from models.promo_codes import PromoCodesModel
 from models.service import ServiceModel
 from models.system_scripts import SystemScriptsModel
 from models.user import UserModel
@@ -399,6 +400,32 @@ class PayMngr:
                 await UserServicesMngr(self.s, self.bus, self.box).deliver(
                     usvc, service, acc
                 )
+                # Промокод скидки (если был указан при создании платежа) —
+                # погашение фиксируем только сейчас, при подтверждённой
+                # оплате, а не в момент создания платежа (см. purchases.py):
+                # платёж может быть не оплачен вовсе, использованный код в
+                # этом случае не должен считаться потраченным.
+                promo_id = (usvc.private_data or {}).get("promocode_id")
+                if promo_id:
+                    promo = await self.s.get(PromoCodesModel, promo_id)
+                    if promo is not None:
+                        from models.promo_use import PromoUseModel
+
+                        already = await self.s.scalar(
+                            select(PromoUseModel).where(
+                                PromoUseModel.promocode_id == promo.id,
+                                PromoUseModel.order_id == usvc.id,
+                            )
+                        )
+                        if already is None:
+                            self.s.add(
+                                PromoUseModel(
+                                    promocode_id=promo.id,
+                                    account_id=payment.account_id,
+                                    order_id=usvc.id,
+                                )
+                            )
+                            promo.used_count += 1
         else:  # пополнение баланса
             acc.balance += payment.amount
 

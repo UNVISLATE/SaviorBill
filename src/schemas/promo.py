@@ -173,6 +173,20 @@ class PromoCodeBatch(BaseModel):
     )
 
 
+class PromoQuote(BaseModel):
+    """Discount preview for a service before ordering."""
+
+    valid: bool
+    code: str
+    service_id: int
+    price: Decimal
+    discount: Decimal
+    final_price: Decimal
+    reason: str | None = Field(
+        default=None, description="Why the code is invalid, if valid=false"
+    )
+
+
 __all__ = [
     "PromoRedeem",
     "PromoResult",
@@ -181,4 +195,5 @@ __all__ = [
     "PromoCatalogPatch",
     "PromoCode",
     "PromoCodeBatch",
+    "PromoQuote",
 ]

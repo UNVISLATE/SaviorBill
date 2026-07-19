@@ -36,6 +36,9 @@ class PaymentCreate(BaseModel):
         default=None,
         description="Return URL if supported (optional)",
     )
+    promocode: str | None = Field(
+        default=None, max_length=64, description="Discount promo code (target=service only)"
+    )
 
     @model_validator(mode="after")
     def _check_amount(self) -> "PaymentCreate":
@@ -46,6 +49,8 @@ class PaymentCreate(BaseModel):
                 "amount must not be supplied for target=service; "
                 "price is taken from the service"
             )
+        if self.target == PayTarget.BALANCE and self.promocode is not None:
+            raise ValueError("promocode is only valid for target=service")
         return self
 
 

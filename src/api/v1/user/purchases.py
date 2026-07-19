@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,11 +17,12 @@ from dependencies.payment import (
     get_pay_mngr,
     get_pay_providers_mngr,
 )
+from dependencies.promo import PromoCodesMngr, get_promo_mngr
 from dependencies.rbac import require_perm
 from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
-from enums import PayTarget
+from enums import PayTarget, PromoKind
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
@@ -92,6 +95,7 @@ async def create_purchase(
     pay_mngr: PayMngr = Depends(get_pay_mngr),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
     usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
+    promo_mngr: PromoCodesMngr = Depends(get_promo_mngr),
     triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> Payment:
     user_svc_id: int | None = None
@@ -106,9 +110,28 @@ async def create_purchase(
                 status.HTTP_400_BAD_REQUEST, "service_id is required for target=service"
             )
         service = await svc_mngr.get_active(body.service_id)
-        amount = service.price
+        discount = Decimal("0")
+        promo_id: int | None = None
+        if body.promocode:
+            promo = await promo_mngr.load_valid(body.promocode, acc)
+            catalog = await promo_mngr.catalog_of(promo)
+            if catalog.kind != PromoKind.DISCOUNT:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "promo code is not a discount code",
+                )
+            discount = promo_mngr.discount_for(catalog, service)
+            promo_id = promo.id
+        amount = service.price - discount
         # Создаём отложенную выдачу (без списания/доставки — доставит колбэк).
-        usvc = await usvc_mngr.create(acc, service, charge=False, deliver=False)
+        usvc = await usvc_mngr.create(
+            acc, service, discount=discount, charge=False, deliver=False
+        )
+        if promo_id is not None:
+            # Погашение кода фиксируется только при подтверждённой оплате
+            # (см. PayMngr._settle) — здесь только помечаем, каким кодом
+            # оплата будет погашена, без записи в promocode_use/used_count.
+            usvc.private_data = {**(usvc.private_data or {}), "promocode_id": promo_id}
         user_svc_id = usvc.id
 
     payment = await pay_mngr.create(

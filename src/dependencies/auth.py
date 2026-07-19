@@ -65,6 +65,26 @@ async def get_current_acc(
     return acc
 
 
+async def get_current_acc_optional(
+    request: Request,
+    cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
+    mngr: UserMngr = Depends(get_acc_mngr),
+) -> UserModel | None:
+    """Как :func:`get_current_acc`, но ``None`` без токена/при невалидном токене.
+
+    Для публичных роутов, у которых поведение опционально меняется для
+    залогиненного пользователя (например, превью скидки промокода — без
+    аккаунта нельзя проверить лимиты "на пользователя", но код всё равно
+    можно предпоказать по его собственным правилам каталога).
+    """
+    if cred is None:
+        return None
+    try:
+        return await get_current_acc(request, cred, mngr)
+    except HTTPException:
+        return None
+
+
 __all__ = [
     "UserModel",
     "UserMngr",
@@ -73,4 +93,5 @@ __all__ = [
     "get_banned_domains_mngr",
     "get_token_svc",
     "get_current_acc",
+    "get_current_acc_optional",
 ]

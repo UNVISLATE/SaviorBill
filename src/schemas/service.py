@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from lifecycle.fulfillment import known_delivery_kinds
 from schemas.media import Attachment
+from schemas.promo import PromoQuote
 
 
 def _check_delivery(v: str) -> str:
@@ -45,6 +46,10 @@ class Service(BaseModel):
         default=None,
         description="Out of stock for key delivery; null = lua delivery",
     )
+    promo_quote: PromoQuote | None = Field(
+        default=None,
+        description="Discount preview for ?promo=CODE; null if not requested",
+    )
 
     @classmethod
     def from_model(cls, m) -> "Service":  # noqa: ANN001 — ServiceModel
@@ -69,6 +74,10 @@ class Service(BaseModel):
     def with_stock(self, out_of_stock: bool | None) -> "Service":
         """Вернуть копию с проставленным ``out_of_stock`` (для delivery=key)."""
         return self.model_copy(update={"out_of_stock": out_of_stock})
+
+    def with_promo_quote(self, quote: PromoQuote | None) -> "Service":
+        """Вернуть копию с проставленным превью скидки (для ``?promo=CODE``)."""
+        return self.model_copy(update={"promo_quote": quote})
 
 
 class ServiceAdmin(Service):

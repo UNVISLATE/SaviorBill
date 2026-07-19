@@ -12,9 +12,13 @@ from dependencies.catalog import (
     get_service_mngr,
     get_servicekeys_mngr,
 )
+from dependencies.auth import get_current_acc_optional
+from dependencies.promo import PromoCodesMngr, get_promo_mngr
 from enums import Delivery
+from models.user import UserModel
 from schemas.catalog import CatalogResponse
 from schemas.page import Page
+from schemas.promo import PromoQuote
 from schemas.service import Service
 from utils.pagination import PageParams, page_params, paginate
 
@@ -64,12 +68,36 @@ async def list_services(
 @router.get("/services/{service_id}", response_model=Service, summary="Service details")
 async def get_service(
     service_id: int,
+    promo: str | None = Query(
+        default=None, description="Preview discount for this promo code"
+    ),
+    acc: UserModel | None = Depends(get_current_acc_optional),
     mngr: ServiceMngr = Depends(get_service_mngr),
     keys_mngr: ServiceKeysMngr = Depends(get_servicekeys_mngr),
+    promo_mngr: PromoCodesMngr = Depends(get_promo_mngr),
 ) -> Service:
-    """Получить активную услугу по идентификатору."""
+    """Получить активную услугу по идентификатору.
+
+    ``?promo=CODE`` — превью скидки без побочных эффектов (см.
+    ``PromoCodesMngr.quote_for``); альтернатива отдельному
+    ``GET /promocodes/{code}/quote``.
+    """
     svc = await mngr.get_active(service_id)
-    return await _with_stock(Service.from_model(svc), service_id, keys_mngr)
+    result = await _with_stock(Service.from_model(svc), service_id, keys_mngr)
+    if promo:
+        valid, discount, reason = await promo_mngr.quote_for(promo, svc, acc)
+        result = result.with_promo_quote(
+            PromoQuote(
+                valid=valid,
+                code=promo,
+                service_id=service_id,
+                price=svc.price,
+                discount=discount,
+                final_price=svc.price - discount,
+                reason=reason,
+            )
+        )
+    return result
 
 
 __all__ = ["router"]

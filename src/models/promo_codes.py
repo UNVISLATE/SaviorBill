@@ -265,6 +265,68 @@ class PromoCodesMngr:
             disc = catalog.value
         return max(Decimal("0"), min(disc, service.price))
 
+    async def quote_for(
+        self, code: str, service, acc=None
+    ) -> tuple[bool, Decimal, str | None]:
+        """Предпоказ скидки без побочных эффектов (ничего не резервирует/не пишет).
+
+        В отличие от :meth:`load_valid`, не требует блокировки строки и не
+        считает лимиты "на пользователя", если ``acc`` не передан (публичный
+        анонимный предпоказ — можно проверить только общую валидность кода).
+
+        :return: ``(valid, discount, reason)`` — ``reason`` заполнен только
+            при ``valid=False``.
+        """
+        promo = await self.s.scalar(
+            select(PromoCodesModel).where(PromoCodesModel.code == code)
+        )
+        if promo is None or not promo.is_active:
+            return False, Decimal("0"), "promo code is invalid"
+
+        now = utc_now()
+        if promo.valid_to and now > promo.valid_to:
+            return False, Decimal("0"), "promo code has expired"
+        if promo.max_uses is not None and promo.used_count >= promo.max_uses:
+            return False, Decimal("0"), "usage limit reached"
+
+        try:
+            catalog = await self.catalog_of(promo)
+        except HTTPException as exc:
+            return False, Decimal("0"), str(exc.detail)
+        if catalog.kind != PromoKind.DISCOUNT:
+            return False, Decimal("0"), "promo code is not a discount code"
+
+        if acc is not None:
+            from models.promo_use import PromoUseModel
+
+            used_this_code = await self.s.scalar(
+                select(func.count())
+                .select_from(PromoUseModel)
+                .where(
+                    PromoUseModel.promocode_id == promo.id,
+                    PromoUseModel.account_id == acc.id,
+                )
+            )
+            if used_this_code >= 1:
+                return False, Decimal("0"), "promo code already used"
+            if catalog.per_user is not None:
+                distinct_codes_used = await self.s.scalar(
+                    select(func.count(func.distinct(PromoUseModel.promocode_id)))
+                    .select_from(PromoUseModel)
+                    .join(
+                        PromoCodesModel,
+                        PromoUseModel.promocode_id == PromoCodesModel.id,
+                    )
+                    .where(
+                        PromoCodesModel.catalog_id == catalog.id,
+                        PromoUseModel.account_id == acc.id,
+                    )
+                )
+                if distinct_codes_used >= catalog.per_user:
+                    return False, Decimal("0"), "promo catalog activation limit reached"
+
+        return True, self.discount_for(catalog, service), None
+
     async def apply_bonus(self, catalog: PromoCatalogsModel, acc) -> Decimal:
         """Зачислить бонус на бонусный баланс.
 

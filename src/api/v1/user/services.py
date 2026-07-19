@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,11 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.auth import get_current_acc
 from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.db import get_db_session
+from dependencies.promo import PromoCodesMngr, get_promo_mngr
 from dependencies.rbac import require_perm
 from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
-from enums import UsvcStatus
+from enums import UsvcStatus, PromoKind
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_services import UserServicesModel
@@ -69,15 +72,29 @@ async def create_service(
     acc: UserModel = Depends(get_current_acc),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
     usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
+    promo_mngr: PromoCodesMngr = Depends(get_promo_mngr),
     triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> Order:
     service = await svc_mngr.get_active(body.service_id)
-    usvc = await usvc_mngr.create(acc, service)
+    discount = Decimal("0")
+    promo = None
+    if body.promocode:
+        promo = await promo_mngr.load_valid(body.promocode, acc)
+        catalog = await promo_mngr.catalog_of(promo)
+        if catalog.kind != PromoKind.DISCOUNT:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "promo code is not a discount code",
+            )
+        discount = promo_mngr.discount_for(catalog, service)
+    usvc = await usvc_mngr.create(acc, service, discount=discount)
     if usvc.status != UsvcStatus.ACTIVE:
         await usvc_mngr.s.rollback()
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, f"service delivery failed: {usvc.error}"
         )
+    if promo is not None:
+        await promo_mngr.record_use(promo, acc, usvc.id)
     await usvc_mngr.s.commit()
     await triggers.fire(
         TriggerEvent.ORDER_CREATED,
