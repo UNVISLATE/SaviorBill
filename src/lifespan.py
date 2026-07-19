@@ -9,6 +9,7 @@ from services.media_results import MediaResults
 from core.config import AppConfig
 from bootstrap import bootstrap
 from bootstrap.init import init_system
+from bootstrap.safety import check_dangerous_defaults
 from utils.openapi import document_perms
 from security.sec.secrets.resolve import resolve_secrets
 from observability.task_log import TaskLog
@@ -30,6 +31,9 @@ def _prepare_storage(config: AppConfig) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     config = AppConfig()
+    # Прежде чем трогать БД/Valkey — убедиться, что не остались опасные
+    # плейсхолдеры из .env.example (см. bootstrap/safety.py, AUDIT.md H3).
+    check_dangerous_defaults(config)
     _prepare_storage(config)
     app.state.settings = config
 

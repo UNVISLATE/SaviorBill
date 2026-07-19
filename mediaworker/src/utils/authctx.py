@@ -19,10 +19,16 @@ from utils.config import Config
 
 
 def client_ip(request: Request) -> str:
-    """IP клиента с учётом Caddy (X-Forwarded-For)."""
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
+    """IP клиента.
+
+    Реальный источник — TCP-peer (``request.client.host``). Значение из
+    ``X-Forwarded-For`` подставляется сюда автоматически uvicorn'овским
+    ``ProxyHeadersMiddleware``, но только если пир — доверенный реверс-прокси
+    из ``TRUSTED_PROXIES`` (см. ``app.py``); без доверенного прокси в списке
+    заголовок полностью игнорируется — раньше он читался напрямую и без
+    проверки, что позволяло клиенту подделать свой IP произвольным
+    заголовком (см. AUDIT.md H2).
+    """
     return request.client.host if request.client else "0.0.0.0"
 
 

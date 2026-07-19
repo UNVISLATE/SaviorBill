@@ -12,7 +12,7 @@ from utils.version import resolve_app_version
 
 # Корень приложения: в Docker-образе — /app (VERSION лежит рядом), в
 # локальном чек-ауте — корень репозитория (.git лежит рядом). Этот файл —
-# src/utils/config.py, поэтому корень — на два уровня выше src/.
+# src/core/config.py, поэтому корень — на два уровня выше src/.
 _BASE_DIR = Path(__file__).resolve().parents[2]
 
 APP_NAME = os.environ.get("APP_NAME", "SaviorBill")

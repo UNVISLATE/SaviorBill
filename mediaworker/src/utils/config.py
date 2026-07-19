@@ -113,6 +113,11 @@ class Config(BaseSettings):
     # другом наборе доменов). Пусто -> CORSMiddleware не подключается.
     CORS_ORIGINS: str = Field(default="")
 
+    # Реверс-прокси (Caddy/nginx), которым доверяем X-Forwarded-For/-Proto
+    # (CSV IP/CIDR; общее имя переменной с billing). Пусто -> заголовок
+    # игнорируется, единственный источник IP клиента — TCP-peer.
+    TRUSTED_PROXIES: str = Field(default="")
+
     # --- Наблюдаемость: метрики Prometheus (/metrics) и трейсинг OpenTelemetry ---
     # Имена переменных совпадают с billing-конфигом (общий .env на весь стек).
     METRICS_ENABLED: bool = Field(default=True)
@@ -292,6 +297,11 @@ class Config(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         """`CORS_ORIGINS` как список непустых origin'ов (CSV → list)."""
         return [o.strip() for o in self.CORS_ORIGINS.split(",") if o.strip()]
+
+    @property
+    def trusted_proxies_list(self) -> list[str]:
+        """`TRUSTED_PROXIES` как список непустых IP/CIDR (CSV → list)."""
+        return [p.strip() for p in self.TRUSTED_PROXIES.split(",") if p.strip()]
 
     @property
     def jwt_alg(self) -> str:

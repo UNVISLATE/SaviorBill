@@ -6,6 +6,7 @@ from pathlib import Path
 from utils.config import Config
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from api import router
 from lifespan import lifespan
@@ -50,6 +51,14 @@ if _cfg.cors_origins_list:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+    )
+
+# Доверять X-Forwarded-For/-Proto только если явно сконфигурирован список
+# реверс-прокси — иначе `request.client.host` (реальный TCP-peer) остаётся
+# единственным источником IP клиента (см. utils/authctx.py::client_ip).
+if _cfg.trusted_proxies_list:
+    app.add_middleware(
+        ProxyHeadersMiddleware, trusted_hosts=_cfg.trusted_proxies_list
     )
 
 app.include_router(router)
