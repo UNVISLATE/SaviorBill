@@ -49,6 +49,11 @@ docker-compose.override.yml
 *.local.md
 /docs/local/
 
+# Рабочие доки аудита/плана (personal working docs, не для истории репо)
+/AUDIT.md
+/CLOUD.md
+/IMPLEMENTATION_PLAN.md
+
 # Logs / runtime
 *.log
 *.pid
