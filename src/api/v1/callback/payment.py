@@ -9,7 +9,7 @@ from dependencies.payment import PayMngr, get_pay_mngr
 from dependencies.triggers import get_dispatcher
 from dependencies.valkey import get_valkey_client
 from enums import PayStatus, PayTarget
-from integrations.triggers import TriggerDispatcher, TriggerEvent
+from automation.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_services import UserServicesModel
 from lua.schemas import LuaRequest

@@ -6,7 +6,7 @@ import pytest
 from jinja2 import UndefinedError
 from jinja2.exceptions import SecurityError
 
-from integrations.email.renderer import MailRenderer
+from notifications.email.renderer import MailRenderer
 
 pytestmark = pytest.mark.unit
 

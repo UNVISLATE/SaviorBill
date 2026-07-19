@@ -9,7 +9,7 @@ from dependencies.mail import VerifySvc, get_verify_svc
 from dependencies.rbac import require_perm
 from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
-from integrations.triggers import TriggerDispatcher, TriggerEvent
+from automation.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_oauth import UserOauthMngr
 from schemas.auth import Account, EmailVerifyConfirm

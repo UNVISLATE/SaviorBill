@@ -16,8 +16,8 @@ from utils.datetime_utils import utc_now
 class TriggerModel(Base):
     """Привязка «событие → действие» с необязательным условием.
 
-    ``event``  — доменное событие (см. integrations.triggers.events.TriggerEvent).
-    ``action`` — ключ действия (``email``, ``lua`` …; см. integrations.triggers).
+    ``event``  — доменное событие (см. automation.triggers.events.TriggerEvent).
+    ``action`` — ключ действия (``email``, ``lua`` …; см. automation.triggers).
     ``config`` — параметры действия (для email: ``template_id``/``to_field``;
     для lua: ``script_id``). ``cond`` — пары ``{path: value}``, все должны совпасть.
     """

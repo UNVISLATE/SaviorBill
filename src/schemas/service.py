@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from integrations.services import known_delivery_kinds
+from fulfillment import known_delivery_kinds
 from schemas.media import Attachment
 
 
@@ -14,7 +14,7 @@ def _check_delivery(v: str) -> str:
     """Валидировать способ доставки по реестру зарегистрированных issuer'ов.
 
     Не хардкод-``Enum`` — новый способ доставки добавляется регистрацией
-    issuer'а в ``integrations/services/__init__.py`` без правки схем.
+    issuer'а в ``fulfillment/__init__.py`` без правки схем.
     """
     known = known_delivery_kinds()
     if v not in known:

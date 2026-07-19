@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from dependencies.rbac import require_perm
 from dependencies.triggers import get_trigger_mngr
-from integrations.triggers import ACTION_KEYS, ALL_EVENTS
+from automation.triggers import ACTION_KEYS, ALL_EVENTS
 from models.triggers import TriggerMngr
 from schemas.trigger import Trigger, TriggerCreate, TriggerMeta, TriggerPatch
 

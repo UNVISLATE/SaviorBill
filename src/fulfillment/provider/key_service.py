@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from integrations.services.base import BaseIssuer
+from fulfillment.base import BaseIssuer
 from utils.datetime_utils import utc_now
 
 

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.db import get_db_session
 from dependencies.mail import build_mail_svc
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
-from integrations.email import EmailSender
+from notifications.email import EmailSender
 from models.email_templates import EmailMngr
 from utils.config import AppConfig
 

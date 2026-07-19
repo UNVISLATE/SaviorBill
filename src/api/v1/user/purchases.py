@@ -20,7 +20,7 @@ from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
 from enums import PayTarget
-from integrations.triggers import TriggerDispatcher, TriggerEvent
+from automation.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
 from schemas.page import Page

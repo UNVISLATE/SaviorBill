@@ -20,7 +20,7 @@ from dependencies.sec import make_secbox
 from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr
 from enums import PayAction, PayStatus, PayTarget
-from integrations.triggers import TriggerDispatcher, TriggerEvent
+from automation.triggers import TriggerDispatcher, TriggerEvent
 from models.payment_providers import PaymentProvidersModel, PaymentProvidersMngr
 from models.service import ServiceModel
 from models.system_scripts import SystemScriptsModel

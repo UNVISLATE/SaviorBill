@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.db import get_db_session
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
-from integrations.email import EmailEvent, EmailSender
+from notifications.email import EmailEvent, EmailSender
 from models.email_templates import EmailMngr
 from models.user import UserModel
 from utils.config import AppConfig

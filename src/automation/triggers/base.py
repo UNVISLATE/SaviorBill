@@ -19,7 +19,7 @@ def dig(ctx: dict, path: str):
 
 
 class BaseAction:
-    """Действие триггера. Конкретные действия — в integrations/triggers/*."""
+    """Действие триггера. Конкретные действия — в automation/triggers/*."""
 
     key: str = ""
 
