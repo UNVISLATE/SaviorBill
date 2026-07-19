@@ -7,6 +7,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 
 import valkey.asyncio as valkey
@@ -16,7 +17,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
 from lua.deps import get_lua_bus_configured
+from dependencies.email import get_email_sender
 from dependencies.sec import get_secbox
+from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
 from enums import AuthAction
 from models.oauth_providers import OAuthProvidersModel
@@ -24,16 +27,25 @@ from models.system_scripts import SystemScriptsModel
 from models.user import UserModel
 from models.user_oauth import UserOauthModel
 from lua.schemas import LuaRequest
-from schemas.oauth import OAuthStart, OAuthUser
+from lifecycle.notifications import EmailEvent, EmailSender
+from schemas.oauth import OAuthPendingLink, OAuthStart, OAuthUser
 from lua.context import LuaRunner
 from core.config import AppConfig
 from lua.bus import LuaBus
 from security.sec.box import SecBox
-from security.sec.crypt import generate_base_token
+from security.sec.crypt import generate_base_token, generate_numeric_code
 
 # Ключ state в Valkey и его TTL (антифрод/CSRF на время редиректа).
 _STATE = "oauth:state:"
 _STATE_TTL = 600
+# Незавершённая привязка OAuth к существующему аккаунту (найден по email, но
+# владение аккаунтом не подтверждено — см. AUDIT.md §1.4/§2.1). Хранится
+# отдельно от подтверждающего кода, чтобы можно было проверять неверные
+# попытки без сброса самой заявки на привязку.
+_PENDING = "oauth:pendinglink:"
+_PENDING_CODE = "oauth:pendinglink:code:"
+_PENDING_TTL = 600
+_CODE_DIGITS = 6
 
 
 def build_lua_request(request: Request) -> LuaRequest:
@@ -62,11 +74,15 @@ class OAuthSvc:
         bus: LuaBus,
         cfg: AppConfig,
         box: SecBox,
+        sender: EmailSender,
+        settings: SystemSettingsMngr,
     ) -> None:
         self.s = session
         self.vk = vk
         self.cfg = cfg
         self.box = box
+        self.sender = sender
+        self.settings = settings
         self.runner = LuaRunner(bus)
 
     def redirect_uri(self, slug: str) -> str:
@@ -222,8 +238,17 @@ class OAuthSvc:
         return user, payload.get("account_id")
 
     # --- привязка/создание аккаунта --------------------------------------
-    async def link_account(self, slug: str, user: OAuthUser) -> UserModel:
-        """Найти/создать аккаунт по внешней учётке и обновить привязку."""
+    async def link_account(
+        self, slug: str, user: OAuthUser
+    ) -> tuple[UserModel | None, OAuthPendingLink | None]:
+        """Найти/создать аккаунт по внешней учётке и обновить привязку.
+
+        :return: ``(acc, None)`` — привязка выполнена/аккаунт создан сразу;
+            ``(None, pending)`` — найден существующий аккаунт с тем же
+            подтверждённым email, но это первый вход этой внешней учётки —
+            владение аккаунтом не подтверждено, требуется код с почты
+            существующего аккаунта (см. ``confirm_pending_link``).
+        """
         conn = await self.s.scalar(
             select(UserOauthModel).where(
                 UserOauthModel.provider == slug, UserOauthModel.subject == user.sub
@@ -238,26 +263,31 @@ class OAuthSvc:
 
         if conn is None:
             acc = None
-            # Связываем с существующим аккаунтом только при подтверждённом email.
+            # Связываем с существующим аккаунтом только при подтверждённом
+            # email — и даже тогда не сразу: сначала подтверждение владения
+            # (см. _start_pending_link), чтобы захват чужого аккаунта через
+            # OAuth-провайдера со слабой проверкой email был невозможен.
             if user.email and user.email_verified:
-                acc = await self.s.scalar(
+                existing = await self.s.scalar(
                     select(UserModel).where(UserModel.email == user.email)
                 )
-            if acc is None:
-                acc = UserModel(
-                    login=f"{slug}:{user.sub}"[:64],
-                    email=user.email,
-                )
-                # Роль по факту верификации email провайдером: user либо guest.
-                from models.user import UserMngr
-                from enums import BaseRole
+                if existing is not None:
+                    pending = await self._start_pending_link(slug, user, existing)
+                    return None, pending
+            acc = UserModel(
+                login=f"{slug}:{user.sub}"[:64],
+                email=user.email,
+            )
+            # Роль по факту верификации email провайдером: user либо guest.
+            from models.user import UserMngr
+            from enums import BaseRole
 
-                role_key = BaseRole.USER if user.email_verified else BaseRole.GUEST
-                role = await UserMngr(self.s).role_by_key(role_key)
-                acc.role_id = role.id if role else None
-                self.s.add(acc)
-                await self.s.flush()
-                acc.role = role
+            role_key = BaseRole.USER if user.email_verified else BaseRole.GUEST
+            role = await UserMngr(self.s).role_by_key(role_key)
+            acc.role_id = role.id if role else None
+            self.s.add(acc)
+            await self.s.flush()
+            acc.role = role
             self.s.add(
                 UserOauthModel(
                     account_id=acc.id,
@@ -268,6 +298,93 @@ class OAuthSvc:
                 )
             )
 
+        await self.s.flush()
+        return acc, None
+
+    async def _pending_ttl(self) -> int:
+        return await self.settings.get_int("mail.code_ttl", _PENDING_TTL)
+
+    async def _start_pending_link(
+        self, slug: str, user: OAuthUser, existing: UserModel
+    ) -> OAuthPendingLink:
+        """Завести заявку на привязку и отправить код на email существующего
+        аккаунта (не создаёт привязку/сессию, пока код не подтверждён)."""
+        pending_token = generate_base_token()
+        code = generate_numeric_code(_CODE_DIGITS)
+        ttl = await self._pending_ttl()
+        payload = {
+            "slug": slug,
+            "sub": user.sub,
+            "email": user.email,
+            "email_verified": user.email_verified,
+            "name": user.name,
+            "picture": user.picture,
+            "raw": user.raw,
+            "account_id": existing.id,
+        }
+        await self.vk.set(_PENDING + pending_token, json.dumps(payload), ex=ttl)
+        await self.vk.set(_PENDING_CODE + pending_token, code, ex=ttl)
+
+        ctx = {
+            "user": {"id": existing.id, "login": existing.login, "email": existing.email},
+            "provider": slug,
+            "code": code,
+            "ttl_minutes": max(1, ttl // 60),
+        }
+        sent = await self.sender.send_template(
+            EmailEvent.OAUTH_LINK_CONFIRM, existing.email, ctx
+        )
+        if not sent:
+            await self.sender.mail.send(
+                existing.email,
+                "Confirm account link",
+                f"Someone tried to sign in to your account via {slug}. "
+                f"Confirmation code: {code}",
+            )
+        return OAuthPendingLink(pending_token=pending_token)
+
+    async def confirm_pending_link(self, pending_token: str, code: str) -> UserModel:
+        """Подтвердить заявку на привязку кодом с почты существующего аккаунта.
+
+        :raises HTTPException: заявка не найдена/истекла, либо код неверный.
+        :return: аккаунт, к которому подтверждена привязка OAuth-учётки.
+        """
+        raw = await self.vk.get(_PENDING + pending_token)
+        if raw is None:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "pending link not found or expired"
+            )
+        stored_code = await self.vk.get(_PENDING_CODE + pending_token)
+        if stored_code is None or not hmac.compare_digest(stored_code, code):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid code")
+
+        payload = json.loads(raw)
+        acc = await self.s.get(UserModel, payload["account_id"])
+        if acc is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
+
+        conn = await self.s.scalar(
+            select(UserOauthModel).where(
+                UserOauthModel.provider == payload["slug"],
+                UserOauthModel.subject == payload["sub"],
+            )
+        )
+        if conn is None:
+            conn = UserOauthModel(
+                account_id=acc.id,
+                provider=payload["slug"],
+                subject=payload["sub"],
+                email=payload.get("email"),
+                raw=payload.get("raw") or {},
+            )
+            self.s.add(conn)
+        else:
+            conn.account_id = acc.id
+            conn.email = payload.get("email")
+            conn.raw = payload.get("raw") or {}
+
+        await self.vk.delete(_PENDING + pending_token)
+        await self.vk.delete(_PENDING_CODE + pending_token)
         await self.s.flush()
         return acc
 
@@ -314,8 +431,10 @@ def get_oauth_svc(
     vk: valkey.Valkey = Depends(get_valkey_client),
     box: SecBox = Depends(get_secbox),
     bus: LuaBus = Depends(get_lua_bus_configured),
+    sender: EmailSender = Depends(get_email_sender),
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> OAuthSvc:
-    return OAuthSvc(session, vk, bus, request.app.state.settings, box)
+    return OAuthSvc(session, vk, bus, request.app.state.settings, box, sender, settings)
 
 
 __all__ = ["OAuthSvc", "get_secbox", "get_oauth_svc", "build_lua_request"]

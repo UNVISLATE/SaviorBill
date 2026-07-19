@@ -66,4 +66,31 @@ class Conn(BaseModel):
         return cls.model_validate(m)
 
 
-__all__ = ["Provider", "OAuthStart", "OAuthUser", "TokenSet", "Conn"]
+class OAuthPendingLink(BaseModel):
+    """Response when the OAuth login matches an existing account by email but
+    is not yet confirmed as belonging to the same person (see
+    ``OAuthSvc.link_account``)."""
+
+    pending: bool = True
+    pending_token: str
+    message: str = (
+        "A confirmation code was sent to the existing account's email. "
+        "Confirm via POST /api/v1/callback/oauth/pending/{pending_token}/confirm."
+    )
+
+
+class OAuthPendingConfirm(BaseModel):
+    """Body to confirm a pending OAuth link."""
+
+    code: str = Field(description="Confirmation code sent to the existing account's email")
+
+
+__all__ = [
+    "Provider",
+    "OAuthStart",
+    "OAuthUser",
+    "TokenSet",
+    "Conn",
+    "OAuthPendingLink",
+    "OAuthPendingConfirm",
+]
