@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Any
 
 import valkey.asyncio as valkey
-from sqlalchemy import func, Boolean, DateTime, String, Text, select
+from sqlalchemy import func, Boolean, Computed, DateTime, String, Text, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -39,6 +39,17 @@ class SystemSettingsModel(Base):
     )
 
     key: Mapped[str] = mapped_column(String(128), primary_key=True)
+    # Первый '.'-сегмент key (например "smtp" для "smtp.host") — генерируется
+    # СУБД (GENERATED ALWAYS AS, см. migrations/0004_settings_prefix.py), не
+    # приложением: так работает и для строк, вставленных мимо
+    # SystemSettingsMngr.set() (сидинг/тесты через прямой INSERT). Индекс —
+    # чтобы get_group() был точечным поиском по колонке, а не LIKE/startswith
+    # сканом всей таблицы. Не путать с SettingDef.group (core/settings_def.py)
+    # — та группировка статическая (для каталога/админки), эта — для
+    # индексированной выборки реально сохранённых строк по namespace.
+    prefix: Mapped[str] = mapped_column(
+        String(64), Computed("split_part(key, '.', 1)"), nullable=False
+    )
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_secret: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
@@ -92,11 +103,14 @@ class SystemSettingsMngr:
         return raw.strip().lower() in ("1", "true", "yes", "on")
 
     async def get_group(self, prefix: str) -> dict[str, str]:
-        """Все настройки с заданным префиксом ключа (например ``smtp.``)."""
+        """Все настройки с заданным префиксом ключа (например ``smtp.``).
+
+        Точечная выборка по индексированной колонке ``prefix`` (первый
+        ``.``-сегмент ключа), не ``LIKE``/``startswith``-скан.
+        """
+        norm = prefix.split(".", 1)[0]
         rows = await self.s.scalars(
-            select(SystemSettingsModel).where(
-                SystemSettingsModel.key.startswith(prefix)
-            )
+            select(SystemSettingsModel).where(SystemSettingsModel.prefix == norm)
         )
         out: dict[str, str] = {}
         for row in rows:
@@ -104,6 +118,14 @@ class SystemSettingsMngr:
                 continue
             out[row.key] = self.box.open(row.value) if row.is_secret else row.value
         return out
+
+    @staticmethod
+    def _prefix_of(key: str) -> str:
+        """Первый ``.``-сегмент ключа (namespace); совпадает с тем, что
+        генерирует СУБД в колонке ``prefix`` — используется только там, где
+        нет смысла ходить в БД (сравнения в памяти), сама колонка не
+        выставляется приложением."""
+        return key.split(".", 1)[0]
 
     # запись
     async def set(
