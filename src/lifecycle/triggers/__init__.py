@@ -10,12 +10,13 @@ from models.triggers import TriggerMngr
 from .base import BaseAction, dig
 from .email_action import EmailAction
 from .events import ALL_EVENTS, TriggerEvent
-from .lua_action import LuaAction
 
 log = logging.getLogger("saviorbill.triggers")
 
-# Ключи доступных действий (для валидации и UI).
-ACTION_KEYS = [EmailAction.key, LuaAction.key]
+# Ключи доступных действий (для валидации и UI). "lua" — ключ
+# lua.integrations.trigger_action.LuaAction; не импортируем класс здесь,
+# чтобы не создавать цикл lifecycle.triggers <-> lua.integrations.
+ACTION_KEYS = [EmailAction.key, "lua"]
 
 _DEFAULT_MAX_RETRIES = 3
 _DEFAULT_MAX_FIRES_PER_MINUTE = 60
@@ -149,6 +150,5 @@ __all__ = [
     "ACTION_KEYS",
     "BaseAction",
     "EmailAction",
-    "LuaAction",
     "dig",
 ]

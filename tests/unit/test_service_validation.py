@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from lifecycle.fulfillment import known_delivery_kinds
+from lifecycle.delivery import known_delivery_kinds
 from schemas.service import ServiceCreate, ServicePatch
 
 pytestmark = pytest.mark.unit

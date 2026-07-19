@@ -21,7 +21,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
 from enums import ServiceAction, UsvcStatus
-from lifecycle.fulfillment import get_issuer
+from lifecycle.delivery import get_issuer
 from utils.datetime_utils import utc_now
 from lua.bus import LuaBus
 from security.sec.box import SecBox
@@ -216,7 +216,7 @@ class UserServicesMngr:
         """Выполнить доставку услуги (ключ или Lua). Идемпотентна по статусу.
 
         Конкретный способ берётся из реестра нативных интеграций
-        (:func:`fulfillment.get_issuer`).
+        (:func:`lifecycle.delivery.get_issuer`).
         """
         if usvc.status == UsvcStatus.ACTIVE:
             return usvc

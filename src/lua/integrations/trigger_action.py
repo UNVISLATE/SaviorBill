@@ -1,12 +1,15 @@
-"""Действие триггера: исполнение Lua-скрипта."""
+"""Действие триггера: исполнение Lua-скрипта.
+
+Lua-реализация `lifecycle.triggers.base.BaseAction` — второе действие,
+не зависящее от lua — `lifecycle.triggers.email_action.EmailAction`.
+"""
 
 from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from lifecycle.triggers.base import BaseAction
 from lua.bus import LuaBus
-
-from .base import BaseAction
 
 
 class LuaAction(BaseAction):

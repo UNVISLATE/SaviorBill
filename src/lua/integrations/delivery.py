@@ -1,11 +1,15 @@
-"""Выдача и обслуживание услуги через Lua-скрипт в LuaWorker (action-driven)."""
+"""Выдача и обслуживание услуги через Lua-скрипт в LuaWorker (action-driven).
+
+Lua-реализация `lifecycle.delivery.base.BaseIssuer` — второй ("нативный",
+без lua) issuer — `lifecycle.delivery.provider.key_service.KeyService`.
+"""
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
 
 from enums import ScriptKind, ServiceAction, UsvcStatus
-from lifecycle.fulfillment.base import BaseIssuer
+from lifecycle.delivery.base import BaseIssuer
 from lua.context import LuaRunner
 
 
