@@ -12,7 +12,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from notifications.email import EmailEvent
+from lifecycle.notifications import EmailEvent
 from models.email_templates import EmailMngr
 from schemas.email import EmailTemplateUpload
 from core.config import AppConfig

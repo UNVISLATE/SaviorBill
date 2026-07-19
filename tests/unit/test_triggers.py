@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from automation.triggers import TriggerDispatcher, TriggerEvent
-from automation.triggers.base import BaseAction, dig
+from lifecycle.triggers import TriggerDispatcher, TriggerEvent
+from lifecycle.triggers.base import BaseAction, dig
 
 pytestmark = pytest.mark.unit
 

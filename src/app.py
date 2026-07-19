@@ -6,7 +6,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from lifespan import lifespan
 from core.config import AppConfig, APP_NAME, APP_VERSION
-from observability.telemetry import install_access_log_filter, setup_observability
+from telemetry.otel import install_access_log_filter, setup_observability
 
 settings = AppConfig()
 

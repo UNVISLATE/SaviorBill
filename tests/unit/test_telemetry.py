@@ -10,7 +10,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
-import observability.telemetry as telemetry
+import telemetry.otel as telemetry
 
 pytestmark = pytest.mark.unit
 

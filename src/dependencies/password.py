@@ -12,7 +12,7 @@ from dependencies.db import get_db_session
 from dependencies.email import get_email_sender
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
-from notifications.email import EmailEvent, EmailSender
+from lifecycle.notifications import EmailEvent, EmailSender
 from models.user import UserModel, UserMngr
 from core.config import AppConfig
 from security.sec.crypt import generate_base_token, generate_numeric_code

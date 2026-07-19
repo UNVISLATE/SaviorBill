@@ -5,8 +5,8 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from enums import Delivery
-from fulfillment.base import BaseIssuer
-from fulfillment.provider import KeyService, LuaService
+from lifecycle.fulfillment.base import BaseIssuer
+from lifecycle.fulfillment.provider import KeyService, LuaService
 from lua.bus import LuaBus
 from security.sec.box import SecBox
 

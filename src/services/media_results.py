@@ -24,7 +24,7 @@ from core.config import AppConfig
 from utils.idempotency import once, release_once
 from messaging.mediabus import MediaBus
 from utils.retry import attempts, clear_attempts
-from observability.telemetry import span_from_carrier
+from telemetry.otel import span_from_carrier
 from security.sec.bus_sign import verify_fields
 
 log = logging.getLogger("saviorbill.media")

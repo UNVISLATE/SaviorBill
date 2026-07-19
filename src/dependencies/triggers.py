@@ -9,8 +9,8 @@ from dependencies.db import get_db_session
 from lua.deps import get_lua_bus_configured
 from dependencies.mail import build_mail_svc
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
-from notifications.email import EmailSender
-from automation.triggers import EmailAction, LuaAction, TriggerDispatcher
+from lifecycle.notifications import EmailSender
+from lifecycle.triggers import EmailAction, LuaAction, TriggerDispatcher
 from models.email_templates import EmailMngr
 from models.triggers import TriggerMngr
 from core.config import AppConfig

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from notifications.email import EmailSender
+from lifecycle.notifications import EmailSender
 from models.email_templates import EmailMngr
 
 from .base import BaseAction, dig

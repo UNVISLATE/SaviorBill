@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, Query
 
 from dependencies.rbac import require_perm
 from dependencies.task_log import get_task_log
-from observability.task_log import TaskLog
+from telemetry.task_log import TaskLog
 
 router = APIRouter()
 

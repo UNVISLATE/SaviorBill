@@ -20,7 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
 from enums import ServiceAction, UsvcStatus
-from fulfillment import get_issuer
+from lifecycle.fulfillment import get_issuer
 from utils.datetime_utils import utc_now
 from lua.bus import LuaBus
 from security.sec.box import SecBox

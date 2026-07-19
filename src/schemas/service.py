@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from fulfillment import known_delivery_kinds
+from lifecycle.fulfillment import known_delivery_kinds
 from schemas.media import Attachment
 
 

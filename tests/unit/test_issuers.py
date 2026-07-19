@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from enums import Delivery
-from fulfillment import KeyService, LuaService, get_issuer
+from lifecycle.fulfillment import KeyService, LuaService, get_issuer
 
 pytestmark = pytest.mark.unit
 

@@ -13,7 +13,7 @@ import json
 
 import valkey.asyncio as valkey
 
-from observability.telemetry import inject_carrier
+from telemetry.otel import inject_carrier
 from security.sec.bus_sign import sign_fields
 
 _STATUS_PREFIX = "media:status:"

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
-from observability import proclog_read
+from telemetry import proclog_read
 from security.rbac import reg_perm
 
 from ...authctx import authorize_ws

@@ -39,7 +39,7 @@ from core.config import AppConfig
 from utils.datetime_utils import utc_now
 from lua.bus import LuaBus
 from utils.retry import attempts, clear_attempts
-from observability.task_log import TaskLog
+from telemetry.task_log import TaskLog
 
 log = logging.getLogger("saviorbill.billing")
 

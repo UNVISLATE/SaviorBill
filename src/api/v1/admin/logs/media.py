@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, Query
 
 from dependencies.rbac import require_perm
 from dependencies.valkey import get_valkey_client
-from observability import proclog_read
+from telemetry import proclog_read
 
 router = APIRouter()
 

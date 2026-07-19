@@ -23,7 +23,7 @@ import time
 
 import valkey.asyncio as valkey
 
-from observability.telemetry import current_trace_id
+from telemetry.otel import current_trace_id
 
 _PREFIX = "tasklog:"
 _EVENTS_PREFIX = "tasklog:events:"

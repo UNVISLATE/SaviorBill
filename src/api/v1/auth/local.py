@@ -13,7 +13,7 @@ from dependencies.auth import (
 from dependencies.login_guard import LoginGuard, client_ip, get_login_guard
 from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
-from automation.triggers import TriggerDispatcher, TriggerEvent
+from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from schemas.auth import Login, Refresh, Reg, TokenPair
 from security.sec import jwt as jwtu
 from security.sec.pwd import dummy_hash, hash_pass, needs_rehash, verify_pass

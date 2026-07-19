@@ -11,7 +11,7 @@ from dependencies.db import get_db_session
 from dependencies.rbac import require_perm
 from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
-from automation.triggers import TriggerDispatcher, TriggerEvent
+from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderAdmin, OrderGrant

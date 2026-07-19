@@ -11,7 +11,7 @@ import valkey.asyncio as valkey
 from valkey.exceptions import ResponseError
 
 from utils.datetime_utils import timestamp_now
-from observability.task_log import TaskLog
+from telemetry.task_log import TaskLog
 from security.sec.bus_sign import sign_fields, verify_fields
 
 log = logging.getLogger("saviorbill.luabus")

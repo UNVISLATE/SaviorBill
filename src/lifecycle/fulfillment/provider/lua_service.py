@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from enums import ScriptKind, ServiceAction, UsvcStatus
-from fulfillment.base import BaseIssuer
+from lifecycle.fulfillment.base import BaseIssuer
 from lua.context import LuaRunner
 
 
