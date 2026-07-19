@@ -73,7 +73,7 @@ async def list_kinds(
     if acc_id is not None:
         db = request.app.state.db
         acc = await db.account(acc_id)
-        if acc is not None and acc.role_key != cfg.role_banned:
+        if acc is not None:
             if has_perm(acc.perms, _PERM_LARGE):
                 limits = {
                     "perm": _PERM_LARGE,

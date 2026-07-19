@@ -53,14 +53,17 @@ async def authenticate(request: Request) -> int:
 
 
 async def authorize(request: Request, acc_id: int) -> tuple[dict | None, str | None]:
-    """Прочитать права аккаунта; вернуть ``(perms, role_key)``. 401/403 при бане."""
-    cfg: Config = request.app.state.cfg
+    """Прочитать права аккаунта; вернуть ``(perms, role_key)``. 401 если аккаунта нет.
+
+    ``banned`` — не хардкодится отдельно: это просто роль, которую назначают
+    при бане, без прав по умолчанию. Доступ к конкретным действиям решает
+    исключительно ``has_perm`` на правах роли — если явно выдать роли
+    ``banned`` конкретное право, оно будет работать.
+    """
     db = request.app.state.db
     acc = await db.account(acc_id)
     if acc is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "access denied")
-    if acc.role_key == cfg.role_banned:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "account banned")
     return acc.perms, acc.role_key
 
 

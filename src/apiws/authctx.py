@@ -45,9 +45,11 @@ async def authorize_ws(ws: WebSocket, required_perm: str) -> bool:
 
     async with ws.app.state.db_sessionmaker() as session:
         acc = await UserMngr(session).by_id(int(claims.sub))
-    if acc is None or not acc.is_active:
+    if acc is None:
         await ws.close(code=4401)
         return False
+    # Как и в get_current_acc: banned — просто роль, доступ решает has_perm
+    # ниже, никакой отдельной проверки role_key тут не делается.
     perms = acc.role.perms if acc.role else None
     if not has_perm(perms, required_perm):
         await ws.close(code=4401)

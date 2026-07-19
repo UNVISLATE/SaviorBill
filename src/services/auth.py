@@ -78,7 +78,7 @@ class TokenSvc:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token revoked")
 
         acc = await mngr.by_id(int(claims.sub))
-        if acc is None or not acc.is_active:
+        if acc is None:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "account unavailable")
 
         await self.revoke(claims)  # ротация: старый refresh больше не валиден

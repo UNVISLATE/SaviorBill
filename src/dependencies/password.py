@@ -99,7 +99,7 @@ class ResetSvc:
             )
 
         acc = await UserMngr(self.s).by_email(self._norm(email))
-        if acc is None or not acc.email or not acc.is_active:
+        if acc is None or not acc.email:
             return
 
         norm = self._norm(acc.email)

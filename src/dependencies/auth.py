@@ -49,8 +49,12 @@ async def get_current_acc(
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "access_token expected")
 
     acc = await mngr.by_id(int(claims.sub))
-    if acc is None or not acc.is_active:
+    if acc is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "access denied")
+    # Доступ к конкретным действиям решает исключительно RBAC (require_perm/
+    # has_perm) на правах текущей роли — banned не хардкодится тут отдельно:
+    # это просто роль, которую назначают при бане, без своих прав по
+    # умолчанию. Если её правам явно дать конкретный perm — он будет работать.
     return acc
 
 

@@ -54,7 +54,7 @@ async def authorize_ws(ws: WebSocket, required_perm: str) -> int | None:
 
     db = ws.app.state.db
     acc = await db.account(acc_id)
-    if acc is None or acc.role_key == cfg.role_banned:
+    if acc is None:
         await ws.close(code=4401)
         return None
     if not has_perm(acc.perms, required_perm):
