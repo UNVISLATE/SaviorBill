@@ -331,11 +331,23 @@ class Worker:
         async def sink(chunk: str) -> None:
             await self.proc_log.append(job_id, chunk)
 
+        async def progress_sink(snapshot) -> None:  # noqa: ANN001 — ProgressSnapshot
+            await self.proc_log.set_progress(
+                job_id,
+                percent=snapshot.percent,
+                eta_sec=snapshot.eta_sec,
+                fps=snapshot.fps,
+                speed=snapshot.speed,
+                frame=snapshot.frame,
+                out_time_sec=snapshot.out_time_sec,
+                done=snapshot.done,
+            )
+
         try:
             # Вид медиа (image/video) больше не приходит от клиента — сервер
             # определяет его сам по сигнатуре файла (см. utils/convert.py).
             kind, variants = await convert(
-                self.cfg, src, self.cfg.uploads_dir, token, on_output=sink
+                self.cfg, src, self.cfg.uploads_dir, token, on_output=sink, on_progress=progress_sink
             )
         except ConvertError as exc:
             await self._set_status(token, state="failed", error=str(exc))

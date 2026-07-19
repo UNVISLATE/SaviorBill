@@ -14,15 +14,28 @@ _JOBS_KEY = "proclog:jobs"
 _META_PREFIX = "proclog:meta:"
 _LINES_PREFIX = "proclog:lines:"
 _EVENTS_PREFIX = "proclog:events:"
+_PROGRESS_PREFIX = "proclog:progress:"
+_PROGRESS_EVENTS_PREFIX = "proclog:progress-events:"
 
 
 def events_channel(job_id: str) -> str:
     return f"{_EVENTS_PREFIX}{job_id}"
 
 
+def progress_channel(job_id: str) -> str:
+    return f"{_PROGRESS_EVENTS_PREFIX}{job_id}"
+
+
 async def tail(vk: valkey.Valkey, job_id: str) -> list[str]:
     """Весь накопленный сырой вывод job'а (в хронологическом порядке)."""
     return await vk.lrange(f"{_LINES_PREFIX}{job_id}", 0, -1)
+
+
+async def get_progress(vk: valkey.Valkey, job_id: str) -> dict:
+    """Последний известный снимок процента/ETA job'а (``{}``, если нет данных
+    — например, конвертация изображения, где прогресс не публикуется).
+    """
+    return await vk.hgetall(f"{_PROGRESS_PREFIX}{job_id}")
 
 
 async def recent_jobs(vk: valkey.Valkey, limit: int = 50) -> list[dict]:
@@ -44,4 +57,4 @@ async def get_job(vk: valkey.Valkey, job_id: str) -> dict | None:
     return {"job_id": job_id, **meta}
 
 
-__all__ = ["tail", "recent_jobs", "get_job", "events_channel"]
+__all__ = ["tail", "recent_jobs", "get_job", "events_channel", "get_progress", "progress_channel"]

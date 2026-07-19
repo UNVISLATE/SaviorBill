@@ -115,6 +115,35 @@ Bus-подписи (`BUS_SIGNING_KEY`) отражаются в метрике
 `bus_signature_rejected_total`, а reclaim/failed переходы — в
 `worker_jobs_reclaimed_total`/`worker_jobs_failed_total` (см. `docs/telemetry.md`).
 
+### Realtime-лог и прогресс конвертации ffmpeg (`proclog`)
+
+Каждый запуск ffmpeg/ffprobe (`convert`) регистрируется как отдельный
+`job_id` в Valkey (`mediaworker/src/utils/proclog.py`) — не завязан на
+`token`, у одного `token` может быть несколько параллельных job'ов (например,
+конвертация + отдельная генерация превью).
+
+- **Сырой вывод** (для xterm.js) — `WS /apiws/v1/logs/media/{job_id}`:
+  бэклог + live-форвардинг терминального текста как есть (включая
+  прогресс-строки ffmpeg с `\r` без `\n`).
+- **Структурированный прогресс** (процент/ETA) — `WS
+  /apiws/v1/logs/media/{job_id}/progress` и одноразовый снимок `GET
+  /api/v1/admin/logs/media/jobs/{job_id}/progress`: снимок и live-события —
+  JSON `{percent, eta_sec, fps, speed, frame, out_time_sec, done}`.
+  Публикуется **только** для основного видео-кодирования (webm) — этап,
+  который может идти минутами; thumb/preview — вырезка одного кадра,
+  процент для них не осмыслен, и они его не публикуют.
+  Разобран из machine-readable вывода ffmpeg (`-progress pipe:1 -nostats`,
+  `mediaworker/src/utils/ffprogress.py`), а не regex-парсинга человеческого
+  stderr — формат `key=value`, официально предназначен для программного
+  мониторинга и не меняется между версиями ffmpeg так, как читаемый вывод.
+  `percent`/`eta_sec` вычисляются из `out_time_us` и заранее известной
+  длительности (`probe_duration()`); при отсутствии длительности (не
+  распозналась) поля остаются `null`, но сырые `fps`/`frame`/`speed`
+  публикуются всё равно.
+  Раздельные Valkey-ключи/каналы от сырого лога (`proclog:progress:{job_id}`
+  + `proclog:progress-events:{job_id}`, TTL как у `proclog:*`) — иначе JSON
+  попадал бы в тот же канал, что и терминальный текст, и ломал xterm.js.
+
 ### Ручная загрузка превью (видео)
 
 `POST /api/media/{token}/preview` (владелец медиа, `kind=video`) — стримит картинку,

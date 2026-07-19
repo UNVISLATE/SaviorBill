@@ -1,8 +1,11 @@
 """Админ: список последних запусков ffmpeg/ffprobe для realtime-логов.
 
 Сами логи отдаются через WS (``/apiws/v1/logs/media/{job_id}``, xterm.js);
-этот REST-роут — только листинг, чтобы UI знал, какие ``job_id`` доступны
-"прямо сейчас" (или недавно завершились).
+процент/ETA основного видео-кодирования — через отдельный WS
+(``/apiws/v1/logs/media/{job_id}/progress``, JSON-снимки, не текст терминала);
+этот REST-роут — только листинг и одноразовые снимки, чтобы UI знал, какие
+``job_id`` доступны "прямо сейчас" (или недавно завершились), и мог показать
+статус без открытия WS.
 """
 
 from __future__ import annotations
@@ -47,6 +50,22 @@ async def media_job(
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "job not found")
     return job
+
+
+@router.get(
+    "/jobs/{job_id}/progress",
+    dependencies=[Depends(require_perm("logs.read"))],
+    summary="Single ffmpeg job progress snapshot",
+    description="Одноразовый снимок процента/ETA основного видео-кодирования "
+    "(без live-обновлений — для этого WS /apiws/v1/logs/media/{job_id}/progress). "
+    "Пустой объект — прогресс не публиковался (например, конвертация "
+    "изображения) или job_id устарел (TTL истёк).",
+)
+async def media_job_progress(
+    job_id: str,
+    vk=Depends(get_valkey_client),
+) -> dict:
+    return await proclog_read.get_progress(vk, job_id)
 
 
 __all__ = ["router"]

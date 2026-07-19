@@ -16,11 +16,16 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from utils.config import Config
+from utils.ffprogress import ProgressParser, ProgressSnapshot
 
 # Коллбэк для realtime-хвоста сырого вывода ffmpeg/ffprobe. Получает очередной сырой
 # кусок stderr как есть (не построчно — как реальный терминал, чтобы
 # прогресс-строки с ``\r`` тоже воспроизводились в xterm.js один в один).
 OutputSink = Callable[[str], Awaitable[None]]
+
+# Коллбэк снимка машинно-читаемого прогресса (``-progress pipe:1``) — процент/
+# ETA/fps, не сырой текст (см. utils/ffprogress.py).
+ProgressSink = Callable[[ProgressSnapshot], Awaitable[None]]
 
 
 class ConvertError(RuntimeError):
@@ -111,19 +116,30 @@ def _thumb_vf(size: int) -> str:
     )
 
 
-async def _run(args: list[str], *, on_output: OutputSink | None = None) -> None:
+async def _run(
+    args: list[str],
+    *,
+    on_output: OutputSink | None = None,
+    on_progress: ProgressSink | None = None,
+    total_duration: float | None = None,
+) -> None:
+    # ``-progress pipe:1 -nostats`` — машинно-читаемый прогресс на stdout,
+    # не мешает человеческому логу на stderr (для on_output/xterm.js).
+    run_args = [args[0], "-progress", "pipe:1", "-nostats", *args[1:]] if on_progress else args
     proc = await asyncio.create_subprocess_exec(
-        *args,
-        stdout=asyncio.subprocess.DEVNULL,
+        *run_args,
+        stdout=asyncio.subprocess.PIPE if on_progress else asyncio.subprocess.DEVNULL,
         stderr=asyncio.subprocess.PIPE,
     )
-    if on_output is None:
-        _, stderr = await proc.communicate()
-    else:
-        # Читаем сырыми кусками (не readline()) — прогресс ffmpeg обновляет
-        # одну строку через "\r" без "\n", readline() завис бы до конца всей
-        # задачи. Так каждый кусок форвардится в реалтайме, как в терминале.
-        assert proc.stderr is not None
+    assert proc.stderr is not None
+
+    async def _pump_stderr() -> bytes:
+        if on_output is None:
+            return await proc.stderr.read()
+        # Читаем сырыми кусками (не readline()) — прогресс-бар ffmpeg
+        # обновляет одну строку через "\r" без "\n", readline() завис бы до
+        # конца всей задачи. Так каждый кусок форвардится в реалтайме, как
+        # в терминале.
         chunks: list[bytes] = []
         while True:
             chunk = await proc.stderr.read(4096)
@@ -131,8 +147,25 @@ async def _run(args: list[str], *, on_output: OutputSink | None = None) -> None:
                 break
             chunks.append(chunk)
             await on_output(chunk.decode("utf-8", "replace"))
-        await proc.wait()
-        stderr = b"".join(chunks)
+        return b"".join(chunks)
+
+    async def _pump_progress() -> None:
+        if on_progress is None or proc.stdout is None:
+            return
+        parser = ProgressParser(total_duration)
+        while True:
+            line = await proc.stdout.readline()
+            if not line:
+                break
+            snapshot = parser.feed_line(line.decode("utf-8", "replace"))
+            if snapshot is not None:
+                await on_progress(snapshot)
+
+    stderr_task = asyncio.create_task(_pump_stderr())
+    progress_task = asyncio.create_task(_pump_progress())
+    await proc.wait()
+    stderr = await stderr_task
+    await progress_task
     dst = args[-1]
     if proc.returncode != 0 or not os.path.exists(dst):
         raise ConvertError(stderr.decode("utf-8", "replace")[-500:] or "ffmpeg failed")
@@ -225,10 +258,22 @@ async def make_preview(
 
 
 async def convert_video(
-    cfg: Config, src: str, out_dir: str, token: str, *, on_output: OutputSink | None = None
+    cfg: Config,
+    src: str,
+    out_dir: str,
+    token: str,
+    *,
+    on_output: OutputSink | None = None,
+    on_progress: ProgressSink | None = None,
 ) -> list[Variant]:
-    """Видео → webm + thumb + один превью-постер по умолчанию."""
+    """Видео → webm + thumb + один превью-постер по умолчанию.
+
+    ``on_progress`` — только для основного кодирования (webm): это единственный
+    шаг, который может идти минутами; thumb/preview — вырезка одного кадра,
+    процент/ETA для них не осмыслены.
+    """
     main = Variant("main", *target_key(token, "video"))
+    duration = await probe_duration(src) if on_progress is not None else None
     await _run(
         [
             "ffmpeg", "-y", "-i", src,
@@ -237,6 +282,8 @@ async def convert_video(
             os.path.join(out_dir, main.key),
         ],
         on_output=on_output,
+        on_progress=on_progress,
+        total_duration=duration,
     )
     thumb = await make_thumb(cfg, src, out_dir, token, on_output=on_output)
     preview = await make_preview(cfg, src, out_dir, token, on_output=on_output)
@@ -244,7 +291,13 @@ async def convert_video(
 
 
 async def convert(
-    cfg: Config, src: str, out_dir: str, token: str, *, on_output: OutputSink | None = None
+    cfg: Config,
+    src: str,
+    out_dir: str,
+    token: str,
+    *,
+    on_output: OutputSink | None = None,
+    on_progress: ProgressSink | None = None,
 ) -> tuple[str, list[Variant]]:
     """Определить вид медиа и сконвертировать оригинал во все варианты.
 
@@ -255,6 +308,9 @@ async def convert(
     :arg on_output: коллбэк сырого вывода ffmpeg/ffprobe для realtime-лога
         (см. ``utils/proclog.py``); ``None`` — не логировать (например,
         служебные вызовы без активного WS-слушателя).
+    :arg on_progress: коллбэк снимка процента/ETA основного видео-кодирования
+        (см. ``utils/ffprogress.py``); для изображений не используется —
+        конвертация одним кадром слишком быстрая, чтобы это было осмысленно.
     :return: ``(detected_kind, variants)`` — ``detected_kind`` — фактический
         вид медиа (``"image"`` | ``"video"``), определённый по сигнатуре, а
         не заявленный клиентом; ``variants[0]`` всегда ``main``.
@@ -268,7 +324,9 @@ async def convert(
     if kind is None:
         raise SignatureError("файл не распознан: неизвестная сигнатура")
     if kind == "video":
-        return kind, await convert_video(cfg, src, out_dir, token, on_output=on_output)
+        return kind, await convert_video(
+            cfg, src, out_dir, token, on_output=on_output, on_progress=on_progress
+        )
     return kind, await convert_image(cfg, src, out_dir, token, on_output=on_output)
 
 
