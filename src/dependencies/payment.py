@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
-from dependencies.lua import get_lua_bus_configured
+from lua.deps import get_lua_bus_configured
 from dependencies.sec import make_secbox
 from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr
@@ -27,11 +27,11 @@ from models.system_scripts import SystemScriptsModel
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel
-from schemas.lua import LuaRequest
+from lua.schemas import LuaRequest
 from services.audit import audit
-from services.lua_ctx import LuaRunner
+from lua.context import LuaRunner
 from utils.datetime_utils import utc_now
-from utils.luabus import LuaBus
+from lua.bus import LuaBus
 from security.sec.box import SecBox
 
 

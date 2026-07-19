@@ -21,7 +21,7 @@ from models.user import UserModel
 from schemas.media import Media
 from services.audit import audit
 from utils.config import AppConfig
-from utils.mediabus import MediaBus
+from messaging.mediabus import MediaBus
 
 router = APIRouter()
 

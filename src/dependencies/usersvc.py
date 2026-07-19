@@ -6,10 +6,10 @@ from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
-from dependencies.lua import get_lua_bus_configured
+from lua.deps import get_lua_bus_configured
 from dependencies.sec import make_secbox
 from models.user_services import UserServicesMngr
-from utils.luabus import LuaBus
+from lua.bus import LuaBus
 
 
 async def get_usersvc_mngr(

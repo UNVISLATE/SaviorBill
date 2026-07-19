@@ -12,7 +12,7 @@ from enums import PayStatus, PayTarget
 from integrations.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_services import UserServicesModel
-from schemas.lua import LuaRequest
+from lua.schemas import LuaRequest
 from schemas.payments import Payment
 from services.audit import audit
 from utils.idempotency import once

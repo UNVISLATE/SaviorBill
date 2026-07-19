@@ -7,7 +7,7 @@ from fastapi import Depends, Request
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.task_log import get_task_log
 from utils.config import AppConfig
-from utils.luabus import LuaBus
+from lua.bus import LuaBus
 from observability.task_log import TaskLog
 
 

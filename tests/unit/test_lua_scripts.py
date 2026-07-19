@@ -8,7 +8,7 @@ import pytest
 from fastapi import HTTPException
 
 from models.system_scripts import SystemScriptsMngr
-from schemas.lua import LuaScriptDetail
+from lua.schemas import LuaScriptDetail
 
 pytestmark = pytest.mark.unit
 
@@ -69,6 +69,6 @@ class TestLuaScriptDetailSchema:
         assert detail.is_active is True
 
     def test_detail_is_a_lua_script_subclass(self) -> None:
-        from schemas.lua import LuaScript
+        from lua.schemas import LuaScript
 
         assert issubclass(LuaScriptDetail, LuaScript)

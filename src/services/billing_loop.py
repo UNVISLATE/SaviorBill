@@ -37,7 +37,7 @@ from models.user_services import UserServicesModel
 from services.audit import audit
 from utils.config import AppConfig
 from utils.datetime_utils import utc_now
-from utils.luabus import LuaBus
+from lua.bus import LuaBus
 from utils.retry import attempts, clear_attempts
 from observability.task_log import TaskLog
 

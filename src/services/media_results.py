@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from models.system_media import SystemMediaMngr
 from utils.config import AppConfig
 from utils.idempotency import once, release_once
-from utils.mediabus import MediaBus
+from messaging.mediabus import MediaBus
 from utils.retry import attempts, clear_attempts
 from observability.telemetry import span_from_carrier
 

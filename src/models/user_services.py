@@ -22,7 +22,7 @@ from models import Base
 from enums import ServiceAction, UsvcStatus
 from integrations.services import get_issuer
 from utils.datetime_utils import utc_now
-from utils.luabus import LuaBus
+from lua.bus import LuaBus
 from security.sec.box import SecBox
 
 

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from dependencies.catalog import SystemScriptsMngr, get_script_mngr
 from dependencies.rbac import require_perm
 from models.user import UserModel
-from schemas.lua import LuaScript, LuaScriptDetail, LuaScriptUpload, LuaScriptPatch
+from lua.schemas import LuaScript, LuaScriptDetail, LuaScriptUpload, LuaScriptPatch
 from services.audit import audit
 
 router = APIRouter()

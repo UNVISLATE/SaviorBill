@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from utils.luabus import LuaBus
+from lua.bus import LuaBus
 
 from .base import BaseAction
 
@@ -27,7 +27,7 @@ class LuaAction(BaseAction):
         :return: ``True`` если скрипт исполнен.
         """
         from models.system_scripts import SystemScriptsModel
-        from services.lua_ctx import LuaRunner
+        from lua.context import LuaRunner
 
         script_id = config.get("script_id")
         if self.bus is None or not script_id:

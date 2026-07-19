@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from utils.luabus import LuaBus
+from lua.bus import LuaBus
 from security.sec.box import SecBox
 
 

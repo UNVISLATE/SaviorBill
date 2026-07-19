@@ -21,7 +21,7 @@ from models.user import UserModel
 from models.user_oauth import UserOauthMngr
 from schemas.auth import Account, AvatarSet, MePatch, PasswordChange
 from utils.config import AppConfig
-from utils.mediabus import MediaBus
+from messaging.mediabus import MediaBus
 from security.sec.pwd import hash_pass, verify_pass
 
 router = APIRouter()

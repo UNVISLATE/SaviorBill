@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from enums import ScriptKind, ServiceAction, UsvcStatus
 from integrations.services.base import BaseIssuer
-from services.lua_ctx import LuaRunner
+from lua.context import LuaRunner
 
 
 class LuaService(BaseIssuer):

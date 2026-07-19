@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from enums import Delivery
 from integrations.services.base import BaseIssuer
 from integrations.services.provider import KeyService, LuaService
-from utils.luabus import LuaBus
+from lua.bus import LuaBus
 from security.sec.box import SecBox
 
 _ISSUERS: dict[str, type[BaseIssuer]] = {

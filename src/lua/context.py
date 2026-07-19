@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from enums import ScriptKind
-from schemas.lua import (
+from lua.schemas import (
     LuaAuthProvider,
     LuaMeta,
     LuaPayment,
@@ -13,7 +13,7 @@ from schemas.lua import (
     LuaTrigger,
     LuaUser,
 )
-from utils.luabus import LuaBus
+from lua.bus import LuaBus
 
 
 def _lua_meta(script) -> dict | None:  # noqa: ANN001 — SystemScriptsModel | None

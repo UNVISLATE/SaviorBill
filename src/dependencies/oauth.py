@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
-from dependencies.lua import get_lua_bus_configured
+from lua.deps import get_lua_bus_configured
 from dependencies.sec import get_secbox
 from dependencies.valkey import get_valkey_client
 from enums import AuthAction
@@ -23,11 +23,11 @@ from models.oauth_providers import OAuthProvidersModel
 from models.system_scripts import SystemScriptsModel
 from models.user import UserModel
 from models.user_oauth import UserOauthModel
-from schemas.lua import LuaRequest
+from lua.schemas import LuaRequest
 from schemas.oauth import OAuthStart, OAuthUser
-from services.lua_ctx import LuaRunner
+from lua.context import LuaRunner
 from utils.config import AppConfig
-from utils.luabus import LuaBus
+from lua.bus import LuaBus
 from security.sec.box import SecBox
 from security.sec.crypt import generate_base_token
 

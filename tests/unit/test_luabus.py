@@ -7,7 +7,7 @@ import uuid
 
 import pytest
 
-from utils.luabus import LuaBus, LuaError
+from lua.bus import LuaBus, LuaError
 
 pytestmark = pytest.mark.unit
 
@@ -309,7 +309,7 @@ async def test_call_retry_sleeps_backoff_between_attempts(monkeypatch):
     async def fake_sleep(seconds: float) -> None:
         sleeps.append(seconds)
 
-    monkeypatch.setattr("utils.luabus.asyncio.sleep", fake_sleep)
+    monkeypatch.setattr("lua.bus.asyncio.sleep", fake_sleep)
 
     result = await bus.call("eval", {})
     assert result == {"result": "ok"}

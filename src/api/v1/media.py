@@ -17,7 +17,7 @@ from models.system_media import SystemMediaMngr
 from models.user import UserModel
 from schemas.media import Media, MediaStatus
 from utils.config import AppConfig
-from utils.mediabus import MediaBus
+from messaging.mediabus import MediaBus
 from security.rbac import has_perm
 
 router = APIRouter(prefix="/api/v1/media", tags=["media"])
