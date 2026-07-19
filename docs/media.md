@@ -88,6 +88,20 @@ upload-token, затем — сама передача файла. Это отд
 - Backpressure: воркер читает из стрима не больше, чем есть свободных слотов
   семафора `MEDIA_TASK_CONCURRENCY`, и обрабатывает задачи конкурентно.
 
+### Единая state machine (`worker_jobs`)
+
+Все статусы фоновых медиа-задач (конвертация/превью/удаление) фиксируются в
+одной таблице `worker_jobs` (+ `worker_job_events` для истории переходов) —
+и одиночный статус (`/media/status/{token}`), и списки в админке читают из
+одного и того же источника, поэтому не бывает рассинхрона «в списке `failed`,
+по прямому запросу `processing`». Consumer `MediaJobEvents`
+(`services/media_job_events.py`) пишет переходы состояний по событиям из
+`media:results`/`media:tasks`. `models/worker_jobs.py::WorkerJobsMngr` — точка
+доступа для всех читателей (`latest()`, `count_pending()`, списки).
+Bus-подписи (`BUS_SIGNING_KEY`) отражаются в метрике
+`bus_signature_rejected_total`, а reclaim/failed переходы — в
+`worker_jobs_reclaimed_total`/`worker_jobs_failed_total` (см. `docs/telemetry.md`).
+
 ### Ручная загрузка превью (видео)
 
 `POST /api/media/{token}/preview` (владелец медиа, `kind=video`) — стримит картинку,
@@ -106,6 +120,13 @@ upload-token, затем — сама передача файла. Это отд
 - Статус при отдаче: `425 Too Early` пока `media:status` = `queued`/`processing`;
   `404` — конвертация провалилась либо файла/варианта нет.
 - Статус: `GET /api/v1/media/status/{token}` (billing) → `{state, url?, mime?, error?}`.
+  Consистентный источник для одиночного статуса и списков — `worker_jobs`
+  (БД, см. §"Единая state machine" ниже); Valkey-кэш (`media:status:{token}`)
+  используется только как быстрый путь сразу после аплоада, до появления
+  первой записи в `worker_jobs`.
+- Статус саб-операции (превью/thumb-replace, начатых уже после основной
+  конвертации): `GET /api/v1/media/{token}/ops/{op}/status` → `{state, attempt,
+  error, created_at, started_at, finished_at}` — тот же `worker_jobs`.
 
 ### Модель доступа (важно при добавлении новых видов медиа)
 
@@ -182,7 +203,7 @@ OGG, а также общий RIFF-контейнер WEBP/AVI). При несо
 
 ## Конфигурация
 
-billing (`src/utils/config.py`): `DOMAIN`, `MEDIAWORKER_URL`, `MEDIA_PUBLIC_URL`,
+billing (`src/core/config.py`): `DOMAIN`, `MEDIAWORKER_URL`, `MEDIA_PUBLIC_URL`,
 `DOCS_ENABLED`, `MEDIA_TASK_STREAM`, `MEDIA_STATUS_TTL`, `STORAGE_BACKEND`
 (`fs`|`s3`) + `S3_*`. Метаданные медиа читает из БД.
 
