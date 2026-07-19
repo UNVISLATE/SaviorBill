@@ -56,7 +56,14 @@ async def lifespan(app: FastAPI):
     db = DB(cfg.db_dsn)
     await db.connect()
     settings = SettingsResolver(cfg, vk, db)
-    task_log = TaskLog(vk, max_len=cfg.tasklog_maxlen, ttl=cfg.tasklog_ttl)
+    task_log = TaskLog(
+        vk,
+        max_len=cfg.tasklog_maxlen,
+        ttl=cfg.tasklog_ttl,
+        job_events_stream=cfg.MEDIA_JOB_EVENTS_STREAM,
+        job_events_maxlen=cfg.MEDIA_JOB_EVENTS_MAXLEN,
+        signing_key=cfg.BUS_SIGNING_KEY,
+    )
     proc_log = ProcLog(vk, max_jobs=cfg.proclog_max_jobs, ttl=cfg.proclog_ttl)
     worker = Worker(cfg, vk, storage, settings, task_log, proc_log)
 

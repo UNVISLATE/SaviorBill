@@ -51,4 +51,5 @@ services:
       DB_NAME: ${DB_NAME:-saviorbill}
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
+      BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-dev-only-bus-signing-key-not-for-prod}
     command: ["pytest", "-m", "unit or integration", "--maxfail=1"]

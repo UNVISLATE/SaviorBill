@@ -25,6 +25,7 @@ from .email_templates import EmailModel, EmailMngr
 from .triggers import TriggerModel, TriggerMngr
 from .log import LogModel
 from .audit_log import AuditLogModel
+from .worker_jobs import WorkerJobModel, WorkerJobEventModel, WorkerJobsMngr
 
 __all__ = [
     "Base",
@@ -66,4 +67,7 @@ __all__ = [
     "TriggerMngr",
     "LogModel",
     "AuditLogModel",
+    "WorkerJobModel",
+    "WorkerJobEventModel",
+    "WorkerJobsMngr",
 ]

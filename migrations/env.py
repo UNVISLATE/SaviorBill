@@ -21,7 +21,7 @@ if SRC.is_dir() and str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from models import Base  # noqa: E402
-from utils.config import AppConfig  # noqa: E402
+from core.config import AppConfig  # noqa: E402
 
 config = context.config
 

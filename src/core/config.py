@@ -184,6 +184,15 @@ class AppConfig(BaseSettings):
     MEDIA_TASK_MAX_ATTEMPTS: int = Field(default=5)
     MEDIA_RESULT_DLQ: str = Field(default="media:results:dead")
     MEDIA_RESULT_MAX_ATTEMPTS: int = Field(default=5)
+    # Стрим переходов статуса (queued/processing/ready/failed/...) медиа-задач:
+    # mediaworker публикует их из того же места, где пишет Valkey `TaskLog`
+    # (см. models/worker_jobs.py) — billing строит по ним authoritative
+    # `worker_jobs`/`worker_job_events`, не только Valkey `media:status:*`.
+    MEDIA_JOB_EVENTS_STREAM: str = Field(default="media:job_events")
+    MEDIA_JOB_EVENTS_GROUP: str = Field(default="billingjobevents")
+    MEDIA_JOB_EVENTS_MAXLEN: int = Field(default=10_000)
+    # Джобы без обновления state дольше этого порога — sweep в `stale`.
+    MEDIA_JOB_STALE_AFTER_SEC: int = Field(default=1800)
 
     # Rate limiting (Valkey, fixed window)
     RATE_LIMIT_ENABLED: bool = Field(default=True)

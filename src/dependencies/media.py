@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
 from models.system_media import SystemMediaMngr
+from models.worker_jobs import WorkerJobsMngr
 from core.config import AppConfig
 from utils.storage import StorageSvc
 
@@ -22,4 +23,10 @@ def get_media_mngr(
     return SystemMediaMngr(session)
 
 
-__all__ = ["get_storage_svc", "get_media_mngr"]
+def get_worker_jobs_mngr(
+    session: AsyncSession = Depends(get_db_session),
+) -> WorkerJobsMngr:
+    return WorkerJobsMngr(session)
+
+
+__all__ = ["get_storage_svc", "get_media_mngr", "get_worker_jobs_mngr"]

@@ -78,6 +78,34 @@ async def test_media_upload_convert_register(http, new_user):
     assert data["tag"] == "cover1"
 
 
+async def test_media_op_status_after_convert(http, new_user):
+    """`worker_jobs` (см. models/worker_jobs.py) отражает финальный op-статус
+
+    конвейера конвертации; тот же источник, что и /status/{token}, поэтому
+    оба не могут "разойтись" в терминальном состоянии."""
+    token_access = await _access(new_user)
+    token = await _upload(token_access)
+
+    await wait_until(
+        lambda: _state(http, token), lambda s: s in ("ready", "failed"), timeout=60
+    )
+
+    resp = await http.get(f"/api/v1/media/{token}/ops/convert/status")
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["token"] == token
+    assert body["op"] == "convert"
+    assert body["state"] == "ready"
+    assert body["finished_at"] is not None
+
+
+async def test_media_op_status_unknown_op(http, new_user):
+    token_access = await _access(new_user)
+    token = await _upload(token_access)
+    resp = await http.get(f"/api/v1/media/{token}/ops/thumb_replace/status")
+    assert resp.status_code == 404, resp.text
+
+
 async def test_media_upload_requires_auth(new_user):
     async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=30) as mw:
         r = await mw.post("/api/media/upload")

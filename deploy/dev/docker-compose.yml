@@ -47,7 +47,7 @@ services:
       SECRETS_KEY: ${SECRETS_KEY:-}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8000}
       LUA_SERVICE_TOKEN: ${LUA_SERVICE_TOKEN:-dev-service-token}
-      BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-}
+      BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-dev-only-bus-signing-key-not-for-prod}
       DATA_DIR: /app/data
       LUA_SCRIPTS_DIR: /app/data/lua
       EMAIL_TEMPLATES_DIR: /app/data/email
@@ -84,7 +84,7 @@ services:
       BILLING_URL: http://billing:8000
       LUA_SERVICE_TOKEN: ${LUA_SERVICE_TOKEN:-dev-service-token}
       LUA_SCRIPTS_DIR: /app/data/lua
-      BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-}
+      BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-dev-only-bus-signing-key-not-for-prod}
       LUA_RECLAIM_INTERVAL_SEC: ${LUA_RECLAIM_INTERVAL_SEC:-30}
       LUA_RECLAIM_MIN_IDLE_MS: ${LUA_RECLAIM_MIN_IDLE_MS:-60000}
       LUA_TASK_MAX_ATTEMPTS: ${LUA_TASK_MAX_ATTEMPTS:-5}
@@ -111,7 +111,7 @@ services:
       VALKEY_DB: 0
       DATA_DIR: /app/data
       JWT_SECRET: ${JWT_SECRET:-}
-      BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-}
+      BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-dev-only-bus-signing-key-not-for-prod}
       MEDIA_TASK_STREAM: media:tasks
       MEDIA_RESULT_STREAM: media:results
       MEDIA_GROUP: mediaworkers

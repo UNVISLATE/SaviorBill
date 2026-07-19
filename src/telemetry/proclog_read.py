@@ -36,4 +36,12 @@ async def recent_jobs(vk: valkey.Valkey, limit: int = 50) -> list[dict]:
     return out
 
 
-__all__ = ["tail", "recent_jobs", "events_channel"]
+async def get_job(vk: valkey.Valkey, job_id: str) -> dict | None:
+    """Метаданные одного запуска ffmpeg/ffprobe (REST single-статус job'а)."""
+    meta = await vk.hgetall(f"{_META_PREFIX}{job_id}")
+    if not meta:
+        return None
+    return {"job_id": job_id, **meta}
+
+
+__all__ = ["tail", "recent_jobs", "get_job", "events_channel"]

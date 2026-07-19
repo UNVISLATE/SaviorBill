@@ -17,6 +17,7 @@ import time
 
 import valkey.asyncio as valkey
 
+from .bus_sign import sign_fields
 from .telemetry import current_trace_id
 
 _PREFIX = "tasklog:"
@@ -26,10 +27,27 @@ _EVENTS_PREFIX = "tasklog:events:"
 class TaskLog:
     """Журнал фактов о тасках одного вида (``kind``, напр. ``"media"``)."""
 
-    def __init__(self, vk: valkey.Valkey, max_len: int = 500, ttl: int = 604_800) -> None:
+    def __init__(
+        self,
+        vk: valkey.Valkey,
+        max_len: int = 500,
+        ttl: int = 604_800,
+        *,
+        job_events_stream: str | None = None,
+        job_events_maxlen: int = 10_000,
+        signing_key: str = "",
+    ) -> None:
         self.vk = vk
         self.max_len = max_len
         self.ttl = ttl
+        # Публикация в стрим для billing (state machine `worker_jobs`, см.
+        # billing `models/worker_jobs.py`) — только для kind == "media"
+        # (единственный протяжённый во времени, межпроцессный жизненный цикл,
+        # см. докстринг там же). `None`/пустая строка отключает публикацию —
+        # так работают тесты и любые сборки, где billing-consumer не поднят.
+        self.job_events_stream = job_events_stream or None
+        self.job_events_maxlen = job_events_maxlen
+        self.signing_key = signing_key
 
     async def record(
         self,
@@ -59,6 +77,21 @@ class TaskLog:
         await self.vk.ltrim(key, 0, self.max_len - 1)
         await self.vk.expire(key, self.ttl)
         await self.vk.publish(f"{_EVENTS_PREFIX}{kind}", raw)
+        if kind == "media" and self.job_events_stream:
+            await self.vk.xadd(
+                self.job_events_stream,
+                sign_fields(
+                    self.signing_key,
+                    {
+                        "op": op,
+                        "token": token_or_cid,
+                        "state": state,
+                        "detail": detail or "",
+                    },
+                ),
+                maxlen=self.job_events_maxlen,
+                approximate=True,
+            )
 
     async def tail(self, kind: str, limit: int = 100) -> list[dict]:
         """Последние ``limit`` фактов (от новых к старым)."""

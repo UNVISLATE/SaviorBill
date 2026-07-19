@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from dependencies.rbac import require_perm
 from dependencies.valkey import get_valkey_client
@@ -30,6 +30,23 @@ async def recent_media_jobs(
     vk=Depends(get_valkey_client),
 ) -> list[dict]:
     return await proclog_read.recent_jobs(vk, limit)
+
+
+@router.get(
+    "/jobs/{job_id}",
+    dependencies=[Depends(require_perm("logs.read"))],
+    summary="Single ffmpeg/ffprobe job status",
+    description="Метаданные одного запуска ffmpeg/ffprobe (без выхода "
+    "процесса — сырой вывод см. WS /apiws/v1/logs/media/{job_id}).",
+)
+async def media_job(
+    job_id: str,
+    vk=Depends(get_valkey_client),
+) -> dict:
+    job = await proclog_read.get_job(vk, job_id)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "job not found")
+    return job
 
 
 __all__ = ["router"]

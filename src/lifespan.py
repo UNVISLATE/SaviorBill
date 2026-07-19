@@ -6,6 +6,7 @@ from dependencies.db import create_db_engine, create_db_sessionmaker
 from dependencies.valkey import create_valkey_client
 from services.billing_loop import BillingLoop
 from services.media_results import MediaResults
+from services.media_job_events import MediaJobEvents
 from core.config import AppConfig
 from bootstrap import bootstrap
 from bootstrap.init import init_system
@@ -69,6 +70,14 @@ async def lifespan(app: FastAPI):
     )
     await app.state.media_results.start()
 
+    # Консьюмер переходов статуса медиа-задач -> worker_jobs (см. models/worker_jobs.py).
+    app.state.media_job_events = MediaJobEvents(
+        app.state.db_sessionmaker,
+        app.state.valkey,
+        config,
+    )
+    await app.state.media_job_events.start()
+
     app.include_router(api_router)
     app.include_router(apiws_router)
     # Роуты добавлены — задокументировать требуемые права в OpenAPI.
@@ -77,6 +86,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await app.state.media_job_events.stop()
         await app.state.media_results.stop()
         await app.state.billing_loop.stop()
         await app.state.valkey.aclose()

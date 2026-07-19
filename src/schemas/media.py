@@ -93,6 +93,21 @@ class MediaStatus(BaseModel):
     error: str | None = Field(default=None, description="Error text (optional)")
 
 
+class OpStatus(BaseModel):
+    """Status of a media sub-operation (preview_add/thumb_replace/...)."""
+
+    token: str = Field(description="Media token")
+    op: str = Field(description="Operation name")
+    state: str = Field(
+        description="queued | processing | retrying | ready | failed | stale | cancelled"
+    )
+    attempt: int = Field(description="Delivery attempt count")
+    error: str | None = Field(default=None, description="Error text (optional)")
+    created_at: str | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+
+
 class Attachment(BaseModel):
     """Service attachment."""
 
@@ -140,6 +155,7 @@ __all__ = [
     "MediaVariant",
     "MediaTask",
     "MediaStatus",
+    "OpStatus",
     "Attachment",
     "AttachmentIn",
 ]

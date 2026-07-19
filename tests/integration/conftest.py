@@ -94,7 +94,13 @@ async def worker_ready(cfg: AppConfig) -> AsyncIterator[None]:
     убираем гонку «задача ушла раньше готовности воркера» на медленном CI.
     """
     vk = valkey.from_url(cfg.valkey_url, decode_responses=True)
-    bus = LuaBus(vk, cfg.LUA_TASK_STREAM, cfg.LUA_RESP_STREAM, default_timeout=5)
+    bus = LuaBus(
+        vk,
+        cfg.LUA_TASK_STREAM,
+        cfg.LUA_RESP_STREAM,
+        default_timeout=5,
+        signing_key=cfg.BUS_SIGNING_KEY,
+    )
     loop = asyncio.get_event_loop()
     deadline = loop.time() + 60.0
     try:

@@ -11,11 +11,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from dependencies.auth import get_current_acc
-from dependencies.media import get_media_mngr
+from dependencies.media import get_media_mngr, get_worker_jobs_mngr
 from dependencies.valkey import get_valkey_client
 from models.system_media import SystemMediaMngr
+from models.worker_jobs import WorkerJobsMngr
 from models.user import UserModel
-from schemas.media import Media, MediaStatus
+from schemas.media import Media, MediaStatus, OpStatus
 from core.config import AppConfig
 from messaging.mediabus import MediaBus
 from security.rbac import has_perm
@@ -55,10 +56,13 @@ async def media_status(
     token: str,
     vk: valkey.Valkey = Depends(get_valkey_client),
     mngr: SystemMediaMngr = Depends(get_media_mngr),
+    jobs: WorkerJobsMngr = Depends(get_worker_jobs_mngr),
 ) -> MediaStatus:
     cfg: AppConfig = request.app.state.settings
     bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN, signing_key=cfg.BUS_SIGNING_KEY)
 
+    # Валкей — быстрый кэш для частого поллинга сразу после аплоада; не
+    # протухнет — ниже authoritative worker_jobs (БД), а не Валкей.
     data = await bus.status(token)
     if data:
         return MediaStatus(
@@ -70,8 +74,19 @@ async def media_status(
             error=data.get("error") or None,
         )
 
-    # Статус в Valkey мог истечь — источник истины по готовым медиа это БД.
+    # Кэш истёк/не создавался — authoritative источник: worker_jobs (БД), не
+    # protuхает и одинаков для этого роута и для списков (см. models/worker_jobs.py).
+    job = await jobs.latest("media", token, op="convert")
     media = await mngr.by_token(token)
+    if job is not None and job.state not in ("ready",):
+        return MediaStatus(
+            token=token,
+            state=job.state,
+            url=None,
+            mime=media.mime if media else None,
+            tag=media.tag if media else None,
+            error=job.error,
+        )
     if media is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
     return MediaStatus(
@@ -80,6 +95,34 @@ async def media_status(
         url=f"/api/media/{media.token}" if media.status == "ready" else None,
         mime=media.mime,
         tag=media.tag,
+        error=job.error if job is not None else None,
+    )
+
+
+@router.get(
+    "/{token}/ops/{op}/status",
+    response_model=OpStatus,
+    summary="Media sub-operation status",
+    description="Status of a media sub-operation (preview_add/thumb_replace/...) "
+    "started after the main upload/convert (see GET /status/{token} for that).",
+)
+async def media_op_status(
+    token: str,
+    op: str,
+    jobs: WorkerJobsMngr = Depends(get_worker_jobs_mngr),
+) -> OpStatus:
+    job = await jobs.latest("media", token, op=op)
+    if job is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "job not found")
+    return OpStatus(
+        token=token,
+        op=op,
+        state=job.state,
+        attempt=job.attempt,
+        error=job.error,
+        created_at=job.created_at.isoformat() if job.created_at else None,
+        started_at=job.started_at.isoformat() if job.started_at else None,
+        finished_at=job.finished_at.isoformat() if job.finished_at else None,
     )
 
 

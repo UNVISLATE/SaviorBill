@@ -67,6 +67,12 @@ class Config(BaseSettings):
     # Кольцевой буфер записей на kind ("media") + TTL всего списка.
     MEDIA_TASKLOG_MAXLEN: int = Field(default=500)
     MEDIA_TASKLOG_TTL: int = Field(default=604_800)  # 7 дней
+    # Стрим переходов статуса (queued/processing/ready/failed/...) для billing
+    # (см. billing `models/worker_jobs.py`) — публикуется из того же места, что
+    # и запись в Valkey TaskLog, чтобы не иметь двух рассинхронизирующихся
+    # источников фактов на mediaworker-стороне.
+    MEDIA_JOB_EVENTS_STREAM: str = Field(default="media:job_events")
+    MEDIA_JOB_EVENTS_MAXLEN: int = Field(default=10_000)
 
     # --- Realtime-лог сырого вывода ffmpeg/ffprobe (xterm.js в админке) ---
     # Сколько последних запусков (job_id) хранить в списке "недавние" и TTL
