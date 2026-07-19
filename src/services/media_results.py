@@ -24,7 +24,7 @@ from utils.config import AppConfig
 from utils.idempotency import once, release_once
 from utils.mediabus import MediaBus
 from utils.retry import attempts, clear_attempts
-from utils.telemetry import span_from_carrier
+from observability.telemetry import span_from_carrier
 
 log = logging.getLogger("saviorbill.media")
 

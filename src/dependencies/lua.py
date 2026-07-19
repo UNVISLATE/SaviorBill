@@ -8,7 +8,7 @@ from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.task_log import get_task_log
 from utils.config import AppConfig
 from utils.luabus import LuaBus
-from utils.task_log import TaskLog
+from observability.task_log import TaskLog
 
 
 def get_lua_bus(request: Request) -> LuaBus:

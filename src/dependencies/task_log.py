@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import Request
 
-from utils.task_log import TaskLog
+from observability.task_log import TaskLog
 
 
 def get_task_log(request: Request) -> TaskLog:

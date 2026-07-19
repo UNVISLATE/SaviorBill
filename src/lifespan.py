@@ -11,8 +11,8 @@ from utils.bootstrap import bootstrap
 from utils.init import init_system
 from utils.openapi import document_perms
 from security.sec.secrets.resolve import resolve_secrets
-from utils.task_log import TaskLog
-from utils.telemetry import instrument_sqlalchemy
+from observability.task_log import TaskLog
+from observability.telemetry import instrument_sqlalchemy
 
 from api import api_router
 from apiws import apiws_router

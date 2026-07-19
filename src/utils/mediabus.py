@@ -13,7 +13,7 @@ import json
 
 import valkey.asyncio as valkey
 
-from utils.telemetry import inject_carrier
+from observability.telemetry import inject_carrier
 
 _STATUS_PREFIX = "media:status:"
 
