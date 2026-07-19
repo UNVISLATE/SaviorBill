@@ -1,6 +1,6 @@
 """Инициализация первого запуска: роли, владелец, секреты, сид настроек.
 
-Полностью независимый модуль. Не знает про ``utils.bootstrap`` и наоборот.
+Полностью независимый модуль. Не знает про ``bootstrap`` и наоборот.
 Точка входа для ``lifespan`` — :func:`init_system` (сама решает по флагу, нужен ли
 запуск ``run_init``).
 """
@@ -17,11 +17,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from dependencies.sec import make_secbox
 from dependencies.settings import SystemSettingsMngr
 from utils.config import AppConfig
-from utils.init.email_templates import seed_email_templates
-from utils.init.owner import create_owner
-from utils.init.role import create_base_roles
-from utils.init.secret import harden_secret
-from utils.init.settings import seed_settings
+from bootstrap.init.email_templates import seed_email_templates
+from bootstrap.init.owner import create_owner
+from bootstrap.init.role import create_base_roles
+from bootstrap.init.secret import harden_secret
+from bootstrap.init.settings import seed_settings
 
 log = logging.getLogger("saviorbill.init")
 

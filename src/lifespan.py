@@ -7,8 +7,8 @@ from dependencies.valkey import create_valkey_client
 from services.billing_loop import BillingLoop
 from services.media_results import MediaResults
 from utils.config import AppConfig
-from utils.bootstrap import bootstrap
-from utils.init import init_system
+from bootstrap import bootstrap
+from bootstrap.init import init_system
 from utils.openapi import document_perms
 from security.sec.secrets.resolve import resolve_secrets
 from observability.task_log import TaskLog

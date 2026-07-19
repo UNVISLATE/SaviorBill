@@ -1,7 +1,7 @@
 """Проверки при каждом старте сервиса (вызывается из ``lifespan``).
 
-Модуль независим от ``utils.init``: первичная инициализация выполняется отдельно
-(:func:`utils.init.init_system`) до вызова :func:`bootstrap`.
+Модуль независим от ``bootstrap.init``: первичная инициализация выполняется отдельно
+(:func:`bootstrap.init.init_system`) до вызова :func:`bootstrap`.
 """
 
 from __future__ import annotations
@@ -14,8 +14,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from dependencies.sec import make_secbox
 from dependencies.settings import SystemSettingsMngr
 from dependencies.ratelimit import seed_rate_limits
-from utils.bootstrap.access import check_access
-from utils.bootstrap.integrity_check import check_integrity
+from bootstrap.access import check_access
+from bootstrap.integrity_check import check_integrity
 from utils.config import AppConfig
 
 log = logging.getLogger("saviorbill.bootstrap")
