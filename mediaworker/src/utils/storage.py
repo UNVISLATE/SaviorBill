@@ -6,11 +6,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import AsyncIterator
 
 from utils.config import Config
+
+log = logging.getLogger("saviormedia.storage")
 
 
 class Storage:
@@ -146,7 +149,7 @@ class Storage:
                 try:
                     await client.delete_object(Bucket=self.cfg.s3_bucket, Key=key)
                 except Exception:  # noqa: BLE001 — best-effort
-                    pass
+                    log.warning("s3: failed to delete key=%s", key, exc_info=True)
 
     @staticmethod
     def _safe_unlink(path: str) -> None:

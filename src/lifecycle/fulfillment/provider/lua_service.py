@@ -13,9 +13,9 @@ class LuaService(BaseIssuer):
     """Исполняет привязанный к услуге Lua-скрипт для действий её ЖЦ.
 
     Скрипт получает ``ctx.action`` и сам решает, что делать (create/renew/stop/
-    delete/freeze). Помимо ``public``/``private`` он может вернуть ``state``/
-    ``status`` (новый статус услуги) и ``expires_at`` (unix-время истечения) —
-    их подхватывает billing-loop для планирования.
+    delete/freeze). Помимо ``public``/``private`` он может вернуть ``state``
+    (новый статус услуги) и ``expires_at`` (unix-время истечения) — их
+    подхватывает billing-loop для планирования.
     """
 
     async def issue(self, usvc, service, acc) -> None:  # noqa: ANN001 — ORM-объекты
@@ -53,7 +53,7 @@ class LuaService(BaseIssuer):
         usvc.public_data = res.get("public") or {}
         usvc.private_data = res.get("private") or {}
 
-        state = res.get("state") or res.get("status")
+        state = res.get("state")
         if state:
             usvc.status = state
         elif action in (ServiceAction.STOP, ServiceAction.DELETE):

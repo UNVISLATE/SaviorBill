@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
 
@@ -24,6 +25,8 @@ from lifecycle.fulfillment import get_issuer
 from utils.datetime_utils import utc_now
 from lua.bus import LuaBus
 from security.sec.box import SecBox
+
+log = logging.getLogger("saviorbill.user_services")
 
 
 class UserServicesModel(Base):
@@ -241,7 +244,11 @@ class UserServicesMngr:
         try:
             await ReferralMngr(self.s).credit(acc, service, amount)
         except Exception:  # noqa: BLE001 — реферальный бонус не влияет на выдачу
-            pass
+            log.exception(
+                "referral credit failed (acc=%s, service=%s) — issuance not blocked",
+                acc.id,
+                service.id,
+            )
 
     async def run_action(
         self,
@@ -282,7 +289,9 @@ class UserServicesMngr:
         try:
             await self.run_action(usvc, service, acc, ServiceAction.STOP)
         except Exception:  # noqa: BLE001 — истечение помечаем даже при сбое stop
-            pass
+            log.exception(
+                "stop-on-expire failed (usvc=%s) — marking EXPIRED anyway", usvc.id
+            )
         usvc.status = UsvcStatus.EXPIRED
         await self.s.flush()
         return usvc
@@ -307,7 +316,9 @@ class UserServicesMngr:
         try:
             await self.run_action(usvc, service, acc, ServiceAction.STOP)
         except Exception:  # noqa: BLE001 — откат помечаем даже при сбое stop
-            pass
+            log.exception(
+                "stop-on-revoke failed (usvc=%s) — marking CANCELLED anyway", usvc.id
+            )
         usvc.status = UsvcStatus.CANCELLED
         await self.s.flush()
         return usvc

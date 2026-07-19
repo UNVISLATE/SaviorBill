@@ -1,10 +1,9 @@
 """Помощник постраничной выборки поверх SQLAlchemy select.
 
-Модель пагинации: три параметра запроса —
-``limit`` (сколько отдать), ``offset`` (приоритетное смещение) и ``pass``/``skip``
-(сколько пропустить, если ``offset`` не задан). Если ``offset`` задан — ``pass``
-игнорируется. Ответ (:class:`schemas.page.Page`) помимо элементов несёт ``total``
-(всего записей) и ``has_more`` (есть ли ещё страницы) — для динамической подгрузки.
+Модель пагинации: два параметра запроса — ``limit`` (сколько отдать) и
+``offset`` (сколько пропустить). Ответ (:class:`schemas.page.Page`) помимо
+элементов несёт ``total`` (всего записей) и ``has_more`` (есть ли ещё
+страницы) — для динамической подгрузки.
 """
 
 from __future__ import annotations
@@ -22,7 +21,7 @@ S = TypeVar("S")
 
 @dataclass(slots=True)
 class PageParams:
-    """Разрешённые параметры пагинации (эффективное смещение уже вычислено)."""
+    """Разрешённые параметры пагинации."""
 
     limit: int
     offset: int
@@ -35,27 +34,14 @@ def page_params(
         le=200,
         description="Page size — how many records to return",
     ),
-    offset: int | None = Query(
-        None,
-        ge=0,
-        description="Explicit offset; if set, `pass` is ignored",
-    ),
-    skip: int = Query(
+    offset: int = Query(
         0,
         ge=0,
-        alias="pass",
-        description="Records to skip when `offset` is not set (for infinite scroll)",
+        description="How many records to skip",
     ),
 ) -> PageParams:
-    """FastAPI-зависимость: свести ``limit``/``offset``/``pass`` к :class:`PageParams`.
-
-    :arg limit: размер страницы.
-    :arg offset: приоритетное смещение (если задано — ``pass`` игнорируется).
-    :arg skip: смещение-«пропуск» (алиас запроса ``pass``), применяется без ``offset``.
-    :return: разрешённые параметры пагинации.
-    """
-    effective = offset if offset is not None else skip
-    return PageParams(limit=limit, offset=effective)
+    """FastAPI-зависимость: свести query-параметры к :class:`PageParams`."""
+    return PageParams(limit=limit, offset=offset)
 
 
 async def paginate(

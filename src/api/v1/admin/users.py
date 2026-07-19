@@ -134,22 +134,6 @@ async def user_services(
 
 
 @router.get(
-    "/{user_id}/orders",
-    response_model=Page[OrderAdmin],
-    dependencies=[Depends(require_perm("orders.read"))],
-    summary="User orders",
-    description="Alias of user services.",
-)
-async def user_orders(
-    user_id: int,
-    pp: PageParams = Depends(page_params),
-    session: AsyncSession = Depends(get_db_session),
-) -> Page[OrderAdmin]:
-    """Список заказов пользователя (совпадает с услугами)."""
-    return await user_services(user_id, pp, session)
-
-
-@router.get(
     "/{user_id}/payments",
     response_model=Page[PaymentAdmin],
     dependencies=[Depends(require_perm("purchases.read"))],
