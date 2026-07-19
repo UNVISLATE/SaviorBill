@@ -10,6 +10,19 @@ from utils.datetime_utils import timestamp_now
 ACCESS = "access"
 REFRESH = "refresh"
 
+# Жёсткий allowlist алгоритмов — не читается из ``alg`` слепо. Защита от
+# alg-confusion и от случайной подмены конфигурации на "none"/асимметричный
+# алгоритм, для которого ``secret`` использовался бы как публичный ключ
+# (см. AUDIT.md M2). HS-семейство — единственное, что реально используется:
+# secret общий между billing и mediaworker (симметричная проверка).
+ALLOWED_ALGS = frozenset({"HS256", "HS384", "HS512"})
+
+# Аудитория токенов этого стека — билинг + доверенные внутренние сервисы
+# (mediaworker), которые проверяют access-JWT тем же общим secret'ом.
+# Явный ``aud`` не даёт токену, случайно/умышленно созданному с тем же
+# secret+iss для не-JWT-сессионных целей, быть принятым здесь.
+AUDIENCE = "saviorbill-services"
+
 
 @dataclass(slots=True)
 class JWTToken:
@@ -23,7 +36,14 @@ class JWTToken:
 
 
 class InvalidJWT(Exception):
-    """Токен невалиден, просрочен или подделан."""
+    """Токен невалиден, просрочен, подделан или использует неразрешённый алгоритм."""
+
+
+def _check_alg(alg: str) -> None:
+    if alg not in ALLOWED_ALGS:
+        raise InvalidJWT(
+            f"алгоритм {alg!r} не в allowlist {sorted(ALLOWED_ALGS)}"
+        )
 
 
 def _encode(
@@ -35,6 +55,7 @@ def _encode(
     iss: str,
     extra: dict | None = None,
 ) -> str:
+    _check_alg(alg)
     now = timestamp_now()
     payload: dict = {
         "sub": str(sub),
@@ -43,6 +64,7 @@ def _encode(
         "iat": now,
         "exp": now + ttl,
         "iss": iss,
+        "aud": AUDIENCE,
     }
     if extra:
         payload.update(extra)
@@ -63,18 +85,20 @@ def make_refresh(sub: str, secret: str, alg: str, ttl: int, iss: str) -> str:
 
 def decode_jwt(token: str, secret: str, alg: str, iss: str) -> JWTToken:
     """Декодировать и провалидировать токен. Бросает ``InvalidJWT`` при ошибке."""
+    _check_alg(alg)
     try:
         data = jwt.decode(
             token,
             secret,
             algorithms=[alg],
             issuer=iss,
-            options={"require": ["exp", "iat", "sub", "jti"]},
+            audience=AUDIENCE,
+            options={"require": ["exp", "iat", "sub", "jti", "aud"]},
         )
     except jwt.PyJWTError as exc:
         raise InvalidJWT(str(exc)) from exc
 
-    reserved = {"sub", "typ", "jti", "exp", "iat", "iss"}
+    reserved = {"sub", "typ", "jti", "exp", "iat", "iss", "aud"}
     return JWTToken(
         sub=data["sub"],
         typ=data.get("typ", ACCESS),
@@ -89,6 +113,8 @@ def decode_jwt(token: str, secret: str, alg: str, iss: str) -> JWTToken:
 __all__ = [
     "ACCESS",
     "REFRESH",
+    "ALLOWED_ALGS",
+    "AUDIENCE",
     "JWTToken",
     "InvalidJWT",
     "make_access",

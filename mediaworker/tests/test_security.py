@@ -21,6 +21,7 @@ def _make(sub, typ="access", ttl=60, **extra):
         "iat": now,
         "exp": now + ttl,
         "iss": _ISS,
+        "aud": security.AUDIENCE,
     }
     payload.update(extra)
     return jwt.encode(payload, _SECRET, algorithm=_ALG)
@@ -45,5 +46,16 @@ def test_bad_signature_rejected():
 
 def test_expired_rejected():
     token = _make(42, ttl=-10)
+    with pytest.raises(security.InvalidToken):
+        security.account_id(token, _SECRET, _ALG, _ISS)
+
+
+def test_disallowed_alg_rejected():
+    with pytest.raises(security.InvalidToken):
+        security.account_id(_make(42), _SECRET, "none", _ISS)
+
+
+def test_wrong_audience_rejected():
+    token = _make(42, aud="someone-else")
     with pytest.raises(security.InvalidToken):
         security.account_id(token, _SECRET, _ALG, _ISS)

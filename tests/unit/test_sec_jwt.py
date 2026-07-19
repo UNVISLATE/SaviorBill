@@ -56,3 +56,23 @@ def test_expired_token_rejected():
     time.sleep(0.01)
     with pytest.raises(InvalidJWT):
         decode_jwt(tok, SECRET, ALG, ISS)
+
+
+def test_disallowed_alg_rejected_on_encode():
+    with pytest.raises(InvalidJWT):
+        make_access("1", SECRET, "none", ttl=60, iss=ISS)
+
+
+def test_disallowed_alg_rejected_on_decode():
+    tok = make_access("1", SECRET, ALG, ttl=60, iss=ISS)
+    with pytest.raises(InvalidJWT):
+        decode_jwt(tok, SECRET, "none", ISS)
+
+
+def test_token_carries_fixed_audience():
+    """``aud`` присутствует и не настраивается извне — фиксированная аудитория стека."""
+    import jwt as pyjwt
+
+    tok = make_access("1", SECRET, ALG, ttl=60, iss=ISS)
+    raw = pyjwt.decode(tok, SECRET, algorithms=[ALG], options={"verify_aud": False})
+    assert raw["aud"] == "saviorbill-services"
