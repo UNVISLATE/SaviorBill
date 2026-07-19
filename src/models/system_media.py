@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, DateTime, Integer, JSON, String, select
+from sqlalchemy import func, DateTime, Integer, JSON, Select, String, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -97,12 +97,16 @@ class SystemMediaMngr:
         return list(rows)
 
     async def list_by_owner(self, owner_id: int) -> list[SystemMediaModel]:
-        rows = await self.s.scalars(
+        rows = await self.s.scalars(self.stmt_for_owner(owner_id))
+        return list(rows)
+
+    def stmt_for_owner(self, owner_id: int) -> Select:
+        """Базовый select медиа владельца (для пагинации, см. utils/pagination)."""
+        return (
             select(SystemMediaModel)
             .where(SystemMediaModel.owner_id == owner_id)
             .order_by(SystemMediaModel.id.desc())
         )
-        return list(rows)
 
     async def create(
         self,

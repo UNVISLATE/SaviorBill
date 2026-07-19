@@ -1,10 +1,12 @@
 """Админ: просмотр аудит-журнала (/api/v1/admin/audit).
 
 Только чтение (append-only журнал). Требует право ``audit.read``. Поддерживает
-фильтрацию по действию/актору и пагинацию.
+фильтрацию по действию/актору/дате и пагинацию.
 """
 
 from __future__ import annotations
+
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
@@ -25,11 +27,17 @@ router = APIRouter()
     response_model=Page[AuditEntry],
     dependencies=[Depends(require_perm("audit.read"))],
     summary="Audit log",
-    description="Paginated audit log with optional action and actor filters.",
+    description="Paginated audit log with optional action/actor/date-range filters.",
 )
 async def list_audit(
     action: str | None = Query(None, description="Action filter"),
     actor_account_id: int | None = Query(None, ge=0, description="Actor filter"),
+    since: datetime | None = Query(
+        None, description="Only entries at/after this timestamp (inclusive)"
+    ),
+    until: datetime | None = Query(
+        None, description="Only entries before this timestamp (exclusive)"
+    ),
     pp: PageParams = Depends(page_params),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[AuditEntry]:
@@ -38,6 +46,10 @@ async def list_audit(
         stmt = stmt.where(AuditLogModel.action == action)
     if actor_account_id is not None:
         stmt = stmt.where(AuditLogModel.actor_account_id == actor_account_id)
+    if since is not None:
+        stmt = stmt.where(AuditLogModel.ts >= since)
+    if until is not None:
+        stmt = stmt.where(AuditLogModel.ts < until)
     items, total, has_more = await paginate(
         session, stmt, AuditEntry.from_model, limit=pp.limit, offset=pp.offset
     )
