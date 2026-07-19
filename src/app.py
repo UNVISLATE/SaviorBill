@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from lifespan import lifespan
-from utils.config import AppConfig, APP_NAME, APP_VERSION
+from core.config import AppConfig, APP_NAME, APP_VERSION
 from observability.telemetry import install_access_log_filter, setup_observability
 
 settings = AppConfig()

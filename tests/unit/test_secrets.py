@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from utils.config import AppConfig
+from core.config import AppConfig
 from security.sec.secrets import (
     BACKENDS,
     FileSecretStore,

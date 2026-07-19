@@ -13,7 +13,7 @@ from notifications.email import EmailSender
 from automation.triggers import EmailAction, LuaAction, TriggerDispatcher
 from models.email_templates import EmailMngr
 from models.triggers import TriggerMngr
-from utils.config import AppConfig
+from core.config import AppConfig
 from lua.bus import LuaBus
 
 

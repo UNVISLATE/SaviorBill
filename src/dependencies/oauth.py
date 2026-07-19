@@ -26,7 +26,7 @@ from models.user_oauth import UserOauthModel
 from lua.schemas import LuaRequest
 from schemas.oauth import OAuthStart, OAuthUser
 from lua.context import LuaRunner
-from utils.config import AppConfig
+from core.config import AppConfig
 from lua.bus import LuaBus
 from security.sec.box import SecBox
 from security.sec.crypt import generate_base_token

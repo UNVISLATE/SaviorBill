@@ -16,7 +16,7 @@ from starlette.routing import Route
 from starlette.testclient import TestClient
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from utils.config import AppConfig
+from core.config import AppConfig
 
 pytestmark = pytest.mark.unit
 

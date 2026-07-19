@@ -13,7 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from models import Base
 from utils.datetime_utils import utc_now
 from security.sec.box import SecBox
-from utils.settings_def import SettingDef, by_key, seed_defs
+from core.settings_def import SettingDef, by_key, seed_defs
 
 # Префикс ключей кэша настроек в Valkey.
 _CACHE = "settings:"

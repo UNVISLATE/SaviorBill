@@ -6,7 +6,7 @@ from dependencies.db import create_db_engine, create_db_sessionmaker
 from dependencies.valkey import create_valkey_client
 from services.billing_loop import BillingLoop
 from services.media_results import MediaResults
-from utils.config import AppConfig
+from core.config import AppConfig
 from bootstrap import bootstrap
 from bootstrap.init import init_system
 from utils.openapi import document_perms

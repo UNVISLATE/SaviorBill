@@ -20,7 +20,7 @@ from models.system_media import SystemMediaMngr, SystemMediaModel, all_storage_k
 from models.user import UserModel
 from schemas.media import Media
 from services.audit import audit
-from utils.config import AppConfig
+from core.config import AppConfig
 from messaging.mediabus import MediaBus
 
 router = APIRouter()

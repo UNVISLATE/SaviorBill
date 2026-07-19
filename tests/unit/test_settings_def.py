@@ -2,7 +2,7 @@
 
 import pytest
 
-from utils.settings_def import SETTINGS, by_key, group_keys, seed_defs
+from core.settings_def import SETTINGS, by_key, group_keys, seed_defs
 
 pytestmark = pytest.mark.unit
 

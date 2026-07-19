@@ -7,7 +7,7 @@ from dependencies.ratelimit import LimitKind, _kind_keys, _rule_for
 from dependencies.rbac import require_perm
 from dependencies.valkey import get_valkey_client
 from schemas.ratelimit import RateLimitPatch, RateLimitRule
-from utils.config import AppConfig
+from core.config import AppConfig
 
 router = APIRouter()
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import Request
 
-from utils.config import AppConfig
+from core.config import AppConfig
 from security.sec.box import SecBox
 
 

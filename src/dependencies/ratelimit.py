@@ -8,7 +8,7 @@ from typing import Callable
 from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from utils.config import AppConfig
+from core.config import AppConfig
 from security.ratelimit import LimitRule, RateLimiter
 
 _bearer = HTTPBearer(auto_error=False)

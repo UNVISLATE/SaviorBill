@@ -16,7 +16,7 @@ from dependencies.valkey import get_valkey_client
 from models.system_media import SystemMediaMngr
 from models.user import UserModel
 from schemas.media import Media, MediaStatus
-from utils.config import AppConfig
+from core.config import AppConfig
 from messaging.mediabus import MediaBus
 from security.rbac import has_perm
 

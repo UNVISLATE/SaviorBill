@@ -7,7 +7,7 @@ import os
 import stat
 
 from dependencies.settings import SystemSettingsMngr
-from utils.config import AppConfig
+from core.config import AppConfig
 
 log = logging.getLogger("saviorbill.bootstrap")
 

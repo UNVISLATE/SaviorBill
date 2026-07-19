@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import secrets as _secrets
 
-from utils.config import AppConfig
+from core.config import AppConfig
 from security.sec.box import SecBox
 
 from .base import SecretName, SecretResolver

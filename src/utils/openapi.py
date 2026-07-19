@@ -9,7 +9,7 @@ from fastapi.routing import APIRoute
 
 from dependencies.auth import get_current_acc
 from dependencies.ratelimit import LimitKind
-from utils.config import AppConfig
+from core.config import AppConfig
 
 _DOCUMENTED = "_perms_documented"
 

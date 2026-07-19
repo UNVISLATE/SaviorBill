@@ -14,7 +14,7 @@ from .base import SecretName, SecretResolver, SecretStore
 from .file_store import FileSecretStore
 
 if TYPE_CHECKING:  # избегаем циклического импорта на рантайме
-    from utils.config import AppConfig
+    from core.config import AppConfig
 
 # Поддерживаемые бэкенды (значения ENV SECRETS_BACKEND).
 BACKENDS = ("file", "aws", "gcp", "azure", "vault")

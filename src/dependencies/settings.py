@@ -10,7 +10,7 @@ from dependencies.db import get_db_session
 from dependencies.sec import make_secbox
 from dependencies.valkey import get_valkey_client
 from models.system_settings import SystemSettingsMngr
-from utils.config import AppConfig
+from core.config import AppConfig
 
 
 def get_settings_mngr(

@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from notifications.email import EmailEvent
 from models.email_templates import EmailMngr
 from schemas.email import EmailTemplateUpload
-from utils.config import AppConfig
+from core.config import AppConfig
 
 log = logging.getLogger("saviorbill.init")
 

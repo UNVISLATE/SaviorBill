@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from pathlib import PurePosixPath
 
-from utils.config import AppConfig
+from core.config import AppConfig
 
 
 class StorageSvc:

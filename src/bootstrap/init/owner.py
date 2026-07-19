@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.roles import Role
 from models.user import UserModel
-from utils.config import AppConfig
+from core.config import AppConfig
 from security.sec.pwd import hash_pass
 
 log = logging.getLogger("saviorbill.init")

@@ -22,7 +22,7 @@ import valkey.asyncio as valkey
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-from utils.config import AppConfig
+from core.config import AppConfig
 from lua.bus import LuaBus, LuaError
 
 BASE_URL = os.environ.get("BASE_URL", "http://localhost:8000")

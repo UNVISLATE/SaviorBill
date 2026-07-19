@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
 from models.system_media import SystemMediaMngr
-from utils.config import AppConfig
+from core.config import AppConfig
 from utils.storage import StorageSvc
 
 

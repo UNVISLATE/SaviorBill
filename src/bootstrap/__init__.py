@@ -16,7 +16,7 @@ from dependencies.settings import SystemSettingsMngr
 from dependencies.ratelimit import seed_rate_limits
 from bootstrap.access import check_access
 from bootstrap.integrity_check import check_integrity
-from utils.config import AppConfig
+from core.config import AppConfig
 
 log = logging.getLogger("saviorbill.bootstrap")
 

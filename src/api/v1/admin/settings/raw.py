@@ -22,7 +22,7 @@ from schemas.page import Page
 from schemas.settings_raw import SettingRawOut, SettingRawUpsert
 from services.audit import audit
 from utils.pagination import PageParams, page_params, paginate
-from utils.settings_def import by_key
+from core.settings_def import by_key
 
 router = APIRouter()
 

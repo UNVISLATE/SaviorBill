@@ -37,7 +37,7 @@ from models.system_settings import SystemSettingsModel
 from models.user import UserModel
 from schemas.settings_raw import SettingRawOut
 from services.audit import audit
-from utils.settings_def import by_key
+from core.settings_def import by_key
 
 router = APIRouter()
 

@@ -14,7 +14,7 @@ from dependencies.valkey import get_valkey_client
 from notifications.email import EmailEvent, EmailSender
 from models.email_templates import EmailMngr
 from models.user import UserModel
-from utils.config import AppConfig
+from core.config import AppConfig
 from utils.mail import MailSvc
 from security.sec.crypt import generate_numeric_code
 

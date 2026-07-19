@@ -20,7 +20,7 @@ import valkey.asyncio as valkey
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from models.system_media import SystemMediaMngr
-from utils.config import AppConfig
+from core.config import AppConfig
 from utils.idempotency import once, release_once
 from messaging.mediabus import MediaBus
 from utils.retry import attempts, clear_attempts

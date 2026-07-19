@@ -7,7 +7,7 @@ import os
 import stat
 from pathlib import Path
 
-from utils.config import AppConfig
+from core.config import AppConfig
 
 log = logging.getLogger("saviorbill.init")
 

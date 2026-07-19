@@ -7,7 +7,7 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 
 from models.system_settings import SystemSettingsModel
-from utils.settings_def import SettingDef
+from core.settings_def import SettingDef
 
 
 class SettingRawOut(BaseModel):

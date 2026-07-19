@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request
 
-from utils.config import AppConfig, APP_NAME, APP_VERSION
+from core.config import AppConfig, APP_NAME, APP_VERSION
 from schemas.system import HealthCheck
 
 router = APIRouter(tags=["health"])

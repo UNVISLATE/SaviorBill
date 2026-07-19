@@ -12,7 +12,7 @@ from models.service_attachment import ServiceAttachmentMngr
 from models.service_catalogs import ServiceCatalogsMngr
 from models.service_keys import ServiceKeysMngr
 from models.system_scripts import SystemScriptsMngr
-from utils.config import AppConfig
+from core.config import AppConfig
 from security.sec.box import SecBox
 from utils.storage import StorageSvc
 

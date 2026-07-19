@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from dependencies.sec import make_secbox
 from dependencies.settings import SystemSettingsMngr
-from utils.config import AppConfig
+from core.config import AppConfig
 from bootstrap.init.email_templates import seed_email_templates
 from bootstrap.init.owner import create_owner
 from bootstrap.init.role import create_base_roles

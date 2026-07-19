@@ -10,7 +10,7 @@ from dependencies.mail import build_mail_svc
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from notifications.email import EmailSender
 from models.email_templates import EmailMngr
-from utils.config import AppConfig
+from core.config import AppConfig
 
 
 def get_email_templates_mngr(
