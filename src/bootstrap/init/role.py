@@ -46,6 +46,11 @@ _BASE_PERMS: dict[str, dict] = {
         # см. mediaworker/src/api/logs.py) — то же право "logs.read", что и
         # раньше проверял billing-прокси.
         "logs": {"read": True},
+        # Явные админ-права на медиа: "upload" — без ограничения по размеру
+        # вообще; "manage_any" — доступ к preview/thumb/avatar ЧУЖОГО медиа.
+        # Не совпадают с media.uploadlarge (только лимит размера) — см.
+        # §2.2 AUDIT.md.
+        "admin": {"media": {"upload": True, "manage_any": True}},
     },
     # Тоже не системная: удобный дефолт, назначается только вручную.
     "manager": {

@@ -30,6 +30,9 @@ from utils.telemetry import inject_carrier
 router = APIRouter()
 
 _PERM_LARGE = "media.uploadlarge"
+# Отдельное право на доступ к preview/thumb ЧУЖОГО медиа — не совпадает с
+# _PERM_LARGE (тот только про лимит размера, см. §2.2 AUDIT.md).
+_PERM_MANAGE_ANY = "admin.media.manage_any"
 
 
 @router.get("/{token}")
@@ -109,6 +112,7 @@ async def _authorize_media_owner(
     acc_id = await authenticate(request)
     perms, _role = await authorize(request, acc_id)
     is_large = has_perm(perms, _PERM_LARGE)
+    manage_any = has_perm(perms, _PERM_MANAGE_ANY)
     settings: SettingsResolver = request.app.state.settings
     max_bytes = await (settings.max_bytes() if is_large else settings.small_max_bytes())
 
@@ -117,7 +121,7 @@ async def _authorize_media_owner(
     if media is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "медиа не найдено")
     _mid, owner_id, mkind = media
-    if owner_id != acc_id and not is_large:
+    if owner_id != acc_id and not manage_any:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "не владелец медиа")
     if mkind != "video":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "доступно только для видео")

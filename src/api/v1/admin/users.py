@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+import valkey.asyncio as valkey
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
+from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
+from dependencies.valkey import get_valkey_client
+from models.system_media import SystemMediaMngr
 from models.user import UserModel
 from models.user_oauth import UserOauthModel, UserOauthMngr
 from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel
+from schemas.auth import Account, AvatarSet
 from schemas.orders import OrderAdmin
 from schemas.page import Page
 from schemas.payments import PaymentAdmin
@@ -178,6 +183,51 @@ async def user_oauth(
         .order_by(UserOauthModel.id)
     )
     return [OAuthConnAdmin.from_model(r) for r in rows]
+
+
+@router.put(
+    "/{user_id}/avatar",
+    response_model=Account,
+    dependencies=[Depends(require_perm("admin.media.manage_any"))],
+    summary="Force-set user avatar (admin)",
+    description=(
+        "Set a user's avatar to any media (not just the user's own) — "
+        "separate from the self-service `/user/me/avatar`, which only "
+        "allows setting your own media. `media_id: null` removes the avatar."
+    ),
+)
+async def set_user_avatar(
+    request: Request,
+    user_id: int,
+    body: AvatarSet,
+    session: AsyncSession = Depends(get_db_session),
+    media: SystemMediaMngr = Depends(get_media_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+) -> Account:
+    # Ленивый импорт: избегаем циклической зависимости api.v1.user <-> admin
+    # на уровне модуля, переиспользуя те же хелперы очистки старой аватарки.
+    from api.v1.user.me import _account_response, _release_old_avatar
+
+    acc = await _get_user(session, user_id)
+    if body.media_id is not None:
+        m = await media.by_id(body.media_id)
+        if m is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
+
+    old_media_id = acc.avatar_media_id
+    acc.avatar_media_id = body.media_id
+    await session.commit()
+    await session.refresh(acc)
+
+    if old_media_id is not None and old_media_id != body.media_id:
+        old = await media.by_id(old_media_id)
+        if old is not None:
+            await _release_old_avatar(
+                request, vk, media, old, exclude_account_id=acc.id
+            )
+        await session.commit()
+
+    return await _account_response(acc, session)
 
 
 __all__ = ["router"]

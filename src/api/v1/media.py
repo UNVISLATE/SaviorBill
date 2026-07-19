@@ -35,12 +35,13 @@ class PreviewOrderIn(BaseModel):
 
 async def _owned_media(mngr: SystemMediaMngr, token: str, acc: UserModel) -> object:
     """Найти медиа по токену и проверить, что запрашивающий — владелец либо
-    имеет право ``media.uploadlarge``"""
+    имеет право ``admin.media.manage_any`` (доступ к чужому медиа отдельно
+    от ``media.uploadlarge``, который только про лимит размера)."""
     media = await mngr.by_token(token)
     if media is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
     perms = acc.role.perms if acc.role else None
-    if media.owner_id != acc.id and not has_perm(perms, "media.uploadlarge"):
+    if media.owner_id != acc.id and not has_perm(perms, "admin.media.manage_any"):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "не владелец медиа")
     return media
 

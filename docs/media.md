@@ -25,10 +25,13 @@ upload-token, затем — сама передача файла. Это отд
 
 1. `mediaworker` валидирует access-JWT (общий `JWT_SECRET` / файл
    `data/keys/jwt.key`) и читает права роли аккаунта из Postgres:
+   - `admin.media.upload` → без ограничения по размеру вообще (админский
+     доступ, не привязан к `MEDIA_MAX_BYTES`);
    - `media.uploadlarge` → `MEDIA_MAX_BYTES` (по умолчанию 50 MiB);
    - `media.upload` → `MEDIA_SMALL_MAX_BYTES` (по умолчанию 1 MiB);
-   - ни одного из двух прав → `403`.
-2. Лимит частоты: для обычных пользователей (без `media.uploadlarge`) —
+   - ни одного из трёх прав → `403`.
+2. Лимит частоты: для обычных пользователей (без `media.uploadlarge` и без
+   `admin.media.upload`) —
    `MEDIA_UPLOADS_PER_HOUR` загрузок в час (ключ `media:uprate:{acc}:{hour}`);
    превышение → `429`.
 3. Выдаётся одноразовый token: `HSET media:uptoken:{token} owner/kind/max_bytes`,
@@ -37,6 +40,23 @@ upload-token, затем — сама передача файла. Это отд
 
 **Шаг 2 — `POST /api/media/upload/{upload_token}`**, тело — файл (стрим). Забаненный IP
 → `403`.
+
+## Владение медиа: `media.uploadlarge` vs `admin.media.manage_any`
+
+Два разных права, которые раньше были ошибочно совмещены в одном
+(`media.uploadlarge`), теперь разведены:
+
+- `media.uploadlarge` — **только** повышенный лимит размера при загрузке
+  (`MEDIA_MAX_BYTES` вместо `MEDIA_SMALL_MAX_BYTES`); не даёт доступа к
+  чужому медиа.
+- `admin.media.upload` — загрузка без ограничения размера вообще
+  (админский аплоад).
+- `admin.media.manage_any` — доступ к preview/thumb/avatar **чужого**
+  медиа (используется в `_authorize_media_owner` в mediaworker и в
+  `_owned_media` в billing); отдельно от лимита размера.
+
+Все три права независимы — можно выдать любую комбинацию.
+
 
 4. Token извлекается **атомарно** (Lua `HGETALL` + `DEL`); отсутствует/истёк →
    `404`. Из него берутся `owner`, `kind`, `max_bytes`.
@@ -320,6 +340,9 @@ OGG, а также общий RIFF-контейнер WEBP/AVI). При несо
 - `DELETE /api/v1/admin/services/{id}/attachments/{att_id}`
 
 Аватар пользователя — `accounts.avatar_media_id` (FK → `system_media`, `SET NULL`).
+`PUT /api/v1/user/me/avatar` — только собственное медиа (`owner_id ==
+acc.id`, строго). `PUT /api/v1/admin/users/{id}/avatar` — принудительная
+установка аватара админом на ЛЮБОЕ медиа, требует `admin.media.manage_any`.
 
 ## OpenAPI-документация
 

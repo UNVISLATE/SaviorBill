@@ -40,6 +40,12 @@ router = APIRouter()
 
 _PERM_SMALL = "media.upload"
 _PERM_LARGE = "media.uploadlarge"
+# Админское право без ограничений по размеру вообще (не совпадает с
+# _PERM_LARGE, у которого есть потолок MEDIA_MAX_BYTES — см. §2.2 AUDIT.md).
+_PERM_ADMIN_UNLIMITED = "admin.media.upload"
+# Достаточно большой предел, чтобы Storage.save_stream не приходилось учить
+# понимать "без лимита"; реального файла такого размера на диске не будет.
+_UNLIMITED_BYTES = 2**62
 # До 16 символов, только латиница и цифры — просто метка для UI, не влияет
 # на обработку файла (в отличие от прежнего "kind").
 _TAG_RE = re.compile(r"^[A-Za-z0-9]{1,16}$")
@@ -56,8 +62,9 @@ return data
 async def _enforce_hourly_limit(
     request: Request, acc_id: int, perms: dict | None
 ) -> None:
-    """Лимит загрузок в час для обычных пользователей (кроме media.uploadlarge)."""
-    if has_perm(perms, _PERM_LARGE):
+    """Лимит загрузок в час для обычных пользователей (кроме media.uploadlarge
+    и admin.media.upload)."""
+    if has_perm(perms, _PERM_LARGE) or has_perm(perms, _PERM_ADMIN_UNLIMITED):
         return
     settings: SettingsResolver = request.app.state.settings
     vk: valkey.Valkey = request.app.state.vk
@@ -108,7 +115,10 @@ async def request_upload_token(
     perms, _role = await authorize(request, acc_id)
 
     is_large = has_perm(perms, _PERM_LARGE)
-    if is_large:
+    is_unlimited = has_perm(perms, _PERM_ADMIN_UNLIMITED)
+    if is_unlimited:
+        max_bytes = _UNLIMITED_BYTES
+    elif is_large:
         max_bytes = await settings.max_bytes()
     elif has_perm(perms, _PERM_SMALL):
         max_bytes = await settings.small_max_bytes()
@@ -127,9 +137,10 @@ async def request_upload_token(
             "owner": str(acc_id),
             "tag": tag or "",
             "max_bytes": str(max_bytes),
-            # Флаг права media.uploadlarge — переносим на шаг 2, чтобы решить,
-            # банить ли IP за подложный Content-Length (см. upload_file).
-            "large": "1" if is_large else "0",
+            # Флаг права media.uploadlarge/admin.media.upload — переносим на
+            # шаг 2, чтобы решить, банить ли IP за подложный Content-Length
+            # (см. upload_file).
+            "large": "1" if (is_large or is_unlimited) else "0",
         },
     )
     await vk.expire(uptoken_hkey, cfg.upload_token_ttl)

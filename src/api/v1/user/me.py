@@ -204,7 +204,10 @@ async def set_avatar(
         m = await media.by_id(body.media_id)
         # Same 404 for "not found" and "belongs to another account" — a
         # distinct 403 would let callers enumerate existing media ids.
-        if m is None or (m.owner_id is not None and m.owner_id != acc.id):
+        # Ownership must be strict `owner_id == acc.id`: `owner_id is None`
+        # is "nobody's", not "anybody's" — it must not be claimable by any
+        # authenticated user (see AUDIT.md §2.1).
+        if m is None or m.owner_id != acc.id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
 
     old_media_id = acc.avatar_media_id

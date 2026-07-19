@@ -31,6 +31,7 @@ router = APIRouter()
 
 _PERM_SMALL = "media.upload"
 _PERM_LARGE = "media.uploadlarge"
+_PERM_ADMIN_UNLIMITED = "admin.media.upload"
 
 # Держим в одном месте с upload.py::_TAG_RE (дублирование ради независимости
 # модулей — см. пояснение о дублировании auth-хелперов в upload.py/serve.py).
@@ -74,7 +75,13 @@ async def list_kinds(
         db = request.app.state.db
         acc = await db.account(acc_id)
         if acc is not None:
-            if has_perm(acc.perms, _PERM_LARGE):
+            if has_perm(acc.perms, _PERM_ADMIN_UNLIMITED):
+                limits = {
+                    "perm": _PERM_ADMIN_UNLIMITED,
+                    "max_bytes": None,  # без ограничения
+                    "uploads_per_hour": None,
+                }
+            elif has_perm(acc.perms, _PERM_LARGE):
                 limits = {
                     "perm": _PERM_LARGE,
                     "max_bytes": await settings.max_bytes(),
