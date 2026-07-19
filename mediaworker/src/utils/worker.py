@@ -332,16 +332,24 @@ class Worker:
             await self.proc_log.append(job_id, chunk)
 
         async def progress_sink(snapshot) -> None:  # noqa: ANN001 — ProgressSnapshot
-            await self.proc_log.set_progress(
-                job_id,
-                percent=snapshot.percent,
-                eta_sec=snapshot.eta_sec,
-                fps=snapshot.fps,
-                speed=snapshot.speed,
-                frame=snapshot.frame,
-                out_time_sec=snapshot.out_time_sec,
-                done=snapshot.done,
-            )
+            # Прогресс — вспомогательная телеметрия, не часть контракта
+            # конвертации: ошибка здесь (например, временный сбой Valkey) не
+            # должна ронять и ретраить сам ffmpeg-конвейер (см. историю бага:
+            # неверная сериализация bool рушила весь _convert() и вызывала
+            # бесконечные повторные конвертации одного и того же файла).
+            try:
+                await self.proc_log.set_progress(
+                    job_id,
+                    percent=snapshot.percent,
+                    eta_sec=snapshot.eta_sec,
+                    fps=snapshot.fps,
+                    speed=snapshot.speed,
+                    frame=snapshot.frame,
+                    out_time_sec=snapshot.out_time_sec,
+                    done=snapshot.done,
+                )
+            except Exception as exc:  # noqa: BLE001
+                print(f"[mediaworker] progress sink error (non-fatal): {exc}", flush=True)
 
         try:
             # Вид медиа (image/video) больше не приходит от клиента — сервер

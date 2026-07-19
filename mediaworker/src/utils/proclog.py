@@ -83,7 +83,11 @@ class ProcLog:
         JSON-снимок (см. ``utils/ffprogress.py``), а не сырой текст терминала.
         """
         key = f"{_PROGRESS_PREFIX}{job_id}"
-        payload = {k: ("" if v is None else v) for k, v in fields.items()}
+        # Valkey hash принимает только bytes/str/int/float — bool (``done``)
+        # нужно привести явно, иначе клиент кидает DataError на каждый снимок
+        # (наблюдалось как зависшая конвертация: исключение из on_progress
+        # рушило весь _convert(), и задача ретраилась бесконечно).
+        payload = {k: ("" if v is None else int(v) if isinstance(v, bool) else v) for k, v in fields.items()}
         await self.vk.hset(key, mapping=payload)
         await self.vk.expire(key, self.ttl)
         await self.vk.publish(f"{_PROGRESS_EVENTS_PREFIX}{job_id}", json.dumps(fields, default=str))
