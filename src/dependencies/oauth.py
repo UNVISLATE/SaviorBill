@@ -24,6 +24,7 @@ from dependencies.valkey import get_valkey_client
 from enums import AuthAction
 from models.oauth_providers import OAuthProvidersModel
 from models.system_scripts import SystemScriptsModel
+from models.banned_email_domains import BannedEmailDomainsMngr
 from models.user import UserModel
 from models.user_oauth import UserOauthModel
 from lua.schemas import LuaRequest
@@ -274,6 +275,11 @@ class OAuthSvc:
                 if existing is not None:
                     pending = await self._start_pending_link(slug, user, existing)
                     return None, pending
+            if user.email and await BannedEmailDomainsMngr(self.s).is_banned(user.email):
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "registration from this email domain is not allowed",
+                )
             acc = UserModel(
                 login=f"{slug}:{user.sub}"[:64],
                 email=user.email,

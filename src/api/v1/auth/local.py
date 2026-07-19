@@ -8,12 +8,14 @@ from dependencies.auth import (
     UserMngr,
     TokenSvc,
     get_acc_mngr,
+    get_banned_domains_mngr,
     get_token_svc,
 )
 from dependencies.login_guard import LoginGuard, client_ip, get_login_guard
 from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
+from models.banned_email_domains import BannedEmailDomainsMngr
 from schemas.auth import Login, Refresh, Reg, TokenPair
 from security.sec import jwt as jwtu
 from security.sec.pwd import dummy_hash, hash_pass, needs_rehash, verify_pass
@@ -35,10 +37,15 @@ router = APIRouter()
 async def register(
     body: Reg,
     mngr: UserMngr = Depends(get_acc_mngr),
+    banned_domains: BannedEmailDomainsMngr = Depends(get_banned_domains_mngr),
     tokens: TokenSvc = Depends(get_token_svc),
     triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> TokenPair:
     """Создать локальный аккаунт и сразу выдать токены."""
+    if body.email and await banned_domains.is_banned(body.email):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "registration from this email domain is not allowed"
+        )
     # Единое сообщение (не раскрывает, что именно занято — логин или email).
     if await mngr.by_login(body.login) or (
         body.email and await mngr.by_email(body.email)

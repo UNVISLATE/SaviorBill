@@ -26,6 +26,7 @@ from .triggers import TriggerModel, TriggerMngr
 from .log import LogModel
 from .audit_log import AuditLogModel
 from .worker_jobs import WorkerJobModel, WorkerJobEventModel, WorkerJobsMngr
+from .banned_email_domains import BannedEmailDomainModel, BannedEmailDomainsMngr
 
 __all__ = [
     "Base",
@@ -70,4 +71,6 @@ __all__ = [
     "WorkerJobModel",
     "WorkerJobEventModel",
     "WorkerJobsMngr",
+    "BannedEmailDomainModel",
+    "BannedEmailDomainsMngr",
 ]

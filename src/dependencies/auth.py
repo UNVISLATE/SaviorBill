@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
 from dependencies.valkey import get_valkey_client
+from models.banned_email_domains import BannedEmailDomainsMngr
 from models.user import UserModel, UserMngr
 from services.auth import TokenSvc
 from core.config import AppConfig
@@ -21,6 +22,12 @@ def _cfg(request: Request) -> AppConfig:
 
 def get_acc_mngr(session: AsyncSession = Depends(get_db_session)) -> UserMngr:
     return UserMngr(session)
+
+
+def get_banned_domains_mngr(
+    session: AsyncSession = Depends(get_db_session),
+) -> BannedEmailDomainsMngr:
+    return BannedEmailDomainsMngr(session)
 
 
 def get_token_svc(
@@ -63,6 +70,7 @@ __all__ = [
     "UserMngr",
     "TokenSvc",
     "get_acc_mngr",
+    "get_banned_domains_mngr",
     "get_token_svc",
     "get_current_acc",
 ]

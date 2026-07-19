@@ -6,6 +6,7 @@ from .catalogs import router as catalogs_router
 from .audit import router as audit_router
 from .analytics import router as analytics_router
 from .email import router as email_router
+from .email_domains import router as email_domains_router
 from .lua import router as lua_router
 from .me import router as me_router
 from .media import router as media_router
@@ -41,6 +42,11 @@ router.include_router(email_router, prefix="/email/templates", tags=["admin: ema
 router.include_router(triggers_router, prefix="/triggers", tags=["admin: triggers"])
 router.include_router(media_router, prefix="/media", tags=["admin: media"])
 router.include_router(settings_router, prefix="/settings", tags=["admin: settings"])
+router.include_router(
+    email_domains_router,
+    prefix="/settings/email-domains",
+    tags=["admin: settings"],
+)
 router.include_router(audit_router, prefix="/audit", tags=["admin: audit"])
 # tasks_router без единого верхнего тега здесь: media.py/lua.py сами задают
 # "admin: tasks/media" и "admin: tasks/lua" при регистрации внутри пакета
