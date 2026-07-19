@@ -25,6 +25,7 @@ from utils.idempotency import once, release_once
 from messaging.mediabus import MediaBus
 from utils.retry import attempts, clear_attempts
 from observability.telemetry import span_from_carrier
+from security.sec.bus_sign import verify_fields
 
 log = logging.getLogger("saviorbill.media")
 
@@ -96,6 +97,17 @@ class MediaResults:
             for _stream, entries in resp or []:
                 for msg_id, data in entries:
                     try:
+                        if not verify_fields(self.cfg.BUS_SIGNING_KEY, data):
+                            # Результат с неверной/отсутствующей подписью — не
+                            # доверяем содержимому (см. AUDIT.md H1): подделка
+                            # или рассинхронизация BUS_SIGNING_KEY между
+                            # сервисами. Не пишем в БД, просто ack и лог.
+                            log.warning(
+                                "media-results: сообщение %s отклонено — "
+                                "неверная подпись",
+                                msg_id,
+                            )
+                            continue
                         with span_from_carrier("media.result.consume", data):
                             await self._handle(data)
                     except Exception:  # noqa: BLE001 — одна запись не валит цикл
@@ -145,6 +157,7 @@ class MediaResults:
                             self.vk,
                             self.cfg.MEDIA_TASK_STREAM,
                             self.cfg.MEDIA_TASK_STREAM_MAXLEN,
+                            signing_key=self.cfg.BUS_SIGNING_KEY,
                         )
                         await bus.enqueue_delete(media.backend, [old_thumb["key"]])
             else:  # convert

@@ -67,7 +67,9 @@ class TestIsMediaStillUsed:
 class TestReleaseOldAvatar:
     def _request(self) -> SimpleNamespace:
         settings = SimpleNamespace(
-            MEDIA_TASK_STREAM="media:tasks", MEDIA_TASK_STREAM_MAXLEN=10_000
+            MEDIA_TASK_STREAM="media:tasks",
+            MEDIA_TASK_STREAM_MAXLEN=10_000,
+            BUS_SIGNING_KEY="",
         )
         return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(settings=settings)))
 

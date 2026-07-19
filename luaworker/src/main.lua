@@ -5,11 +5,16 @@
 --   2. Воркер читает её через consumer-группу (XREADGROUP), исполняет handler.
 --   3. Результат публикуется в LUA_RESP_STREAM (XADD) с полями cid/ok/data.
 --   4. Задача подтверждается (XACK).
+--
+-- Если задан BUS_SIGNING_KEY (общий с billing) — задачи/результаты подписываются
+-- HMAC-SHA256 (поля ts+sig, см. verify_signed/sign_fields выше), что закрывает
+-- подделку сообщений тем, у кого есть прямой доступ к Valkey (см. AUDIT.md H1).
 
 local redis = require("redis")
 local cjson = require("cjson")
 local socket = require("socket")
 local handlers = require("handlers")
+local sbox = require("sbox")
 
 local function env(key, default)
   local v = os.getenv(key)
@@ -33,10 +38,74 @@ local DEFAULT_CONSUMER = (env("HOSTNAME", "worker") .. "-" .. tostring(math.rand
 local CONSUMER = env("LUA_CONSUMER", DEFAULT_CONSUMER)
 local LOG_TTL = tonumber(env("LUA_LOG_TTL", "3600"))
 local LOG_PREFIX = env("LUA_LOG_PREFIX", "lua:log:")
+-- HMAC-ключ подписи lua:tasks/lua:results (см. AUDIT.md H1) — общий с
+-- billing. Пустой = подпись отключена (dev-режим, совпадает с Python-стороной).
+local SIGNING_KEY = env("BUS_SIGNING_KEY", "")
+-- Окно допустимого расхождения времени (anti-replay), см. security/sec/bus_sign.py.
+local MAX_SKEW_SEC = tonumber(env("BUS_SIGN_MAX_SKEW_SEC", "300"))
 
 -- redis-lua не знает stream-команды из коробки — регистрируем их.
 for _, cmd in ipairs({ "xadd", "xack", "xgroup", "xreadgroup" }) do
   redis.commands[cmd] = redis.command(cmd:upper())
+end
+
+-- Сравнение строк за постоянное время (не выдаёт длину общего префикса через
+-- время выполнения) — используется для сверки HMAC-подписи, см. AUDIT.md H1.
+local function ct_equal(a, b)
+  if type(a) ~= "string" or type(b) ~= "string" or #a ~= #b then
+    return false
+  end
+  local diff = 0
+  for i = 1, #a do
+    diff = diff | (string.byte(a, i) ~ string.byte(b, i))
+  end
+  return diff == 0
+end
+
+-- Каноническая строка полей сообщения (без sig), отсортированных по имени —
+-- должна побайтово совпадать с `security/sec/bus_sign.py::_canonical`.
+local function canonical_fields(map)
+  local keys = {}
+  for k in pairs(map) do
+    if k ~= "sig" then
+      keys[#keys + 1] = k
+    end
+  end
+  table.sort(keys)
+  local parts = {}
+  for _, k in ipairs(keys) do
+    parts[#parts + 1] = k .. "=" .. tostring(map[k])
+  end
+  return table.concat(parts, "\31")
+end
+
+-- Проверить подпись+окно времени входящего сообщения. `true`, если подпись
+-- отключена (SIGNING_KEY пуст) — совпадает с поведением Python-стороны.
+local function verify_signed(map)
+  if SIGNING_KEY == "" then
+    return true
+  end
+  local sig, ts = map.sig, map.ts
+  if not sig or not ts then
+    return false
+  end
+  local skew = math.abs(socket.gettime() - tonumber(ts))
+  if not tonumber(ts) or skew > MAX_SKEW_SEC then
+    return false
+  end
+  local expected = sbox.hmac_sha256_hex(SIGNING_KEY, canonical_fields(map))
+  return ct_equal(expected, sig)
+end
+
+-- Подписать исходящее сообщение (добавить ts+sig) либо вернуть без изменений,
+-- если подпись отключена — совпадает с `security/sec/bus_sign.py::sign_fields`.
+local function sign_fields(map)
+  if SIGNING_KEY == "" then
+    return map
+  end
+  map.ts = tostring(math.floor(socket.gettime()))
+  map.sig = sbox.hmac_sha256_hex(SIGNING_KEY, canonical_fields(map))
+  return map
 end
 
 local function connect()
@@ -65,8 +134,30 @@ local function fields_to_map(fields)
   return map
 end
 
+-- Развернуть таблицу field->value в плоский список для клиента redis-lua.
+local function map_to_args(map)
+  local args = {}
+  for k, v in pairs(map) do
+    args[#args + 1] = k
+    args[#args + 1] = v
+  end
+  return args
+end
+
 local function handle(client, entry_id, map)
   local cid = map.cid or ""
+
+  if not verify_signed(map) then
+    -- Задача с неверной/отсутствующей подписью — не исполняем (см.
+    -- AUDIT.md H1), сразу ack (не через reclaim — иначе честно повторяли бы
+    -- заведомо поддельное сообщение бесконечно).
+    io.stderr:write("[luaworker] rejected task cid=" .. cid .. ": invalid signature\n")
+    local resp = sign_fields({ cid = cid, ok = "0", data = cjson.encode("invalid signature") })
+    client:xadd(RESP, "*", table.unpack(map_to_args(resp)))
+    client:xack(TASK, GROUP, entry_id)
+    return
+  end
+
   local ok, result = pcall(handlers.dispatch, map.kind, cjson.decode(map.payload or "{}"))
 
   local data, flag
@@ -83,7 +174,8 @@ local function handle(client, entry_id, map)
     flag, data = "0", cjson.encode(tostring(result))
   end
 
-  client:xadd(RESP, "*", "cid", cid, "ok", flag, "data", data)
+  local resp = sign_fields({ cid = cid, ok = flag, data = data })
+  client:xadd(RESP, "*", table.unpack(map_to_args(resp)))
   client:xack(TASK, GROUP, entry_id)
 end
 

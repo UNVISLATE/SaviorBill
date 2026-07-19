@@ -21,6 +21,15 @@ log = logging.getLogger("saviorbill.media")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     cfg = Config()
+    if not (cfg.BUS_SIGNING_KEY or "").strip():
+        # См. AUDIT.md H1: без общего секрета media:tasks/media:results не
+        # подписываются — billing (см. bootstrap/safety.py) откажется
+        # стартовать в проде без BUS_SIGNING_KEY, здесь — только предупреждение
+        # в лог, т.к. у mediaworker нет собственного понятия DEBUG/prod-режима.
+        log.warning(
+            "[mediaworker] BUS_SIGNING_KEY не задан — media:tasks/media:results "
+            "не подписываются, шина не защищена от подмены сообщений (AUDIT.md H1)"
+        )
     vk = valkey.from_url(cfg.valkey_url, decode_responses=True)
     storage = Storage(cfg)
     db = DB(cfg.db_dsn)

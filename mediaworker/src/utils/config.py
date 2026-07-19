@@ -59,6 +59,9 @@ class Config(BaseSettings):
     # Valkey Streams растут неограниченно (xack не удаляет записи физически).
     MEDIA_TASK_STREAM_MAXLEN: int = Field(default=10_000)
     MEDIA_RESULT_STREAM_MAXLEN: int = Field(default=10_000)
+    # HMAC-ключ подписи сообщений media:tasks/media:results (см. AUDIT.md H1) —
+    # общий с billing. Пустой = подпись отключена (dev-режим).
+    BUS_SIGNING_KEY: str = Field(default="")
 
     # --- Журнал тасков (наблюдаемость, независима от OTEL) ---
     # Кольцевой буфер записей на kind ("media") + TTL всего списка.

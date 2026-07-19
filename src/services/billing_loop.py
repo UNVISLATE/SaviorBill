@@ -108,6 +108,7 @@ class BillingLoop:
             retry_backoff=backoff or 0,
             task_stream_maxlen=self.cfg.LUA_TASK_STREAM_MAXLEN,
             task_log=self.task_log,
+            signing_key=self.cfg.BUS_SIGNING_KEY,
         )
 
     async def _pay_mngr(self, session: AsyncSession) -> PayMngr:

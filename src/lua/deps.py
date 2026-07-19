@@ -26,6 +26,7 @@ def get_lua_bus(request: Request) -> LuaBus:
         cfg.LUA_CALL_TIMEOUT,
         task_stream_maxlen=cfg.LUA_TASK_STREAM_MAXLEN,
         task_log=request.app.state.task_log,
+        signing_key=cfg.BUS_SIGNING_KEY,
     )
 
 
@@ -54,6 +55,7 @@ async def get_lua_bus_configured(
         retry_backoff=backoff or 0,
         task_stream_maxlen=cfg.LUA_TASK_STREAM_MAXLEN,
         task_log=task_log,
+        signing_key=cfg.BUS_SIGNING_KEY,
     )
 
 

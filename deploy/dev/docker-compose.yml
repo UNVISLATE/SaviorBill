@@ -47,6 +47,7 @@ services:
       SECRETS_KEY: ${SECRETS_KEY:-}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8000}
       LUA_SERVICE_TOKEN: ${LUA_SERVICE_TOKEN:-dev-service-token}
+      BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-}
       DATA_DIR: /app/data
       LUA_SCRIPTS_DIR: /app/data/lua
       EMAIL_TEMPLATES_DIR: /app/data/email
@@ -83,6 +84,7 @@ services:
       BILLING_URL: http://billing:8000
       LUA_SERVICE_TOKEN: ${LUA_SERVICE_TOKEN:-dev-service-token}
       LUA_SCRIPTS_DIR: /app/data/lua
+      BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-}
     volumes:
       - ../../data:/app/data:ro
 
@@ -106,6 +108,7 @@ services:
       VALKEY_DB: 0
       DATA_DIR: /app/data
       JWT_SECRET: ${JWT_SECRET:-}
+      BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-}
       MEDIA_TASK_STREAM: media:tasks
       MEDIA_RESULT_STREAM: media:results
       MEDIA_GROUP: mediaworkers

@@ -17,6 +17,7 @@ def _cfg(**overrides) -> AppConfig:
         DB_PASS="s3cr3t-random-generated",
         OWNER_LOGIN="root_admin_x1",
         OWNER_PASS="a-real-random-password",
+        BUS_SIGNING_KEY="a-real-random-bus-signing-key",
     )
     defaults.update(overrides)
     return AppConfig(**defaults)
@@ -57,3 +58,9 @@ def test_cors_wildcard_rejected_at_config_level():
     """AUDIT.md L3 — CORS_ORIGINS=* невалиден вместе с allow_credentials=True."""
     with pytest.raises(Exception, match="CORS_ORIGINS"):
         AppConfig(CORS_ORIGINS="*")
+
+
+def test_empty_bus_signing_key_rejected():
+    """AUDIT.md H1 — без общего секрета шина lua/media не защищена от подделки."""
+    with pytest.raises(InsecureDefaultsError, match="BUS_SIGNING_KEY"):
+        check_dangerous_defaults(_cfg(BUS_SIGNING_KEY=""))

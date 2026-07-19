@@ -12,6 +12,7 @@ from valkey.exceptions import ResponseError
 
 from utils.datetime_utils import timestamp_now
 from observability.task_log import TaskLog
+from security.sec.bus_sign import sign_fields, verify_fields
 
 log = logging.getLogger("saviorbill.luabus")
 
@@ -46,6 +47,7 @@ class LuaBus:
         retry_backoff: float = 0,
         task_stream_maxlen: int = 10_000,
         task_log: TaskLog | None = None,
+        signing_key: str = "",
     ) -> None:
         self.vk = vk
         self.task_stream = task_stream
@@ -61,6 +63,9 @@ class LuaBus:
         # Журнал фактов о тасках (может отсутствовать — например, в тестах);
         # без него LuaBus работает как раньше, просто без записи в tasklog:lua.
         self.task_log = task_log
+        # HMAC-ключ подписи lua:tasks/lua:results (см. AUDIT.md H1). Пустой —
+        # подпись отключена (dev/тесты без настроенного BUS_SIGNING_KEY).
+        self.signing_key = signing_key
 
     async def _last_id(self) -> str:
         """Текущий конец ответного стрима (база для чтения только новых записей)."""
@@ -76,9 +81,13 @@ class LuaBus:
         deadline = timestamp_now() + timeout
 
         last = await self._last_id()
+        task_fields = sign_fields(
+            self.signing_key,
+            {"cid": cid, "kind": kind, "payload": json.dumps(payload or {})},
+        )
         await self.vk.xadd(
             self.task_stream,
-            {"cid": cid, "kind": kind, "payload": json.dumps(payload or {})},
+            task_fields,
             maxlen=self.task_stream_maxlen,
             approximate=True,
         )
@@ -107,6 +116,16 @@ class LuaBus:
                 for entry_id, fields in entries:
                     last = entry_id
                     if fields.get("cid") != cid:
+                        continue
+                    if not verify_fields(self.signing_key, fields):
+                        # Ответ с неверной/отсутствующей подписью — не доверяем
+                        # ему (см. AUDIT.md H1): это либо подделка, либо
+                        # рассинхронизация BUS_SIGNING_KEY между сервисами.
+                        # Продолжаем ждать настоящий ответ до дедлайна.
+                        log.warning(
+                            "LuaBus: ответ cid=%s отклонён — неверная подпись",
+                            cid,
+                        )
                         continue
                     data = json.loads(fields.get("data") or "null")
                     if fields.get("ok") == "1":
@@ -161,9 +180,13 @@ class LuaBus:
     async def submit(self, kind: str, payload: dict | None = None) -> str:
         """Опубликовать задачу без ожидания ответа (fire-and-forget). Возвращает cid."""
         cid = uuid.uuid4().hex
+        task_fields = sign_fields(
+            self.signing_key,
+            {"cid": cid, "kind": kind, "payload": json.dumps(payload or {})},
+        )
         await self.vk.xadd(
             self.task_stream,
-            {"cid": cid, "kind": kind, "payload": json.dumps(payload or {})},
+            task_fields,
             maxlen=self.task_stream_maxlen,
             approximate=True,
         )

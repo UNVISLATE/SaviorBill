@@ -3,10 +3,12 @@
 Вызывается первым в ``lifespan``, до подключения к БД/Valkey — если в
 проде (``DEBUG=false``) остались значения-плейсхолдеры из примера
 (``DB_PASS=change-me``, ``OWNER_LOGIN=owner``/``OWNER_PASS=owner``,
-``TRUSTED_PROXIES=*``), приложение не должно тихо стартовать с ними
-(см. AUDIT.md H3): либо забытый плейсхолдер держит дверь открытой
-(any-IP доверенный прокси = спуфинг X-Forwarded-For), либо это ровно
-тот пароль/логин, который есть в публичном примере в репозитории.
+``TRUSTED_PROXIES=*``) или не задан ``BUS_SIGNING_KEY``, приложение не
+должно тихо стартовать с ними (см. AUDIT.md H1/H3): либо забытый
+плейсхолдер держит дверь открытой (any-IP доверенный прокси = спуфинг
+X-Forwarded-For), либо это ровно тот пароль/логин, который есть в
+публичном примере в репозитории, либо шина задач/результатов вообще не
+защищена от подделки сообщений.
 """
 
 from __future__ import annotations
@@ -51,6 +53,14 @@ def check_dangerous_defaults(cfg: AppConfig) -> None:
         problems.append(
             "OWNER_LOGIN/OWNER_PASS равны публично известным значениям из "
             ".env.example — задайте собственные учётные данные владельца"
+        )
+
+    if not (cfg.BUS_SIGNING_KEY or "").strip():
+        problems.append(
+            "BUS_SIGNING_KEY не задан — без него lua:tasks/lua:results/"
+            "media:tasks/media:results не подписываются, и любой процесс с "
+            "доступом к Valkey может подделать задачу или результат воркера "
+            "(AUDIT.md H1); сгенерируйте общий секрет для billing/luaworker/mediaworker"
         )
 
     if problems:

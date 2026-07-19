@@ -16,6 +16,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from utils import ipban
 from utils.authctx import authenticate, authorize, client_ip
+from utils.bus_sign import sign_fields
 from utils.config import Config
 from utils.keys import file_key, status_key
 from utils.rbac import has_perm
@@ -166,7 +167,10 @@ async def add_preview(
 
     await vk.xadd(
         cfg.task_stream,
-        inject_carrier({"op": "preview_add", "token": token, "source": source}),
+        sign_fields(
+            cfg.BUS_SIGNING_KEY,
+            inject_carrier({"op": "preview_add", "token": token, "source": source}),
+        ),
         maxlen=cfg.task_stream_maxlen,
         approximate=True,
     )
@@ -216,7 +220,7 @@ async def replace_thumb(
 
     await vk.xadd(
         cfg.task_stream,
-        inject_carrier({"op": "thumb_replace", "token": token}),
+        sign_fields(cfg.BUS_SIGNING_KEY, inject_carrier({"op": "thumb_replace", "token": token})),
         maxlen=cfg.task_stream_maxlen,
         approximate=True,
     )

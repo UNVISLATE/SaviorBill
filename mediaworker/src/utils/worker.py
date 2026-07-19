@@ -25,6 +25,7 @@ from .convert import (
     make_thumb,
     probe_duration,
 )
+from .bus_sign import sign_fields, verify_fields
 from .keys import file_key, opstatus_key, status_key
 from .proclog import ProcLog
 from .settings import SettingsResolver
@@ -116,6 +117,17 @@ class Worker:
         """Обработать одну задачу под семафором; при ошибке — повтор/DLQ."""
         async with self._sem:
             try:
+                if not verify_fields(self.cfg.BUS_SIGNING_KEY, data):
+                    # Задача с неверной/отсутствующей подписью — не исполняем
+                    # (см. AUDIT.md H1): подделка или рассинхронизация
+                    # BUS_SIGNING_KEY между сервисами. Ack без повтора (не
+                    # через _on_failure/reclaim — иначе честно повторяли бы
+                    # заведомо поддельное сообщение).
+                    print(
+                        f"[mediaworker] task {msg_id} rejected: invalid signature",
+                        flush=True,
+                    )
+                    return
                 with span_from_carrier(f"media.task.{data.get('op', '?')}", data):
                     await self._handle(data)
             except Exception as exc:  # noqa: BLE001
@@ -148,10 +160,18 @@ class Worker:
                 detail="max attempts exceeded",
             )
         else:
-            # Ещё есть попытки — кладём задачу обратно в очередь.
+            # Ещё есть попытки — кладём задачу обратно в очередь. Подпись/ts
+            # пересобираются заново (не переносим старые ts/sig): к моменту
+            # повторной обработки исходный ts может выйти за anti-replay-окно
+            # (см. AUDIT.md H1) и задача была бы отклонена как "просроченная".
+            fresh = {k: v for k, v in data.items() if k not in ("ts", "sig")}
             await self.vk.xadd(
-                self.cfg.task_stream, data, maxlen=self.cfg.task_stream_maxlen, approximate=True
+                self.cfg.task_stream,
+                sign_fields(self.cfg.BUS_SIGNING_KEY, fresh),
+                maxlen=self.cfg.task_stream_maxlen,
+                approximate=True,
             )
+
 
     async def _handle(self, data: dict) -> None:
         op = data.get("op")
@@ -189,7 +209,7 @@ class Worker:
         """Опубликовать результат конверсии в стрим (billing запишет в БД)."""
         await self.vk.xadd(
             self.cfg.result_stream,
-            inject_carrier(fields),
+            sign_fields(self.cfg.BUS_SIGNING_KEY, inject_carrier(fields)),
             maxlen=self.cfg.result_stream_maxlen,
             approximate=True,
         )

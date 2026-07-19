@@ -14,6 +14,7 @@ import json
 import valkey.asyncio as valkey
 
 from observability.telemetry import inject_carrier
+from security.sec.bus_sign import sign_fields
 
 _STATUS_PREFIX = "media:status:"
 
@@ -26,10 +27,14 @@ class MediaBus:
         vk: valkey.Valkey,
         task_stream: str = "media:tasks",
         task_stream_maxlen: int = 10_000,
+        signing_key: str = "",
     ) -> None:
         self.vk = vk
         self.task_stream = task_stream
         self.task_stream_maxlen = task_stream_maxlen
+        # HMAC-ключ подписи media:tasks (см. AUDIT.md H1) — общий с mediaworker.
+        # Пустой = подпись отключена (dev/тесты без BUS_SIGNING_KEY).
+        self.signing_key = signing_key
 
     async def enqueue_delete(self, backend: str, paths: list[str]) -> None:
         """Поставить задачу удаления файлов из хранилища.
@@ -39,8 +44,8 @@ class MediaBus:
         """
         if not paths:
             return
-        await self.vk.xadd(
-            self.task_stream,
+        fields = sign_fields(
+            self.signing_key,
             inject_carrier(
                 {
                     "op": "delete",
@@ -48,6 +53,10 @@ class MediaBus:
                     "payload": json.dumps({"paths": paths}),
                 }
             ),
+        )
+        await self.vk.xadd(
+            self.task_stream,
+            fields,
             maxlen=self.task_stream_maxlen,
             approximate=True,
         )

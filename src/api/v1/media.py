@@ -57,7 +57,7 @@ async def media_status(
     mngr: SystemMediaMngr = Depends(get_media_mngr),
 ) -> MediaStatus:
     cfg: AppConfig = request.app.state.settings
-    bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN)
+    bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN, signing_key=cfg.BUS_SIGNING_KEY)
 
     data = await bus.status(token)
     if data:
@@ -104,7 +104,7 @@ async def remove_preview(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "preview not found")
     if removed.get("key"):
         cfg: AppConfig = request.app.state.settings
-        bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN)
+        bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN, signing_key=cfg.BUS_SIGNING_KEY)
         await bus.enqueue_delete(media.backend, [removed["key"]])
         # Убрать осиротевший ключ из кэша вариантов mediaworker (media:file:*)
         # — тот же Valkey, тот же префикс, что и в mediaworker/utils/worker.py.

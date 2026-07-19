@@ -26,6 +26,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from utils import ipban
 from utils.authctx import authenticate, authorize, client_ip
+from utils.bus_sign import sign_fields
 from utils.config import Config
 from utils.keys import rate_key, status_key, uptoken_key
 from utils.rbac import has_perm
@@ -209,15 +210,18 @@ async def upload_file(request: Request, upload_token: str) -> dict:
     await vk.expire(status_key(media_token), cfg.status_ttl)
     await vk.xadd(
         cfg.task_stream,
-        inject_carrier(
-            {
-                "op": "convert",
-                "token": media_token,
-                "tag": tag,
-                "owner_id": str(owner_id) if owner_id else "",
-                "backend": cfg.backend,
-                "size": str(size),
-            }
+        sign_fields(
+            cfg.BUS_SIGNING_KEY,
+            inject_carrier(
+                {
+                    "op": "convert",
+                    "token": media_token,
+                    "tag": tag,
+                    "owner_id": str(owner_id) if owner_id else "",
+                    "backend": cfg.backend,
+                    "size": str(size),
+                }
+            ),
         ),
         maxlen=cfg.task_stream_maxlen,
         approximate=True,

@@ -175,7 +175,7 @@ async def _release_old_avatar(
     ):
         return
     cfg: AppConfig = request.app.state.settings
-    bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN)
+    bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN, signing_key=cfg.BUS_SIGNING_KEY)
     await bus.enqueue_delete(old.backend, all_storage_keys(old))
     await media.delete(old)
 

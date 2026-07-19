@@ -255,6 +255,77 @@ async def test_call_error_detail_is_truncated_in_task_log():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# H1 (AUDIT.md) — подпись сообщений шины (BUS_SIGNING_KEY)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_signed_bus_signs_outgoing_task():
+    """При заданном signing_key исходящая задача содержит ts/sig."""
+    fake = FakeValkey()
+    bus = LuaBus(fake, "lua:tasks", "lua:results", signing_key="shared-secret")
+    await bus.submit("eval", {"code": "return 1"})
+    assert len(fake.added_tasks) == 1
+    task = fake.added_tasks[0]
+    assert "ts" in task and "sig" in task
+
+
+@pytest.mark.asyncio
+async def test_signed_bus_rejects_unsigned_response():
+    """Ответ без подписи отклоняется — вызов уходит в таймаут."""
+    fake = FakeValkey()
+    bus = LuaBus(
+        fake, "lua:tasks", "lua:results", default_timeout=1, signing_key="shared-secret"
+    )
+
+    original_xadd = fake.xadd
+
+    async def capturing_xadd(stream: str, fields: dict, **_kwargs) -> str:
+        entry_id = await original_xadd(stream, fields)
+        if "kind" in fields:
+            # Ответ воркера без ts/sig — как если бы кто-то подделал сообщение
+            # или BUS_SIGNING_KEY воркера не совпадает.
+            resp_id = fake._next_id()
+            fake._stream_entries.setdefault("lua:results", []).append(
+                (resp_id, {"cid": fields["cid"], "ok": "1", "data": json.dumps({"x": 1})})
+            )
+        return entry_id
+
+    fake.xadd = capturing_xadd
+
+    with pytest.raises(LuaError, match="таймаут"):
+        await bus.call("eval", {})
+
+
+@pytest.mark.asyncio
+async def test_signed_bus_accepts_correctly_signed_response():
+    """Ответ с верной подписью (и тем же ключом) принимается как обычно."""
+    from security.sec.bus_sign import sign_fields
+
+    fake = FakeValkey()
+    bus = LuaBus(
+        fake, "lua:tasks", "lua:results", default_timeout=5, signing_key="shared-secret"
+    )
+
+    original_xadd = fake.xadd
+
+    async def capturing_xadd(stream: str, fields: dict, **_kwargs) -> str:
+        entry_id = await original_xadd(stream, fields)
+        if "kind" in fields:
+            resp = sign_fields(
+                "shared-secret",
+                {"cid": fields["cid"], "ok": "1", "data": json.dumps({"result": 5})},
+            )
+            resp_id = fake._next_id()
+            fake._stream_entries.setdefault("lua:results", []).append((resp_id, resp))
+        return entry_id
+
+    fake.xadd = capturing_xadd
+
+    result = await bus.call("eval", {})
+    assert result == {"result": 5}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # call: ретраи (IMPLEMENTATION_PLAN §9)
 # ─────────────────────────────────────────────────────────────────────────────
 

@@ -99,6 +99,11 @@ class AppConfig(BaseSettings):
     # по умолчанию либо облачный менеджер).
     LUA_SERVICE_TOKEN: str | None = Field(default=None)
     LUA_SERVICE_TOKEN_FILE: str | None = Field(default=None)
+    # HMAC-ключ подписи сообщений lua:tasks/lua:results/media:tasks/media:results
+    # (см. AUDIT.md H1) — общий с luaworker и mediaworker. Пустой = подпись
+    # отключена (dev-режим); в проде (DEBUG=false) пустое значение — fail-fast
+    # (bootstrap/safety.py), т.к. без подписи стрим не является trust-boundary.
+    BUS_SIGNING_KEY: str = Field(default="")
 
     # Billing-loop (планировщик истечений услуг и перепроверок платежей)
     BILLING_LOOP_ENABLED: bool = Field(default=True)
