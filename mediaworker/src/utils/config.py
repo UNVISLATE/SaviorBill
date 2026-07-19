@@ -88,6 +88,9 @@ class Config(BaseSettings):
     MEDIA_MAX_BYTES: int = Field(default=524_288_000)  # 500 MiB (media.uploadlarge)
     MEDIA_SMALL_MAX_BYTES: int = Field(default=1_048_576)  # 1 MiB
     MEDIA_UPLOADS_PER_HOUR: int = Field(default=30)
+    # Максимум медиа-файлов на пользователя (обычная роль); превышение —
+    # жёсткий отказ при загрузке нового файла, без авто-удаления старых.
+    USER_MEDIA_LIMIT: int = Field(default=5)
 
     # --- Параметры конвертации ---
     MEDIA_WEBP_QUALITY: int = Field(default=82)
@@ -261,6 +264,10 @@ class Config(BaseSettings):
     @property
     def uploads_per_hour(self) -> int:
         return self.MEDIA_UPLOADS_PER_HOUR
+
+    @property
+    def user_media_limit(self) -> int:
+        return self.USER_MEDIA_LIMIT
 
     @property
     def webp_quality(self) -> int:

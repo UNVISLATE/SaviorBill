@@ -209,6 +209,14 @@ SETTINGS: tuple[SettingDef, ...] = (
         desc="Загрузок в час для аккаунтов без media.uploadlarge "
         "(у media.uploadlarge часовой лимит не применяется)",
     ),
+    SettingDef(
+        "user.media.limit",
+        "USER_MEDIA_LIMIT",
+        type="int",
+        group="media",
+        desc="Максимум медиа-файлов на аккаунт (без media.uploadlarge/"
+        "admin.media.upload — у них лимит не применяется)",
+    ),
     # Аналитика: продвинутый уровень (Polars) — кэш и параметры расчётов
     SettingDef(
         "analytics.advanced.cache_ttl_sec",

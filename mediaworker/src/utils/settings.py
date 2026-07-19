@@ -72,5 +72,8 @@ class SettingsResolver:
             "media.uploads_per_hour", self.cfg.uploads_per_hour
         )
 
+    async def user_media_limit(self) -> int:
+        return await self.get_int("user.media.limit", self.cfg.user_media_limit)
+
 
 __all__ = ["SettingsResolver"]

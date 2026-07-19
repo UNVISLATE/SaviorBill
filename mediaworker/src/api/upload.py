@@ -80,6 +80,30 @@ async def _enforce_hourly_limit(
         )
 
 
+async def _enforce_media_count_limit(
+    request: Request, acc_id: int, perms: dict | None
+) -> None:
+    """Лимит количества медиа-файлов на аккаунт (``user.media.limit``).
+
+    Жёсткий отказ при превышении — без авто-удаления старых файлов
+    (пользователь должен сам удалить что-то, чтобы загрузить новое).
+    Не применяется к правам, снимающим ограничение размера (uploadlarge/
+    admin.media.upload) — те же роли, что не упираются в размер файла, не
+    должны упираться и в счётчик.
+    """
+    if has_perm(perms, _PERM_LARGE) or has_perm(perms, _PERM_ADMIN_UNLIMITED):
+        return
+    settings: SettingsResolver = request.app.state.settings
+    db = request.app.state.db
+    limit = await settings.user_media_limit()
+    count = await db.media_count_for_owner(acc_id)
+    if count >= limit:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"media count limit reached ({limit}); delete something first",
+        )
+
+
 @router.post("/upload", status_code=status.HTTP_201_CREATED)
 async def request_upload_token(
     request: Request,
@@ -128,6 +152,7 @@ async def request_upload_token(
         )
 
     await _enforce_hourly_limit(request, acc_id, perms)
+    await _enforce_media_count_limit(request, acc_id, perms)
 
     token = uuid.uuid4().hex
     uptoken_hkey = uptoken_key(token)

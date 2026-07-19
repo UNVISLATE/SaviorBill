@@ -87,5 +87,12 @@ class DB:
             return None
         return row["id"], row["owner_id"], row["kind"]
 
+    async def media_count_for_owner(self, owner_id: int) -> int:
+        """Число медиа-файлов, принадлежащих аккаунту (для лимита user.media.limit)."""
+        assert self.pool is not None
+        return await self.pool.fetchval(
+            "SELECT count(*) FROM system_media WHERE owner_id = $1", owner_id
+        )
+
 
 __all__ = ["DB", "Account"]

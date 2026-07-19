@@ -171,6 +171,10 @@ class AppConfig(BaseSettings):
     # Лимит загрузок в час для обычных пользователей (без media.uploadlarge);
     # у аккаунтов с media.uploadlarge часовой лимит не применяется вовсе.
     MEDIA_UPLOADS_PER_HOUR: int = Field(default=30)
+    # Максимум медиа-файлов на пользователя (обычная роль); превышение —
+    # жёсткий отказ при загрузке нового файла (без media.uploadlarge/
+    # admin.media.upload лимит не применяется).
+    USER_MEDIA_LIMIT: int = Field(default=5)
     # Стрим задач медиа (конвертация/удаление) в Valkey.
     MEDIA_TASK_STREAM: str = Field(default="media:tasks")
     # Приблизительный потолок длины media:tasks (см. LUA_TASK_STREAM_MAXLEN выше).

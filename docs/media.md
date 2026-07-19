@@ -34,7 +34,12 @@ upload-token, затем — сама передача файла. Это отд
    `admin.media.upload`) —
    `MEDIA_UPLOADS_PER_HOUR` загрузок в час (ключ `media:uprate:{acc}:{hour}`);
    превышение → `429`.
-3. Выдаётся одноразовый token: `HSET media:uptoken:{token} owner/kind/max_bytes`,
+3. Лимит количества: для тех же обычных пользователей — не больше
+   `USER_MEDIA_LIMIT` (setting `user.media.limit`, по умолчанию 5)
+   медиа-файлов одновременно (`SELECT count(*) FROM system_media WHERE
+   owner_id = ...`); превышение → `429` с текстом "удали что-то, чтобы
+   загрузить новое" — без авто-удаления старых файлов.
+4. Выдаётся одноразовый token: `HSET media:uptoken:{token} owner/kind/max_bytes`,
    `EXPIRE MEDIA_UPLOAD_TOKEN_TTL` (по умолчанию 60 c). Ответ `201`:
    `{upload_token, expires_in, upload_url: "/api/media/upload/{token}"}`.
 
