@@ -49,6 +49,33 @@ function sleep(ms: number): Promise<void> {
  * находим числовой `media_id` по списку `/v1/user/media` (сам статус его не
  * возвращает) для `PUT /v1/user/me/avatar`.
  */
+/**
+ * Загрузить файл (шаги 1+2), не дожидаясь готовности конвертации — вернуть
+ * сразу после приёма файла mediaworker'ом (``state: "queued"``).
+ *
+ * Используется там, где готовность отслеживается отдельно и параллельно для
+ * нескольких файлов сразу (WS ``/apiws/v1/media/mine``, см.
+ * ``hooks/use-media-status-ws.ts``) — в отличие от ``uploadOwnMedia()``,
+ * которая гоняет REST-поллинг сама и ждёт синхронно один файл.
+ */
+export async function beginOwnMediaUpload(
+  file: File,
+  opts: { tag?: string; onProgress?: (p: UploadProgress) => void; signal?: AbortSignal } = {},
+): Promise<{ token: string }> {
+  const { data: initiate } = await api.post<InitiateResponse>("/media/upload", null, {
+    params: opts.tag ? { tag: opts.tag } : undefined,
+  })
+  const uploadPath = initiate.upload_url.replace(/^\/api/, "")
+  const { data: uploaded } = await api.post<UploadStepResponse>(uploadPath, file, {
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    signal: opts.signal,
+    onUploadProgress: (e) => {
+      opts.onProgress?.({ loaded: e.loaded, total: e.total ?? file.size })
+    },
+  })
+  return { token: uploaded.token }
+}
+
 export async function uploadOwnMedia(
   file: File,
   opts: { tag?: string; onProgress?: (p: UploadProgress) => void; signal?: AbortSignal } = {},
