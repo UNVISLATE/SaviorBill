@@ -6,7 +6,9 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  // "примерыизсшм" — reference-примеры от пользователя (shadcn dashboard шаблоны),
+  // не часть приложения и не участвуют в сборке; линтить их не нужно.
+  globalIgnores(['dist', 'примерыизсшм']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [

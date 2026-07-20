@@ -41,7 +41,7 @@ export function DashboardLayout() {
       <Sidebar variant="inset" collapsible="icon">
         <SidebarHeader>
           <div className="flex items-center gap-2 px-2 py-1.5">
-            <img src="/unvi/logo_1x1_32.webp" alt="" className="size-8 shrink-0" />
+            <img src="/unvi/logo_1x1_128.webp" alt="" className="size-8 shrink-0" />
             <span className="truncate text-lg font-semibold group-data-[collapsible=icon]:hidden">
               SaviorBill Admin
             </span>
@@ -55,6 +55,7 @@ export function DashboardLayout() {
               <Collapsible key={group.title} defaultOpen>
                 <SidebarGroup>
                   <CollapsibleTrigger
+                    nativeButton={false}
                     render={
                       <SidebarGroupLabel className="group flex w-full cursor-pointer items-center justify-between">
                         <span>{group.title}</span>

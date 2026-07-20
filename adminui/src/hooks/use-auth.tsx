@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { api, AUTH_LOGOUT_EVENT } from "@/lib/api"
@@ -26,11 +26,17 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient()
+  // React Query читает `enabled` только на своих собственных ре-рендерах.
+  // Просто читать getAccessToken() внутри `enabled` не работает: после
+  // login()/logout() ничего не заставляет AuthProvider перерендериться,
+  // поэтому query оставался залипшим в старом enabled=false и /admin/me
+  // никогда не запрашивался -> isAuthenticated не менялся -> не было редиректа.
+  const [hasToken, setHasToken] = useState(() => !!getAccessToken())
 
   const meQuery = useQuery({
     queryKey: ["admin-me"],
     queryFn: async () => (await api.get<AdminMe>("/v1/admin/me")).data,
-    enabled: !!getAccessToken(),
+    enabled: hasToken,
     retry: false,
     staleTime: 60_000,
   })
@@ -39,8 +45,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Сработавший refresh-фейл где-то в дереве запросов -> сбросить сессию везде.
     const onLogout = () => {
       clearTokens()
+      setHasToken(false)
       qc.setQueryData(["admin-me"], undefined)
-      qc.invalidateQueries({ queryKey: ["admin-me"] })
+      qc.removeQueries({ queryKey: ["admin-me"] })
     }
     window.addEventListener(AUTH_LOGOUT_EVENT, onLogout)
     return () => window.removeEventListener(AUTH_LOGOUT_EVENT, onLogout)
@@ -50,14 +57,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       me: meQuery.data,
       isLoading: meQuery.isLoading,
-      isAuthenticated: !!getAccessToken() && !meQuery.isError,
+      isAuthenticated: hasToken && !meQuery.isError,
       async login(login: string, password: string) {
         const res = await api.post("/v1/auth/login", { login, password })
         setTokens(res.data)
+        setHasToken(true)
         await qc.invalidateQueries({ queryKey: ["admin-me"] })
       },
       logout() {
         clearTokens()
+        setHasToken(false)
         qc.setQueryData(["admin-me"], undefined)
         qc.removeQueries({ queryKey: ["admin-me"] })
       },
@@ -65,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return hasPerm(meQuery.data?.perms, perm)
       },
     }),
-    [meQuery.data, meQuery.isLoading, meQuery.isError, qc],
+    [meQuery.data, meQuery.isLoading, meQuery.isError, hasToken, qc],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
