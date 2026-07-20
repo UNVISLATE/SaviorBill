@@ -1,18 +1,18 @@
 import { cn } from "@/lib/utils"
 
 /**
- * Логотип unvi — у исходного webp заметные прозрачные поля сверху/снизу
- * (глиф занимает ~70% канвы), из-за чего в маленьких размерах (навбар,
- * логин) он визуально выглядит "сжатым". Обрезаем поля через
- * overflow-hidden + scale вместо правки самого файла.
+ * Логотип unvi — показываем целиком, без кругового кропа и масштабирования:
+ * многие логотипы теряют половину содержимого, если их обрезать в круг.
+ * `object-contain` без scale/overflow-hidden — весь квадрат/прямоугольник
+ * всегда виден полностью, даже если у файла есть прозрачные поля.
  */
 export function Logo({ className }: { className?: string }) {
   return (
-    <div className={cn("relative shrink-0 overflow-hidden rounded-full", className)}>
+    <div className={cn("relative shrink-0", className)}>
       <img
         src="/unvi/logo_1x1_128.webp"
         alt=""
-        className="absolute inset-0 size-full scale-[1.35] object-contain"
+        className="absolute inset-0 size-full object-contain"
       />
     </div>
   )

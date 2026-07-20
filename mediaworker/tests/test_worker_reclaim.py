@@ -12,6 +12,8 @@ pytestmark = pytest.mark.asyncio
 
 class _FakeCfg:
     task_concurrency = 2
+    task_concurrency_image = 2
+    task_concurrency_video = 2
     task_stream = "media:tasks"
     group = "mediaworkers"
     consumer = "media-1"

@@ -19,8 +19,10 @@ import valkey.asyncio as valkey
 from .config import Config
 from .convert import (
     ConvertError,
+    SIGNATURE_READ_BYTES,
     Variant,
     convert,
+    detect_kind,
     make_preview,
     make_thumb,
     probe_duration,
@@ -59,8 +61,14 @@ class Worker:
         self.settings = settings
         self.task_log = task_log
         self.proc_log = proc_log
-        # Ограничитель одновременно обрабатываемых задач (backpressure).
-        self._sem = asyncio.Semaphore(cfg.task_concurrency)
+        # Ограничители одновременно обрабатываемых задач (backpressure).
+        # "convert" делится на 2 пула по виду медиа — иначе одна долгая
+        # видео-конвертация занимает слот, который могла бы использовать
+        # мгновенная фото-конвертация (см. AUDIT/IMPLEMENTATION_PLAN).
+        # Прочие операции (preview_add/thumb_replace/delete) — общий пул.
+        self._sem_image = asyncio.Semaphore(cfg.task_concurrency_image)
+        self._sem_video = asyncio.Semaphore(cfg.task_concurrency_video)
+        self._sem_other = asyncio.Semaphore(cfg.task_concurrency)
 
     async def _set_status(self, token: str, **fields: str) -> None:
         key = status_key(token)
@@ -86,8 +94,13 @@ class Worker:
         """Бесконечный цикл чтения и конкурентной обработки задач."""
         await self._ensure_group()
         while True:
-            # Читаем не больше, чем есть свободных слотов (backpressure).
-            count = max(1, self._sem._value)
+            # Читаем не больше, чем есть свободных слотов суммарно по всем
+            # пулам (backpressure) — какой именно пул займёт конкретная
+            # задача, решится по её виду медиа уже в `_process_one`.
+            count = max(
+                1,
+                self._sem_image._value + self._sem_video._value + self._sem_other._value,
+            )
             try:
                 resp = await self.vk.xreadgroup(
                     self.cfg.group,
@@ -113,6 +126,26 @@ class Worker:
             if tasks:
                 await asyncio.gather(*tasks)
 
+    def _pick_semaphore(self, op: str, token: str) -> asyncio.Semaphore:
+        """Выбрать пул конкурентности для задачи (см. ``__init__``).
+
+        Для ``convert`` смотрим на сигнатуру уже загруженного оригинала —
+        клиент вид медиа не передаёт (см. ``_convert``), поэтому это единственный
+        дешёвый способ узнать image/video до старта самой конвертации.
+        Если файл ещё не виден (гонка) или сигнатура не распознана —
+        консервативно считаем видео (тяжёлый случай), чтобы не переполнить
+        лёгкий пул неожиданно долгой задачей.
+        """
+        if op != "convert":
+            return self._sem_other
+        try:
+            with open(self.storage.orig_path(token), "rb") as f:
+                header = f.read(SIGNATURE_READ_BYTES)
+            kind = detect_kind(header)
+        except Exception:  # noqa: BLE001 — best-effort sniff, any failure -> "unknown"
+            kind = None
+        return self._sem_image if kind == "image" else self._sem_video
+
     async def _process_one(self, msg_id: str, data: dict) -> None:
         """Обработать одну задачу под семафором; при ошибке — повтор/DLQ.
 
@@ -124,7 +157,10 @@ class Worker:
         этот же процесс (self-reclaim не создаёт дубликата), либо другая
         реплика воркера (если их несколько).
         """
-        async with self._sem:
+        op = data.get("op", "?")
+        token = data.get("token", "unknown")
+        sem = self._pick_semaphore(op, token)
+        async with sem:
             lock_key = None
             try:
                 if not verify_fields(self.cfg.BUS_SIGNING_KEY, data):
@@ -137,8 +173,6 @@ class Worker:
                         flush=True,
                     )
                     return
-                op = data.get("op", "?")
-                token = data.get("token", "unknown")
                 lock_key = job_lock_key(op, token)
                 got_lock = bool(
                     await self.vk.set(

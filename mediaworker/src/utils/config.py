@@ -102,7 +102,14 @@ class Config(BaseSettings):
     MEDIA_UPLOAD_TOKEN_TTL: int = Field(default=60)
 
     # --- Backpressure и надёжность ---
+    # Раздельные лимиты на конвертацию по виду медиа: видео (ffmpeg,
+    # секунды-минуты) не должно занимать все слоты и блокировать быстрые
+    # фото — см. AUDIT/IMPLEMENTATION_PLAN. `MEDIA_TASK_CONCURRENCY`
+    # остаётся общим лимитом для лёгких операций (preview_add/thumb_replace/
+    # delete), которым раздельные пулы не нужны.
     MEDIA_TASK_CONCURRENCY: int = Field(default=4)
+    MEDIA_TASK_CONCURRENCY_IMAGE: int = Field(default=3)
+    MEDIA_TASK_CONCURRENCY_VIDEO: int = Field(default=1)
     MEDIA_TASK_MAX_ATTEMPTS: int = Field(default=5)
     MEDIA_TASK_DLQ: str = Field(default="media:tasks:dead")
     # Reclaim зависших PEL-записей media:tasks: раньше
@@ -292,6 +299,14 @@ class Config(BaseSettings):
     @property
     def task_concurrency(self) -> int:
         return self.MEDIA_TASK_CONCURRENCY
+
+    @property
+    def task_concurrency_image(self) -> int:
+        return self.MEDIA_TASK_CONCURRENCY_IMAGE
+
+    @property
+    def task_concurrency_video(self) -> int:
+        return self.MEDIA_TASK_CONCURRENCY_VIDEO
 
     @property
     def task_max_attempts(self) -> int:
