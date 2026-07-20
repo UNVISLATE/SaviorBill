@@ -112,6 +112,10 @@ class Account(BaseModel):
     bonus_balance: Decimal
     avatar_media_id: int | None = None
     avatar_url: str | None = None
+    referred_by_login: str | None = Field(
+        default=None,
+        description="Login of the account that referred this user, if any",
+    )
     oauth_providers: list[str] = Field(
         default_factory=list,
         description="Linked OAuth provider slugs",
@@ -119,7 +123,11 @@ class Account(BaseModel):
 
     @classmethod
     def from_account(
-        cls, acc, *, oauth_providers: list[str] | None = None
+        cls,
+        acc,
+        *,
+        oauth_providers: list[str] | None = None,
+        referred_by_login: str | None = None,
     ) -> "Account":  # noqa: ANN001 — models.UserModel
         """Собрать DTO из ORM-аккаунта (роль — по имени).
 
@@ -128,6 +136,8 @@ class Account(BaseModel):
         :arg oauth_providers: slugs привязанных провайдеров (передаются
             отдельно — требуют отдельного запроса к ``oauth_conns``, схема
             их сама не запрашивает).
+        :arg referred_by_login: логин пригласившего (``acc.referred_by`` —
+            только id, отдельный lookup — см. ``_account_response``).
         """
         return cls(
             id=acc.id,
@@ -143,6 +153,7 @@ class Account(BaseModel):
             bonus_balance=acc.bonus_balance,
             avatar_media_id=acc.avatar_media_id,
             avatar_url=_media_url(acc.avatar_media.token if acc.avatar_media else None),
+            referred_by_login=referred_by_login,
             oauth_providers=list(oauth_providers or []),
         )
 

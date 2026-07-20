@@ -3,6 +3,7 @@ import { Outlet, useLocation, useNavigate } from "react-router-dom"
 
 import { useAuth } from "@/hooks/use-auth"
 import { footerNavItems, navGroups } from "@/components/layout/nav-config"
+import { Logo } from "@/components/layout/Logo"
 import { NavUser } from "@/components/layout/NavUser"
 import {
   Collapsible,
@@ -41,7 +42,7 @@ export function DashboardLayout() {
       <Sidebar variant="inset" collapsible="icon">
         <SidebarHeader>
           <div className="flex items-center gap-2 px-2 py-1.5">
-            <img src="/unvi/logo_1x1_128.webp" alt="" className="size-8 shrink-0" />
+            <Logo className="size-8" />
             <span className="truncate text-lg font-semibold group-data-[collapsible=icon]:hidden">
               SaviorBill Admin
             </span>

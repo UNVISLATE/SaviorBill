@@ -5,20 +5,25 @@ import { LoginPage } from "@/pages/login/LoginPage"
 import { DashboardPage } from "@/pages/dashboard/DashboardPage"
 import { UsersPage } from "@/pages/users/UsersPage"
 import { ProtectedRoute } from "@/routes/ProtectedRoute"
+import { ProfileDialogProvider } from "@/hooks/use-profile-dialog"
+import { ProfileDialogHost } from "@/components/profile/ProfileDialogHost"
 
 export function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
-        <Route element={<ProtectedRoute />}>
-          <Route element={<DashboardLayout />}>
-            <Route path="/" element={<DashboardPage />} />
-            <Route path="/users" element={<UsersPage />} />
+    <ProfileDialogProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route element={<ProtectedRoute />}>
+            <Route element={<DashboardLayout />}>
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/users" element={<UsersPage />} />
+            </Route>
           </Route>
-        </Route>
-      </Routes>
-    </BrowserRouter>
+        </Routes>
+      </BrowserRouter>
+      <ProfileDialogHost />
+    </ProfileDialogProvider>
   )
 }
 

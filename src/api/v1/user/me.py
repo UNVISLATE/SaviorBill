@@ -30,7 +30,14 @@ router = APIRouter()
 async def _account_response(acc: UserModel, session: AsyncSession) -> Account:
     """Собрать полный ответ профиля (с slugs привязанных OAuth-провайдеров)."""
     conns = await UserOauthMngr(session).list_for_account(acc.id)
-    return Account.from_account(acc, oauth_providers=[c.provider for c in conns])
+    referred_by_login: str | None = None
+    if acc.referred_by is not None:
+        referred_by_login = await session.scalar(
+            select(UserModel.login).where(UserModel.id == acc.referred_by)
+        )
+    return Account.from_account(
+        acc, oauth_providers=[c.provider for c in conns], referred_by_login=referred_by_login
+    )
 
 
 def _email_confirmed_by_oauth(

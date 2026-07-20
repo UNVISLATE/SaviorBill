@@ -6,6 +6,7 @@ import { Button } from "@/components/shadsnui/button"
 import { Field, FieldError, FieldLabel } from "@/components/shadsnui/field"
 import { Input } from "@/components/shadsnui/input"
 import { Separator } from "@/components/shadsnui/separator"
+import { Logo } from "@/components/layout/Logo"
 
 export function LoginPage() {
   const { login, isAuthenticated } = useAuth()
@@ -47,7 +48,7 @@ export function LoginPage() {
       />
       <div className="flex w-full max-w-sm flex-col gap-6">
         <div className="flex items-center gap-2 self-center font-medium">
-          <img src="/unvi/logo_1x1_128.webp" alt="unvi.xyz" className="size-9" />
+          <Logo className="size-9" />
           <h1 className="text-lg font-semibold">SaviorBill Admin</h1>
         </div>
         <div className="w-full max-w-sm space-y-6 rounded-xl border bg-card/60 p-8 shadow-lg ring-1 ring-foreground/5 backdrop-blur-sm">

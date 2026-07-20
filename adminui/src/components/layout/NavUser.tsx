@@ -1,6 +1,7 @@
 import { ChevronsUpDown, LogOut, User as UserIcon } from "lucide-react"
 
 import { useAuth } from "@/hooks/use-auth"
+import { useProfileDialog } from "@/hooks/use-profile-dialog"
 import { Avatar, AvatarFallback } from "@/components/shadsnui/avatar"
 import {
   DropdownMenu,
@@ -25,6 +26,7 @@ function initials(login: string): string {
 /** Карточка текущего админа в подвале сайдбара (аватар + логин/роль → меню). */
 export function NavUser() {
   const { me, logout } = useAuth()
+  const { openProfile } = useProfileDialog()
   const { isMobile } = useSidebar()
 
   if (!me) return null
@@ -77,11 +79,9 @@ export function NavUser() {
               </DropdownMenuLabel>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled>
+            <DropdownMenuItem onClick={openProfile}>
               <UserIcon />
               Профиль
-              {/* Страница профиля админа ещё не реализована — пункт placeholder,
-                  не должен вести на пустой роут. */}
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem onClick={logout}>

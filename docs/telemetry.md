@@ -16,9 +16,7 @@ grafana.com/dashboards/14282.
 (`src/telemetry/otel.py`): sliding-window rate-limit по IP
 (`METRICS_RATE_LIMIT_MAX`/`METRICS_RATE_LIMIT_WINDOW`, через
 `security/ratelimit.py`) и, если задан `METRICS_TOKEN`, проверка заголовка
-`X-Metrics-Token` (несовпадение → `404`, не `401` — не раскрываем факт
-существования эндпоинта). mediaworker — тот же контракт, rate-limit
-process-local (без Valkey).
+`X-Metrics-Token` (несовпадение → `404`, не `401`). mediaworker — тот же контракт, rate-limit process-local (без Valkey).
 
 ### Бизнес-метрики (`src/telemetry/metrics.py`)
 

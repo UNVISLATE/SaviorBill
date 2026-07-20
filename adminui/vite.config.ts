@@ -16,7 +16,14 @@ export default defineConfig({
       port: 5173,
       host: "127.0.0.1",
       proxy: {
-        // Dev-прокси на billing — избегаем CORS и рассинхрона origin для cookie/JWT.
+        // billing (main API) отдаёт /api/v1/*; mediaworker — отдельный сервис
+        // на своём порту, слушает /api/media/* (без /v1) — см. deploy/Caddyfile,
+        // в проде это вообще отдельный домен (MEDIA_DOMAIN). Более специфичный
+        // путь должен идти первым, иначе перехватит общий "/api".
+        "/api/media": {
+          target: "http://127.0.0.1:8001",
+          changeOrigin: true,
+        },
         "/api": {
           target: "http://127.0.0.1:8000",
           changeOrigin: true,
