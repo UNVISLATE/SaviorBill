@@ -2,7 +2,8 @@ import { ChevronsUpDown, LogOut, User as UserIcon } from "lucide-react"
 
 import { useAuth } from "@/hooks/use-auth"
 import { useProfileDialog } from "@/hooks/use-profile-dialog"
-import { Avatar, AvatarFallback } from "@/components/shadsnui/avatar"
+import { useUserProfile } from "@/hooks/use-user-profile"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/shadsnui/avatar"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +28,9 @@ function initials(login: string): string {
 export function NavUser() {
   const { me, logout } = useAuth()
   const { openProfile } = useProfileDialog()
+  // AdminMe (useAuth) не содержит avatar_url — берём его из более полного
+  // /v1/user/me, тот же запрос, что использует диалог профиля (общий кэш).
+  const { data: profile } = useUserProfile()
   const { isMobile } = useSidebar()
 
   if (!me) return null
@@ -39,6 +43,7 @@ export function NavUser() {
             render={
               <SidebarMenuButton size="lg">
                 <Avatar className="size-8 rounded-lg">
+                  {profile?.avatar_url && <AvatarImage src={profile.avatar_url} alt="" />}
                   <AvatarFallback className="rounded-lg">
                     {initials(me.login)}
                   </AvatarFallback>
@@ -65,6 +70,7 @@ export function NavUser() {
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                   <Avatar className="size-8 rounded-lg">
+                    {profile?.avatar_url && <AvatarImage src={profile.avatar_url} alt="" />}
                     <AvatarFallback className="rounded-lg">
                       {initials(me.login)}
                     </AvatarFallback>

@@ -97,7 +97,7 @@ export function ProfileDialogHost() {
   if (isMobile) {
     return (
       <Drawer open={isOpen} onOpenChange={handleOpenChange} disablePointerDismissal={isBusy}>
-        <DrawerContent>
+        <DrawerContent className="h-[85vh]">
           <DrawerHeader className="flex items-center justify-between">
             <DrawerTitle>Профиль</DrawerTitle>
             <DrawerClose render={<Button variant="ghost" size="sm" />}>Закрыть</DrawerClose>
@@ -113,7 +113,7 @@ export function ProfileDialogHost() {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange} disablePointerDismissal={isBusy}>
-      <DialogContent className="flex max-w-3xl gap-0 overflow-hidden p-0 sm:max-w-3xl">
+      <DialogContent className="flex h-[640px] max-w-3xl gap-0 overflow-hidden p-0 sm:max-w-3xl">
         <ProfileNav section={section} onSelect={setSection} orientation="vertical" />
         <div className="flex-1 overflow-y-auto p-6">
           <DialogHeader className="mb-4">

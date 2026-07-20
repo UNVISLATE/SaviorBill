@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils"
  */
 export function Logo({ className }: { className?: string }) {
   return (
-    <div className={cn("relative shrink-0 overflow-hidden", className)}>
+    <div className={cn("relative shrink-0 overflow-hidden rounded-full", className)}>
       <img
         src="/unvi/logo_1x1_128.webp"
         alt=""

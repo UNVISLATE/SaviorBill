@@ -35,8 +35,21 @@ async def _account_response(acc: UserModel, session: AsyncSession) -> Account:
         referred_by_login = await session.scalar(
             select(UserModel.login).where(UserModel.id == acc.referred_by)
         )
+    referral_count = 0
+    if acc.ref_code is not None:
+        from sqlalchemy import func
+
+        referral_count = (
+            await session.scalar(
+                select(func.count()).where(UserModel.referred_by == acc.id)
+            )
+            or 0
+        )
     return Account.from_account(
-        acc, oauth_providers=[c.provider for c in conns], referred_by_login=referred_by_login
+        acc,
+        oauth_providers=[c.provider for c in conns],
+        referred_by_login=referred_by_login,
+        referral_count=referral_count,
     )
 
 
@@ -216,6 +229,13 @@ async def set_avatar(
         # authenticated user (see AUDIT.md §2.1).
         if m is None or m.owner_id != acc.id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
+        # Аватар обязан быть картинкой — иначе видео/аудио, загруженное по
+        # ошибке (или намеренно с обходом клиентского accept=image/*), молча
+        # "устанавливается", но никогда не отрендерится как <img>.
+        if m.kind != "image":
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "avatar must be an image, not " + m.kind
+            )
 
     old_media_id = acc.avatar_media_id
     acc.avatar_media_id = body.media_id

@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.roles import Role
-from models.user import UserModel
+from models.user import UserModel, UserMngr
 from core.config import AppConfig
 from security.sec.pwd import hash_pass
 
@@ -31,11 +31,15 @@ async def create_owner(
     if existing is not None:
         return existing
 
+    # ref_code генерируется тут же, а не в UserModel.__init__ — иначе owner
+    # (единственный аккаунт, создаваемый мимо UserMngr.create()) навсегда
+    # остаётся без реферального кода (см. AUDIT/IMPLEMENTATION_PLAN).
     acc = UserModel(
         login=cfg.OWNER_LOGIN,
         email=cfg.OWNER_EMAIL,
         pass_hash=hash_pass(cfg.OWNER_PASS),
         role_id=owner_role.id,
+        ref_code=await UserMngr(session)._gen_ref_code(),
     )
     session.add(acc)
     await session.flush()

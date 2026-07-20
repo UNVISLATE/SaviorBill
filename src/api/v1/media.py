@@ -73,6 +73,8 @@ async def media_status(
             mime=data.get("mime") or None,
             tag=data.get("tag") or None,
             error=data.get("error") or None,
+            percent=float(data["percent"]) if data.get("percent") else None,
+            eta_sec=float(data["eta_sec"]) if data.get("eta_sec") else None,
         )
 
     # Кэш истёк/не создавался — authoritative источник: worker_jobs (БД), не

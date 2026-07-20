@@ -107,6 +107,7 @@ class Account(BaseModel):
     role: str | None = None
     ref_code: str | None = None
     created_at: datetime
+    updated_at: datetime
     last_login: datetime | None = None
     balance: Decimal
     bonus_balance: Decimal
@@ -115,6 +116,9 @@ class Account(BaseModel):
     referred_by_login: str | None = Field(
         default=None,
         description="Login of the account that referred this user, if any",
+    )
+    referral_count: int = Field(
+        default=0, description="How many accounts this user has referred"
     )
     oauth_providers: list[str] = Field(
         default_factory=list,
@@ -128,6 +132,7 @@ class Account(BaseModel):
         *,
         oauth_providers: list[str] | None = None,
         referred_by_login: str | None = None,
+        referral_count: int = 0,
     ) -> "Account":  # noqa: ANN001 — models.UserModel
         """Собрать DTO из ORM-аккаунта (роль — по имени).
 
@@ -138,6 +143,8 @@ class Account(BaseModel):
             их сама не запрашивает).
         :arg referred_by_login: логин пригласившего (``acc.referred_by`` —
             только id, отдельный lookup — см. ``_account_response``).
+        :arg referral_count: сколько аккаунтов пригласил этот пользователь
+            (отдельный COUNT-запрос — см. ``_account_response``).
         """
         return cls(
             id=acc.id,
@@ -148,12 +155,14 @@ class Account(BaseModel):
             role=acc.role.name if acc.role else None,
             ref_code=acc.ref_code,
             created_at=acc.created_at,
+            updated_at=acc.updated_at,
             last_login=acc.last_login,
             balance=acc.balance,
             bonus_balance=acc.bonus_balance,
             avatar_media_id=acc.avatar_media_id,
             avatar_url=_media_url(acc.avatar_media.token if acc.avatar_media else None),
             referred_by_login=referred_by_login,
+            referral_count=referral_count,
             oauth_providers=list(oauth_providers or []),
         )
 

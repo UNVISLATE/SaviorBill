@@ -14,12 +14,14 @@ export interface UserProfile {
   role: string | null
   ref_code: string | null
   created_at: string
+  updated_at: string
   last_login: string | null
   balance: string
   bonus_balance: string
   avatar_media_id: number | null
   avatar_url: string | null
   referred_by_login: string | null
+  referral_count: number
   oauth_providers: string[]
 }
 

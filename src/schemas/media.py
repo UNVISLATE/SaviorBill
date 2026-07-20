@@ -91,6 +91,14 @@ class MediaStatus(BaseModel):
         default=None, description="Optional UI label (latin+digits, up to 16 chars)"
     )
     error: str | None = Field(default=None, description="Error text (optional)")
+    percent: float | None = Field(
+        default=None,
+        description="ffmpeg conversion progress 0..100 (video only; parsed "
+        "from ffmpeg -progress, see mediaworker ffprogress.py)",
+    )
+    eta_sec: float | None = Field(
+        default=None, description="Estimated seconds remaining (video only)"
+    )
 
 
 class OpStatus(BaseModel):

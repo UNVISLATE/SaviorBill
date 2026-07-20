@@ -194,6 +194,7 @@ def _account_row(**overrides) -> SimpleNamespace:
         role=SimpleNamespace(name="user"),
         ref_code="abc123",
         created_at=datetime(2026, 1, 1),
+        updated_at=datetime(2026, 1, 2),
         last_login=datetime(2026, 6, 1),
         balance=Decimal("10.50"),
         bonus_balance=Decimal("2.00"),

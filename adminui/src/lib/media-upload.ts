@@ -53,6 +53,14 @@ export async function uploadOwnMedia(
   file: File,
   opts: { tag?: string; onProgress?: (p: UploadProgress) => void; signal?: AbortSignal } = {},
 ): Promise<{ mediaId: number; token: string }> {
+  if (opts.tag === "avatar" && !file.type.startsWith("image/")) {
+    // Серверный set_avatar тоже это проверяет (kind !== "image" → 400), но
+    // без этой проверки видео сначала долго конвертируется в mediaworker и
+    // только потом отбрасывается — впустую тратим слот конвертации и время
+    // пользователя на файл, который заведомо не подойдёт.
+    throw new Error("для аватара нужна картинка (jpg/png/webp), не видео")
+  }
+
   const { data: initiate } = await api.post<InitiateResponse>("/media/upload", null, {
     params: opts.tag ? { tag: opts.tag } : undefined,
   })
