@@ -8,10 +8,6 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      // shadcn CLI генерирует компоненты с импортами "@/components/ui/*", но
-      // components.json настроен на алиас "shadsnui" (см. aliases.ui) — этот
-      // маппинг держит старые и будущие сгенерированные файлы рабочими без
-      // ручной правки импортов в каждом файле.
       "@/components/ui": path.resolve(__dirname, "./src/components/shadsnui"),
       "@": path.resolve(__dirname, "./src"),
     },

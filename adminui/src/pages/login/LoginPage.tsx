@@ -35,44 +35,45 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-svh items-center justify-center bg-muted/40 p-4">
-      <form
-        onSubmit={onSubmit}
-        className="w-full max-w-sm space-y-6 rounded-xl border bg-background p-8 shadow-sm"
-      >
-        <div className="flex flex-col items-center gap-2 text-center">
-          <img src="/unvi/logo_1x1_128.webp" alt="" className="size-12" />
+    <div className="flex min-h-svh flex-col items-center justify-center gap-4 bg-muted/40 p-4 md:p-10">
+      <div className="flex w-full max-w-sm flex-col gap-4">
+        <div className="flex items-center gap-2 self-center font-medium">
+          <img src="/unvi/logo_1x1_32.webp" alt="unvi.xyz" className="size-8" />
           <h1 className="text-lg font-semibold">SaviorBill Admin</h1>
         </div>
+        <form
+          onSubmit={onSubmit}
+          className="w-full max-w-sm space-y-6 rounded-xl border bg-background p-8 shadow-sm"
+        >
+          <Field>
+            <FieldLabel htmlFor="login">Логин или email</FieldLabel>
+            <Input
+              id="login"
+              autoComplete="username"
+              value={loginValue}
+              onChange={(e) => setLoginValue(e.target.value)}
+              required
+            />
+          </Field>
 
-        <Field>
-          <FieldLabel htmlFor="login">Логин или email</FieldLabel>
-          <Input
-            id="login"
-            autoComplete="username"
-            value={loginValue}
-            onChange={(e) => setLoginValue(e.target.value)}
-            required
-          />
-        </Field>
+          <Field>
+            <FieldLabel htmlFor="password">Пароль</FieldLabel>
+            <Input
+              id="password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            {error && <FieldError>{error}</FieldError>}
+          </Field>
 
-        <Field>
-          <FieldLabel htmlFor="password">Пароль</FieldLabel>
-          <Input
-            id="password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
-          {error && <FieldError>{error}</FieldError>}
-        </Field>
-
-        <Button type="submit" className="w-full" disabled={pending}>
-          {pending ? "Вход…" : "Войти"}
-        </Button>
-      </form>
+          <Button type="submit" className="w-full" disabled={pending}>
+            {pending ? "Вход…" : "Войти"}
+          </Button>
+        </form>
+      </div>
     </div>
   )
 }

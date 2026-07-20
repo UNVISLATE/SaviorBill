@@ -1,6 +1,6 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom"
 
-import { AppLayout } from "@/components/layout/AppLayout"
+import { DashboardLayout } from "@/components/layout/DashboardLayout.tsx"
 import { LoginPage } from "@/pages/login/LoginPage"
 import { DashboardPage } from "@/pages/dashboard/DashboardPage"
 import { UsersPage } from "@/pages/users/UsersPage"
@@ -12,11 +12,9 @@ export function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<ProtectedRoute />}>
-          <Route element={<AppLayout />}>
+          <Route element={<DashboardLayout />}>
             <Route path="/" element={<DashboardPage />} />
             <Route path="/users" element={<UsersPage />} />
-            {/* Остальные разделы из nav-config.ts подключаются по мере готовности
-                соответствующих страниц — см. IMPLEMENTATION_PLAN.md/AUDIT.md. */}
           </Route>
         </Route>
       </Routes>

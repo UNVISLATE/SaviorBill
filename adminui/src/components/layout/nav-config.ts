@@ -64,11 +64,14 @@ export const navGroups: NavGroup[] = [
       { title: "Email-шаблоны", url: "/email", icon: Mail, perm: "email.read" },
     ],
   },
-  {
-    title: "Система",
-    items: [
-      { title: "Настройки", url: "/settings", icon: Settings, perm: "settings.read" },
-      { title: "Аудит", url: "/audit", icon: FileClock, perm: "audit.read" },
-    ],
-  },
+]
+
+/**
+ * Нижний блок сайдбара (над карточкой пользователя) — системные разделы,
+ * не относящиеся к повседневной работе с каталогом/пользователями, вынесены
+ * из общих групп навигации, как "Settings/Get Help/Search" в референсе.
+ */
+export const footerNavItems: NavItem[] = [
+  { title: "Настройки", url: "/settings", icon: Settings, perm: "settings.read" },
+  { title: "Аудит", url: "/audit", icon: FileClock, perm: "audit.read" },
 ]
