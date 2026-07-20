@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { CreditCard, PackageOpen, UserRound } from "lucide-react"
+import { CreditCard, ImageIcon, PackageOpen, UserRound } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -21,11 +21,13 @@ import { Button } from "@/components/shadsnui/button"
 import { ProfileOverviewSection } from "@/components/profile/ProfileOverviewSection"
 import { ProfileServicesSection } from "@/components/profile/ProfileServicesSection"
 import { ProfilePaymentsSection } from "@/components/profile/ProfilePaymentsSection"
+import { ProfileMediaSection } from "@/components/profile/ProfileMediaSection"
 
-type Section = "profile" | "services" | "payments"
+type Section = "profile" | "services" | "payments" | "media"
 
 const SECTIONS: { id: Section; title: string; icon: typeof UserRound }[] = [
   { id: "profile", title: "Профиль", icon: UserRound },
+  { id: "media", title: "Медиа", icon: ImageIcon },
   { id: "services", title: "Товары/услуги", icon: PackageOpen },
   { id: "payments", title: "Платежи", icon: CreditCard },
 ]
@@ -33,6 +35,7 @@ const SECTIONS: { id: Section; title: string; icon: typeof UserRound }[] = [
 function SectionContent({ section }: { section: Section }) {
   if (section === "services") return <ProfileServicesSection />
   if (section === "payments") return <ProfilePaymentsSection />
+  if (section === "media") return <ProfileMediaSection />
   return <ProfileOverviewSection />
 }
 
