@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -41,6 +43,7 @@ class Media(BaseModel):
     mime: str | None = None
     size: int | None = None
     owner_id: int | None = None
+    created_at: datetime
     media: MediaVariant | None = Field(default=None, description="Main file variant")
     thumb: MediaVariant | None = Field(
         default=None,
@@ -67,6 +70,7 @@ class Media(BaseModel):
             mime=m.mime,
             size=m.size,
             owner_id=m.owner_id,
+            created_at=m.created_at,
             media=variants.get("media"),
             thumb=variants.get("thumb"),
             previews=variants.get("previews") or [],

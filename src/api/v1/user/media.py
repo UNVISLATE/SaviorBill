@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import valkey.asyncio as valkey
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import Field
 from sqlalchemy import select
 
 from core.config import AppConfig
 from dependencies.auth import get_current_acc
 from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
+from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
 from messaging.mediabus import MediaBus
 from models.service_attachment import ServiceAttachmentModel
@@ -17,14 +19,29 @@ from models.system_media import SystemMediaMngr, all_storage_keys
 from models.user import UserModel
 from schemas.media import Media
 from schemas.page import Page
+from security.rbac import has_perm
 from utils.pagination import PageParams, page_params, paginate
 
 router = APIRouter()
 
+# Права, снимающие лимит user.media.limit — те же, что и в mediaworker
+# (см. mediaworker/src/api/upload.py::_PERM_LARGE + admin.media.upload).
+_UNLIMITED_PERMS = ("media.uploadlarge", "admin.media.upload")
+
+
+class MyMediaPage(Page[Media]):
+    """Страница собственных медиа + текущая квота (для UI: "3 из 5")."""
+
+    quota_limit: int | None = Field(
+        default=None,
+        description="Max media files for this account, or null if unlimited "
+        "(media.uploadlarge/admin.media.upload perms lift the limit)",
+    )
+
 
 @router.get(
     "/media",
-    response_model=Page[Media],
+    response_model=MyMediaPage,
     summary="My uploaded media",
     description=(
         "Own uploads (any status: processing/ready/error), newest first. "
@@ -33,10 +50,12 @@ router = APIRouter()
     dependencies=[Depends(require_perm("user.media.read"))],
 )
 async def my_media(
+    request: Request,
     pp: PageParams = Depends(page_params),
     acc: UserModel = Depends(get_current_acc),
     mngr: SystemMediaMngr = Depends(get_media_mngr),
-) -> Page[Media]:
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
+) -> MyMediaPage:
     items, total, has_more = await paginate(
         mngr.s,
         mngr.stmt_for_owner(acc.id),
@@ -44,8 +63,18 @@ async def my_media(
         limit=pp.limit,
         offset=pp.offset,
     )
-    return Page(
-        items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
+    perms = acc.role.perms if acc.role else None
+    quota_limit = None
+    if not any(has_perm(perms, p) for p in _UNLIMITED_PERMS):
+        cfg: AppConfig = request.app.state.settings
+        quota_limit = await settings.get_int("user.media.limit", cfg.USER_MEDIA_LIMIT)
+    return MyMediaPage(
+        items=items,
+        total=total,
+        limit=pp.limit,
+        offset=pp.offset,
+        has_more=has_more,
+        quota_limit=quota_limit,
     )
 
 
