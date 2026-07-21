@@ -16,19 +16,19 @@ export default defineConfig({
       port: 5173,
       host: "127.0.0.1",
       proxy: {
-        // billing (main API) отдаёт /api/v1/*; mediaworker — отдельный сервис
-        // на своём порту, слушает /api/media/* (без /v1) — см. deploy/Caddyfile,
-        // в проде это вообще отдельный домен (MEDIA_DOMAIN). Более специфичный
-        // путь должен идти первым, иначе перехватит общий "/api".
+        // Единый префикс /api/*: mediaworker — только /api/media/* (более
+        // специфичный путь должен идти первым, иначе перехватит общий /api),
+        // всё остальное (/api/v1/*, будущие /api/v2/* и т.п., плюс WS-роуты
+        // billing под /apiws/*, который тоже начинается на "/api" — совпадает
+        // с этим правилом по префиксу) — billing. WS переопределять отдельно
+        // не нужно: ws:true на обоих правилах покрывает и HTTP, и WS без
+        // дублирования путей.
         "/api/media": {
           target: "http://127.0.0.1:8001",
           changeOrigin: true,
+          ws: true,
         },
         "/api": {
-          target: "http://127.0.0.1:8000",
-          changeOrigin: true,
-        },
-        "/apiws": {
           target: "http://127.0.0.1:8000",
           changeOrigin: true,
           ws: true,

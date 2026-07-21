@@ -87,6 +87,28 @@ class DB:
             return None
         return row["id"], row["owner_id"], row["kind"]
 
+    async def media_variants(self, token: str) -> dict | None:
+        """Статус + физические варианты (``main``/``thumb``/``previews``) медиа.
+
+        Fallback-источник для ``serve()``, когда Valkey-кэш ``media:file:*``
+        утрачен (например, dev-Valkey без персистентности — ``--save ""
+        --appendonly no``, см. ``deploy/dev/docker-compose.yml`` — любой
+        рестарт стека обнуляет весь Valkey, хотя файлы на диске и запись в
+        Postgres целы). billing — единственный писатель ``variants`` (JSON),
+        здесь только чтение.
+        """
+        assert self.pool is not None
+        row = await self.pool.fetchrow(
+            "SELECT status, mime, variants FROM system_media WHERE token = $1",
+            token,
+        )
+        if row is None:
+            return None
+        variants = row["variants"]
+        if isinstance(variants, str):
+            variants = json.loads(variants) if variants else {}
+        return {"status": row["status"], "mime": row["mime"], "variants": variants or {}}
+
     async def media_count_for_owner(self, owner_id: int) -> int:
         """Число медиа-файлов, принадлежащих аккаунту (для лимита user.media.limit)."""
         assert self.pool is not None

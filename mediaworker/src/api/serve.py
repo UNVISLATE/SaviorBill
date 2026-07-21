@@ -7,12 +7,13 @@
 
 from __future__ import annotations
 
+import hashlib
 import mimetypes
 import os
 
 import valkey.asyncio as valkey
 from fastapi import APIRouter, HTTPException, Request, Security, status
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials
 
 from utils import ipban
@@ -35,6 +36,25 @@ _PERM_LARGE = "media.uploadlarge"
 _PERM_MANAGE_ANY = "admin.media.manage_any"
 
 
+def _variant_from_db(token: str, variant_name: str, variants: dict) -> tuple[str | None, str | None]:
+    """Достать ``(key, mime)`` варианта из billing-JSON (``variants`` в
+    ``system_media``) по имени — та же схема, что строит ``worker.py::
+    _variant_dict`` (``url`` = ``/api/media/{token}{.variant_name}``), поэтому
+    имя варианта надёжно восстанавливается из уже сохранённого ``url``, а не
+    угадывается по именам файлов."""
+    if variant_name == "main":
+        media = variants.get("media") or {}
+        return media.get("key"), media.get("mime")
+    if variant_name == "thumb":
+        thumb = variants.get("thumb") or {}
+        return thumb.get("key"), thumb.get("mime")
+    prefix = f"/api/media/{token}."
+    for preview in variants.get("previews") or []:
+        if (preview.get("url") or "") == f"{prefix}{variant_name}":
+            return preview.get("key"), preview.get("mime")
+    return None, None
+
+
 @router.get("/{token}")
 async def serve(request: Request, token: str):
     """Отдать медиа. S3 → presigned redirect; fs → FileResponse.
@@ -46,24 +66,53 @@ async def serve(request: Request, token: str):
     завязан на фиксированный набор имён — поэтому суффикс не проверяется по
     allow-листу, а ищется динамически; неизвестный/ещё не готовый суффикс —
     404 (раньше здесь молча отдавался main-файл, что вводило в заблуждение).
+
+    Если ``media:file:*``/``media:status:*`` в Valkey пусты (например, стек
+    перезапущен, а dev-Valkey без персистентности — см. ``deploy/dev/
+    docker-compose.yml``) — файл и запись в Postgres при этом целы, поэтому
+    ключ/mime варианта досчитываются из billing-БД (read-only) и кэш в Valkey
+    досыпается обратно, чтобы повторные запросы снова шли быстрым путём.
     """
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
     storage: Storage = request.app.state.storage
+    db = request.app.state.db
 
     base, _, suffix = token.partition(".")
     variant_name = suffix or "main"
 
     st = await vk.hgetall(status_key(base))
+    db_row: dict | None = None
+    if not st:
+        db_row = await db.media_variants(base)
+    state = st.get("state") if st else (db_row["status"] if db_row else None)
     if variant_name == "main":
-        if st and st.get("state") in ("processing", "queued"):
+        if state in ("processing", "queued"):
             raise HTTPException(status.HTTP_425_TOO_EARLY, "still processing")
-        if st and st.get("state") == "failed":
+        if state == "failed":
             raise HTTPException(status.HTTP_404_NOT_FOUND, "conversion failed")
 
     cached = await vk.hgetall(file_key(base))
     key = cached.get(variant_name) if cached else None
+    mime_from_db: str | None = None
     if not key:
+        if db_row is None:
+            db_row = await db.media_variants(base)
+        if db_row and db_row["status"] == "ready":
+            key, mime_from_db = _variant_from_db(base, variant_name, db_row["variants"])
+            if key:
+                await vk.hset(file_key(base), mapping={variant_name: key})
+    if not key:
+        # Диагностика редкого/невоспроизводимого бага: state=ready в Valkey/БД,
+        # но ни кэш, ни variants-JSON не отдали ключ варианта — раньше это тихо
+        # 404-илось, и найти причину постфактум (после рестарта стека, обнулившего
+        # Valkey) было невозможно.
+        print(
+            f"[mediaworker] serve 404: token={base!r} variant={variant_name!r} "
+            f"state={state!r} has_db_row={db_row is not None} "
+            f"variants_keys={list((db_row or {}).get('variants') or {}) if db_row else None}",
+            flush=True,
+        )
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
 
     if cfg.backend == "s3":
@@ -88,11 +137,31 @@ async def serve(request: Request, token: str):
     if variant_name == "main" and st:
         mime = st.get("mime")
     else:
-        mime, _ = mimetypes.guess_type(file_path)
+        mime = mime_from_db
+        if not mime:
+            mime, _ = mimetypes.guess_type(file_path)
+
+    # ETag от физического ``key`` (не от токена): у ``thumb`` URL стабилен и не
+    # меняется при замене (см. schemas/media.py::MediaVariant — контракт "URL
+    # не мигрирует при смене файла"), но сам файл за ним подменяется целиком
+    # (POST /{token}/thumb). Раньше это + Cache-Control max-age=31536000 без
+    # ревалидации означало, что браузер после замены thumb навечно продолжал
+    # показывать старую картинку по тому же URL. main/preview физически
+    # неизменны после публикации — им можно долгий immutable-кэш; thumb — явно
+    # короткий max-age + must-revalidate, ETag на реальный key даёт дешёвую
+    # ревалидацию (304), когда файл не менялся, и мгновенно свежий контент,
+    # когда менялся.
+    etag = f'"{hashlib.md5(key.encode()).hexdigest()}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers={"ETag": etag})
+    if variant_name == "thumb":
+        cache_control = "public, max-age=60, must-revalidate"
+    else:
+        cache_control = "public, max-age=31536000, immutable"
     return FileResponse(
         file_path,
         media_type=mime or "application/octet-stream",
-        headers={"Cache-Control": "public, max-age=31536000"},
+        headers={"Cache-Control": cache_control, "ETag": etag},
     )
 
 

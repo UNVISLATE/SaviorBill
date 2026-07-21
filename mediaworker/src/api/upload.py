@@ -242,7 +242,7 @@ async def upload_file(request: Request, upload_token: str) -> dict:
         await ipban.ban(vk, ip, cfg.ban_seconds)
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
 
-    await vk.hset(status_key(media_token), mapping={"state": "queued"})
+    await vk.hset(status_key(media_token), mapping={"state": "queued", "owner_id": str(owner_id or "")})
     await vk.expire(status_key(media_token), cfg.status_ttl)
     await vk.xadd(
         cfg.task_stream,
