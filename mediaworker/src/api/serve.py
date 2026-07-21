@@ -158,10 +158,23 @@ async def serve(request: Request, token: str):
         cache_control = "public, max-age=60, must-revalidate"
     else:
         cache_control = "public, max-age=31536000, immutable"
+    # ``download`` в UI брал ``url`` как есть (``/api/media/{token}``, без
+    # расширения) — итоговый файл на диске у пользователя оказывался без
+    # расширения, приходилось дописывать вручную наугад. Расширение всегда
+    # известно на сервере (из ``key`` — физического имени с расширением,
+    # либо угадывается по mime) — отдаём его через ``Content-Disposition``,
+    # браузер сам подставит правильное имя при скачивании независимо от
+    # клиентского кода.
+    ext = os.path.splitext(key)[1] or (mimetypes.guess_extension(mime) if mime else "") or ""
+    download_name = f"{base}{'.' + variant_name if variant_name != 'main' else ''}{ext}"
     return FileResponse(
         file_path,
         media_type=mime or "application/octet-stream",
-        headers={"Cache-Control": cache_control, "ETag": etag},
+        headers={
+            "Cache-Control": cache_control,
+            "ETag": etag,
+            "Content-Disposition": f'inline; filename="{download_name}"',
+        },
     )
 
 
