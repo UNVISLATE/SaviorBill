@@ -1,4 +1,4 @@
-"""Лог обращений к API (LogModel) — самоочищающаяся таблица."""
+"""Лог обращений к API (LogModel)"""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-import { api } from "@/lib/api"
+import { api } from "@/api/api.ts"
 
 export interface UploadProgress {
   loaded: number

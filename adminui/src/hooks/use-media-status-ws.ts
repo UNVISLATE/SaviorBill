@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 
-import { getAccessToken } from "@/lib/tokens"
+import { getAccessToken } from "@/api/tokens.ts"
 
 /** Снимок статуса конвертации одного media-токена (см. mediaworker ProcLog). */
 export interface MediaStatusSnap {

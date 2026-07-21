@@ -1,9 +1,9 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { api, AUTH_LOGOUT_EVENT } from "@/lib/api"
-import { hasPerm, type PermNode } from "@/lib/rbac"
-import { clearTokens, getAccessToken, setTokens } from "@/lib/tokens"
+import { api, AUTH_LOGOUT_EVENT } from "@/api/api.ts"
+import { hasPerm, type PermNode } from "@/api/rbac.ts"
+import { clearTokens, getAccessToken, setTokens } from "@/api/tokens.ts"
 
 export interface AdminMe {
   id: number

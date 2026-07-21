@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { api } from "@/lib/api"
+import { api } from "@/api/api.ts"
 
 /** Полный профиль текущего аккаунта (`/v1/user/me`) — богаче, чем AdminMe
  * (id/login/role/perms) из `useAuth()`: баланс, аватар, реферальный код,

@@ -3,7 +3,7 @@ import { CreditCard, ImageIcon, PackageOpen, UserRound } from "lucide-react"
 import { useQuery } from "@tanstack/react-query"
 
 import { cn } from "@/lib/utils"
-import { api } from "@/lib/api"
+import { api } from "@/api/api.ts"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useProfileDialog } from "@/hooks/use-profile-dialog"
 import {

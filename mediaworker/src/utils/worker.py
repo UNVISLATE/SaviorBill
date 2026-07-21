@@ -268,6 +268,7 @@ class Worker:
             token_or_cid=token,
             state="failed",
             detail=reason,
+            owner_id=data.get("owner_id") or None,
         )
 
     async def reclaim_once(self) -> None:
@@ -389,7 +390,8 @@ class Worker:
 
         await self._set_status(token, state="processing")
         await self.task_log.record(
-            kind="media", op="convert", token_or_cid=token, state="processing"
+            kind="media", op="convert", token_or_cid=token, state="processing",
+            owner_id=owner_id or None,
         )
         job_id = await self.proc_log.start_job(op="convert", token=token)
 
@@ -446,6 +448,7 @@ class Worker:
                 token_or_cid=token,
                 state="failed",
                 detail=str(exc),
+                owner_id=owner_id or None,
             )
             await self.proc_log.finish_job(job_id, "failed")
             # Видео конвертируется в несколько шагов (main -> thumb -> preview);
@@ -513,7 +516,8 @@ class Worker:
             token, state="ready", url=f"/api/media/{token}", mime=main.mime, tag=tag
         )
         await self.task_log.record(
-            kind="media", op="convert", token_or_cid=token, state="ready"
+            kind="media", op="convert", token_or_cid=token, state="ready",
+            owner_id=owner_id or None,
         )
         await self.proc_log.finish_job(job_id, "ready")
         await self.vk.delete(f"attempts:media:convert:{token}")

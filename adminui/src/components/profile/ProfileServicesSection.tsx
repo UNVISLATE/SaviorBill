@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query"
 
-import { api } from "@/lib/api"
+import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { Badge } from "@/components/shadsnui/badge"
 import { Skeleton } from "@/components/shadsnui/skeleton"

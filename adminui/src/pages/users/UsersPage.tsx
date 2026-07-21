@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
-import { api } from "@/lib/api"
+import { api } from "@/api/api.ts"
 import { useProfileDialog } from "@/hooks/use-profile-dialog"
 import {
   Table,

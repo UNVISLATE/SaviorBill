@@ -30,7 +30,9 @@ from sqlalchemy import (
     Integer,
     JSON,
     String,
+    and_,
     func,
+    or_,
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,6 +57,14 @@ class WorkerJobModel(Base):
     kind: Mapped[str] = mapped_column(String(16), nullable=False)  # media | lua
     op: Mapped[str] = mapped_column(String(32), nullable=False)
     subject_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Денормализация: на момент создания джобы (``convert``) соответствующей
+    # ``system_media`` строки в БД ещё нет (её создаёт только консьюмер
+    # результата — см. ``services/media_results.py``), поэтому джойн на
+    # ``system_media`` для "мои активные джобы" (§3.Д) не находит ничего,
+    # пока файл не готов. Владелец известен воркеру уже на старте (из
+    # исходной задачи в очереди) — сохраняем его сюда сразу, без ожидания
+    # результата.
+    owner_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     state: Mapped[str] = mapped_column(
         String(16), default="queued", server_default="queued", nullable=False
     )
@@ -171,6 +181,7 @@ class WorkerJobsMngr:
         worker_id: str | None = None,
         error: str | None = None,
         event_data: dict | None = None,
+        owner_id: int | None = None,
     ) -> WorkerJobModel:
         """Применить событие state-машины: создать новую джобу (state=="queued")
         либо обновить существующую активную (не в терминальном состоянии).
@@ -183,7 +194,8 @@ class WorkerJobsMngr:
         if current is None or current.state in TERMINAL_STATES:
             if state == "queued" or current is None:
                 current = WorkerJobModel(
-                    kind=kind, op=op, subject_key=subject_key, state="queued"
+                    kind=kind, op=op, subject_key=subject_key, state="queued",
+                    owner_id=owner_id,
                 )
                 self.s.add(current)
                 await self.s.flush()
@@ -191,12 +203,17 @@ class WorkerJobsMngr:
                 # Событие "processing/ready/..." без предшествующего queued
                 # (например, при перезапуске consumer-группы) — заводим
                 # новую джобу сразу в этом состоянии, чтобы не потерять факт.
-                current = WorkerJobModel(kind=kind, op=op, subject_key=subject_key, state=state)
+                current = WorkerJobModel(
+                    kind=kind, op=op, subject_key=subject_key, state=state,
+                    owner_id=owner_id,
+                )
                 self.s.add(current)
                 await self.s.flush()
         current.state = state
         current.worker_id = worker_id or current.worker_id
         current.error = error
+        if owner_id is not None and current.owner_id is None:
+            current.owner_id = owner_id
         now = utc_now()
         if state == "processing" and current.started_at is None:
             current.started_at = now
@@ -211,16 +228,26 @@ class WorkerJobsMngr:
     async def active_for_owner(self, owner_id: int, *, kind: str = "media") -> list[WorkerJobModel]:
         """Активные (не терминальные) джобы владельца — восстановление карточек
         "в обработке" после перезагрузки страницы (см. IMPLEMENTATION_PLAN.md
-        §3.Д). ``subject_key`` в ``worker_jobs`` — это ``system_media.token``
-        (миграция под ``owner_id`` в самой таблице джоб не добавлялась —
-        джойним на ``system_media`` вместо денормализации)."""
+        §3.Д). ``owner_id`` теперь пишется в саму джобу при создании (см.
+        ``apply``) — не нужно ждать появления ``system_media`` (та строка
+        создаётся только по результату конвертации, см. ``services/
+        media_results.py``, то есть ПОСЛЕ того, как джоба уже была queued/
+        processing — джойн без денормализации всегда возвращал пустой список
+        для ещё не готовых файлов). Джойн оставлен только как fallback для
+        старых записей без ``owner_id`` (созданных до этой миграции)."""
         q = (
             select(WorkerJobModel)
-            .join(SystemMediaModel, SystemMediaModel.token == WorkerJobModel.subject_key)
+            .outerjoin(SystemMediaModel, SystemMediaModel.token == WorkerJobModel.subject_key)
             .where(
                 WorkerJobModel.kind == kind,
                 WorkerJobModel.state.in_(("queued", "processing", "retrying")),
-                SystemMediaModel.owner_id == owner_id,
+                or_(
+                    WorkerJobModel.owner_id == owner_id,
+                    and_(
+                        WorkerJobModel.owner_id.is_(None),
+                        SystemMediaModel.owner_id == owner_id,
+                    ),
+                ),
             )
             .order_by(WorkerJobModel.id.desc())
         )

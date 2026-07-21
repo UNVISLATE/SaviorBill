@@ -2,10 +2,7 @@
  * Хранилище пары токенов (access/refresh) в localStorage.
  *
  * localStorage — не самый безопасный вариант с точки зрения XSS (в отличие от
- * httpOnly-cookie), но соответствует контракту backend `POST /auth/login`,
- * который явно отдаёт токены в теле ответа (не ставит cookie) — см.
- * `src/api/v1/auth/local.py`. Если backend когда-нибудь перейдёт на httpOnly-cookie
- * для админки, это единственное место, которое нужно будет поменять.
+ * httpOnly-cookie), позже бэкед будет изменен на куки
  */
 const ACCESS_KEY = "sb_admin_access"
 const REFRESH_KEY = "sb_admin_refresh"

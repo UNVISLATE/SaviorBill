@@ -2,8 +2,8 @@ import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { ArrowLeft, Loader2, Plus, Trash2, Upload } from "lucide-react"
 
-import { api } from "@/lib/api"
-import { fmtDateTime, fmtSize, metaRows } from "@/lib/media-format"
+import { api } from "@/api/api.ts"
+import { fmtDateTime, fmtSize, metaRows } from "@/api/media-format.ts"
 import { Button } from "@/components/shadsnui/button"
 
 interface MediaVariant {

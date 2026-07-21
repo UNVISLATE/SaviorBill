@@ -57,6 +57,7 @@ class TaskLog:
         token_or_cid: str,
         state: str,
         detail: str | None = None,
+        owner_id: str | None = None,
     ) -> None:
         """Добавить факт в кольцевой буфер + опубликовать событие для WS."""
         entry = {
@@ -87,6 +88,15 @@ class TaskLog:
                         "token": token_or_cid,
                         "state": state,
                         "detail": detail or "",
+                        # Владелец — только у ``convert`` известен сразу (из
+                        # исходной задачи в очереди, см. upload.py), у
+                        # preview_add/thumb_replace тоже передаётся явно (см.
+                        # serve.py — известен из _authorize_media_owner).
+                        # billing денормализует его в саму джобу (см.
+                        # models/worker_jobs.py::apply) — без ожидания
+                        # появления system_media (создаётся только по
+                        # результату конвертации).
+                        "owner_id": owner_id or "",
                     },
                 ),
                 maxlen=self.job_events_maxlen,

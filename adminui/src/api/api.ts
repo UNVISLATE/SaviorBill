@@ -1,6 +1,6 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios"
 
-import { clearTokens, getAccessToken, getRefreshToken, setTokens } from "@/lib/tokens"
+import { clearTokens, getAccessToken, getRefreshToken, setTokens } from "@/api/tokens.ts"
 
 /** Событие: сессия истекла (refresh не удался) — слушает AuthProvider. */
 export const AUTH_LOGOUT_EVENT = "sb-admin:logout"

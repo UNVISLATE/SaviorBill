@@ -19,9 +19,9 @@ import {
 } from "lucide-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { api } from "@/lib/api"
-import { beginOwnMediaUpload, type UploadProgress } from "@/lib/media-upload"
-import { fmtDateTime, fmtEta, fmtSize, STATUS_LABEL, STATUS_VARIANT } from "@/lib/media-format"
+import { api } from "@/api/api.ts"
+import { beginOwnMediaUpload, type UploadProgress } from "@/api/media-upload.ts"
+import { fmtDateTime, fmtEta, fmtSize, STATUS_LABEL, STATUS_VARIANT } from "@/api/media-format.ts"
 import { useInvalidateUserProfile } from "@/hooks/use-user-profile"
 import { useAuth } from "@/hooks/use-auth"
 import { useMediaStatusStream } from "@/hooks/use-media-status-ws"
