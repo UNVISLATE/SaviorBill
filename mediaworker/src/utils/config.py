@@ -95,6 +95,12 @@ class Config(BaseSettings):
     # --- Параметры конвертации ---
     MEDIA_WEBP_QUALITY: int = Field(default=82)
     MEDIA_WEBM_CRF: int = Field(default=33)
+    # libvpx-vp9 без -cpu-used кодирует на самой медленной (0=лучшее сжатие)
+    # скорости — короткий ролик в несколько МБ мог конвертироваться 20+ минут
+    # на 100% CPU, из-за чего казалось, что воркер "завис". 4 — разумный
+    # компромисс скорость/качество для self-hosted; 5-8 — ещё быстрее, но
+    # заметно хуже сжатие.
+    MEDIA_WEBM_CPU_USED: int = Field(default=4)
     MEDIA_THUMB_SIZE: int = Field(default=96)
     MEDIA_THUMB_QUALITY: int = Field(default=40)
 
@@ -283,6 +289,10 @@ class Config(BaseSettings):
     @property
     def webm_crf(self) -> int:
         return self.MEDIA_WEBM_CRF
+
+    @property
+    def webm_cpu_used(self) -> int:
+        return self.MEDIA_WEBM_CPU_USED
 
     @property
     def thumb_size(self) -> int:

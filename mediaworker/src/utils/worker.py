@@ -26,6 +26,7 @@ from .convert import (
     make_preview,
     make_thumb,
     probe_duration,
+    probe_media,
 )
 from .bus_sign import sign_fields, verify_fields
 from .keys import file_key, job_lock_key, opstatus_key, status_key
@@ -91,12 +92,32 @@ class Worker:
                 raise
 
     async def run(self) -> None:
-        """Бесконечный цикл чтения и конкурентной обработки задач."""
+        """Бесконечный цикл чтения и НЕПРЕРЫВНОЙ конкурентной обработки задач.
+
+        Раньше здесь был ``await asyncio.gather(*tasks)`` на каждую пачку —
+        цикл не читал следующую пачку из стрима, пока не завершится САМАЯ
+        долгая задача текущей (см. IMPLEMENTATION_PLAN.md §1). Из-за этого
+        раздельные пулы (``_sem_*``) не давали реального выигрыша: лёгкий
+        фото-слот освобождался за секунду, но простаивал, пока где-то в той
+        же пачке доваривалось видео минуту — новые фото-задачи из стрима не
+        подхватывались, хотя свободный слот под них был.
+
+        Теперь задачи диспетчеризуются fire-and-forget в ``self._running`` —
+        сам семафор внутри ``_process_one`` (``async with sem:``) регулирует
+        фактическую одновременность, а цикл чтения никогда не блокируется на
+        их завершении: он продолжает читать стрим, пока где-то в фоне ещё
+        доваривается видео.
+        """
         await self._ensure_group()
+        running: set[asyncio.Task] = set()
         while True:
             # Читаем не больше, чем есть свободных слотов суммарно по всем
             # пулам (backpressure) — какой именно пул займёт конкретная
-            # задача, решится по её виду медиа уже в `_process_one`.
+            # задача, решится по её виду медиа уже в `_process_one`. Если
+            # слотов сейчас 0 (все пулы заняты) — читаем всё равно 1: заявка
+            # просто подождёт своей очереди на `async with sem`, но не
+            # оставит стрим совсем без чтения (например, при появлении
+            # незанятого пула у другого вида медиа между двумя итерациями).
             count = max(
                 1,
                 self._sem_image._value + self._sem_video._value + self._sem_other._value,
@@ -112,19 +133,23 @@ class Worker:
             except (valkey.TimeoutError, asyncio.TimeoutError):
                 # Блокирующее чтение истекло без сообщений (гонка block-таймаута
                 # сервера и read-таймаута клиента) — штатная пауза, не ошибка.
-                continue
+                resp = None
             except Exception as exc:  # noqa: BLE001
                 print(f"[mediaworker] read error: {exc}", flush=True)
                 await asyncio.sleep(2)
-                continue
-            if not resp:
-                continue
-            tasks = []
-            for _stream, entries in resp:
-                for msg_id, data in entries:
-                    tasks.append(self._process_one(msg_id, data))
-            if tasks:
-                await asyncio.gather(*tasks)
+                resp = None
+            if resp:
+                for _stream, entries in resp:
+                    for msg_id, data in entries:
+                        running.add(asyncio.create_task(self._process_one(msg_id, data)))
+            if running:
+                # Не блокируем цикл — только подчищаем уже завершённые задачи
+                # (чтобы не расти бесконечно и не терять исключения молча).
+                done, running = await asyncio.wait(running, timeout=0)
+                for t in done:
+                    exc = t.exception()
+                    if exc is not None:
+                        print(f"[mediaworker] task crashed: {exc!r}", flush=True)
 
     def _pick_semaphore(self, op: str, token: str) -> asyncio.Semaphore:
         """Выбрать пул конкурентности для задачи (см. ``__init__``).
@@ -265,6 +290,7 @@ class Worker:
             )
         except valkey.ResponseError:
             return  # стрим/группа ещё не созданы — ничего реклеймить
+        reclaimed: list[asyncio.Task] = []
         for item in pending or []:
             msg_id = item["message_id"]
             delivery_count = int(item.get("times_delivered", 1))
@@ -285,7 +311,12 @@ class Worker:
                 message_ids=[msg_id],
             )
             for claimed_id, fields in claimed:
-                await self._process_one(claimed_id, fields)
+                # Диспетчеризуем конкурентно (как в `run()`) — иначе одна
+                # зависшая видео-конвертация в этом же sweep'е задержала бы
+                # реклейм всех остальных PEL-записей до своего завершения.
+                reclaimed.append(asyncio.create_task(self._process_one(claimed_id, fields)))
+        if reclaimed:
+            await asyncio.gather(*reclaimed, return_exceptions=True)
 
     async def reclaim_loop(self) -> None:
         """Периодический sweep зависших задач (см. ``reclaim_once``)."""
@@ -382,6 +413,16 @@ class Worker:
                     out_time_sec=snapshot.out_time_sec,
                     done=snapshot.done,
                 )
+                # Тот же снимок — в основной статус-хэш (``media:status:*``),
+                # откуда его читают REST `/status/{token}` и WS `media/mine`
+                # (см. IMPLEMENTATION_PLAN.md §3.В). Раньше percent/eta_sec
+                # оседали только в ProcLog (debug-лог), клиент их не видел.
+                if snapshot.percent is not None:
+                    await self._set_status(
+                        token,
+                        percent=str(round(snapshot.percent, 1)),
+                        eta_sec=str(round(snapshot.eta_sec, 1)) if snapshot.eta_sec is not None else "",
+                    )
             except Exception as exc:  # noqa: BLE001
                 print(f"[mediaworker] progress sink error (non-fatal): {exc}", flush=True)
 
@@ -416,6 +457,12 @@ class Worker:
 
         sizes: dict = {}
         await self.proc_log.set_stage(job_id, "publish")
+        # Метаданные (§5.7) — снимаем ДО _publish: тот перемещает временный
+        # файл в целевое хранилище (fs/s3), после чего локального пути может
+        # не быть вовсе (s3). Пробуем именно только что созданный main-файл,
+        # а не оригинал src — интересует то, что реально отдаётся клиенту.
+        main_tmp = os.path.join(self.cfg.uploads_dir, variants[0].key)
+        meta = await probe_media(main_tmp)
         for v in variants:
             key, size = await self._publish(v)
             sizes[key] = size
@@ -453,6 +500,8 @@ class Worker:
             "status": "ready",
             "variants": json.dumps(result_variants),
         }
+        if meta:
+            result["meta"] = json.dumps(meta)
         if tag:
             result["tag"] = tag
         if main.key in sizes:

@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from api import router
+from apiws import router as ws_router
 from lifespan import lifespan
 from utils.telemetry import install_access_log_filter, setup_observability
 from utils.version import resolve_app_version
@@ -62,6 +63,7 @@ if _cfg.trusted_proxies_list:
     )
 
 app.include_router(router)
+app.include_router(ws_router, prefix="/api/media")
 
 __all__ = ["app"]
 

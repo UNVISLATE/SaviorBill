@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import uuid
 from collections.abc import Awaitable, Callable
@@ -199,6 +200,68 @@ async def probe_duration(src: str) -> float | None:
         return None
 
 
+async def probe_media(src: str) -> dict:
+    """Технические метаданные готового файла (``system_media.meta``, см.
+    IMPLEMENTATION_PLAN.md §5.7) — только технические поля (без EXIF/geo):
+    ``width``/``height`` для всех, плюс ``duration_sec``/``codec``/``fps``/
+    ``bitrate`` для видео. Одним вызовом ``ffprobe -show_streams -show_format``
+    (JSON) — тот же инструмент, что уже используется в проекте
+    (:func:`probe_duration`), не тянем отдельную библиотеку (Pillow/exiftool)
+    просто для width/height.
+
+    Best-effort: пустой словарь при ошибке разбора — метаданные не входят в
+    контракт "готово/не готово" самой конвертации, отсутствие не должно ронять
+    ``_convert()`` (тот же принцип, что и у ``progress_sink``, см. ``worker.py``).
+    """
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe", "-v", "error",
+        "-show_entries", "stream=width,height,codec_type,codec_name,r_frame_rate,bit_rate",
+        "-show_entries", "format=duration,bit_rate",
+        "-of", "json",
+        src,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    out, _ = await proc.communicate()
+    try:
+        probe = json.loads(out.decode())
+    except (ValueError, UnicodeDecodeError):
+        return {}
+
+    meta: dict = {}
+    video_stream = next(
+        (s for s in probe.get("streams") or [] if s.get("codec_type") == "video"), None
+    )
+    if video_stream:
+        if video_stream.get("width"):
+            meta["width"] = video_stream["width"]
+        if video_stream.get("height"):
+            meta["height"] = video_stream["height"]
+        if video_stream.get("codec_name"):
+            meta["codec"] = video_stream["codec_name"]
+        rate = video_stream.get("r_frame_rate")  # "30/1" | "30000/1001" | "0/0"
+        if rate and "/" in rate:
+            num, _, den = rate.partition("/")
+            try:
+                if float(den):
+                    meta["fps"] = round(float(num) / float(den), 2)
+            except ValueError:
+                pass
+        bitrate = video_stream.get("bit_rate") or (probe.get("format") or {}).get("bit_rate")
+        if bitrate:
+            try:
+                meta["bitrate"] = int(bitrate)
+            except ValueError:
+                pass
+    duration = (probe.get("format") or {}).get("duration")
+    if duration:
+        try:
+            meta["duration_sec"] = round(float(duration), 1)
+        except ValueError:
+            pass
+    return meta
+
+
 def _webp(src: str, dst: str, quality: int, vf: str | None = None, at: float | None = None) -> list[str]:
     args = ["ffmpeg", "-y"]
     if at is not None:
@@ -290,6 +353,7 @@ async def convert_video(
         [
             "ffmpeg", "-y", "-i", src,
             "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", str(cfg.webm_crf),
+            "-deadline", "good", "-cpu-used", str(cfg.webm_cpu_used),
             "-c:a", "libopus", "-row-mt", "1",
             os.path.join(out_dir, main.key),
         ],
@@ -356,6 +420,7 @@ __all__ = [
     "make_thumb",
     "make_preview",
     "probe_duration",
+    "probe_media",
     "detect_kind",
     "target_key",
     "Variant",

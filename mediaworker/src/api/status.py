@@ -47,6 +47,8 @@ async def media_status(request: Request, token: str) -> dict:
         "mime": data.get("mime") or None,
         "tag": data.get("tag") or None,
         "error": data.get("error") or None,
+        "percent": float(data["percent"]) if data.get("percent") else None,
+        "eta_sec": float(data["eta_sec"]) if data.get("eta_sec") else None,
         "jobs": await proc_log.jobs_for_token(token),
     }
 
