@@ -11,7 +11,8 @@ export interface MediaStatusSnap {
 }
 
 /**
- * Живой статус конкретных media-токенов через ``/apiws/v1/media/mine``.
+ * Живой статус конкретных media-токенов через ``/api/media/mine``
+ * (mediaworker — единственный писатель этого статуса, см. IMPLEMENTATION_PLAN.md §3).
  *
  * Раньше каждая карточка в обработке опрашивала REST-статус по таймеру —
  * при нескольких параллельных загрузках это N HTTP-запросов с клиента,
@@ -41,7 +42,7 @@ export function useMediaStatusStream(tokens: string[]): Record<string, MediaStat
     if (!accessToken) return
 
     const proto = location.protocol === "https:" ? "wss" : "ws"
-    const ws = new WebSocket(`${proto}://${location.host}/apiws/v1/media/mine`)
+    const ws = new WebSocket(`${proto}://${location.host}/api/media/mine`)
     wsRef.current = ws
 
     ws.onopen = () => {
@@ -77,7 +78,6 @@ export function useMediaStatusStream(tokens: string[]): Record<string, MediaStat
     if (toAdd.length === 0) return
     toAdd.forEach((t) => watchedRef.current.add(t))
     ws.send(JSON.stringify({ watch: toAdd }))
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tokens])
 
   return statuses

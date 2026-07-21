@@ -54,7 +54,7 @@ function sleep(ms: number): Promise<void> {
  * сразу после приёма файла mediaworker'ом (``state: "queued"``).
  *
  * Используется там, где готовность отслеживается отдельно и параллельно для
- * нескольких файлов сразу (WS ``/apiws/v1/media/mine``, см.
+ * нескольких файлов сразу (WS ``/api/media/mine``, см.
  * ``hooks/use-media-status-ws.ts``) — в отличие от ``uploadOwnMedia()``,
  * которая гоняет REST-поллинг сама и ждёт синхронно один файл.
  */

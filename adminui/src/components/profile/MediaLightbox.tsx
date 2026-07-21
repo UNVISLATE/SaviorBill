@@ -1,6 +1,6 @@
 import { createPortal } from "react-dom"
 import { useEffect } from "react"
-import { X } from "lucide-react"
+import { ChevronLeft, ChevronRight, X } from "lucide-react"
 
 /**
  * Полноэкранный просмотр медиа "как в мессенджерах" — отдельный элемент
@@ -16,16 +16,23 @@ import { X } from "lucide-react"
  */
 export function MediaLightbox({
   onClose,
+  onPrev,
+  onNext,
   children,
   caption,
 }: {
   onClose: () => void
+  /** Навигация между соседними файлами галереи (§5.8) — если не задано, стрелки не показываются. */
+  onPrev?: () => void
+  onNext?: () => void
   children: React.ReactNode
   caption?: React.ReactNode
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose()
+      else if (e.key === "ArrowLeft") onPrev?.()
+      else if (e.key === "ArrowRight") onNext?.()
     }
     document.addEventListener("keydown", onKey)
     const prevOverflow = document.body.style.overflow
@@ -34,7 +41,7 @@ export function MediaLightbox({
       document.removeEventListener("keydown", onKey)
       document.body.style.overflow = prevOverflow
     }
-  }, [onClose])
+  }, [onClose, onPrev, onNext])
 
   return createPortal(
     <div
@@ -45,8 +52,8 @@ export function MediaLightbox({
         className="relative flex max-h-full max-w-full flex-col items-center gap-3"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative max-h-[75vh] max-w-full overflow-hidden rounded-lg shadow-2xl">
-          {children}
+        <div className="relative max-h-[75vh] max-w-full">
+          <div className="overflow-hidden rounded-lg shadow-2xl">{children}</div>
 
           <button
             type="button"
@@ -57,9 +64,36 @@ export function MediaLightbox({
             <X className="size-4" />
           </button>
 
+          {onPrev && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onPrev()
+              }}
+              aria-label="Предыдущий файл"
+              className="absolute top-1/2 left-2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
+            >
+              <ChevronLeft className="size-5" />
+            </button>
+          )}
+          {onNext && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation()
+                onNext()
+              }}
+              aria-label="Следующий файл"
+              className="absolute top-1/2 right-2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
+            >
+              <ChevronRight className="size-5" />
+            </button>
+          )}
+
           {/* Мобильные: подпись прямо на фото затемнением снизу. */}
           {caption && (
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-3 text-xs text-white sm:hidden">
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/85 to-transparent p-3 text-xs text-white sm:hidden">
               {caption}
             </div>
           )}
