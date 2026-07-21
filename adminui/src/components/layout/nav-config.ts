@@ -1,18 +1,10 @@
 import {
-  BadgePercent,
   FileClock,
   Gauge,
-  KeySquare,
-  LayoutTemplate,
-  Link2,
-  Mail,
-  Package,
-  ScrollText,
   Settings,
   ShieldCheck,
-  ShoppingCart,
   Users,
-  Zap,
+  MonitorCog,
 } from "lucide-react"
 
 /**
@@ -43,27 +35,7 @@ export const navGroups: NavGroup[] = [
       { title: "Пользователи", url: "/users", icon: Users, perm: "users.read" },
       { title: "Роли", url: "/roles", icon: ShieldCheck, perm: "roles.read" },
     ],
-  },
-  {
-    title: "Каталог и продажи",
-    items: [
-      { title: "Каталог услуг", url: "/catalogs", icon: LayoutTemplate, perm: "catalogs.read" },
-      { title: "Товары/услуги", url: "/services", icon: Package, perm: "services.read" },
-      { title: "Ключи услуг", url: "/service-keys", icon: KeySquare, perm: "services.read" },
-      { title: "Заказы", url: "/orders", icon: ShoppingCart, perm: "orders.read" },
-      { title: "Покупки", url: "/purchases", icon: ShoppingCart, perm: "purchases.read" },
-      { title: "Промокоды", url: "/promo", icon: BadgePercent, perm: "promo.read" },
-    ],
-  },
-  {
-    title: "Автоматизация",
-    items: [
-      { title: "Lua-скрипты", url: "/lua", icon: ScrollText, perm: "lua.read" },
-      { title: "Триггеры", url: "/triggers", icon: Zap, perm: "triggers.read" },
-      { title: "OAuth-провайдеры", url: "/oauth", icon: Link2, perm: "oauth.read" },
-      { title: "Email-шаблоны", url: "/email", icon: Mail, perm: "email.read" },
-    ],
-  },
+  }
 ]
 
 /**
@@ -72,6 +44,7 @@ export const navGroups: NavGroup[] = [
  * из общих групп навигации, как "Settings/Get Help/Search" в референсе.
  */
 export const footerNavItems: NavItem[] = [
-  { title: "Настройки", url: "/settings", icon: Settings, perm: "settings.read" },
   { title: "Аудит", url: "/audit", icon: FileClock, perm: "audit.read" },
+  { title: "Система", url: "/system", icon: MonitorCog, perm: "system.stats.read" },
+  { title: "Настройки", url: "/settings", icon: Settings, perm: "settings.read" }
 ]

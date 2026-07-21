@@ -37,8 +37,6 @@ export function DashboardLayout() {
 
   return (
     <SidebarProvider>
-      {/* collapsible="icon" — сворачивается до колонки с иконками, а не
-          исчезает целиком (offcanvas), как просили. */}
       <Sidebar variant="inset" collapsible="icon">
         <SidebarHeader>
           <div className="flex items-center gap-2 px-2 py-1.5">

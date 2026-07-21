@@ -1,7 +1,9 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { CreditCard, ImageIcon, PackageOpen, UserRound } from "lucide-react"
+import { useQuery } from "@tanstack/react-query"
 
 import { cn } from "@/lib/utils"
+import { api } from "@/lib/api"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useProfileDialog } from "@/hooks/use-profile-dialog"
 import {
@@ -21,7 +23,7 @@ import { Button } from "@/components/shadsnui/button"
 import { ProfileOverviewSection } from "@/components/profile/ProfileOverviewSection"
 import { ProfileServicesSection } from "@/components/profile/ProfileServicesSection"
 import { ProfilePaymentsSection } from "@/components/profile/ProfilePaymentsSection"
-import { ProfileMediaSection } from "@/components/profile/ProfileMediaSection"
+import { ProfileMediaSection, type MediaSectionHandle } from "@/components/profile/ProfileMediaSection"
 
 type Section = "profile" | "services" | "payments" | "media"
 
@@ -32,11 +34,21 @@ const SECTIONS: { id: Section; title: string; icon: typeof UserRound }[] = [
   { id: "payments", title: "Платежи", icon: CreditCard },
 ]
 
-function SectionContent({ section }: { section: Section }) {
-  if (section === "services") return <ProfileServicesSection />
-  if (section === "payments") return <ProfilePaymentsSection />
-  if (section === "media") return <ProfileMediaSection />
-  return <ProfileOverviewSection />
+function SectionContent({
+  section,
+  mode,
+  userId,
+  mediaRef,
+}: {
+  section: Section
+  mode: "own" | "view"
+  userId?: number
+  mediaRef: React.Ref<MediaSectionHandle>
+}) {
+  if (section === "services") return <ProfileServicesSection mode={mode} userId={userId} />
+  if (section === "payments") return <ProfilePaymentsSection mode={mode} userId={userId} />
+  if (section === "media") return <ProfileMediaSection ref={mediaRef} mode={mode} userId={userId} />
+  return <ProfileOverviewSection mode={mode} userId={userId} />
 }
 
 /** Внутренняя навигация профиля — колонка слева на десктопе, табы сверху в
@@ -81,13 +93,27 @@ function ProfileNav({
   )
 }
 
-/** Диалог/шторка редактирования собственного профиля админа — монтируется
- * один раз в App.tsx, открывается через useProfileDialog().openProfile()
- * (сейчас вызывается из пункта "Профиль" в NavUser). */
+/** Диалог/шторка профиля — свой (через `openProfile()`, пункт "Профиль" в
+ * NavUser) или чужой (через `openUserProfile(userId)`, например из таблицы
+ * пользователей в админке) — общий layout, разный источник данных секций
+ * (см. IMPLEMENTATION_PLAN.md §4). Монтируется один раз в App.tsx. */
 export function ProfileDialogHost() {
-  const { isOpen, closeProfile, isBusy } = useProfileDialog()
+  const { isOpen, target, closeProfile, isBusy } = useProfileDialog()
   const isMobile = useIsMobile()
   const [section, setSection] = useState<Section>("profile")
+  const [dragActive, setDragActive] = useState(false)
+  const mediaRef = useRef<MediaSectionHandle>(null)
+  const mode = target.mode
+  const userId = target.mode === "view" ? target.userId : undefined
+
+  // Заголовок для чужого профиля — отдельный лёгкий запрос (не блокирует
+  // рендер секций, которые грузят свои данные сами).
+  const { data: viewedUser } = useQuery({
+    queryKey: ["admin-user-brief", userId],
+    queryFn: async () =>
+      (await api.get<{ login: string }>(`/v1/admin/users/${userId}`)).data,
+    enabled: mode === "view" && isOpen,
+  })
 
   // Пока идёт загрузка аватарки (isBusy) — закрыть можно только явной
   // кнопкой "Закрыть", а не кликом снаружи/Esc/свайпом, чтобы не потерять
@@ -97,18 +123,66 @@ export function ProfileDialogHost() {
     if (!open) closeProfile()
   }
 
+  const canDropFiles = section === "media" && mode === "own"
+
+  // Drag&drop зоны вкладки "Медиа" — весь диалог/шторка целиком, а не только
+  // блок с карточками (тот больше не привязан к своим onDrag*, см.
+  // ProfileMediaSection). React-события перетаскивания всплывают как обычные
+  // DOM-события, поэтому достаточно навесить их на внешний контейнер.
+  //
+  // ``types.includes("Files")`` — только у настоящего перетаскивания файлов
+  // из ОС. Внутренний drag&drop сортировки превью (MediaPreviewGallery) тоже
+  // всплывает сюда как обычный DragEvent, но без "Files" в dataTransfer —
+  // без этой проверки любое перетаскивание превью внутри "Подробностей"
+  // включало оверлей "Отпустите файл" и мешало сортировке.
+  function isFileDrag(e: React.DragEvent): boolean {
+    return Array.from(e.dataTransfer.types).includes("Files")
+  }
+  function onDragOver(e: React.DragEvent) {
+    if (!canDropFiles || !isFileDrag(e)) return
+    e.preventDefault()
+    setDragActive(true)
+  }
+  function onDragLeave(e: React.DragEvent) {
+    if (!canDropFiles || !isFileDrag(e)) return
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+    setDragActive(false)
+  }
+  function onDrop(e: React.DragEvent) {
+    if (!canDropFiles || !isFileDrag(e)) return
+    e.preventDefault()
+    setDragActive(false)
+    if (e.dataTransfer.files?.length) mediaRef.current?.startUploads(e.dataTransfer.files)
+  }
+
+  const dropOverlay = dragActive && (
+    <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-foreground/50 bg-foreground/5">
+      <span className="rounded-md bg-popover px-3 py-1.5 text-sm font-medium shadow-lg ring-1 ring-foreground/10">
+        Отпустите файл, чтобы загрузить
+      </span>
+    </div>
+  )
+
+  const drawerTitle = mode === "view" ? `Профиль: ${viewedUser?.login ?? "…"}` : "Профиль"
+
   if (isMobile) {
     return (
       <Drawer open={isOpen} onOpenChange={handleOpenChange} disablePointerDismissal={isBusy}>
-        <DrawerContent className="h-[85vh]">
+        <DrawerContent
+          className="h-[85vh]"
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+        >
           <DrawerHeader className="flex items-center justify-between">
-            <DrawerTitle>Профиль</DrawerTitle>
+            <DrawerTitle>{drawerTitle}</DrawerTitle>
             <DrawerClose render={<Button variant="ghost" size="sm" />}>Закрыть</DrawerClose>
           </DrawerHeader>
           <ProfileNav section={section} onSelect={setSection} orientation="horizontal" />
           <div className="flex-1 overflow-y-auto p-4">
-            <SectionContent section={section} />
+            <SectionContent section={section} mode={mode} userId={userId} mediaRef={mediaRef} />
           </div>
+          {dropOverlay}
         </DrawerContent>
       </Drawer>
     )
@@ -116,14 +190,24 @@ export function ProfileDialogHost() {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange} disablePointerDismissal={isBusy}>
-      <DialogContent className="flex h-[640px] max-w-3xl gap-0 overflow-hidden p-0 sm:max-w-3xl">
+      <DialogContent
+        className="flex h-[640px] max-w-3xl gap-0 overflow-hidden p-0 sm:max-w-3xl"
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+      >
         <ProfileNav section={section} onSelect={setSection} orientation="vertical" />
         <div className="flex-1 overflow-y-auto p-6">
           <DialogHeader className="mb-4">
-            <DialogTitle>{SECTIONS.find((s) => s.id === section)?.title}</DialogTitle>
+            <DialogTitle>
+              {mode === "view"
+                ? `${SECTIONS.find((s) => s.id === section)?.title} — ${viewedUser?.login ?? "…"}`
+                : SECTIONS.find((s) => s.id === section)?.title}
+            </DialogTitle>
           </DialogHeader>
-          <SectionContent section={section} />
+          <SectionContent section={section} mode={mode} userId={userId} mediaRef={mediaRef} />
         </div>
+        {dropOverlay}
       </DialogContent>
     </Dialog>
   )

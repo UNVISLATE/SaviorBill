@@ -2,6 +2,7 @@ import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
+import { useProfileDialog } from "@/hooks/use-profile-dialog"
 import {
   Table,
   TableBody,
@@ -39,6 +40,7 @@ const PAGE_SIZE = 25
 
 export function UsersPage() {
   const [offset, setOffset] = useState(0)
+  const { openUserProfile } = useProfileDialog()
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-users", offset],
@@ -80,7 +82,16 @@ export function UsersPage() {
             </TableHeader>
             <TableBody>
               {data.items.map((u) => (
-                <TableRow key={u.id}>
+                <TableRow
+                  key={u.id}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openUserProfile(u.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") openUserProfile(u.id)
+                  }}
+                  className="cursor-pointer"
+                >
                   <TableCell>{u.id}</TableCell>
                   <TableCell className="font-medium">{u.login}</TableCell>
                   <TableCell>{u.email ?? "—"}</TableCell>

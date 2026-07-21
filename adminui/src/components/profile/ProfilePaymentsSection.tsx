@@ -1,7 +1,8 @@
 import { useQuery } from "@tanstack/react-query"
-import { CreditCard } from "lucide-react"
+import { CreditCard, ShieldOff } from "lucide-react"
 
 import { api } from "@/lib/api"
+import { useAuth } from "@/hooks/use-auth"
 import { Badge } from "@/components/shadsnui/badge"
 import { Skeleton } from "@/components/shadsnui/skeleton"
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "@/components/shadsnui/empty"
@@ -29,12 +30,38 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
   cancelled: "outline",
 }
 
-export function ProfilePaymentsSection() {
+export function ProfilePaymentsSection({
+  mode,
+  userId,
+}: {
+  mode: "own" | "view"
+  userId?: number
+}) {
+  const { can } = useAuth()
+  const allowed = mode === "own" || can("purchases.read")
   const { data, isLoading } = useQuery({
-    queryKey: ["user-purchases"],
+    queryKey: mode === "own" ? ["user-purchases"] : ["admin-user-payments", userId],
     queryFn: async () =>
-      (await api.get<Page<Payment>>("/v1/user/purchases", { params: { limit: 50 } })).data,
+      (
+        await api.get<Page<Payment>>(
+          mode === "own" ? "/v1/user/purchases" : `/v1/admin/users/${userId}/payments`,
+          { params: { limit: 50 } },
+        )
+      ).data,
+    enabled: allowed,
   })
+
+  if (!allowed) {
+    return (
+      <Empty>
+        <EmptyMedia>
+          <ShieldOff className="size-8 text-muted-foreground" />
+        </EmptyMedia>
+        <EmptyTitle>Недостаточно прав</EmptyTitle>
+        <EmptyDescription>Нужно право purchases.read, чтобы смотреть чужие платежи.</EmptyDescription>
+      </Empty>
+    )
+  }
 
   if (isLoading) {
     return (

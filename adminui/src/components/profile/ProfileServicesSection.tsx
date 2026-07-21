@@ -1,10 +1,11 @@
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/lib/api"
+import { useAuth } from "@/hooks/use-auth"
 import { Badge } from "@/components/shadsnui/badge"
 import { Skeleton } from "@/components/shadsnui/skeleton"
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "@/components/shadsnui/empty"
-import { PackageOpen } from "lucide-react"
+import { PackageOpen, ShieldOff } from "lucide-react"
 
 interface Order {
   id: number
@@ -27,11 +28,38 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
   error: "destructive",
 }
 
-export function ProfileServicesSection() {
+export function ProfileServicesSection({
+  mode,
+  userId,
+}: {
+  mode: "own" | "view"
+  userId?: number
+}) {
+  const { can } = useAuth()
+  const allowed = mode === "own" || can("orders.read")
   const { data, isLoading } = useQuery({
-    queryKey: ["user-services"],
-    queryFn: async () => (await api.get<Page<Order>>("/v1/user/services", { params: { limit: 50 } })).data,
+    queryKey: mode === "own" ? ["user-services"] : ["admin-user-services", userId],
+    queryFn: async () =>
+      (
+        await api.get<Page<Order>>(
+          mode === "own" ? "/v1/user/services" : `/v1/admin/users/${userId}/services`,
+          { params: { limit: 50 } },
+        )
+      ).data,
+    enabled: allowed,
   })
+
+  if (!allowed) {
+    return (
+      <Empty>
+        <EmptyMedia>
+          <ShieldOff className="size-8 text-muted-foreground" />
+        </EmptyMedia>
+        <EmptyTitle>Недостаточно прав</EmptyTitle>
+        <EmptyDescription>Нужно право orders.read, чтобы смотреть чужие заказы.</EmptyDescription>
+      </Empty>
+    )
+  }
 
   if (isLoading) {
     return (
