@@ -53,6 +53,8 @@ docker-compose.override.yml
 /AUDIT.md
 /CLOUD.md
 /IMPLEMENTATION_PLAN.md
+/CLAUDE.md
+/WS_ROUTES.md
 
 # Logs / runtime
 *.log
