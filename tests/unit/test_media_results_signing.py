@@ -49,7 +49,7 @@ async def test_unsigned_result_rejected_not_handled(monkeypatch):
 
     handled: list[dict] = []
 
-    async def fake_handle(data: dict) -> None:
+    async def fake_handle(_msg_id: str, data: dict) -> None:
         handled.append(data)
 
     monkeypatch.setattr(mr, "_handle", fake_handle)
@@ -72,7 +72,7 @@ async def test_correctly_signed_result_is_handled(monkeypatch):
 
     handled: list[dict] = []
 
-    async def fake_handle(data: dict) -> None:
+    async def fake_handle(_msg_id: str, data: dict) -> None:
         handled.append(data)
 
     monkeypatch.setattr(mr, "_handle", fake_handle)

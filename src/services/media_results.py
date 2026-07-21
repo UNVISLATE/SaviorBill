@@ -111,10 +111,10 @@ class MediaResults:
                             )
                             continue
                         with span_from_carrier("media.result.consume", data):
-                            await self._handle(data)
+                            await self._handle(msg_id, data)
                     except Exception:  # noqa: BLE001 — одна запись не валит цикл
                         log.exception("media-results: recording error")
-                        await self._on_failure(data)
+                        await self._on_failure(msg_id, data)
                     finally:
                         await self.vk.xack(
                             self.cfg.MEDIA_RESULT_STREAM,
@@ -122,11 +122,11 @@ class MediaResults:
                             msg_id,
                         )
 
-    async def _on_failure(self, data: dict) -> None:
+    async def _on_failure(self, msg_id: str, data: dict) -> None:
         """Учесть попытку; при исчерпании отправить результат в DLQ."""
         token = data.get("token", "unknown")
         op = data.get("op", "convert")
-        key = f"media:result:{token}:{op}"
+        key = f"media:result:{token}:{op}:{msg_id}"
         n, exhausted = await attempts(self.vk, key, self.cfg.MEDIA_RESULT_MAX_ATTEMPTS)
         if exhausted:
             await self.vk.xadd(self.cfg.MEDIA_RESULT_DLQ, {**data, "attempts": str(n)})
@@ -135,11 +135,20 @@ class MediaResults:
             # Снять idem-claim, чтобы повторная доставка могла обработаться заново.
             await release_once(self.vk, key)
 
-    async def _handle(self, data: dict) -> None:
+    async def _handle(self, msg_id: str, data: dict) -> None:
         op = data.get("op")
         token = data.get("token", "")
-        # Идемпотентность: один и тот же результат конверсии обрабатываем один раз.
-        if token and not await once(self.vk, f"media:result:{token}:{op}", ttl=3600):
+        # Идемпотентность — на конкретное СООБЩЕНИЕ стрима (msg_id), а не
+        # просто на (token, op): "convert" на токен и правда бывает ровно
+        # раз, но "preview_add"/"thumb_replace" — многократно повторяемые
+        # операции. Раньше ключ был только ``{token}:{op}`` без msg_id — это
+        # значило, что ЛЮБОЙ второй preview_add/thumb_replace на тот же токен
+        # в течение TTL (1 час) тихо отбрасывался как "уже обработанный
+        # дубликат", хотя это было совершенно новое сообщение с новым
+        # вариантом. Пользователь жал "Случайный кадр" второй раз — в БД
+        # ничего не добавлялось, без единой ошибки в логах.
+        key = f"media:result:{token}:{op}:{msg_id}"
+        if token and not await once(self.vk, key, ttl=3600):
             return
         async with self.sm() as session:
             mngr = SystemMediaMngr(session)
@@ -165,6 +174,7 @@ class MediaResults:
             else:  # convert
                 variants = json.loads(data.get("variants") or "{}")
                 owner = data.get("owner_id")
+                meta = json.loads(data.get("meta") or "{}")
                 await mngr.upsert(
                     token=data["token"],
                     kind=data.get("kind", "image"),
@@ -174,11 +184,12 @@ class MediaResults:
                     size=int(data["size"]) if data.get("size") else None,
                     owner_id=int(owner) if owner else None,
                     variants=variants,
+                    meta=meta or None,
                     status=data.get("status", "ready"),
                     tag=data.get("tag") or None,
                 )
             await session.commit()
-        await clear_attempts(self.vk, f"media:result:{token}:{op}")
+        await clear_attempts(self.vk, key)
 
 
 __all__ = ["MediaResults"]
