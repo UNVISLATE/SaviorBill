@@ -18,9 +18,17 @@ def _media_url(token: str) -> str:
 
 
 class MediaVariant(BaseModel):
-    """One physical file variant (main/thumb/preview)."""
+    """One physical file variant (main/thumb/preview).
 
-    key: str
+    ``key`` (реальное имя файла в хранилище, с расширением, например
+    ``<token>.webp``) намеренно не отдаётся клиенту — это внутренний
+    storage-идентификатор (см. ``models/system_media.py::all_storage_keys``,
+    используется только сервером для удаления/S3). Публичный контракт — только
+    ``url`` (``/api/media/<token>[.variant]``, без расширения: mediaworker сам
+    резолвит реальный файл по токену+варианту, поэтому URL не привязан к
+    текущему формату файла и не мигрирует при его смене).
+    """
+
     mime: str | None = None
     size: int | None = None
     url: str
@@ -54,6 +62,12 @@ class Media(BaseModel):
         default_factory=list,
         description="Video poster previews, 0..N, unlimited",
     )
+    meta: dict = Field(
+        default_factory=dict,
+        description="Technical metadata (best-effort, ffprobe): width/height "
+        "for all kinds; duration_sec/codec/fps/bitrate additionally for video. "
+        "No EXIF/geo data.",
+    )
 
     @classmethod
     def from_model(cls, m) -> "Media":  # noqa: ANN001 — SystemMediaModel
@@ -74,6 +88,7 @@ class Media(BaseModel):
             media=variants.get("media"),
             thumb=variants.get("thumb"),
             previews=variants.get("previews") or [],
+            meta=m.meta or {},
         )
 
 
@@ -118,6 +133,12 @@ class OpStatus(BaseModel):
     created_at: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
+    percent: float | None = Field(
+        default=None, description="Best-effort progress 0..100 (video convert only)"
+    )
+    eta_sec: float | None = Field(
+        default=None, description="Best-effort ETA seconds (video convert only)"
+    )
 
 
 class Attachment(BaseModel):

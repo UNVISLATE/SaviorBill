@@ -50,13 +50,23 @@ def _bus(request: Request, vk: valkey.Valkey) -> MediaBus:
     response_model=list[Media],
     dependencies=[Depends(require_perm("media.read"))],
     summary="Media",
+    description="Все медиа (постранично), либо только владельца — фильтр "
+    "`owner_id` для просмотра медиа конкретного пользователя из админского "
+    "Drawer (см. IMPLEMENTATION_PLAN.md §4).",
 )
 async def list_media(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    owner_id: int | None = Query(default=None),
     mngr: SystemMediaMngr = Depends(get_media_mngr),
 ) -> list[Media]:
-    rows = await mngr.list_all(limit=limit, offset=offset)
+    if owner_id is not None:
+        rows = await mngr.s.scalars(
+            mngr.stmt_for_owner(owner_id).limit(limit).offset(offset)
+        )
+        rows = list(rows)
+    else:
+        rows = await mngr.list_all(limit=limit, offset=offset)
     return [Media.from_model(m) for m in rows]
 
 

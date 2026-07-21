@@ -87,6 +87,28 @@ async def user_detail(
     )
 
 
+@router.get(
+    "/{user_id}/profile",
+    response_model=Account,
+    dependencies=[Depends(require_perm("users.read"))],
+    summary="User profile (admin view)",
+    description=(
+        "Тот же формат, что и `GET /v1/user/me`, но для произвольного "
+        "аккаунта — источник данных вкладки 'Профиль' в админском Drawer при "
+        "просмотре чужого профиля (см. IMPLEMENTATION_PLAN.md §4)."
+    ),
+)
+async def user_profile_admin(
+    user_id: int, session: AsyncSession = Depends(get_db_session)
+) -> Account:
+    # Ленивый импорт: та же причина, что и у set_user_avatar ниже — не тащить
+    # api.v1.user на уровень модуля admin.
+    from api.v1.user.me import _account_response
+
+    acc = await _get_user(session, user_id)
+    return await _account_response(acc, session)
+
+
 @router.patch(
     "/{user_id}",
     response_model=User,

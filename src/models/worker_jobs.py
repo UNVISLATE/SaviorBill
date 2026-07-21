@@ -37,6 +37,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
 from models import Base
+from models.system_media import SystemMediaModel
 from utils.datetime_utils import utc_now
 
 # Терминальные состояния — job больше не будет менять статус сама по себе
@@ -206,6 +207,24 @@ class WorkerJobsMngr:
         await self.s.flush()
         await self._record_event(current.id, state, event_data)
         return current
+
+    async def active_for_owner(self, owner_id: int, *, kind: str = "media") -> list[WorkerJobModel]:
+        """Активные (не терминальные) джобы владельца — восстановление карточек
+        "в обработке" после перезагрузки страницы (см. IMPLEMENTATION_PLAN.md
+        §3.Д). ``subject_key`` в ``worker_jobs`` — это ``system_media.token``
+        (миграция под ``owner_id`` в самой таблице джоб не добавлялась —
+        джойним на ``system_media`` вместо денормализации)."""
+        q = (
+            select(WorkerJobModel)
+            .join(SystemMediaModel, SystemMediaModel.token == WorkerJobModel.subject_key)
+            .where(
+                WorkerJobModel.kind == kind,
+                WorkerJobModel.state.in_(("queued", "processing", "retrying")),
+                SystemMediaModel.owner_id == owner_id,
+            )
+            .order_by(WorkerJobModel.id.desc())
+        )
+        return list(await self.s.scalars(q))
 
     async def count_pending(self, kind: str) -> int:
         """Число задач в queued/processing/retrying — для метрики ``worker_jobs_pending``."""

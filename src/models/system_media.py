@@ -156,6 +156,7 @@ class SystemMediaMngr:
         size: int | None = None,
         owner_id: int | None = None,
         variants: dict | None = None,
+        meta: dict | None = None,
         status: str = "ready",
         tag: str | None = None,
     ) -> SystemMediaModel:
@@ -176,6 +177,7 @@ class SystemMediaMngr:
                 size=size,
                 owner_id=owner_id,
                 variants=variants or {},
+                meta=meta or {},
                 tag=tag,
             )
         media.kind = kind
@@ -186,6 +188,8 @@ class SystemMediaMngr:
         if owner_id is not None:
             media.owner_id = owner_id
         media.variants = variants or {}
+        if meta is not None:
+            media.meta = meta
         media.status = status
         if tag is not None:
             media.tag = tag

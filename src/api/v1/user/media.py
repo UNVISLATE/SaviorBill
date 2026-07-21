@@ -17,10 +17,12 @@ from messaging.mediabus import MediaBus
 from models.service_attachment import ServiceAttachmentModel
 from models.system_media import SystemMediaMngr, all_storage_keys
 from models.user import UserModel
-from schemas.media import Media
+from models.worker_jobs import WorkerJobsMngr
+from schemas.media import Media, OpStatus
 from schemas.page import Page
 from security.rbac import has_perm
 from utils.pagination import PageParams, page_params, paginate
+from dependencies.media import get_worker_jobs_mngr
 
 router = APIRouter()
 
@@ -76,6 +78,45 @@ async def my_media(
         has_more=has_more,
         quota_limit=quota_limit,
     )
+
+
+@router.get(
+    "/media/jobs",
+    response_model=list[OpStatus],
+    summary="My active media jobs",
+    description=(
+        "Активные (queued/processing/retrying) джобы конвертации/пост-обработки "
+        "своих загрузок — восстановление карточек 'в обработке' после "
+        "перезагрузки страницы (WS /api/media/mine покрывает live-обновления, "
+        "но не переживает reload сам по себе, см. IMPLEMENTATION_PLAN.md §3.Д)."
+    ),
+    dependencies=[Depends(require_perm("user.media.read"))],
+)
+async def my_media_jobs(
+    acc: UserModel = Depends(get_current_acc),
+    jobs: WorkerJobsMngr = Depends(get_worker_jobs_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+) -> list[OpStatus]:
+    active = await jobs.active_for_owner(acc.id)
+    bus = MediaBus(vk)
+    result: list[OpStatus] = []
+    for job in active:
+        snap = await bus.status(job.subject_key) or {}
+        result.append(
+            OpStatus(
+                token=job.subject_key,
+                op=job.op,
+                state=job.state,
+                attempt=job.attempt,
+                error=job.error,
+                created_at=job.created_at.isoformat() if job.created_at else None,
+                started_at=job.started_at.isoformat() if job.started_at else None,
+                finished_at=job.finished_at.isoformat() if job.finished_at else None,
+                percent=float(snap["percent"]) if snap.get("percent") else None,
+                eta_sec=float(snap["eta_sec"]) if snap.get("eta_sec") else None,
+            )
+        )
+    return result
 
 
 @router.delete(
