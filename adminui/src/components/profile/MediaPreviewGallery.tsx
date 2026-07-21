@@ -169,11 +169,24 @@ export function MediaPreviewGallery({
     onSuccess: invalidate,
   })
 
-  function onDragStart(i: number) {
+  // Браузер (особенно Chrome) при drag DOM-узла с <img> внутри сам добавляет
+  // в dataTransfer.types запись "Files" (готов "отдать" картинку как файл),
+  // даже если это внутренняя сортировка div'ов, а не перетаскивание из ОС —
+  // именно поэтому одной проверки `types.includes("Files")` в
+  // ProfileDialogHost недостаточно: она путала сортировку превью с реальной
+  // загрузкой файла. Кастомный MIME-тип в dataTransfer — надёжный маркер
+  // "это наша внутренняя сортировка", stopPropagation не даёт событию дойти
+  // до onDragOver/onDrop диалога вообще.
+  const REORDER_MIME = "application/x-savior-preview-reorder"
+
+  function onDragStart(e: React.DragEvent, i: number) {
+    e.dataTransfer.setData(REORDER_MIME, String(i))
+    e.dataTransfer.effectAllowed = "move"
     setDragIndex(i)
   }
   function onDragOverItem(e: React.DragEvent, i: number) {
     e.preventDefault()
+    e.stopPropagation()
     if (dragIndex === null || dragIndex === i) return
     setLocalOrder((prev) => {
       const next = [...prev]
@@ -183,7 +196,8 @@ export function MediaPreviewGallery({
     })
     setDragIndex(i)
   }
-  function onDragEnd() {
+  function onDragEnd(e: React.DragEvent) {
+    e.stopPropagation()
     if (dragIndex === null) return
     setDragIndex(null)
     const order = localOrder.map((v) => media.previews.indexOf(v))
@@ -313,12 +327,12 @@ export function MediaPreviewGallery({
                 <div
                   key={p.url}
                   draggable
-                  onDragStart={() => onDragStart(i)}
+                  onDragStart={(e) => onDragStart(e, i)}
                   onDragOver={(e) => onDragOverItem(e, i)}
                   onDragEnd={onDragEnd}
                   className="group relative aspect-square cursor-grab overflow-hidden rounded-md border active:cursor-grabbing"
                 >
-                  <img src={p.url} alt="" className="size-full object-cover" />
+                  <img src={p.url} alt="" draggable={false} className="size-full object-cover" />
                   <Button
                     type="button"
                     size="icon-sm"

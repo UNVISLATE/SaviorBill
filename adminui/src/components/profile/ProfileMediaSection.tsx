@@ -473,6 +473,7 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
                   <AlertDialogFooter>
                     <AlertDialogCancel>Отмена</AlertDialogCancel>
                     <AlertDialogAction
+                      variant="destructive"
                       onClick={() =>
                         bulkDelete.mutate(
                           (data?.items ?? []).filter((m) => selected.has(m.token)),
@@ -781,7 +782,7 @@ function MediaCard({
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Отмена</AlertDialogCancel>
-              <AlertDialogAction disabled={deleting} onClick={onDelete}>
+              <AlertDialogAction variant="destructive" disabled={deleting} onClick={onDelete}>
                 {deleting ? <Loader2 className="size-3.5 animate-spin" /> : "Удалить"}
               </AlertDialogAction>
             </AlertDialogFooter>

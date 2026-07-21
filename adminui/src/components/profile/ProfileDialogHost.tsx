@@ -136,7 +136,9 @@ export function ProfileDialogHost() {
   // без этой проверки любое перетаскивание превью внутри "Подробностей"
   // включало оверлей "Отпустите файл" и мешало сортировке.
   function isFileDrag(e: React.DragEvent): boolean {
-    return Array.from(e.dataTransfer.types).includes("Files")
+    const types = Array.from(e.dataTransfer.types)
+    if (types.includes("application/x-savior-preview-reorder")) return false
+    return types.includes("Files")
   }
   function onDragOver(e: React.DragEvent) {
     if (!canDropFiles || !isFileDrag(e)) return
