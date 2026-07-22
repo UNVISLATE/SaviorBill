@@ -1,19 +1,10 @@
-import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/api/api.ts"
 import { useProfileDialog } from "@/hooks/use-profile-dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/shadsnui/table"
+import { useDataTableQuery } from "@/hooks/use-data-table"
+import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
 import { Badge } from "@/components/shadsnui/badge"
-import { Button } from "@/components/shadsnui/button"
-import { Spinner } from "@/components/shadsnui/spinner"
 
 interface User {
   id: number
@@ -36,18 +27,41 @@ interface Page<T> {
   has_more: boolean
 }
 
-const PAGE_SIZE = 25
+const columns: DataTableColumn<User>[] = [
+  { key: "id", header: "ID", render: (u) => u.id },
+  { key: "login", header: "Логин", render: (u) => <span className="font-medium">{u.login}</span> },
+  { key: "email", header: "Email", render: (u) => u.email ?? "—" },
+  {
+    header: "Статус",
+    render: (u) => (
+      <Badge variant={u.is_active ? "outline" : "destructive"}>
+        {u.is_active ? "активен" : "забанен"}
+      </Badge>
+    ),
+  },
+  { key: "balance", header: "Баланс", render: (u) => u.balance },
+  {
+    key: "created_at",
+    header: "Регистрация",
+    render: (u) => new Date(u.created_at).toLocaleDateString(),
+  },
+]
 
 export function UsersPage() {
-  const [offset, setOffset] = useState(0)
   const { openUserProfile } = useProfileDialog()
+  const table = useDataTableQuery()
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["admin-users", offset],
+    queryKey: ["admin-users", table.limit, table.offset, table.sort, table.search],
     queryFn: async () =>
       (
         await api.get<Page<User>>("/v1/admin/users", {
-          params: { limit: PAGE_SIZE, offset },
+          params: {
+            limit: table.limit,
+            offset: table.offset,
+            sort: table.sort ?? undefined,
+            q: table.search || undefined,
+          },
         })
       ).data,
     placeholderData: (prev) => prev,
@@ -62,71 +76,25 @@ export function UsersPage() {
         )}
       </div>
 
-      {isLoading && <Spinner />}
-      {isError && (
-        <p className="text-sm text-destructive">Не удалось загрузить список.</p>
-      )}
-
-      {data && (
-        <>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>ID</TableHead>
-                <TableHead>Логин</TableHead>
-                <TableHead>Email</TableHead>
-                <TableHead>Статус</TableHead>
-                <TableHead>Баланс</TableHead>
-                <TableHead>Регистрация</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.items.map((u) => (
-                <TableRow
-                  key={u.id}
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => openUserProfile(u.id)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" || e.key === " ") openUserProfile(u.id)
-                  }}
-                  className="cursor-pointer"
-                >
-                  <TableCell>{u.id}</TableCell>
-                  <TableCell className="font-medium">{u.login}</TableCell>
-                  <TableCell>{u.email ?? "—"}</TableCell>
-                  <TableCell>
-                    <Badge variant={u.is_active ? "outline" : "destructive"}>
-                      {u.is_active ? "активен" : "забанен"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{u.balance}</TableCell>
-                  <TableCell>{new Date(u.created_at).toLocaleDateString()}</TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={offset === 0}
-              onClick={() => setOffset((o) => Math.max(0, o - PAGE_SIZE))}
-            >
-              Назад
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!data.has_more}
-              onClick={() => setOffset((o) => o + PAGE_SIZE)}
-            >
-              Далее
-            </Button>
-          </div>
-        </>
-      )}
+      <DataTable
+        columns={columns}
+        data={data?.items ?? []}
+        total={data?.total ?? 0}
+        isLoading={isLoading}
+        isError={isError}
+        getRowId={(u) => u.id}
+        onRowClick={(u) => openUserProfile(u.id)}
+        sort={table.sort}
+        onToggleSort={table.toggleSort}
+        searchValue={table.searchInput}
+        onSearchChange={table.setSearchInput}
+        searchPlaceholder="Поиск по логину/email…"
+        limit={table.limit}
+        offset={table.offset}
+        hasMore={data?.has_more ?? false}
+        onLimitChange={table.changeLimit}
+        onOffsetChange={table.setOffset}
+      />
     </div>
   )
 }
