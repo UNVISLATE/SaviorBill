@@ -27,9 +27,11 @@ import {
   SidebarTrigger,
 } from "@/components/shadsnui/sidebar"
 import { Separator } from "@/components/shadsnui/separator"
+import { Breadcrumbs } from "@/components/layout/Breadcrumbs"
+import { BreadcrumbProvider } from "@/hooks/use-breadcrumb"
 
 export function DashboardLayout() {
-  const { me, can } = useAuth()
+  const { can } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
 
@@ -37,6 +39,7 @@ export function DashboardLayout() {
 
   return (
     <SidebarProvider>
+      <BreadcrumbProvider>
       <Sidebar variant="inset" collapsible="icon">
         <SidebarHeader>
           <div className="flex items-center gap-2 px-2 py-1.5">
@@ -112,12 +115,13 @@ export function DashboardLayout() {
         <header className="flex h-12 items-center gap-2 border-b px-4">
           <SidebarTrigger />
           <Separator orientation="vertical" className="h-4" />
-          <span className="text-sm text-muted-foreground">{me?.role}</span>
+          <Breadcrumbs />
         </header>
         <main className="flex-1 overflow-auto p-6">
           <Outlet />
         </main>
       </SidebarInset>
+      </BreadcrumbProvider>
     </SidebarProvider>
   )
 }

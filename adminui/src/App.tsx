@@ -7,6 +7,7 @@ import { UsersPage } from "@/pages/users/UsersPage"
 import { ProtectedRoute } from "@/routes/ProtectedRoute"
 import { ProfileDialogProvider } from "@/hooks/use-profile-dialog"
 import { ProfileDialogHost } from "@/components/profile/ProfileDialogHost"
+import { Toaster } from "@/components/shadsnui/sonner"
 
 export function App() {
   return (
@@ -23,6 +24,7 @@ export function App() {
         </Routes>
       </BrowserRouter>
       <ProfileDialogHost />
+      <Toaster position="top-center" />
     </ProfileDialogProvider>
   )
 }
