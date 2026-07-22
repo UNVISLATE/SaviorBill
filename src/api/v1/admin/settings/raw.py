@@ -21,10 +21,19 @@ from models.user import UserModel
 from schemas.page import Page
 from schemas.settings_raw import SettingRawOut, SettingRawUpsert
 from services.audit import audit
-from utils.pagination import PageParams, page_params, paginate
+from utils.pagination import (
+    PageParams,
+    apply_sort,
+    page_params,
+    paginate_search,
+    q_param,
+    sort_param,
+)
 from core.settings_def import by_key
 
 router = APIRouter()
+
+_SETTINGS_SORT_FIELDS = {"key", "prefix", "created_at", "updated_at"}
 
 
 def _is_locked(row: SystemSettingsModel | None, key: str) -> bool:
@@ -52,19 +61,30 @@ def _is_undeletable(row: SystemSettingsModel | None, key: str) -> bool:
     response_model=Page[SettingRawOut],
     dependencies=[Depends(require_perm("settings.raw.read"))],
     summary="Raw settings",
-    description="Paginated settings rows. Secret values are hidden.",
+    description="Paginated settings rows. Secret values are hidden. `q` "
+    "searches key (exact substring, no fuzzy — keys are dotted identifiers, "
+    f"not free text); `sort` accepts {'/'.join(sorted(_SETTINGS_SORT_FIELDS))}.",
 )
 async def list_settings_raw(
     pp: PageParams = Depends(page_params),
+    q: str | None = Depends(q_param),
+    sort: str | None = Depends(sort_param),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[SettingRawOut]:
-    stmt = select(SystemSettingsModel).order_by(SystemSettingsModel.key)
-    items, total, has_more = await paginate(
+    stmt = apply_sort(
+        select(SystemSettingsModel), SystemSettingsModel, sort, _SETTINGS_SORT_FIELDS
+    )
+    if sort is None:
+        stmt = stmt.order_by(SystemSettingsModel.key)
+    items, total, has_more = await paginate_search(
         session,
         stmt,
+        SystemSettingsModel,
         lambda r: SettingRawOut.from_model(r, by_key(r.key)),
         limit=pp.limit,
         offset=pp.offset,
+        q=q,
+        search_fields=("key",),
     )
     return Page(
         items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more

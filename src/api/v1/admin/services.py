@@ -11,12 +11,22 @@ from dependencies.catalog import (
     get_service_mngr,
 )
 from dependencies.rbac import require_perm
+from models.service import ServiceModel
 from schemas.media import Attachment, AttachmentIn
 from schemas.page import Page
 from schemas.service import ServiceAdmin, ServiceCreate, ServicePatch
-from utils.pagination import PageParams, page_params, paginate
+from utils.pagination import (
+    PageParams,
+    apply_sort,
+    page_params,
+    paginate_search,
+    q_param,
+    sort_param,
+)
 
 router = APIRouter()
+
+_SORT_FIELDS = {"id", "name", "price", "is_active", "created_at", "catalog_id"}
 
 
 @router.get(
@@ -24,17 +34,26 @@ router = APIRouter()
     response_model=Page[ServiceAdmin],
     dependencies=[Depends(require_perm("services.read"))],
     summary="Services",
+    description="`q` searches name/description (fuzzy fallback on name); "
+    f"`sort` accepts {'/'.join(sorted(_SORT_FIELDS))}.",
 )
 async def list_services(
     pp: PageParams = Depends(page_params),
+    q: str | None = Depends(q_param),
+    sort: str | None = Depends(sort_param),
     mngr: ServiceMngr = Depends(get_service_mngr),
 ) -> Page[ServiceAdmin]:
-    items, total, has_more = await paginate(
+    stmt = apply_sort(mngr.stmt_all(), ServiceModel, sort, _SORT_FIELDS)
+    items, total, has_more = await paginate_search(
         mngr.s,
-        mngr.stmt_all(),
+        stmt,
+        ServiceModel,
         ServiceAdmin.from_model,
         limit=pp.limit,
         offset=pp.offset,
+        q=q,
+        search_fields=("name", "description"),
+        fuzzy_fields=("name",),
     )
     return Page(
         items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more

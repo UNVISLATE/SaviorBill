@@ -22,9 +22,19 @@ from schemas.page import Page
 from schemas.payments import PaymentAdmin
 from schemas.user import OAuthConnAdmin, User, UserDetail, UserPatch
 from services.account import account_response, release_old_avatar
-from utils.pagination import PageParams, page_params, paginate
+from utils.pagination import (
+    PageParams,
+    apply_sort,
+    page_params,
+    paginate,
+    paginate_search,
+    q_param,
+    sort_param,
+)
 
 router = APIRouter()
+
+_SORT_FIELDS = {"id", "login", "email", "created_at", "last_login", "role_id", "balance"}
 
 
 async def _get_user(session: AsyncSession, user_id: int) -> UserModel:
@@ -44,16 +54,30 @@ async def _get_user(session: AsyncSession, user_id: int) -> UserModel:
     response_model=Page[User],
     dependencies=[Depends(require_perm("users.read"))],
     summary="Users",
-    description="Paginated user list.",
+    description="Paginated user list. `q` searches login/email (falls back to "
+    "fuzzy matching if nothing is found); `sort` accepts "
+    f"{'/'.join(sorted(_SORT_FIELDS))} (prefix with '-' for descending).",
 )
 async def list_users(
     pp: PageParams = Depends(page_params),
+    q: str | None = Depends(q_param),
+    sort: str | None = Depends(sort_param),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[User]:
     """Постраничный список аккаунтов."""
-    stmt = select(UserModel).order_by(UserModel.id)
-    items, total, has_more = await paginate(
-        session, stmt, User.from_model, limit=pp.limit, offset=pp.offset
+    stmt = apply_sort(select(UserModel), UserModel, sort, _SORT_FIELDS)
+    if sort is None:
+        stmt = stmt.order_by(UserModel.id)
+    items, total, has_more = await paginate_search(
+        session,
+        stmt,
+        UserModel,
+        User.from_model,
+        limit=pp.limit,
+        offset=pp.offset,
+        q=q,
+        search_fields=("login", "email"),
+        fuzzy_fields=("login", "email"),
     )
     return Page(
         items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more

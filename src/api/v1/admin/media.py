@@ -22,8 +22,12 @@ from schemas.media import Media
 from services.audit import audit
 from core.config import AppConfig
 from messaging.mediabus import MediaBus
+from utils.pagination import apply_sort, q_param, sort_param
+from sqlalchemy import select
 
 router = APIRouter()
+
+_MEDIA_SORT_FIELDS = {"id", "created_at", "size", "status", "kind", "tag"}
 
 # До 16 символов, только латиница и цифры (см. mediaworker/src/api/upload.py::_TAG_RE
 # — то же правило по обе стороны, метка задаётся при загрузке и меняется здесь).
@@ -52,21 +56,26 @@ def _bus(request: Request, vk: valkey.Valkey) -> MediaBus:
     summary="Media",
     description="Все медиа (постранично), либо только владельца — фильтр "
     "`owner_id` для просмотра медиа конкретного пользователя из админского "
-    "Drawer (см. IMPLEMENTATION_PLAN.md §4).",
+    "Drawer (см. IMPLEMENTATION_PLAN.md §4). `q` searches tag/mime (exact "
+    f"substring); `sort` accepts {'/'.join(sorted(_MEDIA_SORT_FIELDS))}.",
 )
 async def list_media(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     owner_id: int | None = Query(default=None),
+    q: str | None = Depends(q_param),
+    sort: str | None = Depends(sort_param),
     mngr: SystemMediaMngr = Depends(get_media_mngr),
 ) -> list[Media]:
-    if owner_id is not None:
-        rows = await mngr.s.scalars(
-            mngr.stmt_for_owner(owner_id).limit(limit).offset(offset)
+    stmt = mngr.stmt_for_owner(owner_id) if owner_id is not None else select(SystemMediaModel)
+    stmt = apply_sort(stmt, SystemMediaModel, sort, _MEDIA_SORT_FIELDS)
+    if sort is None:
+        stmt = stmt.order_by(SystemMediaModel.id.desc())
+    if q:
+        stmt = stmt.where(
+            SystemMediaModel.tag.ilike(f"%{q}%") | SystemMediaModel.mime.ilike(f"%{q}%")
         )
-        rows = list(rows)
-    else:
-        rows = await mngr.list_all(limit=limit, offset=offset)
+    rows = await mngr.s.scalars(stmt.limit(limit).offset(offset))
     return [Media.from_model(m) for m in rows]
 
 

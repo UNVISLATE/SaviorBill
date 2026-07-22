@@ -27,10 +27,12 @@ from schemas.service_keys import (
     ServiceKeysImportOut,
     ServiceStockOut,
 )
-from utils.pagination import PageParams, page_params, paginate
+from utils.pagination import PageParams, apply_sort, page_params, paginate, sort_param
 from sqlalchemy import select
 
 router = APIRouter()
+
+_KEY_SORT_FIELDS = {"id", "created_at", "is_used", "used_at"}
 
 
 async def _get_service_or_404(service_id: int, svc_mngr: ServiceMngr):
@@ -45,21 +47,27 @@ async def _get_service_or_404(service_id: int, svc_mngr: ServiceMngr):
     response_model=Page[ServiceKeyOut],
     dependencies=[Depends(require_perm("services.keys.read"))],
     summary="Service keys",
+    description=f"`sort` accepts {'/'.join(sorted(_KEY_SORT_FIELDS))}. No "
+    "text search — key values are secrets and never exposed unmasked here.",
 )
 async def list_keys(
     service_id: int,
     pp: PageParams = Depends(page_params),
+    sort: str | None = Depends(sort_param),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
     mngr: ServiceKeysMngr = Depends(get_servicekeys_mngr),
 ) -> Page[ServiceKeyOut]:
     from models.service_keys import ServiceKeysModel
 
     await _get_service_or_404(service_id, svc_mngr)
-    stmt = (
-        select(ServiceKeysModel)
-        .where(ServiceKeysModel.service_id == service_id)
-        .order_by(ServiceKeysModel.id)
+    stmt = apply_sort(
+        select(ServiceKeysModel).where(ServiceKeysModel.service_id == service_id),
+        ServiceKeysModel,
+        sort,
+        _KEY_SORT_FIELDS,
     )
+    if sort is None:
+        stmt = stmt.order_by(ServiceKeysModel.id)
     items, total, has_more = await paginate(
         mngr.s, stmt, ServiceKeyOut.from_model, limit=pp.limit, offset=pp.offset
     )

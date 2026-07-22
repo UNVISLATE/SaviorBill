@@ -11,6 +11,7 @@ from dependencies.promo import (
     get_promo_mngr,
 )
 from dependencies.rbac import require_perm
+from models.promo_codes import PromoCodesModel
 from schemas.page import Page
 from schemas.promo import (
     PromoCatalog,
@@ -19,9 +20,18 @@ from schemas.promo import (
     PromoCode,
     PromoCodeBatch,
 )
-from utils.pagination import PageParams, page_params, paginate
+from utils.pagination import (
+    PageParams,
+    apply_sort,
+    page_params,
+    paginate_search,
+    q_param,
+    sort_param,
+)
 
 router = APIRouter()
+
+_CODE_SORT_FIELDS = {"id", "code", "used_count", "max_uses", "valid_to", "created_at"}
 
 
 @router.get(
@@ -92,18 +102,27 @@ async def delete_catalog(
     response_model=Page[PromoCode],
     dependencies=[Depends(require_perm("promo.codes.read"))],
     summary="Promo codes",
+    description="`q` searches by exact code prefix (no fuzzy — codes aren't "
+    f"meant to be 'similar'-matched); `sort` accepts "
+    f"{'/'.join(sorted(_CODE_SORT_FIELDS))}.",
 )
 async def list_codes(
     catalog_id: int,
     pp: PageParams = Depends(page_params),
+    q: str | None = Depends(q_param),
+    sort: str | None = Depends(sort_param),
     mngr: PromoCodesMngr = Depends(get_promo_mngr),
 ) -> Page[PromoCode]:
-    items, total, has_more = await paginate(
+    stmt = apply_sort(mngr.stmt_for(catalog_id), PromoCodesModel, sort, _CODE_SORT_FIELDS)
+    items, total, has_more = await paginate_search(
         mngr.s,
-        mngr.stmt_for(catalog_id),
+        stmt,
+        PromoCodesModel,
         PromoCode.from_model,
         limit=pp.limit,
         offset=pp.offset,
+        q=q,
+        search_fields=("code",),
     )
     return Page(
         items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more

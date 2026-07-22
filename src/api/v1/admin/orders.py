@@ -16,9 +16,25 @@ from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderAdmin, OrderGrant
 from schemas.page import Page
-from utils.pagination import PageParams, page_params, paginate
+from utils.pagination import (
+    PageParams,
+    apply_sort,
+    page_params,
+    paginate_search,
+    q_param,
+    sort_param,
+)
 
 router = APIRouter()
+
+_ORDER_SORT_FIELDS = {
+    "id",
+    "status",
+    "created_at",
+    "expires_at",
+    "price",
+    "delivered_at",
+}
 
 
 @router.get(
@@ -26,14 +42,27 @@ router = APIRouter()
     response_model=Page[OrderAdmin],
     dependencies=[Depends(require_perm("orders.read"))],
     summary="Orders",
+    description="`q` searches product_key (exact substring, no fuzzy); "
+    f"`sort` accepts {'/'.join(sorted(_ORDER_SORT_FIELDS))}.",
 )
 async def list_orders(
     pp: PageParams = Depends(page_params),
+    q: str | None = Depends(q_param),
+    sort: str | None = Depends(sort_param),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[OrderAdmin]:
-    stmt = select(UserServicesModel).order_by(UserServicesModel.id.desc())
-    items, total, has_more = await paginate(
-        session, stmt, OrderAdmin.from_model, limit=pp.limit, offset=pp.offset
+    stmt = apply_sort(select(UserServicesModel), UserServicesModel, sort, _ORDER_SORT_FIELDS)
+    if sort is None:
+        stmt = stmt.order_by(UserServicesModel.id.desc())
+    items, total, has_more = await paginate_search(
+        session,
+        stmt,
+        UserServicesModel,
+        OrderAdmin.from_model,
+        limit=pp.limit,
+        offset=pp.offset,
+        q=q,
+        search_fields=("product_key",),
     )
     return Page(
         items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more

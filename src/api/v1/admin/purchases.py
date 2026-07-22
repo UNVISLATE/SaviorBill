@@ -18,10 +18,27 @@ from models.user_payments import UserPaymentsModel
 from schemas.payment_provider import PayProviderCreate, PayProvider, PayProviderPatch
 from schemas.payments import PaymentAdmin
 from schemas.page import Page
-from utils.pagination import PageParams, page_params, paginate
+from utils.pagination import (
+    PageParams,
+    apply_sort,
+    page_params,
+    paginate_search,
+    q_param,
+    sort_param,
+)
 from security.sec.box import SecBox
 
 router = APIRouter()
+
+_PAYMENT_SORT_FIELDS = {
+    "id",
+    "amount",
+    "status",
+    "provider",
+    "created_at",
+    "paid_at",
+    "currency",
+}
 
 
 # --- платежи -------------------------------------------------------------
@@ -30,14 +47,28 @@ router = APIRouter()
     response_model=Page[PaymentAdmin],
     dependencies=[Depends(require_perm("purchases.read"))],
     summary="Payments",
+    description="`q` searches provider/external_id (exact substring, no "
+    f"fuzzy — identifiers aren't meant to be 'similar'-matched); `sort` "
+    f"accepts {'/'.join(sorted(_PAYMENT_SORT_FIELDS))}.",
 )
 async def list_payments(
     pp: PageParams = Depends(page_params),
+    q: str | None = Depends(q_param),
+    sort: str | None = Depends(sort_param),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[PaymentAdmin]:
-    stmt = select(UserPaymentsModel).order_by(UserPaymentsModel.id.desc())
-    items, total, has_more = await paginate(
-        session, stmt, PaymentAdmin.from_model, limit=pp.limit, offset=pp.offset
+    stmt = apply_sort(select(UserPaymentsModel), UserPaymentsModel, sort, _PAYMENT_SORT_FIELDS)
+    if sort is None:
+        stmt = stmt.order_by(UserPaymentsModel.id.desc())
+    items, total, has_more = await paginate_search(
+        session,
+        stmt,
+        UserPaymentsModel,
+        PaymentAdmin.from_model,
+        limit=pp.limit,
+        offset=pp.offset,
+        q=q,
+        search_fields=("provider", "external_id"),
     )
     return Page(
         items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
