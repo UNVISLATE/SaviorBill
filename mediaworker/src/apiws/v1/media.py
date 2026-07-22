@@ -39,6 +39,13 @@ _POLL_INTERVAL = 1.0
 # а конвертация зависла) — ~10 минут, чего достаточно даже для крупных видео.
 _MAX_TICKS = 600
 _TERMINAL_STATES = ("ready", "error", "failed")
+# Защита от DoS через огромные watch-списки (каждый токен — отдельный запрос
+# к БД/Valkey в _owned_tokens, см. ниже): лишние токены в одном фрейме просто
+# отбрасываются, а не обрабатываются целиком.
+_MAX_WATCH_PER_FRAME = 200
+# Суммарный лимит watch-множества за всё время жизни соединения — не даёт
+# клиенту раздувать watch до неограниченного размера серией мелких фреймов.
+_MAX_WATCH_TOTAL = 500
 
 
 async def _owned_tokens(ws: WebSocket, acc_id: int, tokens: list[str]) -> set[str]:
@@ -80,7 +87,9 @@ async def my_media_status(ws: WebSocket) -> None:
         return
     acc_id, payload = handshake
 
-    initial_watch = [t for t in (payload.get("watch") or []) if isinstance(t, str)]
+    initial_watch = [t for t in (payload.get("watch") or []) if isinstance(t, str)][
+        :_MAX_WATCH_PER_FRAME
+    ]
     watch = await _owned_tokens(ws, acc_id, initial_watch)
 
     vk = ws.app.state.vk
@@ -94,8 +103,15 @@ async def my_media_status(ws: WebSocket) -> None:
             try:
                 raw = await asyncio.wait_for(ws.receive_text(), timeout=_POLL_INTERVAL)
                 msg = json.loads(raw)
-                new_tokens = [t for t in (msg.get("watch") or []) if isinstance(t, str)]
-                watch |= await _owned_tokens(ws, acc_id, new_tokens)
+                new_tokens = [
+                    t for t in (msg.get("watch") or []) if isinstance(t, str)
+                ][:_MAX_WATCH_PER_FRAME]
+                # Не даём суммарному watch расти без ограничения серией
+                # мелких фреймов — превышение общего лимита просто отбрасывает
+                # излишек новых токенов этого фрейма.
+                room = max(0, _MAX_WATCH_TOTAL - len(watch))
+                if room:
+                    watch |= await _owned_tokens(ws, acc_id, new_tokens[:room])
             except asyncio.TimeoutError:
                 pass
             except json.JSONDecodeError:
