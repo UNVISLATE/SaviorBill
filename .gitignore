@@ -55,6 +55,7 @@ docker-compose.override.yml
 /IMPLEMENTATION_PLAN.md
 /CLAUDE.md
 /WS_ROUTES.md
+/FEATURE_ROADMAP.md
 
 # Logs / runtime
 *.log
