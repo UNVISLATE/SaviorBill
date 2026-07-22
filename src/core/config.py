@@ -124,12 +124,6 @@ class AppConfig(BaseSettings):
     # Ключи Valkey для очереди задач и распределённого лока планировщика.
     BILLING_QUEUE_KEY: str = Field(default="billing:queue")
     BILLING_ATTEMPTS_KEY: str = Field(default="billing:pay_attempts")
-    # DEPRECATED: распределённый лок больше не используется — очередь разделяемая,
-    # задачи выбираются атомарным claim (ZRANGEBYSCORE+ZREM). Поля оставлены для
-    # обратной совместимости конфигов и будут удалены в будущем.
-    BILLING_LOCK_KEY: str = Field(default="billing:lock")
-    # DEPRECATED: TTL неиспользуемого лока планировщика (сек).
-    BILLING_LOCK_TTL: int = Field(default=30)
     # Предел одновременно обрабатываемых задач за одну итерацию (backpressure).
     BILLING_CONCURRENCY: int = Field(default=4)
     # Dead-letter очередь и предел попыток исполнения задачи биллинга.
