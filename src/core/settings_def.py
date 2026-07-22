@@ -275,6 +275,42 @@ SETTINGS: tuple[SettingDef, ...] = (
         group="ui",
         desc="Произвольная JSON-тема клиента",
     ),
+    # Rate limiting: переопределения правил по категории (см.
+    # dependencies/ratelimit.py). Значение — JSON {"max_hits": N, "window": N}.
+    # Создаётся только через admin/settings/ratelimits.py (не сидится из ENV —
+    # ENV-дефолт применяется в коде, когда строки в settings нет вообще).
+    # Есть также ``ratelimit.scope.<scope>`` — точечные override по конкретному
+    # роуту (``scope`` — открытый набор строк из вызовов ``rate_limit(scope, ...)``
+    # по всему коду, поэтому в каталог заранее не заносится: SystemSettingsMngr
+    # умеет читать/писать незарегистрированные ключи).
+    SettingDef(
+        "ratelimit.kind.default",
+        None,
+        type="json",
+        group="ratelimit",
+        desc="Override лимита категории 'default': {max_hits, window}",
+    ),
+    SettingDef(
+        "ratelimit.kind.auth",
+        None,
+        type="json",
+        group="ratelimit",
+        desc="Override лимита категории 'auth': {max_hits, window}",
+    ),
+    SettingDef(
+        "ratelimit.kind.mail",
+        None,
+        type="json",
+        group="ratelimit",
+        desc="Override лимита категории 'mail': {max_hits, window}",
+    ),
+    SettingDef(
+        "ratelimit.kind.sensitive",
+        None,
+        type="json",
+        group="ratelimit",
+        desc="Override лимита категории 'sensitive': {max_hits, window}",
+    ),
 )
 
 _BY_KEY: dict[str, SettingDef] = {d.key: d for d in SETTINGS}

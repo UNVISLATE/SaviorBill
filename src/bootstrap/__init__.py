@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from dependencies.sec import make_secbox
 from dependencies.settings import SystemSettingsMngr
-from dependencies.ratelimit import seed_rate_limits
 from bootstrap.access import check_access
 from bootstrap.integrity_check import check_integrity
 from core.config import AppConfig
@@ -42,8 +41,6 @@ async def bootstrap(
             log.critical(
                 "encryption integrity check failed - " "secrets can be unreadable"
             )
-    # Сид ENV-дефолтов лимитов частоты в Valkey (не перетирая ручные правки).
-    await seed_rate_limits(vk, cfg)
 
 
 __all__ = ["bootstrap"]

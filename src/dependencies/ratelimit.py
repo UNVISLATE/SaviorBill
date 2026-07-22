@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 from enum import Enum
 from typing import Callable
 
@@ -9,7 +11,11 @@ from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from core.config import AppConfig
+from dependencies.settings import get_settings_mngr
+from models.system_settings import SystemSettingsMngr
 from security.ratelimit import LimitRule, RateLimiter
+
+log = logging.getLogger("saviorbill.ratelimit")
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -34,54 +40,50 @@ def _rule_for(cfg: AppConfig, kind: LimitKind) -> LimitRule:
     return LimitRule(cfg.RATE_LIMIT_DEFAULT_MAX, cfg.RATE_LIMIT_DEFAULT_WINDOW)
 
 
-# Префикс персистентных ключей настроек лимитов в Valkey. Значения переопределяются
-# админом в рантайме без рестарта; ENV-дефолты сидятся при старте через SETNX.
-_RLCFG = "rlcfg:"
+# Переопределения правил лимитов хранятся в таблице `settings` (не в чистом
+# Valkey — см. IMPLEMENTATION_PLAN.md §0.4), значение — JSON {"max_hits", "window"}.
+# `SystemSettingsMngr` сам кэширует прочитанные значения в Valkey, поэтому
+# отдельного ручного кэша override'ов здесь не требуется.
+def _kind_setting_key(kind: LimitKind) -> str:
+    return f"ratelimit.kind.{kind.value}"
 
 
-def _kind_keys(kind: LimitKind) -> tuple[str, str]:
-    return f"{_RLCFG}kind:{kind.value}:max", f"{_RLCFG}kind:{kind.value}:window"
+def _scope_setting_key(scope: str) -> str:
+    return f"ratelimit.scope.{scope}"
 
 
-def _scope_keys(scope: str) -> tuple[str, str]:
-    return f"{_RLCFG}scope:{scope}:max", f"{_RLCFG}scope:{scope}:window"
+async def _load_override(settings: SystemSettingsMngr, key: str) -> LimitRule | None:
+    """Прочитать override правила по ключу настройки (или ``None``, если не задан
+    / повреждён — повреждённое значение не должно валить запрос, только лог)."""
+    raw = await settings.get(key)
+    if raw is None:
+        return None
+    try:
+        data = json.loads(raw)
+        return LimitRule(int(data["max_hits"]), int(data["window"]))
+    except (ValueError, KeyError, TypeError) as exc:
+        log.warning("invalid rate limit override at %s: %s", key, exc)
+        return None
 
 
-async def seed_rate_limits(vk, cfg: AppConfig) -> None:
-    """Записать ENV-дефолты лимитов в Valkey (не перетирая ручные правки).
+async def _resolve_rule(
+    settings: SystemSettingsMngr, cfg: AppConfig, scope: str, kind: LimitKind
+) -> LimitRule:
+    """Определить действующее правило: scope-override > kind-override > ENV-дефолт.
 
-    Вызывается на каждом старте. Использует SETNX, поэтому админ-переопределения
-    переживают рестарт, а ENV задаёт лишь первоначальные значения.
-
-    :arg vk: клиент Valkey.
-    :arg cfg: конфигурация приложения (источник ENV-дефолтов).
-    """
-    for kind in LimitKind:
-        rule = _rule_for(cfg, kind)
-        kmax, kwin = _kind_keys(kind)
-        await vk.set(kmax, rule.max_hits, nx=True)
-        await vk.set(kwin, rule.window, nx=True)
-
-
-async def _resolve_rule(vk, cfg: AppConfig, scope: str, kind: LimitKind) -> LimitRule:
-    """Определить действующее правило: scope-override > kind > ENV-дефолт.
-
-    Читает переопределения из Valkey (одним MGET). Отсутствие ключей — падение на
-    ENV-дефолт, чтобы лимиты работали и без сидинга.
-
-    :arg vk: клиент Valkey.
+    :arg settings: менеджер настроек (БД + кэш Valkey внутри).
     :arg cfg: конфигурация приложения (ENV-дефолт).
     :arg scope: имя точки (для персонального переопределения).
     :arg kind: категория лимита.
     :return: действующее правило лимита.
     """
-    smax, swin = _scope_keys(scope)
-    kmax, kwin = _kind_keys(kind)
-    vals = await vk.mget([smax, swin, kmax, kwin])
-    base = _rule_for(cfg, kind)
-    max_hits = int(vals[0] or vals[2] or base.max_hits)
-    window = int(vals[1] or vals[3] or base.window)
-    return LimitRule(max_hits, window)
+    rule = await _load_override(settings, _scope_setting_key(scope))
+    if rule is not None:
+        return rule
+    rule = await _load_override(settings, _kind_setting_key(kind))
+    if rule is not None:
+        return rule
+    return _rule_for(cfg, kind)
 
 
 def _client_ident(request: Request, cred: HTTPAuthorizationCredentials | None) -> str:
@@ -104,11 +106,12 @@ def rate_limit(scope: str, kind: LimitKind = LimitKind.DEFAULT) -> Callable:
         request: Request,
         response: Response,
         cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
+        settings: SystemSettingsMngr = Depends(get_settings_mngr),
     ) -> None:
         cfg: AppConfig = request.app.state.settings
         if not cfg.RATE_LIMIT_ENABLED:
             return
-        rule = await _resolve_rule(request.app.state.valkey, cfg, scope, kind)
+        rule = await _resolve_rule(settings, cfg, scope, kind)
         limiter = RateLimiter(request.app.state.valkey)
         res = await limiter.hit(scope, _client_ident(request, cred), rule)
         if not res.allowed:
@@ -125,4 +128,4 @@ def rate_limit(scope: str, kind: LimitKind = LimitKind.DEFAULT) -> Callable:
     return _dep
 
 
-__all__ = ["LimitKind", "rate_limit", "seed_rate_limits"]
+__all__ = ["LimitKind", "rate_limit"]

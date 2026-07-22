@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import valkey.asyncio as valkey
+import json
+
 from fastapi import APIRouter, Depends, Request
 
-from dependencies.ratelimit import LimitKind, _kind_keys, _rule_for
+from dependencies.ratelimit import LimitKind, _kind_setting_key, _rule_for
 from dependencies.rbac import require_perm
-from dependencies.valkey import get_valkey_client
+from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from schemas.ratelimit import RateLimitPatch, RateLimitRule
 from core.config import AppConfig
 
@@ -20,25 +21,25 @@ router = APIRouter()
 )
 async def list_rate_limits(
     request: Request,
-    vk: valkey.Valkey = Depends(get_valkey_client),
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> list[RateLimitRule]:
     """Действующие правила по категориям (с пометкой ручного переопределения)."""
     cfg: AppConfig = request.app.state.settings
     out: list[RateLimitRule] = []
     for kind in LimitKind:
-        kmax, kwin = _kind_keys(kind)
-        vmax, vwin = await vk.mget([kmax, kwin])
         base = _rule_for(cfg, kind)
-        # Считаем «переопределением» лишь несовпадение с ENV-дефолтом.
-        max_hits = int(vmax) if vmax is not None else base.max_hits
-        window = int(vwin) if vwin is not None else base.window
-        overridden = max_hits != base.max_hits or window != base.window
+        raw = await settings.get(_kind_setting_key(kind))
+        if raw is not None:
+            data = json.loads(raw)
+            max_hits, window = int(data["max_hits"]), int(data["window"])
+        else:
+            max_hits, window = base.max_hits, base.window
         out.append(
             RateLimitRule(
                 kind=kind.value,
                 max_hits=max_hits,
                 window=window,
-                overridden=overridden,
+                overridden=raw is not None,
             )
         )
     return out
@@ -54,12 +55,13 @@ async def list_rate_limits(
 async def set_rate_limit(
     kind: LimitKind,
     body: RateLimitPatch,
-    vk: valkey.Valkey = Depends(get_valkey_client),
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> RateLimitRule:
-    """Записать переопределение правила категории в Valkey."""
-    kmax, kwin = _kind_keys(kind)
-    await vk.set(kmax, body.max_hits)
-    await vk.set(kwin, body.window)
+    """Записать переопределение правила категории в таблицу settings."""
+    await settings.set(
+        _kind_setting_key(kind),
+        json.dumps({"max_hits": body.max_hits, "window": body.window}),
+    )
     return RateLimitRule(
         kind=kind.value,
         max_hits=body.max_hits,
@@ -77,14 +79,12 @@ async def set_rate_limit(
 async def reset_rate_limit(
     kind: LimitKind,
     request: Request,
-    vk: valkey.Valkey = Depends(get_valkey_client),
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> RateLimitRule:
     """Удалить переопределение — вернуться к значению из ENV."""
     cfg: AppConfig = request.app.state.settings
-    kmax, kwin = _kind_keys(kind)
     base = _rule_for(cfg, kind)
-    await vk.set(kmax, base.max_hits)
-    await vk.set(kwin, base.window)
+    await settings.set(_kind_setting_key(kind), None)
     return RateLimitRule(
         kind=kind.value,
         max_hits=base.max_hits,
