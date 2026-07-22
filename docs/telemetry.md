@@ -31,7 +31,7 @@ grafana.com/dashboards/14282.
 | `lua_script_duration_seconds` | Histogram | `slug` | полный RPC через `LuaBus`, включая ожидание ответа |
 | `bus_signature_rejected_total` | Counter | `bus` | сообщения шины, отклонённые по HMAC-подписи |
 
-### Метрики LuaWorker (push через Valkey, `src/telemetry/lua_metrics.py`)
+### Метрики LuaWorker (push через Valkey, `src/telemetry/instance_metrics.py`)
 
 У Lua-процесса нет своего HTTP-порта — вместо pull-модели `main.lua` раз в
 `LUA_METRICS_INTERVAL_SEC` пушит снимок счётчиков (`processed_total`,

@@ -15,7 +15,7 @@ from utils.openapi import document_perms
 from security.sec.secrets.resolve import resolve_secrets
 from telemetry.task_log import TaskLog
 from telemetry.otel import instrument_sqlalchemy, instrument_valkey
-from telemetry.lua_metrics import LuaMetricsCollector
+from telemetry.instance_metrics import LuaMetricsCollector, SelfMetricsPusher
 
 from api import api_router
 from apiws import apiws_router
@@ -81,9 +81,14 @@ async def lifespan(app: FastAPI):
     await app.state.media_job_events.start()
 
     # Переэкспорт метрик LuaWorker (push в Valkey -> Prometheus Gauge, см.
-    # telemetry/lua_metrics.py).
+    # telemetry/instance_metrics.py).
     app.state.lua_metrics = LuaMetricsCollector(app.state.valkey, config)
     await app.state.lua_metrics.start()
+
+    # Собственный heartbeat billing (см. §1: billing тоже виден в списке
+    # инстансов наравне с media/lua, читает api/v1/system/stats.py).
+    app.state.self_metrics = SelfMetricsPusher(app.state.valkey, config)
+    await app.state.self_metrics.start()
 
     app.include_router(api_router)
     app.include_router(apiws_router)
@@ -93,6 +98,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await app.state.self_metrics.stop()
         await app.state.lua_metrics.stop()
         await app.state.media_job_events.stop()
         await app.state.media_results.stop()

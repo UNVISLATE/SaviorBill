@@ -57,7 +57,7 @@ async def ready(request: Request, response: Response) -> dict:
 
     # Информационно, не влияет на общий readiness (billing по-прежнему готов
     # обслуживать HTTP без живых lua-воркеров) — сколько реплик LuaWorker
-    # прислали живой heartbeat (см. telemetry/lua_metrics.py).
+    # прислали живой heartbeat (см. telemetry/instance_metrics.py).
     try:
         settings: AppConfig = request.app.state.settings
         cursor, keys = await asyncio.wait_for(

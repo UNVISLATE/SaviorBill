@@ -100,6 +100,17 @@ class AppConfig(BaseSettings):
     # Prometheus (см. telemetry/lua_metrics.py).
     LUA_METRICS_PREFIX: str = Field(default="lua:metrics:")
     LUA_METRICS_POLL_INTERVAL_SEC: int = Field(default=15)
+    # Собственный heartbeat billing-процесса (см. §1: billing тоже виден в
+    # списке инстансов наравне с media/lua) — push раз в *_INTERVAL_SEC в
+    # billing:metrics:{consumer}, TTL — *_TTL_SEC (> интервала, иначе умерший
+    # процесс выглядел бы живым дольше, чем на самом деле).
+    SELF_METRICS_INTERVAL_SEC: int = Field(default=10)
+    SELF_METRICS_TTL_SEC: int = Field(default=30)
+    # WS /api/ws/v1/system/stats: период поллинга по умолчанию и допустимый
+    # диапазон для клиентского override (см. api/v1/system/stats.py).
+    SYSTEM_STATS_WS_DEFAULT_SEC: int = Field(default=5)
+    SYSTEM_STATS_WS_MIN_SEC: int = Field(default=1)
+    SYSTEM_STATS_WS_MAX_SEC: int = Field(default=60)
     # Сервисный токен LuaWorker - генерируемый секрет (файл LUA_SERVICE_TOKEN_FILE
     # по умолчанию либо облачный менеджер).
     LUA_SERVICE_TOKEN: str | None = Field(default=None)
