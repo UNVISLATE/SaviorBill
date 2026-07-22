@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+from decimal import Decimal
+
 import valkey.asyncio as valkey
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
@@ -22,11 +25,17 @@ from schemas.auth import Account, AvatarSet
 from schemas.orders import OrderAdmin
 from schemas.page import Page
 from schemas.payments import PaymentAdmin
-from schemas.user import BalanceAdjust, OAuthConnAdmin, User, UserDetail, UserPatch
-from decimal import Decimal
-
+from schemas.user import (
+    BalanceAdjust,
+    OAuthConnAdmin,
+    User,
+    UserDetail,
+    UserPatch,
+    UserStats,
+)
 from services.account import account_response, release_old_avatar
 from services.audit import audit
+from utils.datetime_utils import utc_now
 from utils.pagination import (
     PageParams,
     apply_sort,
@@ -89,6 +98,47 @@ async def list_users(
     )
     return Page(
         items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
+    )
+
+
+@router.get(
+    "/stats",
+    response_model=UserStats,
+    dependencies=[Depends(require_perm("users.read"))],
+    summary="User registration stats",
+    description="Total users + registrations bucketed by common periods; "
+    "pass both `from_`/`to` for an additional custom-range count.",
+)
+async def user_stats(
+    from_: datetime | None = None,
+    to: datetime | None = None,
+    session: AsyncSession = Depends(get_db_session),
+) -> UserStats:
+    async def _count(since: datetime | None) -> int:
+        stmt = select(func.count()).select_from(UserModel)
+        if since is not None:
+            stmt = stmt.where(UserModel.created_at >= since)
+        return int(await session.scalar(stmt) or 0)
+
+    now = utc_now()
+    custom = None
+    if from_ is not None and to is not None:
+        custom = int(
+            await session.scalar(
+                select(func.count())
+                .select_from(UserModel)
+                .where(UserModel.created_at >= from_, UserModel.created_at <= to)
+            )
+            or 0
+        )
+    return UserStats(
+        total=await _count(None),
+        registered_all_time=await _count(None),
+        registered_1d=await _count(now - timedelta(days=1)),
+        registered_7d=await _count(now - timedelta(days=7)),
+        registered_30d=await _count(now - timedelta(days=30)),
+        registered_90d=await _count(now - timedelta(days=90)),
+        registered_custom=custom,
     )
 
 

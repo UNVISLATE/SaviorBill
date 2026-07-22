@@ -60,6 +60,20 @@ class BalanceAdjust(BaseModel):
     reason: str = Field(min_length=1, max_length=500, description="Audit reason")
 
 
+class UserStats(BaseModel):
+    """Registration counters for the admin users page header."""
+
+    total: int
+    registered_all_time: int
+    registered_1d: int
+    registered_7d: int
+    registered_30d: int
+    registered_90d: int
+    registered_custom: int | None = Field(
+        default=None, description="Count in [from, to] if both were given"
+    )
+
+
 class OAuthConnAdmin(BaseModel):
     """User OAuth link."""
 
@@ -135,4 +149,11 @@ class UserDetail(BaseModel):
         )
 
 
-__all__ = ["User", "UserPatch", "BalanceAdjust", "OAuthConnAdmin", "UserDetail"]
+__all__ = [
+    "User",
+    "UserPatch",
+    "BalanceAdjust",
+    "UserStats",
+    "OAuthConnAdmin",
+    "UserDetail",
+]
