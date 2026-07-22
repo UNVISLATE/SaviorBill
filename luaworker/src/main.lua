@@ -55,9 +55,10 @@ local RECLAIM_MIN_IDLE_MS = tonumber(env("LUA_RECLAIM_MIN_IDLE_MS", "60000"))
 -- Redis Streams из XPENDING, отдельный счётчик не нужен) — при превышении
 -- задача не reclaim-ится повторно, а сразу считается провалившейся.
 local MAX_ATTEMPTS = tonumber(env("LUA_TASK_MAX_ATTEMPTS", "5"))
--- Метрики воркера (счётчики + last_seen) периодически пушатся в Valkey-хэш
--- lua:metrics:{CONSUMER} — billing переэкспортирует их как Prometheus Gauge
--- (см. telemetry/lua_metrics.py). Push, а не pull — у воркера нет своего
+-- Метрики воркера (счётчики + CPU%/RSS + last_seen) периодически пушатся в
+-- Valkey-хэш lua:metrics:{CONSUMER} — billing переэкспортирует счётчики как
+-- Prometheus Gauge и агрегирует весь хэш в мониторинге инстансов (см.
+-- telemetry/instance_metrics.py). Push, а не pull — у воркера нет своего
 -- HTTP-порта для /metrics, и это не нужно вводить только под один эндпоинт.
 local METRICS_INTERVAL_SEC = tonumber(env("LUA_METRICS_INTERVAL_SEC", "15"))
 local METRICS_PREFIX = env("LUA_METRICS_PREFIX", "lua:metrics:")
@@ -77,6 +78,77 @@ local metrics = { processed_total = 0, errors_total = 0, reclaimed_total = 0, ex
 local last_metrics_push = 0
 
 -- Раз в METRICS_INTERVAL_SEC отправить снимок счётчиков в Valkey.
+-- Читает /proc/self/status (VmRSS) и дельту /proc/self/stat (utime+stime)
+-- между тиками для cpu_percent — без внешних Lua-зависимостей (аналога
+-- psutil для Lua нет, а парсить /proc дешевле и надёжнее, чем вывод top/ps).
+local last_cpu_ticks = nil
+local last_cpu_wall = nil
+local CLK_TCK = 100 -- почти всегда 100 на Linux (getconf CLK_TCK); без libc-байндинга не вычислить точнее
+
+local function read_rss_mb()
+  local f = io.open("/proc/self/status", "r")
+  if not f then
+    return 0
+  end
+  local rss_kb = 0
+  for line in f:lines() do
+    local kb = line:match("^VmRSS:%s+(%d+)%s+kB")
+    if kb then
+      rss_kb = tonumber(kb)
+      break
+    end
+  end
+  f:close()
+  return rss_kb / 1024
+end
+
+local function read_cpu_ticks()
+  local f = io.open("/proc/self/stat", "r")
+  if not f then
+    return nil
+  end
+  local line = f:read("*l")
+  f:close()
+  -- Поля после закрывающей ')' имени процесса (может содержать пробелы) —
+  -- в этом хвосте utime/stime — 12-е/13-е поля (полные поля 14/15 из
+  -- proc(5), минус pid+comm, которые сюда не входят).
+  local tail = line:match("%)%s*(.*)$")
+  if not tail then
+    return nil
+  end
+  local fields = {}
+  for tok in tail:gmatch("%S+") do
+    fields[#fields + 1] = tok
+  end
+  local utime, stime = tonumber(fields[12]), tonumber(fields[13])
+  if not utime or not stime then
+    return nil
+  end
+  return utime + stime
+end
+
+-- cpu_percent = (дельта тиков CPU / дельта тиков CLK_TCK) * 100, за период
+-- между двумя пушами метрик — не за всё время жизни процесса.
+local function read_cpu_percent()
+  local ticks = read_cpu_ticks()
+  local now = socket.gettime()
+  if not ticks then
+    return 0
+  end
+  local percent = 0
+  if last_cpu_ticks and last_cpu_wall then
+    local dt_wall = now - last_cpu_wall
+    local dt_ticks = ticks - last_cpu_ticks
+    if dt_wall > 0 then
+      percent = (dt_ticks / CLK_TCK) / dt_wall * 100
+    end
+  end
+  last_cpu_ticks, last_cpu_wall = ticks, now
+  return percent
+end
+
+local PROCESS_STARTED_AT = os.time()
+
 local function maybe_push_metrics(client)
   local now = socket.gettime()
   if now - last_metrics_push < METRICS_INTERVAL_SEC then
@@ -91,10 +163,15 @@ local function maybe_push_metrics(client)
   pcall(function()
     client:hset(
       key,
+      "service", "lua",
+      "consumer", CONSUMER,
+      "started_at", tostring(PROCESS_STARTED_AT),
       "processed_total", tostring(metrics.processed_total),
       "errors_total", tostring(metrics.errors_total),
       "reclaimed_total", tostring(metrics.reclaimed_total),
       "avg_exec_ms", string.format("%.2f", avg_exec_ms),
+      "cpu_percent", string.format("%.2f", read_cpu_percent()),
+      "rss_mb", string.format("%.2f", read_rss_mb()),
       "last_seen_at", tostring(os.time())
     )
     client:expire(key, METRICS_TTL_SEC)
