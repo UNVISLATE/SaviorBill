@@ -239,9 +239,11 @@ class Worker:
                         "op": op,
                         "started_at": time.time(),
                     }
+                    heartbeat = asyncio.create_task(self._lock_heartbeat(lock_key))
                     try:
                         await self._handle(data)
                     finally:
+                        heartbeat.cancel()
                         self._active_jobs.pop(msg_id, None)
             except Exception as exc:  # noqa: BLE001
                 print(f"[mediaworker] task error: {exc}", flush=True)
@@ -250,6 +252,22 @@ class Worker:
                 if lock_key is not None:
                     await self.vk.delete(lock_key)
                 await self.vk.xack(self.cfg.task_stream, self.cfg.group, msg_id)
+
+    async def _lock_heartbeat(self, lock_key: str) -> None:
+        """Продлевать job-лок, пока обработка ещё идёт.
+
+        Без этого тяжёлая видео-конвертация (например, пресет "quality"),
+        не успевшая уложиться в ``job_lock_ttl_sec``, теряла лок — reclaim
+        запускал ДУБЛИКАТ той же задачи (см. reclaim_once), и второй процесс
+        падал с FileNotFoundError на уже удалённом первым процессом
+        оригинале (либо оба писали в одни и те же временные файлы).
+        """
+        try:
+            while True:
+                await asyncio.sleep(self.cfg.job_lock_ttl_sec / 3)
+                await self.vk.expire(lock_key, self.cfg.job_lock_ttl_sec)
+        except asyncio.CancelledError:
+            pass
 
     async def _on_failure(self, data: dict) -> None:
         """Учесть попытку; до исчерпания — вернуть задачу в стрим, иначе — в DLQ."""
@@ -419,6 +437,28 @@ class Worker:
         cpu_used = int(cpu_used_raw) if cpu_used_raw.isdigit() else None
         crf = int(crf_raw) if crf_raw.isdigit() else None
         src = self.storage.orig_path(token)
+
+        # Идемпотентность: at-least-once доставка (crash/redelivery) может
+        # прислать эту задачу повторно ПОСЛЕ того, как оригинал уже был
+        # успешно сконвертирован и удалён (см. финал функции). Раньше это
+        # падало с FileNotFoundError и (что хуже) не трогало status — но
+        # если статус уже "ready", просто подтверждаем повтор без ошибки,
+        # вместо загрязнения логов и лишних попыток/DLQ.
+        if not os.path.exists(src):
+            status = await self.vk.hgetall(status_key(token))
+            if (status or {}).get("state") == "ready":
+                print(
+                    f"[mediaworker] convert {token}: original already gone, "
+                    f"status already ready — skipping duplicate delivery",
+                    flush=True,
+                )
+                return
+            await self._set_status(token, state="failed", error="original file missing")
+            await self.task_log.record(
+                kind="media", op="convert", token_or_cid=token, state="failed",
+                detail="original file missing", owner_id=owner_id or None,
+            )
+            return
 
         # Право на kind файла проверяется здесь, не на приёме (HTTP) — сам
         # kind определяется по сигнатуре файла только сейчас, в фоне (см.
