@@ -22,8 +22,11 @@ from schemas.auth import Account, AvatarSet
 from schemas.orders import OrderAdmin
 from schemas.page import Page
 from schemas.payments import PaymentAdmin
-from schemas.user import OAuthConnAdmin, User, UserDetail, UserPatch
+from schemas.user import BalanceAdjust, OAuthConnAdmin, User, UserDetail, UserPatch
+from decimal import Decimal
+
 from services.account import account_response, release_old_avatar
+from services.audit import audit
 from utils.pagination import (
     PageParams,
     apply_sort,
@@ -37,6 +40,7 @@ from utils.pagination import (
 router = APIRouter()
 
 reg_perm("users.admin.role.edit")  # проверяется вручную внутри edit_user
+reg_perm("users.admin.balance.edit")  # проверяется вручную в edit_user и /balance
 
 _SORT_FIELDS = {"id", "login", "email", "created_at", "last_login", "role_id", "balance"}
 
@@ -172,9 +176,59 @@ async def edit_user(
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN, "the owner role cannot be assigned"
             )
+    if ("balance" in data or "bonus_balance" in data) and not (
+        caller.role and caller.role.key == "owner"
+    ):
+        caller_perms = caller.role.perms if caller.role else None
+        if not has_perm(caller_perms, "users.admin.balance.edit"):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "insufficient permissions: users.admin.balance.edit",
+            )
     for field, value in data.items():
         setattr(acc, field, value)
     await session.commit()
+    return User.from_model(acc)
+
+
+@router.post(
+    "/{user_id}/balance",
+    response_model=User,
+    dependencies=[Depends(require_perm("users.admin.balance.edit"))],
+    summary="Manually adjust user balance",
+    description="Top up (positive amount) or deduct (negative amount) the "
+    "user's main or bonus balance. Logged to the audit trail.",
+)
+async def adjust_balance(
+    request: Request,
+    user_id: int,
+    body: BalanceAdjust,
+    session: AsyncSession = Depends(get_db_session),
+    caller: UserModel = Depends(require_perm("users.admin.balance.edit")),
+) -> User:
+    acc = await _get_user(session, user_id)
+    if acc.role and acc.role.key == "owner":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "the owner's balance cannot be adjusted"
+        )
+    field = "balance" if body.kind == "main" else "bonus_balance"
+    current: Decimal = getattr(acc, field)
+    new_value = current + body.amount
+    if new_value < 0:
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "insufficient funds")
+    setattr(acc, field, new_value)
+    await audit(
+        session,
+        action="user.balance.adjust",
+        actor_id=caller.id,
+        actor_role=caller.role.name if caller.role else None,
+        target_type="user",
+        target_id=str(acc.id),
+        ip=request.client.host if request.client else None,
+        meta={"kind": body.kind, "amount": str(body.amount), "reason": body.reason},
+    )
+    await session.commit()
+    await session.refresh(acc)
     return User.from_model(acc)
 
 

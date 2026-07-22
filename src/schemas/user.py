@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -47,6 +48,16 @@ class UserPatch(BaseModel):
     bonus_balance: Decimal | None = Field(
         default=None, description="New bonus balance (optional)"
     )
+
+
+class BalanceAdjust(BaseModel):
+    """Manual balance adjustment (admin)."""
+
+    amount: Decimal = Field(
+        description="Delta to apply; positive tops up, negative deducts"
+    )
+    kind: Literal["main", "bonus"] = Field(description="Which balance to adjust")
+    reason: str = Field(min_length=1, max_length=500, description="Audit reason")
 
 
 class OAuthConnAdmin(BaseModel):
@@ -124,4 +135,4 @@ class UserDetail(BaseModel):
         )
 
 
-__all__ = ["User", "UserPatch", "OAuthConnAdmin", "UserDetail"]
+__all__ = ["User", "UserPatch", "BalanceAdjust", "OAuthConnAdmin", "UserDetail"]
