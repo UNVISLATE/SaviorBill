@@ -144,6 +144,28 @@ class PromoCode(BaseModel):
         return cls.model_validate(m)
 
 
+class PromoUse(BaseModel):
+    """One promo code activation (admin: user activation history)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    promocode_id: int
+    code: str
+    order_id: int | None = None
+    created_at: datetime
+
+    @classmethod
+    def from_model(cls, m, code: str) -> "PromoUse":  # noqa: ANN001 — PromoUseModel
+        return cls(
+            id=m.id,
+            promocode_id=m.promocode_id,
+            code=code,
+            order_id=m.order_id,
+            created_at=m.created_at,
+        )
+
+
 class PromoCodeBatch(BaseModel):
     """Create promo code batch."""
 
@@ -195,5 +217,6 @@ __all__ = [
     "PromoCatalogPatch",
     "PromoCode",
     "PromoCodeBatch",
+    "PromoUse",
     "PromoQuote",
 ]

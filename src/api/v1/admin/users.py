@@ -15,6 +15,8 @@ from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
 from security.rbac import has_perm, reg_perm
 from dependencies.valkey import get_valkey_client
+from models.promo_codes import PromoCodesModel
+from models.promo_use import PromoUseModel
 from models.roles import Role
 from models.system_media import SystemMediaMngr
 from models.user import UserModel
@@ -25,6 +27,7 @@ from schemas.auth import Account, AvatarSet
 from schemas.orders import OrderAdmin
 from schemas.page import Page
 from schemas.payments import PaymentAdmin
+from schemas.promo import PromoUse
 from schemas.user import (
     BalanceAdjust,
     OAuthConnAdmin,
@@ -280,6 +283,42 @@ async def adjust_balance(
     await session.commit()
     await session.refresh(acc)
     return User.from_model(acc)
+
+
+@router.get(
+    "/{user_id}/promocodes",
+    response_model=Page[PromoUse],
+    dependencies=[Depends(require_perm("users.read"))],
+    summary="User promo code activations",
+    description="Promo codes this user has redeemed, newest first.",
+)
+async def user_promocodes(
+    user_id: int,
+    pp: PageParams = Depends(page_params),
+    session: AsyncSession = Depends(get_db_session),
+) -> Page[PromoUse]:
+    await _get_user(session, user_id)
+    stmt = (
+        select(PromoUseModel, PromoCodesModel.code)
+        .join(PromoCodesModel, PromoUseModel.promocode_id == PromoCodesModel.id)
+        .where(PromoUseModel.account_id == user_id)
+        .order_by(PromoUseModel.id.desc())
+    )
+    total = await session.scalar(
+        select(func.count())
+        .select_from(PromoUseModel)
+        .where(PromoUseModel.account_id == user_id)
+    )
+    rows = await session.execute(stmt.limit(pp.limit).offset(pp.offset))
+    items = [PromoUse.from_model(use, code) for use, code in rows.all()]
+    total = int(total or 0)
+    return Page(
+        items=items,
+        total=total,
+        limit=pp.limit,
+        offset=pp.offset,
+        has_more=pp.offset + len(items) < total,
+    )
 
 
 @router.get(
