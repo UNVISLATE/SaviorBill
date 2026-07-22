@@ -8,7 +8,7 @@ JWT + чтение прав роли из той же Postgres, тот же Valk
 формата. mediaworker и так уже умеет проверять права (см. ``api/upload.py``),
 поэтому отдаёт логи/прогресс сам, напрямую.
 
-Роуты (все требуют право ``logs.read``):
+Роуты (все требуют право ``system.jobs.read``):
 
 - ``GET /api/media/logs/jobs``                          — список job'ов
 - ``GET /api/media/logs/jobs/{job_id}``                  — метаданные job'а
@@ -43,7 +43,7 @@ from utils.rbac import has_perm
 
 router = APIRouter(prefix="/logs")
 
-_PERM = "logs.read"
+_PERM = "system.jobs.read"
 
 
 async def _require_logs_read(request: Request) -> None:

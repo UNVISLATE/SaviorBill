@@ -13,7 +13,7 @@ router = APIRouter()
 
 @router.get(
     "",
-    dependencies=[Depends(require_perm("tasks.read"))],
+    dependencies=[Depends(require_perm("system.tasks.read"))],
     summary="Media tasks log tail",
     description="Последние факты о медиа-тасках (convert/preview_add/"
     "thumb_replace): queued/processing/ready/failed. Пишет mediaworker, "

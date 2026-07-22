@@ -42,10 +42,14 @@ _BASE_PERMS: dict[str, dict] = {
         "audit": True,
         "settings": True,
         "analytics": {"basic": {"read": True}},
-        # Реалтайм-логи/прогресс ffmpeg (сами роуты — на стороне mediaworker,
-        # см. mediaworker/src/api/logs.py) — то же право "logs.read", что и
-        # раньше проверял billing-прокси.
-        "logs": {"read": True},
+        # Реалтайм-мониторинг ("Система" в админке, задел на будущее — см.
+        # IMPLEMENTATION_PLAN.md §0.2.4/§1): system.tasks.* — хвост журнала
+        # media/lua тасков (billing, apiws/v1/tasks.py + admin/tasks/*);
+        # system.jobs.* — realtime-логи/прогресс ffmpeg (сами роуты на
+        # стороне mediaworker, см. mediaworker/src/api/logs.py); system.stats.*
+        # зарезервировано под будущие метрики инстансов (§1), пока не
+        # реализовано.
+        "system": {"tasks": {"read": True}, "jobs": {"read": True}},
         # Явные админ-права на медиа: "upload" — без ограничения по размеру
         # вообще; "manage_any" — доступ к preview/thumb/avatar ЧУЖОГО медиа.
         # Не совпадают с media.uploadlarge (только лимит размера) — см.

@@ -13,7 +13,7 @@ router = APIRouter()
 
 @router.get(
     "",
-    dependencies=[Depends(require_perm("tasks.read"))],
+    dependencies=[Depends(require_perm("system.tasks.read"))],
     summary="Lua tasks log tail",
     description="Последние факты о вызовах LuaWorker: sent/ok/error "
     "(fire-and-forget задачи — только sent, ответа никогда не ждём).",
