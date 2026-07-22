@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.db import get_db_session
 from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
+from security.rbac import has_perm, reg_perm
 from dependencies.valkey import get_valkey_client
 from models.roles import Role
 from models.system_media import SystemMediaMngr
@@ -34,6 +35,8 @@ from utils.pagination import (
 )
 
 router = APIRouter()
+
+reg_perm("users.admin.role.edit")  # проверяется вручную внутри edit_user
 
 _SORT_FIELDS = {"id", "login", "email", "created_at", "last_login", "role_id", "balance"}
 
@@ -134,14 +137,15 @@ async def user_profile_admin(
 @router.patch(
     "/{user_id}",
     response_model=User,
-    dependencies=[Depends(require_perm("users.edit"))],
     summary="Update user",
-    description="Update the provided user fields.",
+    description="Update the provided user fields. Changing `role_id` "
+    "additionally requires `users.admin.role.edit`.",
 )
 async def edit_user(
     user_id: int,
     body: UserPatch,
     session: AsyncSession = Depends(get_db_session),
+    caller: UserModel = Depends(require_perm("users.admin.edit")),
 ) -> User:
     """Частично обновить аккаунт.
 
@@ -151,6 +155,14 @@ async def edit_user(
     acc = await _get_user(session, user_id)
     data = body.model_dump(exclude_unset=True)
     if "role_id" in data and data["role_id"] != acc.role_id:
+        caller_perms = caller.role.perms if caller.role else None
+        if not (caller.role and caller.role.key == "owner") and not has_perm(
+            caller_perms, "users.admin.role.edit"
+        ):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "insufficient permissions: users.admin.role.edit",
+            )
         if acc.role and acc.role.key == "owner":
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN, "the owner role cannot be changed"
