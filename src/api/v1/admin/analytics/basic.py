@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from utils.pagination import PageParams, page_params, paginate, paginate_rows
 
 router = APIRouter(
-    prefix="/analytics/basic",
+    prefix="/basic",
     dependencies=[Depends(require_perm("analytics.basic.read"))],
 )
 

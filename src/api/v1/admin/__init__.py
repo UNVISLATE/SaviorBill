@@ -52,10 +52,10 @@ router.include_router(audit_router, prefix="/audit", tags=["admin: audit"])
 # "admin: tasks/media" и "admin: tasks/lua" при регистрации внутри пакета
 # (см. api/v1/admin/tasks/__init__.py) — тот же паттерн, что у analytics.
 router.include_router(tasks_router, prefix="/tasks")
-# analytics_router без префикса здесь: basic_router и advanced_router уже
-# сами задают полные "/analytics/basic" и "/analytics/advanced" (см.
-# api/v1/admin/analytics/basic.py и advanced.py) — тот же паттерн, что и у
-# одиночных модулей catalog.py/media.py/oauth.py верхнего уровня.
-router.include_router(analytics_router, tags=["admin: analytics"])
+# analytics_router: единый префикс "/analytics" задан здесь (тот же паттерн,
+# что у tasks_router выше); basic_router/advanced_router внутри пакета
+# объявляют только свой суффикс ("/basic"/"/advanced"), теги — при монтировании
+# в admin/analytics/__init__.py.
+router.include_router(analytics_router, prefix="/analytics")
 
 __all__ = ["router"]

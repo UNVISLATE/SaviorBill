@@ -21,7 +21,7 @@ from schemas.analytics import AdvancedSummary, RetentionCohort
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(
-    prefix="/analytics/advanced",
+    prefix="/advanced",
     dependencies=[Depends(require_perm("analytics.advanced.read"))],
 )
 
