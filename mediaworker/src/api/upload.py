@@ -54,6 +54,15 @@ _STEP2_RATE_PER_MIN = 30
 # на обработку файла (в отличие от прежнего "kind").
 _TAG_RE = re.compile(r"^[A-Za-z0-9]{1,16}$")
 
+# Пресеты скорости/качества VP9 (см. IMPLEMENTATION_PLAN.md §1.5): значение —
+# cpu-used для libvpx-vp9 (0 — медленнее/лучше качество, 8 — быстрее/хуже).
+# media.uploadlarge всегда получает "fast" (пользователи с большими файлами не
+# должны иметь возможность выбрать медленный пресет и забить очередь конвертации
+# надолго); admin.media.upload может выбрать любой + переопределить CRF.
+_VIDEO_PRESETS: dict[str, int] = {"fast": 8, "balanced": 5, "quality": 2}
+_DEFAULT_PRESET = "balanced"
+_CRF_MIN, _CRF_MAX = 15, 40
+
 # Атомарный claim одноразового upload-token: HGETALL + DEL одним вызовом.
 _CLAIM_TOKEN_SCRIPT = """
 local data = redis.call('HGETALL', KEYS[1])
@@ -112,6 +121,8 @@ async def _enforce_media_count_limit(
 async def request_upload_token(
     request: Request,
     tag: str | None = None,
+    preset: str | None = None,
+    crf: int | None = None,
     _creds: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
 ) -> dict:
     """Шаг 1: проверить права и выдать одноразовый upload-token.
@@ -119,6 +130,13 @@ async def request_upload_token(
     ``tag`` — необязательная метка (до 16 символов, латиница/цифры) только
     для удобства UI (сортировка/поиск в админке и у клиента); формат файла
     сервер определяет сам по содержимому, а не по этой метке.
+
+    ``preset``/``crf`` — управление скоростью/качеством конвертации видео
+    (см. IMPLEMENTATION_PLAN.md §1.5): доступны только для
+    ``admin.media.upload`` (полный выбор пресета + CRF); ``media.uploadlarge``
+    всегда получает самый быстрый пресет независимо от переданных значений;
+    ``media.upload`` видео вообще не грузит (см. ``video_allowed`` ниже), эти
+    параметры для него ни на что не влияют.
 
     ``_creds`` не используется напрямую (реальный разбор — в
     ``authenticate()``/``bearer()`` из ``utils/authctx.py``) — параметр здесь
@@ -155,6 +173,23 @@ async def request_upload_token(
             status.HTTP_403_FORBIDDEN, f"недостаточно прав: {_PERM_SMALL}"
         )
 
+    if is_unlimited:
+        if preset is not None and preset not in _VIDEO_PRESETS:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"preset: один из {sorted(_VIDEO_PRESETS)}",
+            )
+        cpu_used = _VIDEO_PRESETS[preset or _DEFAULT_PRESET]
+        if crf is not None and not (_CRF_MIN <= crf <= _CRF_MAX):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, f"crf: {_CRF_MIN}..{_CRF_MAX}"
+            )
+    else:
+        # uploadlarge/обычные — без выбора: всегда самый быстрый пресет,
+        # дефолтный CRF из конфига.
+        cpu_used = _VIDEO_PRESETS["fast"]
+        crf = None
+
     await _enforce_hourly_limit(request, acc_id, perms)
     await _enforce_media_count_limit(request, acc_id, perms)
 
@@ -175,6 +210,8 @@ async def request_upload_token(
             # определяется по сигнатуре файла только в фоне (worker.py),
             # поэтому решение принимается здесь и переносится через очередь.
             "video_allowed": "1" if (is_large or is_unlimited) else "0",
+            "cpu_used": str(cpu_used),
+            "crf": str(crf) if crf is not None else "",
         },
     )
     await vk.expire(uptoken_hkey, cfg.upload_token_ttl)
@@ -242,6 +279,8 @@ async def upload_file(request: Request, upload_token: str) -> dict:
     max_bytes = int(payload.get("max_bytes", cfg.small_max_bytes))
     is_large = payload.get("large") == "1"
     video_allowed = payload.get("video_allowed") == "1"
+    cpu_used = payload.get("cpu_used") or ""
+    crf = payload.get("crf") or ""
 
     # Пре-проверка: честно заявленный слишком большой Content-Length → отказ.
     clen = request.headers.get("content-length")
@@ -282,6 +321,8 @@ async def upload_file(request: Request, upload_token: str) -> dict:
                     # проверить без лишнего похода в БД, поэтому переносим
                     # флаг через очередь (см. worker.py::_convert).
                     "video_allowed": "1" if video_allowed else "0",
+                    "cpu_used": cpu_used,
+                    "crf": crf,
                 }
             ),
         ),

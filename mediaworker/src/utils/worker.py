@@ -414,6 +414,10 @@ class Worker:
         tag = data.get("tag") or None
         owner_id = data.get("owner_id")
         video_allowed = data.get("video_allowed") == "1"
+        cpu_used_raw = data.get("cpu_used") or ""
+        crf_raw = data.get("crf") or ""
+        cpu_used = int(cpu_used_raw) if cpu_used_raw.isdigit() else None
+        crf = int(crf_raw) if crf_raw.isdigit() else None
         src = self.storage.orig_path(token)
 
         # Право на kind файла проверяется здесь, не на приёме (HTTP) — сам
@@ -493,6 +497,8 @@ class Worker:
                 src,
                 self.cfg.uploads_dir,
                 token,
+                cpu_used=cpu_used,
+                crf=crf,
                 on_output=sink,
                 on_progress=progress_sink,
                 on_stage=lambda stage: self.proc_log.set_stage(job_id, stage),

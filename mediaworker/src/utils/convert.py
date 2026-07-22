@@ -333,6 +333,8 @@ async def convert_video(
     out_dir: str,
     token: str,
     *,
+    cpu_used: int | None = None,
+    crf: int | None = None,
     on_output: OutputSink | None = None,
     on_progress: ProgressSink | None = None,
     on_stage: StageSink | None = None,
@@ -344,6 +346,10 @@ async def convert_video(
     процент/ETA для них не осмыслены. ``on_stage`` уведомляет о переходе между
     шагами (``encode``/``thumb``/``preview``), чтобы клиент видел, чем занят
     job, даже когда процент/ETA для текущего шага не публикуются.
+
+    ``cpu_used``/``crf`` — переопределение пресета скорости/качества VP9
+    (см. ``api/upload.py::_VIDEO_PRESETS``), выбранное на приёме файла в
+    зависимости от права аккаунта; ``None`` — взять дефолт из конфига.
     """
     main = Variant("main", *target_key(token, "video"))
     duration = await probe_duration(src) if on_progress is not None else None
@@ -352,8 +358,10 @@ async def convert_video(
     await _run(
         [
             "ffmpeg", "-y", "-i", src,
-            "-c:v", "libvpx-vp9", "-b:v", "0", "-crf", str(cfg.webm_crf),
-            "-deadline", "good", "-cpu-used", str(cfg.webm_cpu_used),
+            "-c:v", "libvpx-vp9", "-b:v", "0",
+            "-crf", str(crf if crf is not None else cfg.webm_crf),
+            "-deadline", "good",
+            "-cpu-used", str(cpu_used if cpu_used is not None else cfg.webm_cpu_used),
             "-c:a", "libopus", "-row-mt", "1",
             os.path.join(out_dir, main.key),
         ],
@@ -376,6 +384,8 @@ async def convert(
     out_dir: str,
     token: str,
     *,
+    cpu_used: int | None = None,
+    crf: int | None = None,
     on_output: OutputSink | None = None,
     on_progress: ProgressSink | None = None,
     on_stage: StageSink | None = None,
@@ -386,6 +396,10 @@ async def convert(
     :arg src: путь к оригиналу.
     :arg out_dir: каталог для выходных файлов.
     :arg token: идентификатор медиа (префикс имён файлов).
+    :arg cpu_used: переопределение VP9 cpu-used (см. ``convert_video``);
+        игнорируется для изображений.
+    :arg crf: переопределение VP9 CRF (см. ``convert_video``); игнорируется
+        для изображений.
     :arg on_output: коллбэк сырого вывода ffmpeg/ffprobe для realtime-лога
         (см. ``utils/proclog.py``); ``None`` — не логировать (например,
         служебные вызовы без активного WS-слушателя).
@@ -408,7 +422,15 @@ async def convert(
         raise SignatureError("файл не распознан: неизвестная сигнатура")
     if kind == "video":
         return kind, await convert_video(
-            cfg, src, out_dir, token, on_output=on_output, on_progress=on_progress, on_stage=on_stage
+            cfg,
+            src,
+            out_dir,
+            token,
+            cpu_used=cpu_used,
+            crf=crf,
+            on_output=on_output,
+            on_progress=on_progress,
+            on_stage=on_stage,
         )
     return kind, await convert_image(cfg, src, out_dir, token, on_output=on_output)
 
