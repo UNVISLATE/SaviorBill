@@ -11,6 +11,7 @@ from dependencies.db import get_db_session
 from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
 from dependencies.valkey import get_valkey_client
+from models.roles import Role
 from models.system_media import SystemMediaMngr
 from models.user import UserModel
 from models.user_oauth import UserOauthModel, UserOauthMngr
@@ -148,7 +149,18 @@ async def edit_user(
     :return: обновлённый аккаунт.
     """
     acc = await _get_user(session, user_id)
-    for field, value in body.model_dump(exclude_unset=True).items():
+    data = body.model_dump(exclude_unset=True)
+    if "role_id" in data and data["role_id"] != acc.role_id:
+        if acc.role and acc.role.key == "owner":
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "the owner role cannot be changed"
+            )
+        new_role = await session.get(Role, data["role_id"]) if data["role_id"] else None
+        if new_role is not None and new_role.key == "owner":
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "the owner role cannot be assigned"
+            )
+    for field, value in data.items():
         setattr(acc, field, value)
     await session.commit()
     return User.from_model(acc)

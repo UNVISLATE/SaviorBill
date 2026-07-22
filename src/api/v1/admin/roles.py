@@ -87,6 +87,10 @@ async def update_role(
     role = await session.get(RoleModel, role_id)
     if role is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "role not found")
+    if role.key == "owner":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "the owner role cannot be edited via API"
+        )
     data = body.model_dump(exclude_unset=True)
     if "title" in data:
         role.title = data["title"]

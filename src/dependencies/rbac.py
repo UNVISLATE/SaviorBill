@@ -21,6 +21,11 @@ def require_perm(path: str) -> Callable:
     reg_perm(path)
 
     async def _dep(acc: UserModel = Depends(get_current_acc)) -> UserModel:
+        # owner может ВСЁ, независимо от содержимого perms — единственная
+        # неприкасаемая роль (см. IMPLEMENTATION_PLAN.md, "Решения по
+        # открытым вопросам" п.1).
+        if acc.role and acc.role.key == "owner":
+            return acc
         perms = acc.role.perms if acc.role else None
         if not has_perm(perms, path):
             raise HTTPException(
