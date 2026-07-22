@@ -16,7 +16,10 @@ const ALL_ITEMS = [...navGroups.flatMap((g) => g.items), ...footerNavItems]
 export function Breadcrumbs() {
   const location = useLocation()
   const { extra } = useBreadcrumbState()
-  const current = ALL_ITEMS.find((i) => i.url === location.pathname)
+  const current =
+    ALL_ITEMS.find((i) => i.url === location.pathname) ??
+    ALL_ITEMS.filter((i) => i.url !== "/" && location.pathname.startsWith(i.url))
+      .sort((a, b) => b.url.length - a.url.length)[0]
   const title = current?.title ?? "Дашборд"
 
   return (

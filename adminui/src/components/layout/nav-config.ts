@@ -2,7 +2,6 @@ import {
   FileClock,
   Gauge,
   Settings,
-  ShieldCheck,
   Users,
   MonitorCog,
 } from "lucide-react"
@@ -31,10 +30,7 @@ export const navGroups: NavGroup[] = [
   },
   {
     title: "Пользователи",
-    items: [
-      { title: "Пользователи", url: "/users", icon: Users, perm: "users.read" },
-      { title: "Роли", url: "/roles", icon: ShieldCheck, perm: "roles.read" },
-    ],
+    items: [{ title: "Пользователи", url: "/users", icon: Users, perm: "users.read" }],
   }
 ]
 

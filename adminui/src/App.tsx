@@ -4,6 +4,9 @@ import { DashboardLayout } from "@/components/layout/DashboardLayout.tsx"
 import { LoginPage } from "@/pages/login/LoginPage"
 import { DashboardPage } from "@/pages/dashboard/DashboardPage"
 import { UsersPage } from "@/pages/users/UsersPage"
+import { AuditPage } from "@/pages/audit/AuditPage"
+import { SystemPage } from "@/pages/system/SystemPage"
+import { SettingsPage } from "@/pages/settings/SettingsPage"
 import { ProtectedRoute } from "@/routes/ProtectedRoute"
 import { ProfileDialogProvider } from "@/hooks/use-profile-dialog"
 import { ProfileDialogHost } from "@/components/profile/ProfileDialogHost"
@@ -19,6 +22,9 @@ export function App() {
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/users" element={<UsersPage />} />
+              <Route path="/audit" element={<AuditPage />} />
+              <Route path="/system/*" element={<SystemPage />} />
+              <Route path="/settings/*" element={<SettingsPage />} />
             </Route>
           </Route>
         </Routes>
