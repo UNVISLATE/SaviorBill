@@ -28,7 +28,7 @@ from utils import ipban
 from utils.authctx import authenticate, authorize, client_ip
 from utils.bus_sign import sign_fields
 from utils.config import Config
-from utils.keys import rate_key, status_key, uptoken_key
+from utils.keys import rate_key, status_key, step2_rate_key, uptoken_key
 from utils.rbac import has_perm
 from utils.openapi_auth import bearer_scheme
 from utils.settings import SettingsResolver
@@ -46,6 +46,10 @@ _PERM_ADMIN_UNLIMITED = "admin.media.upload"
 # Достаточно большой предел, чтобы Storage.save_stream не приходилось учить
 # понимать "без лимита"; реального файла такого размера на диске не будет.
 _UNLIMITED_BYTES = 2**62
+# Лимит попыток шага 2 (приём файла) на один IP в минуту — независимо от
+# часового лимита шага 1 (тот считает по аккаунту, этот — по IP, чтобы не
+# пускать перебор чужих/просроченных upload-token'ов и общий флуд запросами).
+_STEP2_RATE_PER_MIN = 30
 # До 16 символов, только латиница и цифры — просто метка для UI, не влияет
 # на обработку файла (в отличие от прежнего "kind").
 _TAG_RE = re.compile(r"^[A-Za-z0-9]{1,16}$")
@@ -166,6 +170,11 @@ async def request_upload_token(
             # шаг 2, чтобы решить, банить ли IP за подложный Content-Length
             # (см. upload_file).
             "large": "1" if (is_large or is_unlimited) else "0",
+            # Право загружать видео (не только фото) — media.upload сам по
+            # себе не даёт video, см. IMPLEMENTATION_PLAN.md §0.1.3. Kind
+            # определяется по сигнатуре файла только в фоне (worker.py),
+            # поэтому решение принимается здесь и переносится через очередь.
+            "video_allowed": "1" if (is_large or is_unlimited) else "0",
         },
     )
     await vk.expire(uptoken_hkey, cfg.upload_token_ttl)
@@ -204,6 +213,16 @@ async def upload_file(request: Request, upload_token: str) -> dict:
     if await ipban.is_banned(vk, ip):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "temporarily banned")
 
+    bucket = int(time.time()) // 60
+    rkey = step2_rate_key(ip, bucket)
+    used = await vk.incr(rkey)
+    if used == 1:
+        await vk.expire(rkey, 60)
+    if used > _STEP2_RATE_PER_MIN:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "upload rate limit exceeded"
+        )
+
     # Атомарно забрать одноразовый токен (Lua HGETALL + DEL).
     raw = await vk.eval(_CLAIM_TOKEN_SCRIPT, 1, uptoken_key(upload_token))
     if not raw:
@@ -222,6 +241,7 @@ async def upload_file(request: Request, upload_token: str) -> dict:
     tag = payload.get("tag") or ""
     max_bytes = int(payload.get("max_bytes", cfg.small_max_bytes))
     is_large = payload.get("large") == "1"
+    video_allowed = payload.get("video_allowed") == "1"
 
     # Пре-проверка: честно заявленный слишком большой Content-Length → отказ.
     clen = request.headers.get("content-length")
@@ -256,6 +276,12 @@ async def upload_file(request: Request, upload_token: str) -> dict:
                     "owner_id": str(owner_id) if owner_id else "",
                     "backend": cfg.backend,
                     "size": str(size),
+                    # Решение о доступе к video принято на шаге 1 (см.
+                    # request_upload_token) — kind определяется по сигнатуре
+                    # файла только в воркере, права аккаунта там уже не
+                    # проверить без лишнего похода в БД, поэтому переносим
+                    # флаг через очередь (см. worker.py::_convert).
+                    "video_allowed": "1" if video_allowed else "0",
                 }
             ),
         ),

@@ -386,7 +386,37 @@ class Worker:
         token = data["token"]
         tag = data.get("tag") or None
         owner_id = data.get("owner_id")
+        video_allowed = data.get("video_allowed") == "1"
         src = self.storage.orig_path(token)
+
+        # Право на kind файла проверяется здесь, не на приёме (HTTP) — сам
+        # kind определяется по сигнатуре файла только сейчас, в фоне (см.
+        # IMPLEMENTATION_PLAN.md §0.1.3). media.upload — только фото;
+        # media.uploadlarge/admin.media.upload разрешают video (флаг
+        # video_allowed прокинут из upload.py при приёме файла).
+        if not video_allowed:
+            try:
+                with open(src, "rb") as f:
+                    header = f.read(SIGNATURE_READ_BYTES)
+                sniffed_kind = detect_kind(header)
+            except Exception:  # noqa: BLE001 — best-effort sniff
+                sniffed_kind = None
+            if sniffed_kind == "video":
+                await self._set_status(
+                    token,
+                    state="error",
+                    error="video not allowed for this account tier",
+                )
+                await self.task_log.record(
+                    kind="media",
+                    op="convert",
+                    token_or_cid=token,
+                    state="error",
+                    detail="video not allowed for this account tier",
+                    owner_id=owner_id or None,
+                )
+                self.storage._safe_unlink(src)
+                return
 
         await self._set_status(token, state="processing")
         await self.task_log.record(

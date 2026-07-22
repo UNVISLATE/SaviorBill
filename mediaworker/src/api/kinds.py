@@ -62,6 +62,9 @@ async def list_kinds(
         {
             "kind": "video",
             "target": {"ext": "webm", "mime": "video/webm"},
+            "note": f"требуется {_PERM_LARGE} или {_PERM_ADMIN_UNLIMITED} — "
+            f"с {_PERM_SMALL} видео отклоняется после приёма файла (kind "
+            "определяется по сигнатуре, не по расширению/Content-Type)",
             # thumb — один, заменяемый целиком (POST /{token}/thumb);
             # previews — список, 0..N, без лимита по количеству, пополняемый
             # через POST /{token}/preview (ручной кадр либо случайный).

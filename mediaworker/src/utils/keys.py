@@ -7,6 +7,7 @@ FILE_PREFIX = "media:file:"
 OPSTATUS_PREFIX = "media:opstatus:"
 UPTOKEN_PREFIX = "media:uptoken:"
 RATE_PREFIX = "media:uprate:"
+STEP2_RATE_PREFIX = "media:up2rate:"
 JOBLOCK_PREFIX = "media:joblock:"
 
 
@@ -35,6 +36,12 @@ def rate_key(acc_id: int, bucket: int) -> str:
     return f"{RATE_PREFIX}{acc_id}:{bucket}"
 
 
+def step2_rate_key(ip: str, bucket: int) -> str:
+    """Счётчик по IP для шага 2 загрузки (защита от перебора upload-token'ов
+    и общего заспамливания приёма файлов мимо часового лимита шага 1)."""
+    return f"{STEP2_RATE_PREFIX}{ip}:{bucket}"
+
+
 def job_lock_key(op: str, token: str) -> str:
     """Лок "op+token сейчас в обработке" — не даёт reclaim запустить дублирующую
     обработку того же токена, пока оригинальная не закончилась (см. worker.py)."""
@@ -47,11 +54,13 @@ __all__ = [
     "OPSTATUS_PREFIX",
     "UPTOKEN_PREFIX",
     "RATE_PREFIX",
+    "STEP2_RATE_PREFIX",
     "JOBLOCK_PREFIX",
     "status_key",
     "file_key",
     "opstatus_key",
     "uptoken_key",
     "rate_key",
+    "step2_rate_key",
     "job_lock_key",
 ]
