@@ -14,6 +14,7 @@ import {
   ShieldOff,
   Trash2,
   TriangleAlert,
+  UserRound,
   Video,
   X,
 } from "lucide-react"
@@ -21,10 +22,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { api } from "@/api/api.ts"
 import { beginOwnMediaUpload, type UploadProgress } from "@/api/media-upload.ts"
-import { fmtDateTime, fmtEta, fmtSize, STATUS_LABEL, STATUS_VARIANT } from "@/api/media-format.ts"
+import { fmtDateTime, fmtEta, fmtSize, metaRows, STATUS_LABEL, STATUS_VARIANT } from "@/api/media-format.ts"
 import { useInvalidateUserProfile } from "@/hooks/use-user-profile"
 import { useAuth } from "@/hooks/use-auth"
 import { useMediaStatusStream } from "@/hooks/use-media-status-ws"
+import { toastError, toastSuccess } from "@/lib/toast"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
 import {
@@ -38,6 +40,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/shadsnui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/shadsnui/dialog"
 import { Progress } from "@/components/shadsnui/progress"
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "@/components/shadsnui/empty"
 import { Skeleton } from "@/components/shadsnui/skeleton"
@@ -137,6 +146,7 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
 
   const canRead = isOwn || can("media.read")
   const canDelete = isOwn || can("media.delete")
+  const canSetAvatar = isOwn || can("admin.media.manage_any")
   const mediaQueryKey = isOwn ? ["user-media"] : ["admin-user-media", userId]
 
   const { data, isLoading } = useQuery({
@@ -179,6 +189,21 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
       if (isOwn) invalidateProfile()
       setSelected(new Set())
     },
+  })
+
+  const setAvatar = useMutation({
+    mutationFn: async (item: MediaItem) => {
+      if (isOwn) {
+        await api.put("/v1/user/me/avatar", { media_id: item.id })
+      } else {
+        await api.put(`/v1/admin/users/${userId}/avatar`, { media_id: item.id })
+      }
+    },
+    onSuccess: () => {
+      invalidateProfile()
+      toastSuccess("Аватар обновлён")
+    },
+    onError: () => toastError("Не удалось установить аватар"),
   })
 
   // Живой статус конвертации всех токенов, ещё не готовых — один WS вместо
@@ -450,6 +475,14 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
         <div className="flex items-center gap-1.5">
           {selected.size > 0 ? (
             <>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => setSelected(new Set((data?.items ?? []).map((m) => m.token)))}
+              >
+                Выделить все
+              </Button>
               <AlertDialog>
                 <AlertDialogTrigger
                   render={
@@ -490,9 +523,21 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
               </Button>
             </>
           ) : (
-            <Badge variant={quotaReached ? "destructive" : "outline"} className="text-[11px] font-normal">
-              {quotaLabel ?? `${data?.total ?? 0}${isOwn ? " · безлимит" : ""}`}
-            </Badge>
+            <>
+              {canDelete && (data?.items?.length ?? 0) > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setSelected(new Set((data?.items ?? []).map((m) => m.token)))}
+                >
+                  Выделить все
+                </Button>
+              )}
+              <Badge variant={quotaReached ? "destructive" : "outline"} className="text-[11px] font-normal">
+                {quotaLabel ?? `${data?.total ?? 0}${isOwn ? " · безлимит" : ""}`}
+              </Badge>
+            </>
           )}
         </div>
       </div>
@@ -503,14 +548,15 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
           центрировался на всю доступную высоту. */}
       <div className="relative flex-1 min-h-[220px] rounded-lg">
         <div className="flex h-full flex-col gap-3 p-1">
-          {(isOwn || cells.length > 0) && (
+          {hasAnything && (
             <div className="grid grid-cols-3 gap-3">
-              {!quotaReached && uploadTile}
+              {isOwn && !quotaReached && uploadTile}
               {cells.map((cell) => (
                 <MediaCard
                   key={cell.key}
                   cell={cell}
                   canDelete={canDelete}
+                  canSetAvatar={canSetAvatar}
                   deleting={del.isPending && del.variables?.token === cell.item?.token}
                   selected={cell.item ? selected.has(cell.item.token) : false}
                   selectMode={selected.size > 0}
@@ -526,6 +572,7 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
                   onRetry={() => cell.job && retryJob(cell.job)}
                   onOpenGallery={() => cell.item && setGalleryToken(cell.item.token)}
                   onCopyLink={() => cell.item && copyLink(cell.item)}
+                  onSetAvatar={() => cell.item && setAvatar.mutate(cell.item)}
                 />
               ))}
             </div>
@@ -546,6 +593,18 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
                     ? "Перетащите файл сюда или нажмите «Загрузить»"
                     : "У пользователя нет загруженных файлов"}
                 </EmptyDescription>
+                {isOwn && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="mt-2"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Plus className="size-3.5" />
+                    Загрузить
+                  </Button>
+                )}
               </Empty>
             </div>
           )}
@@ -605,6 +664,7 @@ ProfileMediaSection.displayName = "ProfileMediaSection"
 function MediaCard({
   cell,
   canDelete,
+  canSetAvatar,
   deleting,
   selected,
   selectMode,
@@ -616,9 +676,11 @@ function MediaCard({
   onRetry,
   onOpenGallery,
   onCopyLink,
+  onSetAvatar,
 }: {
   cell: Cell
   canDelete: boolean
+  canSetAvatar: boolean
   deleting: boolean
   selected: boolean
   selectMode: boolean
@@ -630,9 +692,11 @@ function MediaCard({
   onRetry: () => void
   onOpenGallery: () => void
   onCopyLink: () => void
+  onSetAvatar: () => void
 }) {
   const { job, item } = cell
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const [detailsOpen, setDetailsOpen] = useState(false)
 
   // Джоба ещё без токена/данных из /media — временная плитка-заглушка
   // (единственный оставшийся случай отдельного рендера, см. §5.2).
@@ -705,10 +769,12 @@ function MediaCard({
           {fmtDateTime(item.created_at)}
         </span>
         <div className="flex items-center justify-between gap-1">
-          <Badge variant={STATUS_VARIANT[item.status] ?? "outline"} className="text-[10px]">
-            {STATUS_LABEL[item.status] ?? item.status}
-          </Badge>
-          <span className="text-[10px] text-white/80">{fmtSize(item.size)}</span>
+          {item.status !== "ready" && (
+            <Badge variant={STATUS_VARIANT[item.status] ?? "outline"} className="text-[10px]">
+              {STATUS_LABEL[item.status] ?? item.status}
+            </Badge>
+          )}
+          <span className="ml-auto text-[10px] text-white/80">{fmtSize(item.size)}</span>
         </div>
       </div>
 
@@ -737,10 +803,14 @@ function MediaCard({
       <ContextMenu>
         <ContextMenuTrigger>{card}</ContextMenuTrigger>
         <ContextMenuContent>
-          {isVideo && (
-            <ContextMenuItem onClick={onOpenGallery}>
-              <Images className="size-4" />
-              Подробности
+          <ContextMenuItem onClick={isVideo ? onOpenGallery : () => setDetailsOpen(true)}>
+            <Images className="size-4" />
+            Подробности
+          </ContextMenuItem>
+          {canSetAvatar && !isVideo && item.status === "ready" && (
+            <ContextMenuItem onClick={onSetAvatar}>
+              <UserRound className="size-4" />
+              Использовать как аватар
             </ContextMenuItem>
           )}
           <ContextMenuItem
@@ -789,6 +859,37 @@ function MediaCard({
           </AlertDialogContent>
         </AlertDialog>
       )}
+
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Подробности файла</DialogTitle>
+            <DialogDescription>ID {item.id}</DialogDescription>
+          </DialogHeader>
+          <dl className="grid grid-cols-2 gap-y-1.5 text-sm">
+            <dt className="text-muted-foreground">Тип</dt>
+            <dd>{isVideo ? "Видео" : "Фото"}</dd>
+            <dt className="text-muted-foreground">Размер</dt>
+            <dd>{fmtSize(item.size)}</dd>
+            <dt className="text-muted-foreground">Статус</dt>
+            <dd>{STATUS_LABEL[item.status] ?? item.status}</dd>
+            <dt className="text-muted-foreground">Загружено</dt>
+            <dd>{fmtDateTime(item.created_at)}</dd>
+            {metaRows(item.meta, item.kind).map((row) => (
+              <FragmentRow key={row.label} label={row.label} value={row.value} />
+            ))}
+          </dl>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+function FragmentRow({ label, value }: { label: string; value: string }) {
+  return (
+    <>
+      <dt className="text-muted-foreground">{label}</dt>
+      <dd>{value}</dd>
     </>
   )
 }
