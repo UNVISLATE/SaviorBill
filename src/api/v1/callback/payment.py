@@ -6,6 +6,7 @@ import valkey.asyncio as valkey
 from fastapi import APIRouter, Depends, Request
 
 from dependencies.payment import PayMngr, get_pay_mngr
+from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
 from dependencies.valkey import get_valkey_client
 from enums import PayStatus, PayTarget
@@ -86,6 +87,10 @@ async def _notify(svc: PayMngr, triggers: TriggerDispatcher, payment) -> None:
     response_model=Payment,
     summary="Payment callback",
     description="Provider webhook endpoint. Passes the request to the provider callback script and handles it idempotently.",
+    # Лимит по IP (не по бизнес-ключу/аккаунту — вебхук шлёт сам провайдер,
+    # а не пользователь), чтобы не блокировать легитимные ретраи провайдера
+    # при спокойном фоне и всё же остановить перебор/спам с одного адреса.
+    dependencies=[Depends(rate_limit("payment.callback", LimitKind.DEFAULT))],
 )
 async def payment_callback(
     provider: str,
