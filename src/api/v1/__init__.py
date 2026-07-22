@@ -10,6 +10,7 @@ from .catalog import router as catalog_router
 from .media import router as media_router
 from .oauth import router as oauth_router
 from .promocodes import router as promocodes_router
+from .system import router as system_router
 from .user import router as user_router
 
 router = APIRouter()
@@ -22,6 +23,7 @@ for _r in (
     promocodes_router,
     callback_router,
     media_router,
+    system_router,
     admin_router,
 ):
     router.include_router(_r)
