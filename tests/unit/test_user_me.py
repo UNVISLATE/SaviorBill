@@ -12,12 +12,10 @@ from unittest.mock import AsyncMock
 import pytest
 from pydantic import ValidationError
 
-from api.v1.user.me import (
-    _email_confirmed_by_oauth,
-    _is_media_still_used,
-    _release_old_avatar,
-)
+from api.v1.user.me import _email_confirmed_by_oauth
 from models.user import UserMngr
+from services.account import is_media_still_used as _is_media_still_used
+from services.account import release_old_avatar as _release_old_avatar
 from schemas.auth import Account, AvatarSet, Login, MePatch, PasswordChange
 
 pytestmark = pytest.mark.unit
