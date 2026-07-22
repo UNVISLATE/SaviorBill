@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import random
+import time
 
 import valkey.asyncio as valkey
 
@@ -70,6 +71,12 @@ class Worker:
         self._sem_image = asyncio.Semaphore(cfg.task_concurrency_image)
         self._sem_video = asyncio.Semaphore(cfg.task_concurrency_video)
         self._sem_other = asyncio.Semaphore(cfg.task_concurrency)
+        # Джобы, сейчас реально выполняющиеся этим процессом (не PEL/очередь —
+        # только то, что уже прошло лок и находится в _handle) — для heartbeat
+        # current_job (см. utils/metrics.py). Ключ — msg_id, не op+token: один
+        # и тот же op+token не может обрабатываться этим же процессом
+        # параллельно (см. job_lock_key), но msg_id уникален всегда.
+        self._active_jobs: dict[str, dict] = {}
 
     async def _set_status(self, token: str, **fields: str) -> None:
         key = status_key(token)
@@ -81,6 +88,18 @@ class Worker:
         key = opstatus_key(token, op)
         await self.vk.hset(key, mapping={k: v for k, v in fields.items() if v})
         await self.vk.expire(key, self.cfg.status_ttl)
+
+    def current_job(self) -> dict | None:
+        """Одна из активных прямо сейчас джоб (для heartbeat, см.
+        ``utils/metrics.py``) — если параллельно обрабатывается несколько
+        (несколько семафоров), отдаём самую старую по ``started_at``: она
+        интереснее для диагностики "застрял ли воркер"."""
+        if not self._active_jobs:
+            return None
+        return min(self._active_jobs.values(), key=lambda j: j["started_at"])
+
+    def active_jobs_count(self) -> int:
+        return len(self._active_jobs)
 
     async def _ensure_group(self) -> None:
         try:
@@ -215,7 +234,15 @@ class Worker:
                     lock_key = None  # не наш — не освобождать в finally
                     return
                 with span_from_carrier(f"media.task.{op}", data):
-                    await self._handle(data)
+                    self._active_jobs[msg_id] = {
+                        "token": token,
+                        "op": op,
+                        "started_at": time.time(),
+                    }
+                    try:
+                        await self._handle(data)
+                    finally:
+                        self._active_jobs.pop(msg_id, None)
             except Exception as exc:  # noqa: BLE001
                 print(f"[mediaworker] task error: {exc}", flush=True)
                 await self._on_failure(data)

@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from utils.config import Config
 from utils.db import DB
+from utils.metrics import MetricsPusher
 from utils.proclog import ProcLog
 from utils.settings import SettingsResolver
 from utils.storage import Storage
@@ -79,6 +80,8 @@ async def lifespan(app: FastAPI):
 
     task = asyncio.create_task(_supervised("worker.run", worker.run))
     reclaim_task = asyncio.create_task(_supervised("worker.reclaim_loop", worker.reclaim_loop))
+    metrics = MetricsPusher(cfg, vk, worker)
+    await metrics.start()
     log.info(
         "[mediaworker] %s -> %s backend=%s stream=%s",
         cfg.consumer,
@@ -89,6 +92,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await metrics.stop()
         task.cancel()
         reclaim_task.cancel()
         for t in (task, reclaim_task):

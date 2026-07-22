@@ -81,6 +81,12 @@ class Config(BaseSettings):
     MEDIA_PROCLOG_MAX_JOBS: int = Field(default=50)
     MEDIA_PROCLOG_TTL: int = Field(default=3600)  # 1 час
 
+    # --- Heartbeat/метрики инстанса (§1 IMPLEMENTATION_PLAN.md) ---
+    # Push собственного CPU%/RSS + текущей джобы в media:metrics:{consumer}
+    # (billing переэкспортирует/агрегирует, см. telemetry/instance_metrics.py).
+    MEDIA_METRICS_INTERVAL_SEC: int = Field(default=10)
+    MEDIA_METRICS_TTL_SEC: int = Field(default=30)
+
     # --- Квоты и лимиты ---
     MEDIA_STATUS_TTL: int = Field(default=3600)
     MEDIA_BAN_SECONDS: int = Field(default=180)
@@ -361,6 +367,14 @@ class Config(BaseSettings):
     @property
     def proclog_ttl(self) -> int:
         return self.MEDIA_PROCLOG_TTL
+
+    @property
+    def metrics_interval_sec(self) -> int:
+        return self.MEDIA_METRICS_INTERVAL_SEC
+
+    @property
+    def metrics_ttl_sec(self) -> int:
+        return self.MEDIA_METRICS_TTL_SEC
 
     @property
     def backend(self) -> str:
