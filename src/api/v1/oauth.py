@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
 from dependencies.oauth import OAuthSvc, get_oauth_svc
+from dependencies.ratelimit import LimitKind, rate_limit
 from models.oauth_providers import OAuthProvidersModel
 from schemas.oauth import OAuthStart, Provider
 
@@ -47,6 +48,7 @@ async def providers(
     response_model=OAuthStart,
     summary="Start OAuth sign-in",
     description="Creates state and returns authorize_url for provider redirect.",
+    dependencies=[Depends(rate_limit("oauth.start", LimitKind.AUTH))],
 )
 async def start(
     provider: str, request: Request, svc: OAuthSvc = Depends(get_oauth_svc)

@@ -27,6 +27,7 @@ router = APIRouter(prefix="/api/v1/promocodes", tags=["promocodes"])
         "Without authentication, per-user usage limits cannot be checked — "
         "only the code's general validity (active/not expired/kind=discount)."
     ),
+    dependencies=[Depends(rate_limit("promocodes.quote", LimitKind.DEFAULT))],
 )
 async def quote(
     code: str,

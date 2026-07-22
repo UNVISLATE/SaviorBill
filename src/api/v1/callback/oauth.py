@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from dependencies.auth import TokenSvc, get_token_svc
 from dependencies.oauth import OAuthSvc, build_lua_request, get_oauth_svc
+from dependencies.ratelimit import LimitKind, rate_limit
 from models.user import UserModel
 from schemas.auth import TokenPair
 from schemas.oauth import OAuthPendingConfirm, OAuthPendingLink
@@ -23,6 +24,7 @@ router = APIRouter(prefix="/api/v1/callback/oauth", tags=["callback"])
         "matches an existing account by email — ownership must first be "
         "confirmed via POST /pending/{pending_token}/confirm."
     ),
+    dependencies=[Depends(rate_limit("oauth.callback", LimitKind.AUTH))],
 )
 async def oauth_callback(
     provider: str,
@@ -59,6 +61,7 @@ async def oauth_callback(
         "callback) with the code emailed to the existing account, and "
         "issues tokens for that account."
     ),
+    dependencies=[Depends(rate_limit("oauth.pending_confirm", LimitKind.AUTH))],
 )
 async def confirm_pending_link(
     pending_token: str,
