@@ -37,19 +37,21 @@ async def oauth_callback(
     user, account_id = await svc.finish(
         provider, code, state, build_lua_request(request)
     )
+    ua = request.headers.get("user-agent")
+    ip = request.client.host if request.client else None
     if account_id is not None:
         acc = await svc.s.get(UserModel, account_id)
         if acc is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
         await svc.link_to_existing(acc, provider, user)
         await svc.s.commit()
-        return tokens.issue(acc)
+        return await tokens.issue_tracked(acc, ip=ip, user_agent=ua)
 
     acc, pending = await svc.link_account(provider, user)
     await svc.s.commit()
     if pending is not None:
         return pending
-    return tokens.issue(acc)
+    return await tokens.issue_tracked(acc, ip=ip, user_agent=ua)
 
 
 @router.post(
@@ -66,12 +68,17 @@ async def oauth_callback(
 async def confirm_pending_link(
     pending_token: str,
     body: OAuthPendingConfirm,
+    request: Request,
     svc: OAuthSvc = Depends(get_oauth_svc),
     tokens: TokenSvc = Depends(get_token_svc),
 ) -> TokenPair:
     acc = await svc.confirm_pending_link(pending_token, body.code)
     await svc.s.commit()
-    return tokens.issue(acc)
+    return await tokens.issue_tracked(
+        acc,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
 
 
 __all__ = ["router"]

@@ -311,6 +311,16 @@ SETTINGS: tuple[SettingDef, ...] = (
         group="ratelimit",
         desc="Override лимита категории 'sensitive': {max_hits, window}",
     ),
+    # Сессии (см. services/auth.py::TokenSvc) — TTL записи об активной
+    # сессии (ip/device) в Valkey, не путать с REFRESH_TOKEN_TTL самого
+    # токена. Не сидится из ENV — дефолт применяется в коде, если строки нет.
+    SettingDef(
+        "session.ttl",
+        None,
+        type="int",
+        group="session",
+        desc="TTL записи об активной сессии в секундах (по умолчанию 86400)",
+    ),
 )
 
 _BY_KEY: dict[str, SettingDef] = {d.key: d for d in SETTINGS}

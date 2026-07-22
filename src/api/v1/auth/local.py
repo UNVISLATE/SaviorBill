@@ -36,6 +36,7 @@ router = APIRouter()
 )
 async def register(
     body: Reg,
+    request: Request,
     mngr: UserMngr = Depends(get_acc_mngr),
     banned_domains: BannedEmailDomainsMngr = Depends(get_banned_domains_mngr),
     tokens: TokenSvc = Depends(get_token_svc),
@@ -62,7 +63,9 @@ async def register(
         TriggerEvent.USER_REGISTERED,
         {"user": {"id": acc.id, "login": acc.login, "email": acc.email}},
     )
-    return tokens.issue(acc)
+    return await tokens.issue_tracked(
+        acc, ip=client_ip(request), user_agent=request.headers.get("user-agent")
+    )
 
 
 @router.post(
@@ -104,7 +107,9 @@ async def login(
     await mngr.touch_login(acc)
     await mngr.s.commit()
     await guard.clear(body.login)
-    return tokens.issue(acc)
+    return await tokens.issue_tracked(
+        acc, ip=ip, user_agent=request.headers.get("user-agent")
+    )
 
 
 @router.post(
@@ -116,11 +121,17 @@ async def login(
 )
 async def refresh(
     body: Refresh,
+    request: Request,
     mngr: UserMngr = Depends(get_acc_mngr),
     tokens: TokenSvc = Depends(get_token_svc),
 ) -> TokenPair:
     """Ротация пары токенов по refresh-токену."""
-    _, pair = await tokens.rotate(body.refresh_token, mngr)
+    _, pair = await tokens.rotate(
+        body.refresh_token,
+        mngr,
+        ip=client_ip(request),
+        user_agent=request.headers.get("user-agent"),
+    )
     return pair
 
 
@@ -145,7 +156,7 @@ async def logout(
     except jwtu.InvalidJWT:
         return
     if claims.typ == jwtu.REFRESH:
-        await tokens.revoke(claims)
+        await tokens.revoke(claims, account_id=int(claims.sub))
 
 
 __all__ = ["router"]

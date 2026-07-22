@@ -6,6 +6,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
+from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
 from models.banned_email_domains import BannedEmailDomainsMngr
 from models.user import UserModel, UserMngr
@@ -31,9 +32,11 @@ def get_banned_domains_mngr(
 
 
 def get_token_svc(
-    request: Request, vk: valkey.Valkey = Depends(get_valkey_client)
+    request: Request,
+    vk: valkey.Valkey = Depends(get_valkey_client),
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> TokenSvc:
-    return TokenSvc(_cfg(request), vk)
+    return TokenSvc(_cfg(request), vk, settings)
 
 
 async def get_current_acc(

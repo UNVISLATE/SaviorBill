@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
+from dependencies.auth import get_token_svc
 from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
 from security.rbac import has_perm, reg_perm
@@ -31,6 +32,7 @@ from schemas.promo import PromoUse
 from schemas.user import (
     BalanceAdjust,
     OAuthConnAdmin,
+    SessionOut,
     User,
     UserDetail,
     UserPatch,
@@ -38,6 +40,7 @@ from schemas.user import (
 )
 from services.account import account_response, release_old_avatar
 from services.audit import audit
+from services.auth import TokenSvc
 from utils.datetime_utils import utc_now
 from utils.pagination import (
     PageParams,
@@ -393,6 +396,45 @@ async def user_oauth(
         .order_by(UserOauthModel.id)
     )
     return [OAuthConnAdmin.from_model(r) for r in rows]
+
+
+@router.get(
+    "/{user_id}/sessions",
+    response_model=list[SessionOut],
+    dependencies=[Depends(require_perm("users.admin.sessions.manage"))],
+    summary="User active sessions",
+    description="Active login sessions (IP/device) tracked in Valkey.",
+)
+async def user_sessions(
+    user_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    tokens: TokenSvc = Depends(get_token_svc),
+) -> list[SessionOut]:
+    await _get_user(session, user_id)
+    infos = await tokens.list_sessions(user_id)
+    return [SessionOut.from_info(i) for i in infos]
+
+
+@router.delete(
+    "/{user_id}/sessions/{jti}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_perm("users.admin.sessions.manage"))],
+    summary="Revoke a user session",
+    description="Force-terminates a single active session (denylists its refresh token).",
+)
+async def revoke_user_session(
+    user_id: int,
+    jti: str,
+    session: AsyncSession = Depends(get_db_session),
+    tokens: TokenSvc = Depends(get_token_svc),
+) -> None:
+    acc = await _get_user(session, user_id)
+    if acc.role and acc.role.key == "owner":
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "the owner's sessions cannot be managed"
+        )
+    if not await tokens.revoke_session(user_id, jti):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
 
 
 @router.put(

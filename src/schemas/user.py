@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal
 
@@ -72,6 +72,28 @@ class UserStats(BaseModel):
     registered_custom: int | None = Field(
         default=None, description="Count in [from, to] if both were given"
     )
+
+
+class SessionOut(BaseModel):
+    """Active login session (one refresh-token lineage) for a user."""
+
+    jti: str
+    ip: str | None
+    user_agent: str | None
+    created_at: datetime
+    last_seen_at: datetime
+    expires_at: datetime
+
+    @classmethod
+    def from_info(cls, info) -> "SessionOut":
+        return cls(
+            jti=info.jti,
+            ip=info.ip,
+            user_agent=info.user_agent,
+            created_at=datetime.fromtimestamp(info.created_at, tz=timezone.utc),
+            last_seen_at=datetime.fromtimestamp(info.last_seen_at, tz=timezone.utc),
+            expires_at=datetime.fromtimestamp(info.exp, tz=timezone.utc),
+        )
 
 
 class OAuthConnAdmin(BaseModel):
@@ -154,6 +176,7 @@ __all__ = [
     "UserPatch",
     "BalanceAdjust",
     "UserStats",
+    "SessionOut",
     "OAuthConnAdmin",
     "UserDetail",
 ]
