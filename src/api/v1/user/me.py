@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import valkey.asyncio as valkey
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.auth import UserMngr, get_acc_mngr, get_current_acc
@@ -15,42 +14,14 @@ from dependencies.rbac import require_perm
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
 from enums import BaseRole
-from models.service_attachment import ServiceAttachmentModel
-from models.system_media import SystemMediaModel, SystemMediaMngr, all_storage_keys
+from models.system_media import SystemMediaMngr
 from models.user import UserModel
 from models.user_oauth import UserOauthMngr
 from schemas.auth import Account, AvatarSet, MePatch, PasswordChange
-from core.config import AppConfig
-from messaging.mediabus import MediaBus
 from security.sec.pwd import hash_pass, verify_pass
+from services.account import account_response, release_old_avatar
 
 router = APIRouter()
-
-
-async def _account_response(acc: UserModel, session: AsyncSession) -> Account:
-    """Собрать полный ответ профиля (с slugs привязанных OAuth-провайдеров)."""
-    conns = await UserOauthMngr(session).list_for_account(acc.id)
-    referred_by_login: str | None = None
-    if acc.referred_by is not None:
-        referred_by_login = await session.scalar(
-            select(UserModel.login).where(UserModel.id == acc.referred_by)
-        )
-    referral_count = 0
-    if acc.ref_code is not None:
-        from sqlalchemy import func
-
-        referral_count = (
-            await session.scalar(
-                select(func.count()).where(UserModel.referred_by == acc.id)
-            )
-            or 0
-        )
-    return Account.from_account(
-        acc,
-        oauth_providers=[c.provider for c in conns],
-        referred_by_login=referred_by_login,
-        referral_count=referral_count,
-    )
 
 
 def _email_confirmed_by_oauth(
@@ -81,7 +52,7 @@ async def me(
     session: AsyncSession = Depends(get_db_session),
 ) -> Account:
     """Вернуть данные текущего аккаунта по access-токену."""
-    return await _account_response(acc, session)
+    return await account_response(acc, session)
 
 
 @router.patch(
@@ -122,7 +93,7 @@ async def patch_me(
             await mngr.set_role_key(acc, BaseRole.GUEST)
 
     await mngr.s.commit()
-    return await _account_response(acc, mngr.s)
+    return await account_response(acc, mngr.s)
 
 
 @router.post(
@@ -153,51 +124,6 @@ async def change_password(
             )
     acc.pass_hash = hash_pass(body.new_password)
     await mngr.s.commit()
-
-
-async def _is_media_still_used(
-    session: AsyncSession, media_id: int, *, exclude_account_id: int
-) -> bool:
-    """Есть ли ещё ссылки на медиа, кроме аватарки указанного аккаунта."""
-    other_avatar = await session.scalar(
-        select(UserModel.id)
-        .where(UserModel.avatar_media_id == media_id)
-        .where(UserModel.id != exclude_account_id)
-        .limit(1)
-    )
-    if other_avatar is not None:
-        return True
-    attachment = await session.scalar(
-        select(ServiceAttachmentModel.id)
-        .where(ServiceAttachmentModel.media_id == media_id)
-        .limit(1)
-    )
-    return attachment is not None
-
-
-async def _release_old_avatar(
-    request: Request,
-    vk: valkey.Valkey,
-    media: SystemMediaMngr,
-    old: SystemMediaModel,
-    *,
-    exclude_account_id: int,
-) -> None:
-    """Удалить файл старой аватарки, если он больше нигде не используется.
-
-    Файл удаляем только для медиа, загруженного самим пользователем
-    (``owner_id == exclude_account_id``) — чужие/системные медиа не трогаем.
-    """
-    if old.owner_id != exclude_account_id:
-        return
-    if await _is_media_still_used(
-        media.s, old.id, exclude_account_id=exclude_account_id
-    ):
-        return
-    cfg: AppConfig = request.app.state.settings
-    bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN, signing_key=cfg.BUS_SIGNING_KEY)
-    await bus.enqueue_delete(old.backend, all_storage_keys(old))
-    await media.delete(old)
 
 
 @router.put(
@@ -245,12 +171,12 @@ async def set_avatar(
     if old_media_id is not None and old_media_id != body.media_id:
         old = await media.by_id(old_media_id)
         if old is not None:
-            await _release_old_avatar(
+            await release_old_avatar(
                 request, vk, media, old, exclude_account_id=acc.id
             )
         await mngr.s.commit()
 
-    return await _account_response(acc, mngr.s)
+    return await account_response(acc, mngr.s)
 
 
 __all__ = ["router"]

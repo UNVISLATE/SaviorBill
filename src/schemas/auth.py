@@ -142,9 +142,9 @@ class Account(BaseModel):
             отдельно — требуют отдельного запроса к ``oauth_conns``, схема
             их сама не запрашивает).
         :arg referred_by_login: логин пригласившего (``acc.referred_by`` —
-            только id, отдельный lookup — см. ``_account_response``).
+            только id, отдельный lookup — см. ``services/account.py::account_response``).
         :arg referral_count: сколько аккаунтов пригласил этот пользователь
-            (отдельный COUNT-запрос — см. ``_account_response``).
+            (отдельный COUNT-запрос — см. ``services/account.py::account_response``).
         """
         return cls(
             id=acc.id,

@@ -21,6 +21,7 @@ from schemas.orders import OrderAdmin
 from schemas.page import Page
 from schemas.payments import PaymentAdmin
 from schemas.user import OAuthConnAdmin, User, UserDetail, UserPatch
+from services.account import account_response, release_old_avatar
 from utils.pagination import PageParams, page_params, paginate
 
 router = APIRouter()
@@ -101,12 +102,8 @@ async def user_detail(
 async def user_profile_admin(
     user_id: int, session: AsyncSession = Depends(get_db_session)
 ) -> Account:
-    # Ленивый импорт: та же причина, что и у set_user_avatar ниже — не тащить
-    # api.v1.user на уровень модуля admin.
-    from api.v1.user.me import _account_response
-
     acc = await _get_user(session, user_id)
-    return await _account_response(acc, session)
+    return await account_response(acc, session)
 
 
 @router.patch(
@@ -226,10 +223,6 @@ async def set_user_avatar(
     media: SystemMediaMngr = Depends(get_media_mngr),
     vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> Account:
-    # Ленивый импорт: избегаем циклической зависимости api.v1.user <-> admin
-    # на уровне модуля, переиспользуя те же хелперы очистки старой аватарки.
-    from api.v1.user.me import _account_response, _release_old_avatar
-
     acc = await _get_user(session, user_id)
     if body.media_id is not None:
         m = await media.by_id(body.media_id)
@@ -244,12 +237,12 @@ async def set_user_avatar(
     if old_media_id is not None and old_media_id != body.media_id:
         old = await media.by_id(old_media_id)
         if old is not None:
-            await _release_old_avatar(
+            await release_old_avatar(
                 request, vk, media, old, exclude_account_id=acc.id
             )
         await session.commit()
 
-    return await _account_response(acc, session)
+    return await account_response(acc, session)
 
 
 __all__ = ["router"]
