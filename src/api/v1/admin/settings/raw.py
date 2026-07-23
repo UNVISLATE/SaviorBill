@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
@@ -19,7 +19,12 @@ from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from models.system_settings import SystemSettingsModel
 from models.user import UserModel
 from schemas.page import Page
-from schemas.settings_raw import SettingRawOut, SettingRawUpsert
+from schemas.settings_raw import (
+    SettingRawOut,
+    SettingRawUpsert,
+    SettingsGroupOut,
+    effective_group,
+)
 from services.audit import audit
 from utils.pagination import (
     PageParams,
@@ -29,7 +34,7 @@ from utils.pagination import (
     q_param,
     sort_param,
 )
-from core.settings_def import by_key
+from core.settings_def import by_key, group_keys, SETTINGS
 
 router = APIRouter()
 
@@ -57,17 +62,47 @@ def _is_undeletable(row: SystemSettingsModel | None, key: str) -> bool:
 
 
 @router.get(
+    "/groups",
+    response_model=list[SettingsGroupOut],
+    dependencies=[Depends(require_perm("settings.raw.read"))],
+    summary="Raw settings groups",
+    description="Distinct prefixes (catalog groups + ad-hoc key prefixes) "
+    "with row counts — powers the two-level (prefix list → filtered table) "
+    "raw settings UI.",
+)
+async def list_setting_groups(
+    session: AsyncSession = Depends(get_db_session),
+) -> list[SettingsGroupOut]:
+    rows = (await session.execute(select(SystemSettingsModel.key))).scalars().all()
+    counts: dict[str, int] = {}
+    for key in rows:
+        counts[effective_group(key, by_key(key))] = (
+            counts.get(effective_group(key, by_key(key)), 0) + 1
+        )
+    # Каталожные группы показываем всегда, даже если в БД для них пока нет ни
+    # одной строки (напр. только-только задеклалированная в settings_def).
+    for spec in SETTINGS:
+        counts.setdefault(spec.group, 0)
+    return [
+        SettingsGroupOut(name=name, count=count)
+        for name, count in sorted(counts.items())
+    ]
+
+
+@router.get(
     "",
     response_model=Page[SettingRawOut],
     dependencies=[Depends(require_perm("settings.raw.read"))],
     summary="Raw settings",
     description="Paginated settings rows. Secret values are hidden. `q` "
     "searches key (exact substring, no fuzzy — keys are dotted identifiers, "
-    f"not free text); `sort` accepts {'/'.join(sorted(_SETTINGS_SORT_FIELDS))}.",
+    f"not free text); `group` filters to one prefix; `sort` accepts "
+    f"{'/'.join(sorted(_SETTINGS_SORT_FIELDS))}.",
 )
 async def list_settings_raw(
     pp: PageParams = Depends(page_params),
     q: str | None = Depends(q_param),
+    group: str | None = None,
     sort: str | None = Depends(sort_param),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[SettingRawOut]:
@@ -76,6 +111,30 @@ async def list_settings_raw(
     )
     if sort is None:
         stmt = stmt.order_by(SystemSettingsModel.key)
+    if group:
+        if group == "other":
+            # "other" — ключи без каталожной записи (не начинаются с известного
+            # группового префикса).
+            known_groups = {s.group for s in SETTINGS}
+            stmt = stmt.where(
+                not_(
+                    or_(
+                        *[
+                            SystemSettingsModel.key.startswith(f"{g}.")
+                            for g in known_groups
+                        ]
+                    )
+                )
+                if known_groups
+                else True
+            )
+        else:
+            stmt = stmt.where(
+                or_(
+                    SystemSettingsModel.key.startswith(f"{group}."),
+                    SystemSettingsModel.key.in_(group_keys(group)),
+                )
+            )
     items, total, has_more = await paginate_search(
         session,
         stmt,
