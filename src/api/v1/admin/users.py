@@ -247,6 +247,38 @@ async def edit_user(
     return User.from_model(acc)
 
 
+@router.delete(
+    "/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete user",
+    description="Permanently deletes the account (related services/payments/"
+    "OAuth links/promo uses cascade). The owner account can never be deleted, "
+    "even by another owner. Requires `users.admin.delete`.",
+)
+async def delete_user(
+    request: Request,
+    user_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    caller: UserModel = Depends(require_perm("users.admin.delete")),
+) -> None:
+    acc = await _get_user(session, user_id)
+    if acc.role and acc.role.key == "owner":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "the owner cannot be deleted")
+    login = acc.login
+    await audit(
+        session,
+        action="user.delete",
+        actor_id=caller.id,
+        actor_role=caller.role.name if caller.role else None,
+        target_type="user",
+        target_id=str(acc.id),
+        ip=request.client.host if request.client else None,
+        meta={"login": login},
+    )
+    await session.delete(acc)
+    await session.commit()
+
+
 @router.post(
     "/{user_id}/balance",
     response_model=User,
