@@ -82,6 +82,10 @@ _BASE_PERMS: dict[str, dict] = {
     "banned": {"user": {"profile": {"read": True}}},
 }
 
+# Базовые роли, допущенные к входу в админку по умолчанию (owner всегда,
+# остальные системные/пользовательские роли — нет, доступ включается вручную).
+_ADMIN_LOGIN_ALLOWED: frozenset[str] = frozenset({"owner", "admin", "manager"})
+
 _TITLES: dict[str, str] = {
     "owner": "Owner",
     "admin": "Administrator",
@@ -115,6 +119,7 @@ async def create_base_roles(
                 title=_TITLES.get(key, name.title()),
                 key=key,
                 is_system=key in _SYSTEM_KEYS,
+                admin_login_allowed=key in _ADMIN_LOGIN_ALLOWED,
                 perms=perms,
             )
             session.add(role)

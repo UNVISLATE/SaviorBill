@@ -54,7 +54,12 @@ async def create_role(
 ) -> Role:
     if await session.scalar(select(RoleModel).where(RoleModel.name == body.name)):
         raise HTTPException(status.HTTP_409_CONFLICT, "role name already exists")
-    role = RoleModel(name=body.name, title=body.title, perms=body.perms)
+    role = RoleModel(
+        name=body.name,
+        title=body.title,
+        perms=body.perms,
+        admin_login_allowed=body.admin_login_allowed,
+    )
     session.add(role)
     await session.flush()
     await audit(
@@ -94,6 +99,8 @@ async def update_role(
     data = body.model_dump(exclude_unset=True)
     if "title" in data:
         role.title = data["title"]
+    if "admin_login_allowed" in data:
+        role.admin_login_allowed = data["admin_login_allowed"]
     if "perms" in data:
         role.perms = data["perms"]
     await audit(

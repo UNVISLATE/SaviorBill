@@ -48,6 +48,10 @@ class Role(Base):
     )
     # Системные роли нельзя удалять из админки.
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Явный допуск роли к входу в админку (независимо от состава perms).
+    admin_login_allowed: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     perms: Mapped[dict] = mapped_column(
         JSON, default=dict, server_default="{}", nullable=False
     )

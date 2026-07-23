@@ -27,10 +27,16 @@ export function LoginPage() {
     setPending(true)
     try {
       await login(loginValue, password)
-    } catch {
+    } catch (err) {
       // Анти-энумерация (см. src/api/v1/auth/local.py) — backend не различает
       // "нет такого логина" и "неверный пароль", UI повторяет ту же анонимность.
-      setError("Неверный логин или пароль")
+      // Отдельно — явный отказ, если роль не допущена к входу в админку
+      // (role.admin_login_allowed=false), это не связано с анти-энумерацией.
+      setError(
+        err instanceof Error && err.message === "ACCESS_DENIED"
+          ? "Доступ запрещён: у вашей роли нет прав на вход в админ-панель"
+          : "Неверный логин или пароль",
+      )
     } finally {
       setPending(false)
     }

@@ -61,8 +61,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async login(login: string, password: string) {
         const res = await api.post("/v1/auth/login", { login, password })
         setTokens(res.data)
-        setHasToken(true)
-        await qc.invalidateQueries({ queryKey: ["admin-me"] })
+        try {
+          // Гейт на вход в админку — на бэкенде (role.admin_login_allowed),
+          // здесь только сразу подхватываем результат и, если роль не
+          // допущена, чистим токены, чтобы не оставлять "полу-залогиненную"
+          // сессию в сторейдже.
+          const me = await qc.fetchQuery({
+            queryKey: ["admin-me"],
+            queryFn: async () => (await api.get<AdminMe>("/v1/admin/me")).data,
+          })
+          qc.setQueryData(["admin-me"], me)
+          setHasToken(true)
+        } catch (err) {
+          clearTokens()
+          setHasToken(false)
+          qc.removeQueries({ queryKey: ["admin-me"] })
+          const status =
+            err && typeof err === "object" && "response" in err
+              ? // @ts-expect-error — axios error shape
+                (err.response?.status as number | undefined)
+              : undefined
+          throw new Error(
+            status === 403 ? "ACCESS_DENIED" : "LOGIN_FAILED",
+          )
+        }
       },
       logout() {
         clearTokens()

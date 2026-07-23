@@ -14,6 +14,7 @@ class Role(BaseModel):
     name: str
     title: str | None = None
     is_system: bool
+    admin_login_allowed: bool
     perms: dict
 
     @classmethod
@@ -27,6 +28,9 @@ class RoleCreate(BaseModel):
 
     name: str = Field(min_length=2, max_length=64, description="Unique role name")
     title: str | None = Field(default=None, description="Display title (optional)")
+    admin_login_allowed: bool = Field(
+        default=False, description="Allow accounts with this role to log into the admin panel"
+    )
     perms: dict = Field(
         default_factory=dict, description="Role permission tree (optional)"
     )
@@ -36,6 +40,9 @@ class RolePatch(BaseModel):
     """Update role."""
 
     title: str | None = Field(default=None, description="Display title")
+    admin_login_allowed: bool | None = Field(
+        default=None, description="Allow accounts with this role to log into the admin panel"
+    )
     perms: dict | None = Field(default=None, description="Role permission tree")
 
 
