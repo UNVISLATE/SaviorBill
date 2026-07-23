@@ -1,6 +1,14 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { MoreHorizontal, Trash2 } from "lucide-react"
+import { MoreHorizontal, Plus, Trash2 } from "lucide-react"
+import {
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts"
 
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
@@ -10,6 +18,21 @@ import { DataTable, type DataTableColumn } from "@/components/data-table/DataTab
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
 import { Input } from "@/components/shadsnui/input"
+import { Label } from "@/components/shadsnui/label"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/shadsnui/select"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/shadsnui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -63,12 +86,169 @@ interface UserStats {
   registered_90d: number
 }
 
-function StatCard({ label, value }: { label: string; value: number | undefined }) {
+interface RegDay {
+  day: string
+  count: number
+}
+
+const PERIODS = [
+  { key: "registered_1d", label: "1 день" },
+  { key: "registered_7d", label: "7 дней" },
+  { key: "registered_30d", label: "30 дней" },
+  { key: "registered_90d", label: "90 дней" },
+] as const
+
+/** Одна карточка статистики: числа по периодам + переключаемый на график
+ * регистраций по дням режим (чтобы не плодить отдельные карточки на каждую
+ * цифру). */
+function UsersStatsCard({ stats }: { stats: UserStats | undefined }) {
+  const [showChart, setShowChart] = useState(false)
+  const { data: byDay } = useQuery({
+    queryKey: ["admin-users-stats-by-day"],
+    queryFn: async () =>
+      (await api.get<RegDay[]>("/v1/admin/users/stats/by-day", { params: { days: 30 } })).data,
+    enabled: showChart,
+  })
+
   return (
-    <div className="rounded-lg border bg-card px-4 py-3">
-      <div className="text-xs text-muted-foreground">{label}</div>
-      <div className="text-2xl font-semibold">{value ?? "—"}</div>
+    <div className="rounded-lg border bg-card p-4">
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <div className="text-xs text-muted-foreground">Пользователи всего</div>
+          <div className="text-2xl font-semibold">{stats?.total ?? "—"}</div>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => setShowChart((v) => !v)}>
+          {showChart ? "Показать цифры" : "График регистраций"}
+        </Button>
+      </div>
+
+      {showChart ? (
+        <div className="h-48 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={byDay ?? []}>
+              <XAxis
+                dataKey="day"
+                tick={{ fontSize: 11 }}
+                tickFormatter={(d: string) => d.slice(5)}
+              />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={28} />
+              <Tooltip labelFormatter={(d) => `Дата: ${d}`} />
+              <Line type="monotone" dataKey="count" name="Регистраций" stroke="#009080" strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {PERIODS.map((p) => (
+            <div key={p.key}>
+              <div className="text-xs text-muted-foreground">За {p.label}</div>
+              <div className="text-lg font-medium">{stats?.[p.key] ?? "—"}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
+  )
+}
+
+function CreateUserDialog({
+  open,
+  onOpenChange,
+  roles,
+}: {
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  roles: Role[] | undefined
+}) {
+  const [login, setLogin] = useState("")
+  const [password, setPassword] = useState("")
+  const [email, setEmail] = useState("")
+  const [roleId, setRoleId] = useState<string>("")
+  const qc = useQueryClient()
+
+  const assignable = roles?.filter((r) => r.key !== "owner") ?? []
+
+  const reset = () => {
+    setLogin("")
+    setPassword("")
+    setEmail("")
+    setRoleId("")
+  }
+
+  const create = useMutation({
+    mutationFn: async () =>
+      api.post("/v1/admin/users", {
+        login,
+        password,
+        email: email || undefined,
+        role_id: roleId ? Number(roleId) : undefined,
+      }),
+    onSuccess: () => {
+      toastSuccess(`Пользователь «${login}» создан`)
+      onOpenChange(false)
+      reset()
+      void qc.invalidateQueries({ queryKey: ["admin-users"] })
+      void qc.invalidateQueries({ queryKey: ["admin-users-stats"] })
+      void qc.invalidateQueries({ queryKey: ["admin-users-stats-by-day"] })
+    },
+    onError: (e: unknown) => {
+      const detail =
+        e && typeof e === "object" && "response" in e
+          ? // @ts-expect-error — axios error shape
+            e.response?.data?.detail
+          : undefined
+      toastError("Не удалось создать пользователя", typeof detail === "string" ? detail : undefined)
+    },
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset() }}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Новый пользователь</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label>Логин</Label>
+            <Input value={login} onChange={(e) => setLogin(e.target.value)} autoFocus />
+          </div>
+          <div className="space-y-1">
+            <Label>Пароль</Label>
+            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label>Email (опционально)</Label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <div className="space-y-1">
+            <Label>Роль</Label>
+            <Select value={roleId} onValueChange={(v) => setRoleId(v ?? "")}>
+              <SelectTrigger>
+                <SelectValue placeholder="user (по умолчанию)" />
+              </SelectTrigger>
+              <SelectContent>
+                {assignable.map((r) => (
+                  <SelectItem key={r.id} value={String(r.id)}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Отмена
+          </Button>
+          <Button
+            disabled={login.length < 3 || password.length < 8 || create.isPending}
+            onClick={() => create.mutate()}
+          >
+            Создать
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -92,6 +272,7 @@ function DeleteUserDialog({
       setConfirmText("")
       void qc.invalidateQueries({ queryKey: ["admin-users"] })
       void qc.invalidateQueries({ queryKey: ["admin-users-stats"] })
+      void qc.invalidateQueries({ queryKey: ["admin-users-stats-by-day"] })
     },
     onError: (e: unknown) => {
       const detail =
@@ -141,7 +322,9 @@ export function UsersPage() {
   const { can } = useAuth()
   const table = useDataTableQuery()
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null)
+  const [creating, setCreating] = useState(false)
   const canDelete = can("users.admin.delete")
+  const canCreate = can("users.admin.create")
 
   const { data: roles } = useQuery({
     queryKey: ["admin-roles-lookup"],
@@ -239,15 +422,14 @@ export function UsersPage() {
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
         <h1 className="text-xl font-semibold">Пользователи</h1>
+        {canCreate && (
+          <Button size="sm" onClick={() => setCreating(true)}>
+            <Plus className="size-4" /> Создать
+          </Button>
+        )}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <StatCard label="Всего" value={stats?.total} />
-        <StatCard label="За 1 день" value={stats?.registered_1d} />
-        <StatCard label="За 7 дней" value={stats?.registered_7d} />
-        <StatCard label="За 30 дней" value={stats?.registered_30d} />
-        <StatCard label="За 90 дней" value={stats?.registered_90d} />
-      </div>
+      <UsersStatsCard stats={stats} />
 
       <DataTable
         columns={columns}
@@ -276,6 +458,9 @@ export function UsersPage() {
           onOpenChange={(v) => !v && setDeleteTarget(null)}
         />
       )}
+
+      <CreateUserDialog open={creating} onOpenChange={setCreating} roles={roles} />
     </div>
   )
 }
+
