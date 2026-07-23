@@ -27,6 +27,10 @@ import {
   SelectValue,
 } from "@/components/shadsnui/select"
 import {
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@/components/shadsnui/toggle-group"
+import {
   Dialog,
   DialogContent,
   DialogFooter,
@@ -92,61 +96,72 @@ interface RegDay {
 }
 
 const PERIODS = [
-  { key: "registered_1d", label: "1 день" },
-  { key: "registered_7d", label: "7 дней" },
-  { key: "registered_30d", label: "30 дней" },
-  { key: "registered_90d", label: "90 дней" },
+  { value: "1", label: "1 день", statKey: "registered_1d" },
+  { value: "7", label: "7 дней", statKey: "registered_7d" },
+  { value: "30", label: "30 дней", statKey: "registered_30d" },
+  { value: "90", label: "90 дней", statKey: "registered_90d" },
 ] as const
 
-/** Одна карточка статистики: числа по периодам + переключаемый на график
- * регистраций по дням режим (чтобы не плодить отдельные карточки на каждую
- * цифру). */
-function UsersStatsCard({ stats }: { stats: UserStats | undefined }) {
-  const [showChart, setShowChart] = useState(false)
+/** Карточка "всего пользователей" — просто число. */
+function TotalUsersCard({ total }: { total: number | undefined }) {
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <div className="text-xs text-muted-foreground">Пользователи всего</div>
+      <div className="text-2xl font-semibold">{total ?? "—"}</div>
+    </div>
+  )
+}
+
+/** Карточка "регистрации": группа кнопок-периодов (объединённая, как единое
+ * целое) над графиком, под группой — сумма за выбранный период. */
+function RegistrationsCard({ stats }: { stats: UserStats | undefined }) {
+  const [period, setPeriod] = useState<(typeof PERIODS)[number]["value"]>("30")
+  const current = PERIODS.find((p) => p.value === period) ?? PERIODS[2]
+
   const { data: byDay } = useQuery({
-    queryKey: ["admin-users-stats-by-day"],
+    queryKey: ["admin-users-stats-by-day", period],
     queryFn: async () =>
-      (await api.get<RegDay[]>("/v1/admin/users/stats/by-day", { params: { days: 30 } })).data,
-    enabled: showChart,
+      (
+        await api.get<RegDay[]>("/v1/admin/users/stats/by-day", {
+          params: { days: period },
+        })
+      ).data,
   })
 
   return (
     <div className="rounded-lg border bg-card p-4">
       <div className="mb-3 flex items-center justify-between">
-        <div>
-          <div className="text-xs text-muted-foreground">Пользователи всего</div>
-          <div className="text-2xl font-semibold">{stats?.total ?? "—"}</div>
-        </div>
-        <Button variant="outline" size="sm" onClick={() => setShowChart((v) => !v)}>
-          {showChart ? "Показать цифры" : "График регистраций"}
-        </Button>
+        <div className="text-xs text-muted-foreground">Регистрации по дням</div>
+        <ToggleGroup
+          value={[period]}
+          onValueChange={(v) => v[0] && setPeriod(v[0] as typeof period)}
+        >
+          {PERIODS.map((p) => (
+            <ToggleGroupItem key={p.value} value={p.value} size="sm">
+              {p.label}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
       </div>
 
-      {showChart ? (
-        <div className="h-48 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={byDay ?? []}>
-              <XAxis
-                dataKey="day"
-                tick={{ fontSize: 11 }}
-                tickFormatter={(d: string) => d.slice(5)}
-              />
-              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={28} />
-              <Tooltip labelFormatter={(d) => `Дата: ${d}`} />
-              <Line type="monotone" dataKey="count" name="Регистраций" stroke="#009080" strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {PERIODS.map((p) => (
-            <div key={p.key}>
-              <div className="text-xs text-muted-foreground">За {p.label}</div>
-              <div className="text-lg font-medium">{stats?.[p.key] ?? "—"}</div>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="h-40 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={byDay ?? []}>
+            <XAxis
+              dataKey="day"
+              tick={{ fontSize: 11 }}
+              tickFormatter={(d: string) => d.slice(5)}
+            />
+            <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={28} />
+            <Tooltip labelFormatter={(d) => `Дата: ${d}`} />
+            <Line type="monotone" dataKey="count" name="Регистраций" stroke="#009080" strokeWidth={2} dot={false} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div className="mt-2 text-center text-sm text-muted-foreground">
+        Всего за {current.label}: <span className="font-semibold text-foreground">{stats?.[current.statKey] ?? "—"}</span>
+      </div>
     </div>
   )
 }
@@ -429,7 +444,10 @@ export function UsersPage() {
         )}
       </div>
 
-      <UsersStatsCard stats={stats} />
+      <div className="grid gap-3 sm:grid-cols-[minmax(160px,220px)_1fr]">
+        <TotalUsersCard total={stats?.total} />
+        <RegistrationsCard stats={stats} />
+      </div>
 
       <DataTable
         columns={columns}
