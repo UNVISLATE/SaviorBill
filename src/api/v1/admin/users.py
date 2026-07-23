@@ -57,8 +57,8 @@ from utils.pagination import (
 
 router = APIRouter()
 
-reg_perm("users.admin.role.edit")  # проверяется вручную внутри edit_user
-reg_perm("users.admin.balance.edit")  # проверяется вручную в edit_user и /balance
+reg_perm("admin.user.role.edit")  # проверяется вручную внутри edit_user
+reg_perm("admin.user.balance.edit")  # проверяется вручную в edit_user и /balance
 
 _SORT_FIELDS = {"id", "login", "email", "created_at", "last_login", "role_id", "balance"}
 
@@ -194,7 +194,7 @@ async def user_stats_by_day(
 async def create_user(
     body: UserCreateAdmin,
     session: AsyncSession = Depends(get_db_session),
-    caller: UserModel = Depends(require_perm("users.admin.create")),
+    caller: UserModel = Depends(require_perm("admin.user.create")),
 ) -> User:
     mngr = UserMngr(session)
     if await mngr.by_login(body.login) or (
@@ -278,13 +278,13 @@ async def user_profile_admin(
     response_model=User,
     summary="Update user",
     description="Update the provided user fields. Changing `role_id` "
-    "additionally requires `users.admin.role.edit`.",
+    "additionally requires `admin.user.role.edit`.",
 )
 async def edit_user(
     user_id: int,
     body: UserPatch,
     session: AsyncSession = Depends(get_db_session),
-    caller: UserModel = Depends(require_perm("users.admin.edit")),
+    caller: UserModel = Depends(require_perm("admin.user.edit")),
 ) -> User:
     """Частично обновить аккаунт.
 
@@ -296,11 +296,11 @@ async def edit_user(
     if "role_id" in data and data["role_id"] != acc.role_id:
         caller_perms = caller.role.perms if caller.role else None
         if not (caller.role and caller.role.key == "owner") and not has_perm(
-            caller_perms, "users.admin.role.edit"
+            caller_perms, "admin.user.role.edit"
         ):
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
-                "insufficient permissions: users.admin.role.edit",
+                "insufficient permissions: admin.user.role.edit",
             )
         if acc.role and acc.role.key == "owner":
             raise HTTPException(
@@ -315,10 +315,10 @@ async def edit_user(
         caller.role and caller.role.key == "owner"
     ):
         caller_perms = caller.role.perms if caller.role else None
-        if not has_perm(caller_perms, "users.admin.balance.edit"):
+        if not has_perm(caller_perms, "admin.user.balance.edit"):
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
-                "insufficient permissions: users.admin.balance.edit",
+                "insufficient permissions: admin.user.balance.edit",
             )
     for field, value in data.items():
         setattr(acc, field, value)
@@ -332,13 +332,13 @@ async def edit_user(
     summary="Delete user",
     description="Permanently deletes the account (related services/payments/"
     "OAuth links/promo uses cascade). The owner account can never be deleted, "
-    "even by another owner. Requires `users.admin.delete`.",
+    "even by another owner. Requires `admin.user.delete`.",
 )
 async def delete_user(
     request: Request,
     user_id: int,
     session: AsyncSession = Depends(get_db_session),
-    caller: UserModel = Depends(require_perm("users.admin.delete")),
+    caller: UserModel = Depends(require_perm("admin.user.delete")),
 ) -> None:
     acc = await _get_user(session, user_id)
     if acc.role and acc.role.key == "owner":
@@ -361,7 +361,7 @@ async def delete_user(
 @router.post(
     "/{user_id}/balance",
     response_model=User,
-    dependencies=[Depends(require_perm("users.admin.balance.edit"))],
+    dependencies=[Depends(require_perm("admin.user.balance.edit"))],
     summary="Manually adjust user balance",
     description="Top up (positive amount) or deduct (negative amount) the "
     "user's main or bonus balance. Logged to the audit trail.",
@@ -371,7 +371,7 @@ async def adjust_balance(
     user_id: int,
     body: BalanceAdjust,
     session: AsyncSession = Depends(get_db_session),
-    caller: UserModel = Depends(require_perm("users.admin.balance.edit")),
+    caller: UserModel = Depends(require_perm("admin.user.balance.edit")),
 ) -> User:
     acc = await _get_user(session, user_id)
     if acc.role and acc.role.key == "owner":
@@ -512,7 +512,7 @@ async def user_oauth(
 @router.get(
     "/{user_id}/sessions",
     response_model=list[SessionOut],
-    dependencies=[Depends(require_perm("users.admin.sessions.manage"))],
+    dependencies=[Depends(require_perm("admin.user.sessions.manage"))],
     summary="User active sessions",
     description="Active login sessions (IP/device) tracked in Valkey.",
 )
@@ -529,7 +529,7 @@ async def user_sessions(
 @router.delete(
     "/{user_id}/sessions/{jti}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_perm("users.admin.sessions.manage"))],
+    dependencies=[Depends(require_perm("admin.user.sessions.manage"))],
     summary="Revoke a user session",
     description="Force-terminates a single active session (denylists its refresh token).",
 )

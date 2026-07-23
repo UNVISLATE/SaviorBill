@@ -111,42 +111,45 @@ export function RolesPage() {
               <TableHead>Название</TableHead>
               <TableHead>Тип</TableHead>
               <TableHead>Прав</TableHead>
-              <TableHead className="w-24" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
                   Загрузка…
                 </TableCell>
               </TableRow>
             )}
             {roles?.map((r) => (
-              <TableRow key={r.id}>
+              <TableRow
+                key={r.id}
+                className={r.name !== "owner" ? "cursor-pointer" : undefined}
+                onClick={() => r.name !== "owner" && openEdit(r)}
+              >
                 <TableCell>{r.id}</TableCell>
                 <TableCell>
                   <span className="font-medium">{r.title ?? r.name}</span>
                   <span className="ml-1.5 text-xs text-muted-foreground">{r.name}</span>
                 </TableCell>
                 <TableCell>
-                  {r.name === "owner" ? (
-                    <Badge variant="outline">owner — неприкасаема</Badge>
-                  ) : r.is_system ? (
-                    <Badge variant="secondary">системная</Badge>
-                  ) : (
-                    <Badge variant="outline">кастомная</Badge>
-                  )}
+                  <div className="flex flex-wrap gap-1">
+                    {r.name === "owner" ? (
+                      <Badge variant="outline">owner — неприкасаема</Badge>
+                    ) : r.is_system ? (
+                      <Badge variant="secondary">системная</Badge>
+                    ) : (
+                      <Badge variant="outline">кастомная</Badge>
+                    )}
+                    {(r.name === "media" || r.name === "support") && (
+                      <Badge variant="outline" className="text-muted-foreground">
+                        зарезервирована — пока не используется
+                      </Badge>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground">
                   {catalog ? catalog.flat.filter((p) => hasPerm(r.perms, p)).length : "—"}
-                </TableCell>
-                <TableCell>
-                  {r.name !== "owner" && (
-                    <Button size="sm" variant="outline" onClick={() => openEdit(r)}>
-                      Права
-                    </Button>
-                  )}
                 </TableCell>
               </TableRow>
             ))}

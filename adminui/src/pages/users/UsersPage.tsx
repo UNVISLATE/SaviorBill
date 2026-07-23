@@ -338,8 +338,8 @@ export function UsersPage() {
   const table = useDataTableQuery()
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null)
   const [creating, setCreating] = useState(false)
-  const canDelete = can("users.admin.delete")
-  const canCreate = can("users.admin.create")
+  const canDelete = can("admin.user.delete")
+  const canCreate = can("admin.user.create")
 
   const { data: roles } = useQuery({
     queryKey: ["admin-roles-lookup"],
