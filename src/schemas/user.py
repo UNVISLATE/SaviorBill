@@ -32,6 +32,17 @@ class User(BaseModel):
         return cls.model_validate(m)
 
 
+class UserCreateAdmin(BaseModel):
+    """Create a user account (admin)."""
+
+    login: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=8, max_length=256)
+    email: str | None = Field(default=None, max_length=255)
+    role_id: int | None = Field(
+        default=None, description="Starting role; defaults to 'user' if omitted"
+    )
+
+
 class UserPatch(BaseModel):
     """Update user account."""
 
@@ -72,6 +83,13 @@ class UserStats(BaseModel):
     registered_custom: int | None = Field(
         default=None, description="Count in [from, to] if both were given"
     )
+
+
+class RegistrationsByDay(BaseModel):
+    """One point of the registrations-per-day series."""
+
+    day: str = Field(description="ISO date (YYYY-MM-DD)")
+    count: int
 
 
 class SessionOut(BaseModel):

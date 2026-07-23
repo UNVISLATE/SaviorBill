@@ -20,7 +20,7 @@ from models.promo_codes import PromoCodesModel
 from models.promo_use import PromoUseModel
 from models.roles import Role
 from models.system_media import SystemMediaMngr
-from models.user import UserModel
+from models.user import UserModel, UserMngr
 from models.user_oauth import UserOauthModel, UserOauthMngr
 from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel
@@ -32,8 +32,10 @@ from schemas.promo import PromoUse
 from schemas.user import (
     BalanceAdjust,
     OAuthConnAdmin,
+    RegistrationsByDay,
     SessionOut,
     User,
+    UserCreateAdmin,
     UserDetail,
     UserPatch,
     UserStats,
@@ -41,6 +43,7 @@ from schemas.user import (
 from services.account import account_response, release_old_avatar
 from services.audit import audit
 from services.auth import TokenSvc
+from security.sec.pwd import hash_pass
 from utils.datetime_utils import utc_now
 from utils.pagination import (
     PageParams,
@@ -146,6 +149,82 @@ async def user_stats(
         registered_90d=await _count(now - timedelta(days=90)),
         registered_custom=custom,
     )
+
+
+@router.get(
+    "/stats/by-day",
+    response_model=list[RegistrationsByDay],
+    dependencies=[Depends(require_perm("users.read"))],
+    summary="Registrations per day",
+    description="Daily registration counts for the last `days` days (default 30, "
+    "max 365), oldest first — feeds the chart on the users stats card.",
+)
+async def user_stats_by_day(
+    days: int = 30,
+    session: AsyncSession = Depends(get_db_session),
+) -> list[RegistrationsByDay]:
+    days = max(1, min(days, 365))
+    since = utc_now() - timedelta(days=days - 1)
+    day_col = func.date(UserModel.created_at)
+    rows = (
+        await session.execute(
+            select(day_col.label("day"), func.count().label("count"))
+            .where(UserModel.created_at >= since)
+            .group_by(day_col)
+            .order_by(day_col)
+        )
+    ).all()
+    by_day = {str(r.day): int(r.count) for r in rows}
+    now = utc_now()
+    series = []
+    for i in range(days):
+        d = (now - timedelta(days=days - 1 - i)).date().isoformat()
+        series.append(RegistrationsByDay(day=d, count=by_day.get(d, 0)))
+    return series
+
+
+@router.post(
+    "",
+    response_model=User,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create user",
+    description="Creates a user account with the given role (defaults to "
+    "'user' if omitted). The owner role can never be assigned this way.",
+)
+async def create_user(
+    body: UserCreateAdmin,
+    session: AsyncSession = Depends(get_db_session),
+    caller: UserModel = Depends(require_perm("users.admin.create")),
+) -> User:
+    mngr = UserMngr(session)
+    if await mngr.by_login(body.login) or (
+        body.email and await mngr.by_email(body.email)
+    ):
+        raise HTTPException(status.HTTP_409_CONFLICT, "account already exists")
+
+    role_key = "user"
+    if body.role_id is not None:
+        role = await session.get(Role, body.role_id)
+        if role is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown role_id")
+        if role.key == "owner":
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "the owner role cannot be assigned"
+            )
+        role_key = role.key
+
+    acc = await mngr.create(body.login, hash_pass(body.password), body.email, role_key=role_key)
+    await audit(
+        session,
+        action="user.create",
+        actor_id=caller.id,
+        actor_role=caller.role.name if caller.role else None,
+        target_type="user",
+        target_id=str(acc.id),
+        meta={"login": acc.login},
+    )
+    await session.commit()
+    return User.from_model(acc)
 
 
 @router.get(
