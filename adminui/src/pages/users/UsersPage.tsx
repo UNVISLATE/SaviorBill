@@ -1,20 +1,13 @@
 import { useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { MoreHorizontal, Plus, Trash2 } from "lucide-react"
-import {
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts"
 
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { useProfileDialog } from "@/hooks/use-profile-dialog"
 import { useDataTableQuery } from "@/hooks/use-data-table"
 import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
+import { ChartCard } from "@/components/charts/ChartCard"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
 import { Input } from "@/components/shadsnui/input"
@@ -26,10 +19,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/shadsnui/select"
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "@/components/shadsnui/toggle-group"
 import {
   Dialog,
   DialogContent,
@@ -112,8 +101,8 @@ function TotalUsersCard({ total }: { total: number | undefined }) {
   )
 }
 
-/** Карточка "регистрации": группа кнопок-периодов (объединённая, как единое
- * целое) над графиком, под группой — сумма за выбранный период. */
+/** Карточка "регистрации": группа кнопок-периодов над графиком (через
+ * общий ChartCard), под группой — сумма за выбранный период. */
 function RegistrationsCard({ stats }: { stats: UserStats | undefined }) {
   const [period, setPeriod] = useState<(typeof PERIODS)[number]["value"]>("30")
   const current = PERIODS.find((p) => p.value === period) ?? PERIODS[2]
@@ -129,40 +118,20 @@ function RegistrationsCard({ stats }: { stats: UserStats | undefined }) {
   })
 
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="text-xs text-muted-foreground">Регистрации по дням</div>
-        <ToggleGroup
-          value={[period]}
-          onValueChange={(v) => v[0] && setPeriod(v[0] as typeof period)}
-        >
-          {PERIODS.map((p) => (
-            <ToggleGroupItem key={p.value} value={p.value} size="sm">
-              {p.label}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-
-      <div className="h-40 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={byDay ?? []}>
-            <XAxis
-              dataKey="day"
-              tick={{ fontSize: 11 }}
-              tickFormatter={(d: string) => d.slice(5)}
-            />
-            <YAxis allowDecimals={false} tick={{ fontSize: 11 }} width={28} />
-            <Tooltip labelFormatter={(d) => `Дата: ${d}`} />
-            <Line type="monotone" dataKey="count" name="Регистраций" stroke="#009080" strokeWidth={2} dot={false} />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
-
-      <div className="mt-2 text-center text-sm text-muted-foreground">
-        Всего за {current.label}: <span className="font-semibold text-foreground">{stats?.[current.statKey] ?? "—"}</span>
-      </div>
-    </div>
+    <ChartCard
+      title="Регистрации по дням"
+      data={byDay ?? []}
+      xKey="day"
+      xTickFormatter={(d) => d.slice(5)}
+      tooltipLabelFormatter={(d) => `Дата: ${d}`}
+      series={[{ key: "count", label: "Регистраций", color: "#009080" }]}
+      periods={PERIODS}
+      period={period}
+      onPeriodChange={(v) => setPeriod(v as typeof period)}
+      totalLabel={`Всего за ${current.label}`}
+      totalValue={stats?.[current.statKey]}
+      height={160}
+    />
   )
 }
 

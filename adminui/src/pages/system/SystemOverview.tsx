@@ -1,17 +1,8 @@
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import {
-  CartesianGrid,
-  Legend,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts"
 
 import { api } from "@/api/api.ts"
+import { ChartCardBody } from "@/components/charts/ChartCard"
 import {
   Card,
   CardContent,
@@ -127,35 +118,16 @@ export function SystemOverview() {
           <CardTitle className="text-base">Потребление во времени (live)</CardTitle>
           <CardDescription>Последние {MAX_POINTS} замеров, без сохранения истории</CardDescription>
         </CardHeader>
-        <CardContent className="h-64">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={points}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-              <XAxis dataKey="t" fontSize={11} minTickGap={30} />
-              <YAxis yAxisId="cpu" fontSize={11} width={40} />
-              <YAxis yAxisId="rss" orientation="right" fontSize={11} width={50} />
-              <Tooltip />
-              <Legend />
-              <Line
-                yAxisId="cpu"
-                type="monotone"
-                dataKey="cpu"
-                name="CPU %"
-                stroke="#009080"
-                dot={false}
-                isAnimationActive={false}
-              />
-              <Line
-                yAxisId="rss"
-                type="monotone"
-                dataKey="rss"
-                name="RSS МБ"
-                stroke="#0D504B"
-                dot={false}
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+        <CardContent>
+          <ChartCardBody
+            data={points}
+            xKey="t"
+            series={[
+              { key: "cpu", label: "CPU %", color: "#009080", yAxisId: "cpu" },
+              { key: "rss", label: "RSS МБ", color: "#0D504B", yAxisId: "rss" },
+            ]}
+            height={256}
+          />
         </CardContent>
       </Card>
     </div>
