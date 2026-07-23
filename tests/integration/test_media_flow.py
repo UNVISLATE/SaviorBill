@@ -133,7 +133,7 @@ async def test_admin_media_list_and_cleanup(http, new_user, seed):
 
     lst = await http.get("/api/v1/admin/media", headers=hdr)
     assert lst.status_code == 200, lst.text
-    entry = next((m for m in lst.json() if m["token"] == token), None)
+    entry = next((m for m in lst.json()["items"] if m["token"] == token), None)
     assert entry is not None
     # mediaworker записал основной файл; для маленького тестового PNG thumb не
     # генерируется (фото меньше media.small_max_bytes — см. worker.py::_convert).

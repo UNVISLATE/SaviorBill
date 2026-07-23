@@ -19,10 +19,11 @@ from dependencies.valkey import get_valkey_client
 from models.system_media import SystemMediaMngr, SystemMediaModel, all_storage_keys
 from models.user import UserModel
 from schemas.media import Media
+from schemas.page import Page
 from services.audit import audit
 from core.config import AppConfig
 from messaging.mediabus import MediaBus
-from utils.pagination import apply_sort, q_param, sort_param
+from utils.pagination import apply_sort, paginate, q_param, sort_param
 from sqlalchemy import select
 
 router = APIRouter()
@@ -51,7 +52,7 @@ def _bus(request: Request, vk: valkey.Valkey) -> MediaBus:
 
 @router.get(
     "",
-    response_model=list[Media],
+    response_model=Page[Media],
     dependencies=[Depends(require_perm("media.read"))],
     summary="Media",
     description="Все медиа (постранично), либо только владельца — фильтр "
@@ -66,7 +67,7 @@ async def list_media(
     q: str | None = Depends(q_param),
     sort: str | None = Depends(sort_param),
     mngr: SystemMediaMngr = Depends(get_media_mngr),
-) -> list[Media]:
+) -> Page[Media]:
     stmt = mngr.stmt_for_owner(owner_id) if owner_id is not None else select(SystemMediaModel)
     stmt = apply_sort(stmt, SystemMediaModel, sort, _MEDIA_SORT_FIELDS)
     if sort is None:
@@ -75,8 +76,10 @@ async def list_media(
         stmt = stmt.where(
             SystemMediaModel.tag.ilike(f"%{q}%") | SystemMediaModel.mime.ilike(f"%{q}%")
         )
-    rows = await mngr.s.scalars(stmt.limit(limit).offset(offset))
-    return [Media.from_model(m) for m in rows]
+    items, total, has_more = await paginate(
+        mngr.s, stmt, Media.from_model, limit=limit, offset=offset
+    )
+    return Page(items=items, total=total, limit=limit, offset=offset, has_more=has_more)
 
 
 async def _drop(mngr: SystemMediaMngr, bus: MediaBus, media: SystemMediaModel) -> None:
