@@ -4,6 +4,7 @@ import {
   Settings,
   Users,
   MonitorCog,
+  ScrollText,
 } from "lucide-react"
 
 /**
@@ -41,6 +42,7 @@ export const navGroups: NavGroup[] = [
  */
 export const footerNavItems: NavItem[] = [
   { title: "Аудит", url: "/audit", icon: FileClock, perm: "audit.read" },
+  { title: "Lua-скрипты", url: "/lua", icon: ScrollText, perm: "lua.read" },
   { title: "Система", url: "/system", icon: MonitorCog, perm: "system.stats.read" },
   { title: "Настройки", url: "/settings", icon: Settings, perm: "settings.read" }
 ]

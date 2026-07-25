@@ -7,6 +7,7 @@ import { UsersPage } from "@/pages/users/UsersPage"
 import { AuditPage } from "@/pages/audit/AuditPage"
 import { SystemPage } from "@/pages/system/SystemPage"
 import { SettingsPage } from "@/pages/settings/SettingsPage"
+import { LuaScriptsPage } from "@/pages/lua/LuaScriptsPage"
 import { ProtectedRoute } from "@/routes/ProtectedRoute"
 import { ProfileDialogProvider } from "@/hooks/use-profile-dialog"
 import { ProfileDialogHost } from "@/components/profile/ProfileDialogHost"
@@ -25,6 +26,7 @@ export function App() {
               <Route path="/audit" element={<AuditPage />} />
               <Route path="/system/*" element={<SystemPage />} />
               <Route path="/settings/*" element={<SettingsPage />} />
+              <Route path="/lua" element={<LuaScriptsPage />} />
             </Route>
           </Route>
         </Routes>
