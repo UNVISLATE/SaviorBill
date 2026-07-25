@@ -27,11 +27,21 @@ export interface NavGroup {
 export const navGroups: NavGroup[] = [
   {
     title: "Обзор",
-    items: [{ title: "Дашборд", url: "/", icon: Gauge }],
+    items: [
+        { title: "Дашборд", url: "/", icon: Gauge }
+    ],
   },
   {
     title: "Пользователи",
-    items: [{ title: "Пользователи", url: "/users", icon: Users, perm: "users.read" }],
+    items: [
+        { title: "Пользователи", url: "/users", icon: Users, perm: "users.read" }
+    ],
+  },
+  {
+    title: "Автоматизация",
+    items: [
+        { title: "Скрипты", url: "/lua", icon: ScrollText, perm: "lua.read" }
+    ]
   }
 ]
 
@@ -42,7 +52,6 @@ export const navGroups: NavGroup[] = [
  */
 export const footerNavItems: NavItem[] = [
   { title: "Аудит", url: "/audit", icon: FileClock, perm: "audit.read" },
-  { title: "Lua-скрипты", url: "/lua", icon: ScrollText, perm: "lua.read" },
   { title: "Система", url: "/system", icon: MonitorCog, perm: "system.stats.read" },
   { title: "Настройки", url: "/settings", icon: Settings, perm: "settings.read" }
 ]

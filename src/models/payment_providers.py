@@ -67,6 +67,8 @@ class PaymentProvidersModel(Base):
     script_id: Mapped[int | None] = mapped_column(
         ForeignKey("lua_scripts.id", ondelete="RESTRICT"), nullable=True, index=True
     )
+    # Версия скрипта: NULL — latest (по умолчанию), число — закреплённая версия.
+    script_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # Несекретные дополнительные настройки провайдера.
     extra: Mapped[dict] = mapped_column(

@@ -115,6 +115,7 @@ async def create_provider(
         currency=body.currency,
         secrets_enc=box.seal(json.dumps(body.secrets)),
         script_id=body.script_id,
+        script_version=body.script_version,
         extra=body.extra,
     )
     session.add(prov)

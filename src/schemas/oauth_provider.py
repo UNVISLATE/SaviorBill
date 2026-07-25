@@ -24,6 +24,7 @@ class OAuthProvider(BaseModel):
     title: str | None = None
     enabled: bool
     script_id: int | None = None
+    script_version: int | None = None
     icon_media_id: int | None = None
     icon_url: str | None = None
     scopes: str
@@ -38,6 +39,7 @@ class OAuthProvider(BaseModel):
             title=m.title,
             enabled=m.enabled,
             script_id=m.script_id,
+            script_version=m.script_version,
             icon_media_id=m.icon_media_id,
             icon_url=_icon_url(m.icon.token if m.icon else None),
             scopes=m.scopes,
@@ -54,6 +56,9 @@ class OAuthProviderCreate(BaseModel):
         description="Unique provider slug",
     )
     script_id: int = Field(description="Auth script ID")
+    script_version: int | None = Field(
+        default=None, description="Pinned script version; null = latest"
+    )
     secrets: dict = Field(
         default_factory=dict,
         description="Provider secrets/endpoints (optional)",
@@ -76,6 +81,9 @@ class OAuthProviderPatch(BaseModel):
     title: str | None = Field(default=None, description="Display name (optional)")
     enabled: bool | None = Field(default=None, description="Enabled (optional)")
     script_id: int | None = Field(default=None, description="Auth script ID (optional)")
+    script_version: int | None = Field(
+        default=None, description="Pinned script version; null = latest"
+    )
     secrets: dict | None = Field(
         default=None,
         description="Provider secrets (optional)",

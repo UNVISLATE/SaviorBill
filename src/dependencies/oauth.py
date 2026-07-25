@@ -117,8 +117,10 @@ class OAuthSvc:
 
     async def _script(
         self, prov: OAuthProvidersModel, action: str
-    ) -> SystemScriptsModel:
-        """Получить auth-скрипт провайдера и проверить поддержку действия."""
+    ) -> tuple[SystemScriptsModel, str]:
+        """Получить auth-скрипт провайдера (+ путь резолвленной версии)."""
+        from models.system_scripts import resolve_version_filename
+
         if not prov.script_id:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, "provider has no auth script configured"
@@ -134,7 +136,8 @@ class OAuthSvc:
                 status.HTTP_400_BAD_REQUEST,
                 f"auth script does not support action '{action}'",
             )
-        return script
+        filename = await resolve_version_filename(self.s, script, prov.script_version)
+        return script, filename
 
     # --- старт авторизации ------------------------------------------------
     async def start(
@@ -156,7 +159,7 @@ class OAuthSvc:
         :return: authorize_url для редиректа + state.
         """
         prov = await self._provider(slug)
-        script = await self._script(prov, AuthAction.START)
+        script, filename = await self._script(prov, AuthAction.START)
         state = generate_base_token()
         # Nonce — чисто транспортная роль платформы: сгенерировать и надёжно
         # сохранить между start/callback (это может сделать только платформа,
@@ -174,6 +177,7 @@ class OAuthSvc:
             state=state,
             nonce=nonce,
             request=build_lua_request(request) if request is not None else None,
+            filename=filename,
         )
         pub = res.get("public") or {}
         authorize_url = pub.get("authorize_url")
@@ -209,7 +213,7 @@ class OAuthSvc:
         """
         payload = await self._pop_state(slug, state)
         prov = await self._provider(slug)
-        script = await self._script(prov, AuthAction.CALLBACK)
+        script, filename = await self._script(prov, AuthAction.CALLBACK)
 
         res = await self.runner.run_auth(
             script,
@@ -221,6 +225,7 @@ class OAuthSvc:
             code=code,
             expected_nonce=payload.get("nonce"),
             request=request,
+            filename=filename,
         )
         priv = res.get("private") or {}
         if not priv.get("ok") or not priv.get("sub"):

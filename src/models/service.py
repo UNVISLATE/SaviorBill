@@ -86,6 +86,10 @@ class ServiceModel(Base):
     lua_script_id: Mapped[int | None] = mapped_column(
         ForeignKey("lua_scripts.id", ondelete="RESTRICT"), nullable=True, index=True
     )
+    # Версия скрипта: NULL — latest (по умолчанию), число — закреплённая версия.
+    # Если версия удалена — резолвер (resolve_version_filename) тихо
+    # фоллбэчится на latest.
+    lua_script_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Кастом-параметры услуги (снимок прокидывается в скрипт как ctx.params).
     params: Mapped[dict] = mapped_column(
         JSON, default=dict, server_default="{}", nullable=False

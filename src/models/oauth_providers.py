@@ -53,6 +53,8 @@ class OAuthProvidersModel(Base):
     script_id: Mapped[int | None] = mapped_column(
         ForeignKey("lua_scripts.id", ondelete="RESTRICT"), nullable=True, index=True
     )
+    # Версия скрипта: NULL — latest (по умолчанию), число — закреплённая версия.
+    script_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Зашифрованный JSON секретов/доп-данных провайдера (client_id/secret и пр.),
     # прокидывается в скрипт как ctx.secrets.*. Единственный источник кредов —
     # легаси-поля (client_id/authorize_url/…) удалены, весь Lua-флоу action-driven

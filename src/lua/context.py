@@ -206,15 +206,17 @@ class LuaRunner:
         )
 
     async def run_service(
-        self, script, action, acc, usvc, service, payment=None
+        self, script, action, acc, usvc, service, payment=None, filename=None
     ) -> dict:  # noqa: ANN001
         """Собрать контекст услуги и исполнить скрипт.
 
         :arg script: модель скрипта (``SystemScriptsModel``) — источник имени файла
             и данных ``lua.*``/``lua.settings.*``.
+        :arg filename: явный путь файла версии (переопределяет ``script.filename``,
+            см. :func:`models.system_scripts.resolve_version_filename`).
         """
         ctx = build_service_ctx(action, acc, usvc, service, payment, script)
-        return await self.run(script.filename, ScriptKind.SERVICE, ctx)
+        return await self.run(filename or script.filename, ScriptKind.SERVICE, ctx)
 
     async def run_payment(
         self,
@@ -226,6 +228,7 @@ class LuaRunner:
         secrets,
         request=None,
         return_url=None,
+        filename=None,
     ) -> dict:
         """Собрать контекст платежа и исполнить скрипт."""
         ctx = self._build_ctx_safely(
@@ -240,14 +243,14 @@ class LuaRunner:
             return_url,
             script,
         )
-        return await self.run(script.filename, ScriptKind.PAYMENT, ctx)
+        return await self.run(filename or script.filename, ScriptKind.PAYMENT, ctx)
 
     async def run_trigger(
-        self, script, event: str, config: dict, data: dict
+        self, script, event: str, config: dict, data: dict, filename=None
     ) -> dict:  # noqa: ANN001
         """Собрать контекст триггера и исполнить скрипт."""
         ctx = build_trigger_ctx(event, config, data, script)
-        return await self.run(script.filename, ScriptKind.TRIGGER, ctx)
+        return await self.run(filename or script.filename, ScriptKind.TRIGGER, ctx)
 
     async def run_auth(
         self,
@@ -262,6 +265,7 @@ class LuaRunner:
         nonce: str | None = None,
         expected_nonce: str | None = None,
         request=None,
+        filename=None,
     ) -> dict:
         """Собрать контекст OAuth и исполнить скрипт провайдера."""
         ctx = self._build_ctx_safely(
@@ -278,7 +282,7 @@ class LuaRunner:
             request=request,
             script=script,
         )
-        return await self.run(script.filename, ScriptKind.AUTH, ctx)
+        return await self.run(filename or script.filename, ScriptKind.AUTH, ctx)
 
 
 __all__ = [

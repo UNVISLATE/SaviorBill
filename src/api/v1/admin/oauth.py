@@ -102,6 +102,7 @@ async def create_provider(
         title=body.title,
         enabled=body.enabled,
         script_id=body.script_id,
+        script_version=body.script_version,
         secrets_enc=box.seal(json.dumps(body.secrets)),
         icon_media_id=body.icon_media_id,
         scopes=body.scopes,

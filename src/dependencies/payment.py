@@ -77,13 +77,17 @@ class PayMngr:
 
     async def _script(
         self, prov: PaymentProvidersModel, action: str
-    ) -> SystemScriptsModel:
-        """Получить action-driven скрипт провайдера и проверить поддержку действия.
+    ) -> tuple[SystemScriptsModel, str]:
+        """Получить action-driven скрипт провайдера (+ путь резолвленной версии).
 
         :arg prov: провайдер.
         :arg action: требуемое действие (см. :class:`enums.PayAction`).
         :raises HTTPException: скрипт не задан/недоступен/не поддерживает действие.
+        :return: (модель скрипта, путь файла нужной версии — см.
+            :func:`models.system_scripts.resolve_version_filename`).
         """
+        from models.system_scripts import resolve_version_filename
+
         if not prov.script_id:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, "provider has no payment script configured"
@@ -99,7 +103,8 @@ class PayMngr:
                 status.HTTP_400_BAD_REQUEST,
                 f"provider script does not support action '{action}'",
             )
-        return script
+        filename = await resolve_version_filename(self.s, script, prov.script_version)
+        return script, filename
 
     # --- инициализация платежа -------------------------------------------
     async def create(
@@ -115,7 +120,7 @@ class PayMngr:
     ) -> UserPaymentsModel:
         """Создать платёж и запустить скрипт (action=create) за ссылкой оплаты."""
         prov = await self._provider(provider_slug)
-        script = await self._script(prov, PayAction.CREATE)
+        script, filename = await self._script(prov, PayAction.CREATE)
         secrets = self._secrets(prov)
 
         payment = UserPaymentsModel(
@@ -139,6 +144,7 @@ class PayMngr:
                 prov,
                 secrets,
                 return_url=return_url,
+                filename=filename,
             )
             payment.public_data = res.get("public") or {}
             payment.private_data = res.get("private") or {}
@@ -164,7 +170,7 @@ class PayMngr:
         :return: обновлённый платёж.
         """
         prov = await self._provider(provider_slug)
-        script = await self._script(prov, PayAction.CALLBACK)
+        script, filename = await self._script(prov, PayAction.CALLBACK)
         res = await self.runner.run_payment(
             script,
             PayAction.CALLBACK,
@@ -173,6 +179,7 @@ class PayMngr:
             prov,
             self._secrets(prov),
             request=request,
+            filename=filename,
         )
         priv = res.get("private") or {}
 
@@ -218,7 +225,7 @@ class PayMngr:
         if payment.status in (PayStatus.PAID, PayStatus.FAILED, PayStatus.REFUNDED):
             return payment
         prov = await self._provider(payment.provider, enabled=False)
-        script = await self._script(prov, PayAction.CHECK)
+        script, filename = await self._script(prov, PayAction.CHECK)
         acc = await self.s.get(UserModel, payment.account_id)
 
         res = await self.runner.run_payment(
@@ -228,6 +235,7 @@ class PayMngr:
             payment,
             prov,
             self._secrets(prov),
+            filename=filename,
         )
         priv = res.get("private") or {}
 
@@ -261,7 +269,7 @@ class PayMngr:
                 "refund is only possible for a paid payment",
             )
         prov = await self._provider(payment.provider, enabled=False)
-        script = await self._script(prov, PayAction.REFUND)
+        script, filename = await self._script(prov, PayAction.REFUND)
         acc = await self.s.get(UserModel, payment.account_id)
 
         res = await self.runner.run_payment(
@@ -271,6 +279,7 @@ class PayMngr:
             payment,
             prov,
             self._secrets(prov),
+            filename=filename,
         )
         priv = res.get("private") or {}
 

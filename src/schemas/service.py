@@ -84,6 +84,7 @@ class ServiceAdmin(Service):
     """Service with admin fields."""
 
     lua_script_id: int | None = None
+    lua_script_version: int | None = None
     params: dict
     settings: dict
     warnings: list[str] = Field(
@@ -108,6 +109,7 @@ class ServiceAdmin(Service):
             attachments=[Attachment.from_model(a) for a in m.attachments],
             is_active=m.is_active,
             lua_script_id=m.lua_script_id,
+            lua_script_version=m.lua_script_version,
             params=m.params,
             settings=m.settings,
             warnings=warnings or [],
@@ -126,6 +128,9 @@ class ServiceCreate(BaseModel):
     delivery: str = Field(default="key", description="Delivery method: key | lua")
     lua_script_id: int | None = Field(
         default=None, description="Lua script ID for delivery=lua"
+    )
+    lua_script_version: int | None = Field(
+        default=None, description="Pinned script version; null = latest"
     )
     params: dict = Field(default_factory=dict, description="Delivery params")
     settings: dict = Field(default_factory=dict, description="Service settings")
@@ -147,6 +152,9 @@ class ServicePatch(BaseModel):
     currency: str | None = Field(default=None, description="Currency")
     delivery: str | None = Field(default=None, description="Delivery method: key | lua")
     lua_script_id: int | None = Field(default=None, description="Lua script ID")
+    lua_script_version: int | None = Field(
+        default=None, description="Pinned script version; null = latest"
+    )
     params: dict | None = Field(default=None, description="Delivery params")
     settings: dict | None = Field(default=None, description="Service settings")
     is_active: bool | None = Field(default=None, description="Active")

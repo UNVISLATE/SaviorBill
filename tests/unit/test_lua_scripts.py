@@ -23,6 +23,7 @@ def _row(filename: str, **overrides) -> SimpleNamespace:
         actions=["start", "callback"],
         settings={},
         is_active=True,
+        current_version=1,
     )
     base.update(overrides)
     return SimpleNamespace(**base)

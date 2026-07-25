@@ -7,8 +7,21 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+import shutil
+
 from fastapi import HTTPException, status
-from sqlalchemy import func, Boolean, DateTime, Integer, JSON, String, Text, select
+from sqlalchemy import (
+    func,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+    select,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -70,6 +83,61 @@ class SystemScriptsModel(Base):
         JSON, default=dict, server_default="{}", nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Номер текущей (последней) версии — растёт на 1 при каждом изменении кода.
+    current_version: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False
+    )
+
+
+class LuaScriptVersionModel(Base):
+    """Снимок версии кода Lua-скрипта (история, для diff/восстановления/пиннинга)."""
+
+    __tablename__ = "lua_script_versions"
+    __table_args__ = (UniqueConstraint("script_id", "version"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    script_id: Mapped[int] = mapped_column(
+        ForeignKey("lua_scripts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    # Неизменяемый файл этой версии (относительно LUA_SCRIPTS_DIR).
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    commit_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        server_default=func.now(),
+        nullable=False,
+    )
+    created_by: Mapped[int | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="SET NULL"), nullable=True
+    )
+
+
+async def resolve_version_filename(
+    session: AsyncSession, script: SystemScriptsModel, version: int | None
+) -> str:
+    """Разрешить путь файла нужной версии скрипта.
+
+    ``version=None`` — всегда latest. Если версия указана, но такой записи
+    больше нет (удалена/не найдена) — тихий фоллбэк на latest (см. задачу:
+    ссылки на скрипт не должны падать из-за истёкшей версии).
+
+    :arg session: активная сессия БД.
+    :arg script: модель скрипта (источник ``filename``/``current_version``).
+    :arg version: желаемый номер версии или ``None`` (latest).
+    :return: путь файла версии (относительно LUA_SCRIPTS_DIR).
+    """
+    if version is None or version == script.current_version:
+        return script.filename
+    row = await session.scalar(
+        select(LuaScriptVersionModel).where(
+            LuaScriptVersionModel.script_id == script.id,
+            LuaScriptVersionModel.version == version,
+        )
+    )
+    return row.filename if row is not None else script.filename
 
 
 class SystemScriptsMngr:
@@ -90,35 +158,50 @@ class SystemScriptsMngr:
             select(SystemScriptsModel).where(SystemScriptsModel.slug == slug)
         )
 
-    def _gen_filename(self, kind: str) -> str:
-        """Сгенерировать безопасное имя файла скрипта (uuid4 + подпапка по виду)."""
+    def _gen_base(self, kind: str) -> str:
+        """Сгенерировать базовый путь-каталог скрипта (uuid4 + подпапка по виду)."""
         subdir = _SUBDIR_BY_KIND.get(kind, "generic")
-        return f"{subdir}/{uuid.uuid4().hex}.lua"
+        return f"{subdir}/{uuid.uuid4().hex}"
 
-    async def create(self, data) -> SystemScriptsModel:
-        """Записать тело скрипта в файл со сгенерированным именем и сохранить карту."""
+    async def create(self, data, created_by: int | None = None) -> SystemScriptsModel:
+        """Записать тело скрипта (v1) в файл со сгенерированным именем и сохранить карту."""
         if await self.by_slug(data.slug):
             raise HTTPException(status.HTTP_409_CONFLICT, "script slug already taken")
 
         actions = list(getattr(data, "actions", None) or [])
         self._check_actions(data.kind, actions)
 
-        filename = self._gen_filename(data.kind)
+        base = self._gen_base(data.kind)
+        filename = f"{base}/v1.lua"
         target = self._safe_target(filename)
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(data.code, encoding="utf-8")
+        sha256 = hashlib.sha256(data.code.encode()).hexdigest()
 
         row = SystemScriptsModel(
             slug=data.slug,
             name=data.name,
             kind=data.kind,
             filename=filename,
-            sha256=hashlib.sha256(data.code.encode()).hexdigest(),
+            sha256=sha256,
             description=data.description,
             actions=actions,
             settings=dict(getattr(data, "settings", None) or {}),
+            current_version=1,
         )
         self.s.add(row)
+        await self.s.flush()
+
+        self.s.add(
+            LuaScriptVersionModel(
+                script_id=row.id,
+                version=1,
+                filename=filename,
+                sha256=sha256,
+                commit_message=getattr(data, "commit_message", None) or "Начальная версия",
+                created_by=created_by,
+            )
+        )
         await self.s.flush()
         return row
 
@@ -181,11 +264,15 @@ class SystemScriptsMngr:
             ) from exc
         return target
 
-    async def patch(self, script_id: int, data) -> SystemScriptsModel:
+    async def patch(self, script_id: int, data, actor_id: int | None = None) -> SystemScriptsModel:
         """Обновить тело и/или настройки скрипта (только переданные поля).
 
+        Изменение ``code`` создаёт новую immutable-версию (``current_version + 1``)
+        в отдельном файле — старые версии не перезатираются.
+
         :arg script_id: id скрипта.
-        :arg data: схема с опциональными ``code`` и ``settings``.
+        :arg data: схема с опциональными ``code``/``settings``/``commit_message``.
+        :arg actor_id: id актора (для истории версий).
         :return: обновлённая запись.
         """
         row = await self.by_id(script_id)
@@ -194,10 +281,27 @@ class SystemScriptsMngr:
 
         code = getattr(data, "code", None)
         if code is not None:
-            target = self._safe_target(row.filename)
+            base = str(Path(row.filename).parent)
+            new_version = row.current_version + 1
+            filename = f"{base}/v{new_version}.lua"
+            target = self._safe_target(filename)
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(code, encoding="utf-8")
-            row.sha256 = hashlib.sha256(code.encode()).hexdigest()
+            sha256 = hashlib.sha256(code.encode()).hexdigest()
+
+            row.filename = filename
+            row.sha256 = sha256
+            row.current_version = new_version
+            self.s.add(
+                LuaScriptVersionModel(
+                    script_id=row.id,
+                    version=new_version,
+                    filename=filename,
+                    sha256=sha256,
+                    commit_message=getattr(data, "commit_message", None),
+                    created_by=actor_id,
+                )
+            )
 
         settings = getattr(data, "settings", None)
         if settings is not None:
@@ -205,6 +309,34 @@ class SystemScriptsMngr:
 
         await self.s.flush()
         return row
+
+    async def list_versions(self, script_id: int) -> list[LuaScriptVersionModel]:
+        """Список версий скрипта (новые сверху)."""
+        rows = await self.s.scalars(
+            select(LuaScriptVersionModel)
+            .where(LuaScriptVersionModel.script_id == script_id)
+            .order_by(LuaScriptVersionModel.version.desc())
+        )
+        return list(rows)
+
+    async def get_version(
+        self, script_id: int, version: int
+    ) -> LuaScriptVersionModel | None:
+        return await self.s.scalar(
+            select(LuaScriptVersionModel).where(
+                LuaScriptVersionModel.script_id == script_id,
+                LuaScriptVersionModel.version == version,
+            )
+        )
+
+    async def read_code_at(self, filename: str) -> str:
+        """Прочитать тело скрипта из произвольного файла версии."""
+        target = self._safe_target(filename)
+        if not target.exists():
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND, "script version body file is missing"
+            )
+        return target.read_text(encoding="utf-8")
 
     async def _references(self, script_id: int) -> list[str]:
         """Найти сущности, ссылающиеся на скрипт (для дружелюбного 409).
@@ -255,10 +387,18 @@ class SystemScriptsMngr:
                 "script is in use and cannot be deleted: " + ", ".join(refs),
             )
         target = self._safe_target(row.filename)
-        if target.exists():
+        version_dir = target.parent
+        if version_dir != self.dir.resolve() and version_dir.exists():
+            shutil.rmtree(version_dir, ignore_errors=True)
+        elif target.exists():
             target.unlink()
         await self.s.delete(row)
         await self.s.flush()
 
 
-__all__ = ["SystemScriptsModel", "SystemScriptsMngr"]
+__all__ = [
+    "SystemScriptsModel",
+    "SystemScriptsMngr",
+    "LuaScriptVersionModel",
+    "resolve_version_filename",
+]

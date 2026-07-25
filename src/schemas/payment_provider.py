@@ -16,6 +16,7 @@ class PayProvider(BaseModel):
     enabled: bool
     currency: str
     script_id: int | None = None
+    script_version: int | None = None
     extra: dict
 
     @classmethod
@@ -45,6 +46,9 @@ class PayProviderCreate(BaseModel):
         default=None,
         description=("Unified provider Lua script ID (optional)"),
     )
+    script_version: int | None = Field(
+        default=None, description="Pinned script version; null = latest"
+    )
     extra: dict = Field(
         default_factory=dict, description="Non-secret extra params (optional)"
     )
@@ -59,6 +63,9 @@ class PayProviderPatch(BaseModel):
     secrets: dict | None = Field(default=None, description="New secrets JSON")
     script_id: int | None = Field(
         default=None, description="Unified provider Lua script ID"
+    )
+    script_version: int | None = Field(
+        default=None, description="Pinned script version; null = latest"
     )
     extra: dict | None = Field(default=None, description="Non-secret extra params")
 
