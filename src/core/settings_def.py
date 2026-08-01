@@ -217,6 +217,22 @@ SETTINGS: tuple[SettingDef, ...] = (
         desc="Максимум медиа-файлов на аккаунт (без media.uploadlarge/"
         "admin.media.upload — у них лимит не применяется)",
     ),
+    # Заказы: повтор выдачи и компенсация при окончательном провале
+    SettingDef(
+        "orders.delivery.max_attempts",
+        None,
+        type="int",
+        group="orders",
+        desc="Сколько раз повторить выдачу услуги после ошибки, прежде чем "
+        "признать её проваленной и вернуть сумму на внутренний баланс",
+    ),
+    SettingDef(
+        "orders.delivery.retry_backoff_sec",
+        None,
+        type="int",
+        group="orders",
+        desc="Пауза между повторами выдачи услуги, секунды",
+    ),
     # Аналитика: продвинутый уровень (Polars) — кэш и параметры расчётов
     SettingDef(
         "analytics.advanced.cache_ttl_sec",

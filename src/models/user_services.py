@@ -113,6 +113,11 @@ class UserServicesModel(Base):
         DateTime(timezone=True), nullable=True
     )
     error: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    # Сколько раз пытались выдать. Дошло до orders.delivery.max_attempts —
+    # billing-loop больше не повторяет и компенсирует внутренним балансом.
+    delivery_attempts: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
 
     service: Mapped["ServiceModel"] = relationship(lazy="joined")
 
@@ -247,6 +252,7 @@ class UserServicesMngr:
         except Exception as exc:  # noqa: BLE001 — любая ошибка доставки -> возврат
             usvc.status = UsvcStatus.FAILED
             usvc.error = str(exc)[:512]
+            usvc.delivery_attempts += 1
             if refund_on_fail:
                 self._refund(acc, refund_on_fail)
         await self.s.flush()

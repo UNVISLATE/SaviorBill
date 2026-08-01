@@ -25,6 +25,7 @@ from models.system_settings import SystemSettingsMngr
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel
+from services.account import lock_account
 from services.audit import audit
 from core.config import AppConfig
 from utils.datetime_utils import utc_now
@@ -37,6 +38,10 @@ log = logging.getLogger("saviorbill.billing")
 # Префиксы членов очереди по виду задачи.
 _SVC = "svc:"  # истечение услуги (ref = user_services.id)
 _PAY = "pay:"  # перепроверка платежа (ref = user_payments.id)
+_DLV = "dlv:"  # повтор выдачи услуги после ошибки (ref = user_services.id)
+
+_DELIVERY_MAX_ATTEMPTS = 3
+_DELIVERY_BACKOFF_SEC = 60
 
 # Атомарная выборка «созревших» задач: ZRANGEBYSCORE + ZREM одним вызовом, чтобы
 # один и тот же член не достался двум инстансам billing одновременно.
@@ -152,6 +157,7 @@ class BillingLoop:
         """Засеять окно: истёкшие/ближайшие услуги + висящие pending-платежи."""
         await self._refill(session)
         await self._seed_pending_payments(session)
+        await self._seed_failed_deliveries(session)
 
     async def _refill(self, session: AsyncSession) -> int:
         """Поставить ближайшие активные срочные услуги в очередь. Идемпотентно.
@@ -177,6 +183,29 @@ class BillingLoop:
             )
             added += 1
         return added
+
+    async def _seed_failed_deliveries(self, session: AsyncSession) -> None:
+        """Поставить повтор выдачи услугам, у которых доставка провалилась.
+
+        Источник — БД, а не публикация из хендлера: продюсеру (`PayMngr`) не
+        нужен доступ к Valkey, а перезапуск инстанса не теряет уже упавшие
+        выдачи. Члены детерминированы, поэтому засев идемпотентен.
+        """
+        rows = await session.scalars(
+            select(UserServicesModel)
+            .where(
+                UserServicesModel.status == UsvcStatus.FAILED,
+                # Уже компенсированные не переставляем — иначе член очереди
+                # возвращался бы каждый тик и крутился вхолостую.
+                UserServicesModel.private_data["delivery_credit"].is_(None),
+            )
+            .order_by(UserServicesModel.id)
+            .limit(self.cfg.BILLING_QUEUE_WINDOW)
+        )
+        now = _score(utc_now())
+        for usvc in rows:
+            # nx=True: не сбрасывать уже назначенный backoff повторной попытки.
+            await self.vk.zadd(self._qkey, {f"{_DLV}{usvc.id}": now}, nx=True)
 
     async def _seed_pending_payments(self, session: AsyncSession) -> None:
         """Поставить перепроверку платежам, висящим в pending дольше порога."""
@@ -222,6 +251,7 @@ class BillingLoop:
             await asyncio.gather(*(self._process_one(member) for member in due))
         async with self.sm() as session:
             await self._refill(session)
+            await self._seed_failed_deliveries(session)
 
     async def _process_one(self, member: str) -> None:
         """Обработать один claimed-член в отдельной сессии под семафором."""
@@ -256,7 +286,98 @@ class BillingLoop:
             await self._exec_svc_action(session, int(member[len(_SVC) :]))
         elif member.startswith(_PAY):
             await self._exec_pay_recheck(session, int(member[len(_PAY) :]))
+        elif member.startswith(_DLV):
+            await self._exec_delivery_retry(session, int(member[len(_DLV) :]))
         # неизвестный член — уже удалён claim'ом, делать нечего.
+
+    async def _delivery_limits(self, session: AsyncSession) -> tuple[int, int]:
+        settings = SystemSettingsMngr(
+            session, self.vk, make_secbox(self.cfg), self.cfg.SETTINGS_CACHE_TTL
+        )
+        max_attempts = await settings.get_int(
+            "orders.delivery.max_attempts", _DELIVERY_MAX_ATTEMPTS
+        )
+        backoff = await settings.get_int(
+            "orders.delivery.retry_backoff_sec", _DELIVERY_BACKOFF_SEC
+        )
+        return (
+            max_attempts or _DELIVERY_MAX_ATTEMPTS,
+            backoff or _DELIVERY_BACKOFF_SEC,
+        )
+
+    async def _exec_delivery_retry(self, session: AsyncSession, usvc_id: int) -> None:
+        """Повторить провалившуюся выдачу; исчерпав попытки — вернуть деньги.
+
+        Возврат идёт на внутренний баланс: обращаться к платёжному провайдеру
+        за автоматическим рефандом мы не имеем права (см. IMPLEMENTATION_PLAN,
+        решение D7).
+        """
+        usvc = await session.get(UserServicesModel, usvc_id)
+        if usvc is None or usvc.status != UsvcStatus.FAILED:
+            return
+        max_attempts, backoff = await self._delivery_limits(session)
+
+        if usvc.delivery_attempts < max_attempts:
+            service = await session.get(ServiceModel, usvc.service_id)
+            acc = await lock_account(session, usvc.account_id)
+            if service is None or acc is None:
+                return
+            mngr = await self._usvc_mngr(session)
+            await mngr.deliver(usvc, service, acc)
+            if usvc.status == UsvcStatus.ACTIVE:
+                await self._audit_delivery(session, usvc, "service.delivery.recovered")
+                return
+            if usvc.delivery_attempts < max_attempts:
+                nxt = utc_now() + timedelta(seconds=backoff)
+                await self.vk.zadd(self._qkey, {f"{_DLV}{usvc_id}": _score(nxt)})
+                return
+
+        await self._compensate_delivery(session, usvc)
+
+    async def _compensate_delivery(
+        self, session: AsyncSession, usvc: UserServicesModel
+    ) -> None:
+        """Зачислить стоимость проваленной выдачи на внутренний баланс (однократно)."""
+        private = usvc.private_data or {}
+        if private.get("delivery_credit"):
+            return
+        acc = await lock_account(session, usvc.account_id)
+        if acc is None or usvc.price <= 0:
+            return
+        acc.balance += usvc.price
+        usvc.private_data = {
+            **private,
+            "delivery_credit": {
+                "amount": str(usvc.price),
+                "at": utc_now().isoformat(),
+            },
+        }
+        await session.flush()
+        await self._audit_delivery(
+            session,
+            usvc,
+            "service.delivery.credited",
+            meta={"amount": str(usvc.price), "attempts": usvc.delivery_attempts},
+        )
+
+    async def _audit_delivery(
+        self,
+        session: AsyncSession,
+        usvc: UserServicesModel,
+        action: str,
+        meta: dict | None = None,
+    ) -> None:
+        try:
+            await audit(
+                session,
+                action=action,
+                actor_id=usvc.account_id,
+                target_type="user_service",
+                target_id=str(usvc.id),
+                meta={"service_id": usvc.service_id, **(meta or {})},
+            )
+        except Exception:  # noqa: BLE001 — аудит не должен ломать задачу
+            log.exception("billing-loop: failed to record %s audit", action)
 
     async def _exec_svc_action(self, session: AsyncSession, usvc_id: int) -> None:
         member = f"{_SVC}{usvc_id}"
