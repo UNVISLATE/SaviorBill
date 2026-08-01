@@ -41,6 +41,54 @@ class Login(BaseModel):
         description="Login or email",
     )
     password: str = Field(min_length=1, max_length=128, description="Password")
+    totp: str | None = Field(
+        default=None,
+        max_length=32,
+        description="Authenticator code or a recovery code; required if the "
+        "account has two-factor enabled",
+    )
+
+
+class TwoFAStatus(BaseModel):
+    """Two-factor state of the current account."""
+
+    enabled: bool
+    #: Роль обязана включить 2FA (auth.2fa.required_for_admin).
+    required: bool
+    recovery_codes_left: int
+
+
+class TwoFASetup(BaseModel):
+    """Freshly issued TOTP secret (not active until confirmed)."""
+
+    secret: str
+    otpauth_url: str
+
+
+class TwoFAConfirm(BaseModel):
+    """Confirm two-factor setup."""
+
+    code: str = Field(min_length=6, max_length=32, description="Authenticator code")
+
+
+class TwoFAEnabled(BaseModel):
+    """Recovery codes, shown exactly once."""
+
+    recovery_codes: list[str]
+
+
+class TwoFADisable(BaseModel):
+    """Disable two-factor."""
+
+    password: str | None = Field(
+        default=None, max_length=128, description="Current password"
+    )
+    code: str | None = Field(
+        default=None,
+        max_length=32,
+        description="Authenticator or recovery code; used when the account has "
+        "no password",
+    )
 
 
 class Refresh(BaseModel):

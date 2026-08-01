@@ -7,10 +7,12 @@ from .media import router as media_router
 from .oauth import router as oauth_router
 from .purchases import router as purchases_router
 from .services import router as services_router
+from .twofa import router as twofa_router
 from .verify import router as verify_router
 
 router = APIRouter(prefix="/api/v1/user", tags=["user"])
 router.include_router(me_router)
+router.include_router(twofa_router)
 router.include_router(media_router)
 router.include_router(services_router)
 router.include_router(purchases_router)

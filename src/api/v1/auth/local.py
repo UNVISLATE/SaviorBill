@@ -14,12 +14,18 @@ from dependencies.auth import (
 )
 from dependencies.login_guard import LoginGuard, client_ip, get_login_guard
 from dependencies.ratelimit import LimitKind, rate_limit
+from dependencies.sec import make_secbox
 from dependencies.triggers import get_dispatcher
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.banned_email_domains import BannedEmailDomainsMngr
 from schemas.auth import Login, Refresh, Reg, TokenPair
 from security.sec import jwt as jwtu
 from security.sec.pwd import dummy_hash, hash_pass, needs_rehash, verify_pass
+from services.twofa import TotpSvc
+
+
+def _cfg(request: Request):
+    return request.app.state.settings
 
 router = APIRouter()
 
@@ -109,6 +115,17 @@ async def login(
 
     # is_active (бан) больше не блокирует вход — роль banned и так лишена
     # прав через RBAC; клиент получает токены + флаг is_active=false.
+    if acc.totp_enabled:
+        # Неверный второй фактор считаем такой же неудачей входа, как и
+        # неверный пароль: иначе счётчик блокировки его не видит.
+        if not body.totp or not TotpSvc(make_secbox(_cfg(request))).verify_any(
+            acc, body.totp
+        ):
+            await guard.record_fail(body.login, ip)
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "totp required" if not body.totp else "invalid totp",
+            )
     if needs_rehash(acc.pass_hash):
         acc.pass_hash = hash_pass(body.password)
     await mngr.touch_login(acc)

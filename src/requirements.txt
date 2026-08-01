@@ -1,4 +1,4 @@
-fastapi==0.138.1
+﻿fastapi==0.138.1
 uvicorn[standard]==0.49.0
 python-multipart==0.0.20
 sqlalchemy==2.0.51
@@ -23,7 +23,9 @@ opentelemetry-sdk==1.43.0
 opentelemetry-exporter-otlp==1.43.0
 opentelemetry-instrumentation-fastapi==0.64b0
 opentelemetry-instrumentation-sqlalchemy==0.64b0
-# Advanced-аналитика (analytics/advanced.py): LTV/retention/churn на Polars.
-# lts-cpu вариант — совместимость с виртуалками без AVX2 (безопаснее для
-# произвольного облачного окружения, чем обычный polars).
+# Advanced-Ð°Ð½Ð°Ð»Ð¸Ñ‚Ð¸ÐºÐ° (analytics/advanced.py): LTV/retention/churn Ð½Ð° Polars.
+# lts-cpu Ð²Ð°Ñ€Ð¸Ð°Ð½Ñ‚ â€” ÑÐ¾Ð²Ð¼ÐµÑÑ‚Ð¸Ð¼Ð¾ÑÑ‚ÑŒ Ñ Ð²Ð¸Ñ€Ñ‚ÑƒÐ°Ð»ÐºÐ°Ð¼Ð¸ Ð±ÐµÐ· AVX2 (Ð±ÐµÐ·Ð¾Ð¿Ð°ÑÐ½ÐµÐµ Ð´Ð»Ñ
+# Ð¿Ñ€Ð¾Ð¸Ð·Ð²Ð¾Ð»ÑŒÐ½Ð¾Ð³Ð¾ Ð¾Ð±Ð»Ð°Ñ‡Ð½Ð¾Ð³Ð¾ Ð¾ÐºÑ€ÑƒÐ¶ÐµÐ½Ð¸Ñ, Ñ‡ÐµÐ¼ Ð¾Ð±Ñ‹Ñ‡Ð½Ñ‹Ð¹ polars).
 polars-lts-cpu==1.33.1
+# TOTP (RFC 6238) для двухфакторной аутентификации.
+pyotp==2.9.0

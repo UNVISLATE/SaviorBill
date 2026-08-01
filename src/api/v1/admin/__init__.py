@@ -1,6 +1,8 @@
 """/api/v1/admin"""
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
+
+from dependencies.twofa import require_2fa
 
 from .catalogs import router as catalogs_router
 from .audit import router as audit_router
@@ -22,7 +24,7 @@ from .tasks import router as tasks_router
 from .triggers import router as triggers_router
 from .users import router as users_router
 
-router = APIRouter(prefix="/api/v1/admin")
+router = APIRouter(prefix="/api/v1/admin", dependencies=[Depends(require_2fa)])
 # Каждый саброутер получает свой сегмент пути здесь, а не дублирует его в
 # каждом отдельном @router.get(...)/... внутри своего файла (см. upd_plan для
 # истории вопроса). roles_router — исключение: в одном файле смешаны два

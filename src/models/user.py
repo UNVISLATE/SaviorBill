@@ -9,9 +9,11 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import (
     func,
+    Boolean,
     DateTime,
     ForeignKey,
     Integer,
+    JSON,
     Numeric,
     String,
     select,
@@ -59,6 +61,17 @@ class UserModel(Base):
     )
     pass_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
+    # Второй фактор (TOTP, см. services/twofa.py). Секрет — зашифрован SecBox,
+    # коды восстановления — только хэши. `totp_enabled` включается лишь после
+    # подтверждения кодом, иначе неудачная настройка запирала бы аккаунт.
+    totp_secret: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    totp_recovery: Mapped[list] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
+    )
+
     balance: Mapped[Decimal] = mapped_column(
         Numeric(18, 2), default=Decimal("0"), server_default="0", nullable=False
     )
@@ -100,7 +113,6 @@ class UserModel(Base):
     @property
     def has_pass(self) -> bool:
         return self.pass_hash is not None
-
     @property
     def is_active(self) -> bool:
         """Информационный флаг для клиента: назначена ли роль ``banned``.
