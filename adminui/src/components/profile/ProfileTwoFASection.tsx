@@ -1,6 +1,7 @@
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { KeyRound, Loader2, ShieldCheck, ShieldOff } from "lucide-react"
+import QRCode from "qrcode"
 
 import { api } from "@/api/api.ts"
 import { toastError, toastSuccess } from "@/lib/toast"
@@ -26,14 +27,15 @@ interface TwoFASetup {
  * "own" (см. ProfileDialogHost — раздел добавляется с `ownOnly: true`),
  * админ не может включать/выключать 2FA за другого пользователя.
  *
- * Нет отрисовки QR-кода (не тащим новую зависимость ради одной картинки,
- * см. CLAUDE.md "экосистемные инструменты") — вместо неё секрет и
- * otpauth-ссылка показаны как копируемый текст для ручного ввода в
- * приложение-аутентификатор.
+ * QR-код рисуется на клиенте из `otpauth_url` (пакет `qrcode`, чистый JS,
+ * без сетевых запросов к сторонним генераторам QR — секрет 2FA никуда не
+ * уходит с клиента). Секрет/ссылка ниже остаются как копируемый текст —
+ * запасной вариант для ручного ввода, если не получается отсканировать.
  */
 export function ProfileTwoFASection() {
   const qc = useQueryClient()
   const [setup, setSetup] = useState<TwoFASetup | null>(null)
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [confirmCode, setConfirmCode] = useState("")
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null)
   const [disableOpen, setDisableOpen] = useState(false)
@@ -53,6 +55,24 @@ export function ProfileTwoFASection() {
     },
     onError: () => toastError("Не удалось начать настройку 2FA"),
   })
+
+  useEffect(() => {
+    if (!setup) {
+      setQrDataUrl(null)
+      return
+    }
+    let cancelled = false
+    QRCode.toDataURL(setup.otpauth_url, { width: 220, margin: 1 })
+      .then((url) => {
+        if (!cancelled) setQrDataUrl(url)
+      })
+      .catch(() => {
+        if (!cancelled) setQrDataUrl(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [setup])
 
   const confirmSetup = useMutation({
     mutationFn: async () =>
@@ -180,19 +200,22 @@ export function ProfileTwoFASection() {
       <div className="space-y-4">
         <Alert>
           <KeyRound className="size-4" />
-          <AlertTitle>Добавьте аккаунт в приложение-аутентификатор</AlertTitle>
+          <AlertTitle>Отсканируйте QR-код в приложении-аутентификаторе</AlertTitle>
           <AlertDescription>
-            Google Authenticator, Authy, 1Password и т.п. — введите секрет
-            вручную или добавьте по ссылке.
+            Google Authenticator, Authy, 1Password и т.п. Если сканировать
+            нельзя — введите секрет вручную ниже.
           </AlertDescription>
         </Alert>
+        <div className="flex justify-center rounded-md border bg-white p-4">
+          {qrDataUrl ? (
+            <img src={qrDataUrl} alt="QR-код для настройки 2FA" width={220} height={220} />
+          ) : (
+            <Skeleton className="h-[220px] w-[220px]" />
+          )}
+        </div>
         <Field>
-          <FieldLabel>Секрет</FieldLabel>
+          <FieldLabel>Секрет (для ручного ввода)</FieldLabel>
           <Input readOnly value={setup.secret} onFocus={(e) => e.currentTarget.select()} className="font-mono" />
-        </Field>
-        <Field>
-          <FieldLabel>Ссылка (otpauth://)</FieldLabel>
-          <Input readOnly value={setup.otpauth_url} onFocus={(e) => e.currentTarget.select()} className="font-mono text-xs" />
         </Field>
         <Separator />
         <Field>
