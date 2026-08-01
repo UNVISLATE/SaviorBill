@@ -17,6 +17,26 @@ from models.user_oauth import UserOauthMngr
 from schemas.auth import Account
 
 
+async def lock_account(session: AsyncSession, account_id: int) -> UserModel | None:
+    """Загрузить аккаунт с блокировкой строки (``SELECT ... FOR UPDATE OF``).
+
+    Обязательна перед любой мутацией ``balance``/``bonus_balance``: без неё два
+    параллельных платежа одного пользователя читают одно значение и последний
+    коммит затирает первый (см. AUDIT.md §3.1).
+
+    ``of=UserModel`` нужен потому, что у ``UserModel`` есть ``lazy="joined"``
+    связи: без него Postgres откажется применять FOR UPDATE к nullable-стороне
+    LEFT JOIN. ``populate_existing`` перечитывает уже закэшированный в сессии
+    объект — иначе вернулись бы значения, прочитанные до блокировки.
+    """
+    return await session.scalar(
+        select(UserModel)
+        .where(UserModel.id == account_id)
+        .with_for_update(of=UserModel)
+        .execution_options(populate_existing=True)
+    )
+
+
 async def account_response(acc: UserModel, session: AsyncSession) -> Account:
     """Собрать полный ответ профиля (с slugs привязанных OAuth-провайдеров)."""
     conns = await UserOauthMngr(session).list_for_account(acc.id)
@@ -86,4 +106,9 @@ async def release_old_avatar(
     await media.delete(old)
 
 
-__all__ = ["account_response", "is_media_still_used", "release_old_avatar"]
+__all__ = [
+    "account_response",
+    "is_media_still_used",
+    "lock_account",
+    "release_old_avatar",
+]

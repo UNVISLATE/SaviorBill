@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from models.system_settings import SystemSettingsModel
 from models.user import UserModel
+from services.account import lock_account
 
 _CENT = Decimal("0.01")
 _HUNDRED = Decimal("100")
@@ -78,7 +79,7 @@ class ReferralMngr:
         if bonus <= 0:
             return None
 
-        referrer = await self.s.get(UserModel, buyer.referred_by)
+        referrer = await lock_account(self.s, buyer.referred_by)
         if referrer is None:
             return None
         referrer.bonus_balance += bonus

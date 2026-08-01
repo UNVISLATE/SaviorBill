@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException, status
 from sqlalchemy import (
@@ -25,8 +25,11 @@ from lifecycle.delivery import get_issuer
 from utils.datetime_utils import utc_now
 from lua.bus import LuaBus
 from security.sec.box import SecBox
+from services.account import lock_account
 
 log = logging.getLogger("saviorbill.user_services")
+
+_CENT = Decimal("0.01")
 
 
 class UserServicesModel(Base):
@@ -130,14 +133,25 @@ class UserServicesMngr:
     # --- деньги -----------------------------------------------------------
     @staticmethod
     def _charge(acc, amount: Decimal) -> None:
-        """Списать сумму: сначала бонусы, затем основной баланс."""
+        """Списать сумму: сначала бонусы, затем основной баланс.
+
+        Вызывающий обязан предварительно взять row-lock на аккаунт
+        (:func:`services.account.lock_account`) — иначе две параллельные
+        покупки прочитают один и тот же баланс.
+        """
         if amount <= 0:
             return
+        amount = amount.quantize(_CENT, rounding=ROUND_HALF_UP)
         if acc.bonus_balance + acc.balance < amount:
             raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "insufficient funds")
         from_bonus = min(acc.bonus_balance, amount)
         acc.bonus_balance -= from_bonus
         acc.balance -= amount - from_bonus
+
+    @staticmethod
+    def _refund(acc, amount: Decimal) -> None:
+        if amount > 0:
+            acc.balance += amount.quantize(_CENT, rounding=ROUND_HALF_UP)
 
     @staticmethod
     def _refund(acc, amount: Decimal) -> None:
@@ -166,6 +180,9 @@ class UserServicesMngr:
         price = service.price - discount
 
         if charge:
+            # Блокируем строку аккаунта до чтения баланса — иначе две
+            # параллельные покупки уводят баланс в минус (AUDIT.md §3.1).
+            await lock_account(self.s, acc.id)
             self._charge(acc, price)
 
         merged = dict(service.params or {})

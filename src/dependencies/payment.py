@@ -23,12 +23,14 @@ from enums import PayAction, PayStatus, PayTarget
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.payment_providers import PaymentProvidersModel, PaymentProvidersMngr
 from models.promo_codes import PromoCodesModel
+from models.promo_use import PromoUseModel
 from models.service import ServiceModel
 from models.system_scripts import SystemScriptsModel
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel
 from lua.schemas import LuaRequest
+from services.account import lock_account
 from services.audit import audit
 from lua.context import LuaRunner
 from utils.datetime_utils import utc_now
@@ -317,13 +319,13 @@ class PayMngr:
             usvc = await self.s.get(UserServicesModel, payment.user_svc_id)
             if usvc is not None:
                 service = await self.s.get(ServiceModel, usvc.service_id)
-                acc = await self.s.get(UserModel, payment.account_id)
+                acc = await lock_account(self.s, payment.account_id)
                 if service is not None and acc is not None:
                     await UserServicesMngr(self.s, self.bus, self.box).revoke(
                         usvc, service, acc
                     )
         else:  # возврат пополнения баланса
-            acc = await self.s.get(UserModel, payment.account_id)
+            acc = await lock_account(self.s, payment.account_id)
             if acc is not None:
                 # Списываем не больше суммы этого платежа и не больше того,
                 # что реально ещё есть на балансе — старые/чужие средства
@@ -399,7 +401,7 @@ class PayMngr:
         if priv.get("external_id"):
             payment.external_id = str(priv["external_id"])
 
-        acc = await self.s.get(UserModel, payment.account_id)
+        acc = await lock_account(self.s, payment.account_id)
 
         if payment.target == PayTarget.SERVICE and payment.user_svc_id:
             usvc = await self.s.get(UserServicesModel, payment.user_svc_id)
@@ -416,27 +418,53 @@ class PayMngr:
                 # этом случае не должен считаться потраченным.
                 promo_id = (usvc.private_data or {}).get("promocode_id")
                 if promo_id:
-                    promo = await self.s.get(PromoCodesModel, promo_id)
-                    if promo is not None:
-                        from models.promo_use import PromoUseModel
-
-                        already = await self.s.scalar(
-                            select(PromoUseModel).where(
-                                PromoUseModel.promocode_id == promo.id,
-                                PromoUseModel.order_id == usvc.id,
-                            )
-                        )
-                        if already is None:
-                            self.s.add(
-                                PromoUseModel(
-                                    promocode_id=promo.id,
-                                    account_id=payment.account_id,
-                                    order_id=usvc.id,
-                                )
-                            )
-                            promo.used_count += 1
+                    await self._redeem_promo(promo_id, payment, usvc)
         else:  # пополнение баланса
             acc.balance += payment.amount
+
+    async def _redeem_promo(
+        self, promo_id: int, payment: UserPaymentsModel, usvc: UserServicesModel
+    ) -> None:
+        """Погасить промокод заказа ровно один раз.
+
+        Блокировка строки промокода обязательна: в `purchases.py` лок берётся
+        при создании заказа и отпускается на коммите, поэтому два платежа с
+        одним одноразовым кодом доходят сюда одновременно и без FOR UPDATE оба
+        не видят чужой `PromoUseModel` (см. AUDIT.md §3.1).
+        """
+        promo = await self.s.scalar(
+            select(PromoCodesModel)
+            .where(PromoCodesModel.id == promo_id)
+            .with_for_update()
+        )
+        if promo is None:
+            return
+        already = await self.s.scalar(
+            select(PromoUseModel).where(
+                PromoUseModel.promocode_id == promo.id,
+                PromoUseModel.order_id == usvc.id,
+            )
+        )
+        if already is not None:
+            return
+        if promo.max_uses is not None and promo.used_count >= promo.max_uses:
+            await audit(
+                self.s,
+                action="promo_use_exhausted",
+                target_type="payment",
+                target_id=payment.id,
+                result="warn",
+                meta={"promocode_id": promo.id, "order_id": usvc.id},
+            )
+            return
+        self.s.add(
+            PromoUseModel(
+                promocode_id=promo.id,
+                account_id=payment.account_id,
+                order_id=usvc.id,
+            )
+        )
+        promo.used_count += 1
 
 
 def _blank_account() -> UserModel:
