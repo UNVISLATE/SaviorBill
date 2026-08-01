@@ -47,6 +47,12 @@ valkey_degraded_total = Counter(
     ["component"],
 )
 
+dlq_pending = Gauge(
+    "dlq_pending",
+    "Задачи в мёртвых очередях (исчерпали попытки и ждут ручного разбора)",
+    ["queue"],
+)
+
 __all__ = [
     "worker_jobs_pending",
     "worker_jobs_reclaimed_total",
@@ -54,4 +60,5 @@ __all__ = [
     "lua_script_duration_seconds",
     "bus_signature_rejected_total",
     "valkey_degraded_total",
+    "dlq_pending",
 ]

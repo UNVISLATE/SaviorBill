@@ -27,6 +27,7 @@ from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel
 from services.account import lock_account
 from services.audit import audit
+from services.dlq import DeadLetters
 from core.config import AppConfig
 from utils.datetime_utils import utc_now
 from lua.bus import LuaBus
@@ -78,6 +79,7 @@ class BillingLoop:
         self._stopped = False
         # Ограничитель параллелизма задач одной итерации (backpressure).
         self._sem = asyncio.Semaphore(cfg.BILLING_CONCURRENCY)
+        self._dlq = DeadLetters(vk, cfg)
 
     # --- ресурсы -----------------------------------------------------------
     async def _bus(self, session: AsyncSession) -> LuaBus:
@@ -252,6 +254,7 @@ class BillingLoop:
         async with self.sm() as session:
             await self._refill(session)
             await self._seed_failed_deliveries(session)
+        await self._dlq.refresh_metrics()
 
     async def _process_one(self, member: str) -> None:
         """Обработать один claimed-член в отдельной сессии под семафором."""
@@ -411,6 +414,7 @@ class BillingLoop:
                 {"member": member, "ref_id": str(ref_id), "attempts": str(n)},
             )
             await clear_attempts(self.vk, attempt_key)
+            await self._audit_dlq(member, n)
         else:
             # Повтор через интервал перепроверки — задача снова в очереди.
             nxt = utc_now() + timedelta(seconds=self.cfg.BILLING_PAY_RECHECK_INTERVAL)
@@ -418,6 +422,22 @@ class BillingLoop:
 
     async def _clear_attempts(self, attempt_key: str) -> None:
         await clear_attempts(self.vk, attempt_key)
+
+    async def _audit_dlq(self, member: str, attempts_n: int) -> None:
+        """Отдельная сессия: вызывающая транзакция будет откачена вместе с ошибкой."""
+        try:
+            async with self.sm() as session:
+                await audit(
+                    session,
+                    action="tasks.dlq.enqueued",
+                    target_type="dlq",
+                    target_id=member,
+                    result="warn",
+                    meta={"attempts": attempts_n, "queue": "billing"},
+                )
+                await session.commit()
+        except Exception:  # noqa: BLE001 — аудит не должен ломать задачу
+            log.exception("billing-loop: failed to audit DLQ placement")
 
     async def _audit_expire(
         self, session: AsyncSession, usvc: UserServicesModel, acc
