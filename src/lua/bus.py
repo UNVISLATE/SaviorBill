@@ -77,9 +77,11 @@ class LuaBus:
         except ResponseError:
             return "0-0"  # стрим ещё не создан
 
-    async def _call_once(self, kind: str, payload: dict | None, timeout: int) -> dict:
+    async def _call_once(
+        self, kind: str, payload: dict | None, timeout: int, metric_label: str
+    ) -> dict:
         """Одна попытка: отправить задачу и дождаться результата."""
-        with lua_script_duration_seconds.labels(slug=kind).time():
+        with lua_script_duration_seconds.labels(slug=metric_label).time():
             return await self._call_once_timed(kind, payload, timeout)
 
     async def _call_once_timed(self, kind: str, payload: dict | None, timeout: int) -> dict:
@@ -155,20 +157,29 @@ class LuaBus:
                     raise LuaError(detail)
 
     async def call(
-        self, kind: str, payload: dict | None = None, timeout: int | None = None
+        self,
+        kind: str,
+        payload: dict | None = None,
+        timeout: int | None = None,
+        metric_label: str | None = None,
     ) -> dict:
         """Отправить задачу и дождаться результата (с ретраями при таймауте).
 
-        :arg kind: тип задачи для воркера.
+        :arg kind: тип задачи для воркера (диспетчеризация в handlers.dispatch).
         :arg payload: произвольная структура данных, прокидывается в Lua.
+        :arg metric_label: метка ``lua_script_duration_seconds{slug=...}``
+            (по умолчанию — ``kind``). Позволяет размечать метрику фактическим
+            slug'ом исполняемого пользовательского скрипта, а не общим типом
+            задачи (см. :meth:`lua.context.LuaRunner.run`).
         :raises LuaError: при ошибке исполнения либо таймауте последней попытки.
         """
         eff_timeout = timeout or self.default_timeout
+        label = metric_label or kind
         attempts = max(1, self.max_retries + 1)
         last_exc: LuaError | None = None
         for attempt in range(1, attempts + 1):
             try:
-                return await self._call_once(kind, payload, eff_timeout)
+                return await self._call_once(kind, payload, eff_timeout, label)
             except LuaError as exc:
                 last_exc = exc
                 if attempt >= attempts:

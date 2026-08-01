@@ -337,7 +337,7 @@ async def test_call_default_no_retry_raises_immediately():
 
     calls = 0
 
-    async def failing_once(kind, payload, timeout):
+    async def failing_once(kind, payload, timeout, metric_label):
         nonlocal calls
         calls += 1
         raise LuaError("timeout")
@@ -359,7 +359,7 @@ async def test_call_retries_then_succeeds():
 
     calls = 0
 
-    async def flaky(kind, payload, timeout):
+    async def flaky(kind, payload, timeout, metric_label):
         nonlocal calls
         calls += 1
         if calls < 3:
@@ -383,7 +383,7 @@ async def test_call_retries_exhausted_raises_last_error():
 
     calls = 0
 
-    async def always_fails(kind, payload, timeout):
+    async def always_fails(kind, payload, timeout, metric_label):
         nonlocal calls
         calls += 1
         raise LuaError(f"ошибка #{calls}")
@@ -406,7 +406,7 @@ async def test_call_retry_sleeps_backoff_between_attempts(monkeypatch):
 
     calls = 0
 
-    async def flaky(kind, payload, timeout):
+    async def flaky(kind, payload, timeout, metric_label):
         nonlocal calls
         calls += 1
         if calls == 1:

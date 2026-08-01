@@ -118,6 +118,10 @@ class UserServicesModel(Base):
     delivery_attempts: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False
     )
+    # Провенанс: какая версия lua-скрипта фактически выполнила последнее
+    # действие ЖЦ (пин на услуге — service.lua_script_version — мог с тех пор
+    # измениться). NULL — услуга не lua-delivery или ещё ни разу не исполнялась.
+    lua_script_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     service: Mapped["ServiceModel"] = relationship(lazy="joined")
 

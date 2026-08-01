@@ -21,7 +21,7 @@ COPY src/ /app/
 FROM base AS tests
 
 COPY tests/ /app/tests/
-RUN lua tests/sandbox_test.lua && touch /app/.tests-passed
+RUN lua tests/sandbox_test.lua && lua tests/handlers_test.lua && touch /app/.tests-passed
 
 
 FROM base AS runtime

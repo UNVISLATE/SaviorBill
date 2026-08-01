@@ -28,7 +28,7 @@ grafana.com/dashboards/14282.
 | `worker_jobs_pending` | Gauge | `kind` | джобы в `queued`/`processing` по `worker_jobs` |
 | `worker_jobs_reclaimed_total` | Counter | `kind` | джобы, забранные как stale после `MEDIA_JOB_STALE_AFTER_SEC` |
 | `worker_jobs_failed_total` | Counter | `kind`, `op` | завершившиеся ошибкой |
-| `lua_script_duration_seconds` | Histogram | `slug` | полный RPC через `LuaBus`, включая ожидание ответа |
+| `lua_script_duration_seconds` | Histogram | `slug` | полный RPC через `LuaBus`, включая ожидание ответа. Для `run_script`/`test-run` — `run_script:{slug}`/`test_run:{slug}` (реальный скрипт), для служебных задач (`eval`/`lint`/`http`/`billing`) — тип задачи |
 | `bus_signature_rejected_total` | Counter | `bus` | сообщения шины, отклонённые по HMAC-подписи |
 
 ### Метрики LuaWorker (push через Valkey, `src/telemetry/instance_metrics.py`)

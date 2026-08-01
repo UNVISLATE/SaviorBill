@@ -34,7 +34,7 @@ class LuaService(BaseIssuer):
         :arg acc: аккаунт-владелец (ORM).
         :arg action: действие из :class:`enums.ServiceAction`.
         """
-        from models.system_scripts import SystemScriptsModel, resolve_version_filename
+        from models.system_scripts import SystemScriptsModel, resolve_version
 
         if self.bus is None:
             raise RuntimeError("Lua-выдача недоступна без шины LuaWorker")
@@ -44,7 +44,7 @@ class LuaService(BaseIssuer):
         script = await self.s.get(SystemScriptsModel, service.lua_script_id)
         if script is None or not script.is_active or script.kind != ScriptKind.SERVICE:
             raise RuntimeError("Lua-скрипт услуги недоступен")
-        filename = await resolve_version_filename(
+        filename, resolved_version = await resolve_version(
             self.s, script, service.lua_script_version
         )
 
@@ -59,6 +59,9 @@ class LuaService(BaseIssuer):
         )
         usvc.public_data = res.get("public") or {}
         usvc.private_data = res.get("private") or {}
+        # Провенанс: какая именно версия скрипта реально выполнила это
+        # действие (пин на услуге мог измениться/сброситься между выдачами).
+        usvc.lua_script_version = resolved_version
 
         state = res.get("state")
         if state:

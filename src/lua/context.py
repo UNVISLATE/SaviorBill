@@ -192,17 +192,23 @@ class LuaRunner:
             )
             raise RuntimeError(f"lua context build failed: {kind}") from None
 
-    async def run(self, script_filename: str, kind: str, ctx: dict) -> dict:
+    async def run(
+        self, script_filename: str, kind: str, ctx: dict, slug: str | None = None
+    ) -> dict:
         """Отправить скрипт с контекстом в LuaWorker.
 
         :arg script_filename: имя файла скрипта относительно LUA_SCRIPTS_DIR.
         :arg kind: класс скрипта (тег), см. :class:`enums.ScriptKind`.
         :arg ctx: собранный контекст.
+        :arg slug: slug исполняемого пользовательского скрипта — метка
+            ``lua_script_duration_seconds`` (по умолчанию — общий тип задачи
+            ``run_script``, без разбивки по конкретным скриптам).
         :return: результат исполнения ({public, private, state, expires_at, …}).
         """
         return await self.bus.call(
             "run_script",
             {"script": script_filename, "kind": kind, "ctx": ctx},
+            metric_label=f"run_script:{slug}" if slug else None,
         )
 
     async def run_service(
@@ -216,7 +222,9 @@ class LuaRunner:
             см. :func:`models.system_scripts.resolve_version_filename`).
         """
         ctx = build_service_ctx(action, acc, usvc, service, payment, script)
-        return await self.run(filename or script.filename, ScriptKind.SERVICE, ctx)
+        return await self.run(
+            filename or script.filename, ScriptKind.SERVICE, ctx, slug=script.slug
+        )
 
     async def run_payment(
         self,
@@ -243,14 +251,18 @@ class LuaRunner:
             return_url,
             script,
         )
-        return await self.run(filename or script.filename, ScriptKind.PAYMENT, ctx)
+        return await self.run(
+            filename or script.filename, ScriptKind.PAYMENT, ctx, slug=script.slug
+        )
 
     async def run_trigger(
         self, script, event: str, config: dict, data: dict, filename=None
     ) -> dict:  # noqa: ANN001
         """Собрать контекст триггера и исполнить скрипт."""
         ctx = build_trigger_ctx(event, config, data, script)
-        return await self.run(filename or script.filename, ScriptKind.TRIGGER, ctx)
+        return await self.run(
+            filename or script.filename, ScriptKind.TRIGGER, ctx, slug=script.slug
+        )
 
     async def run_auth(
         self,
@@ -282,7 +294,9 @@ class LuaRunner:
             request=request,
             script=script,
         )
-        return await self.run(filename or script.filename, ScriptKind.AUTH, ctx)
+        return await self.run(
+            filename or script.filename, ScriptKind.AUTH, ctx, slug=script.slug
+        )
 
 
 __all__ = [

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import difflib
 import hashlib
 import uuid
 from datetime import datetime
@@ -15,6 +16,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     JSON,
     String,
@@ -87,13 +89,25 @@ class SystemScriptsModel(Base):
     current_version: Mapped[int] = mapped_column(
         Integer, default=1, server_default="1", nullable=False
     )
+    # Оптимистичная блокировка редактирования: растёт на 1 при каждом patch()/
+    # activate_version(). Клиент присылает последний известный ему lock_version
+    # в запросе — расхождение (кто-то другой сохранил раньше) даёт 409, а не
+    # тихую перезапись чужих правок.
+    lock_version: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
 
 
 class LuaScriptVersionModel(Base):
     """Снимок версии кода Lua-скрипта (история, для diff/восстановления/пиннинга)."""
 
     __tablename__ = "lua_script_versions"
-    __table_args__ = (UniqueConstraint("script_id", "version"),)
+    __table_args__ = (
+        UniqueConstraint("script_id", "version"),
+        # Быстрый поиск версии с тем же содержимым (дедуп при сохранении —
+        # см. SystemScriptsMngr.patch()).
+        Index("ix_lua_script_versions_script_sha", "script_id", "sha256"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     script_id: Mapped[int] = mapped_column(
@@ -115,10 +129,10 @@ class LuaScriptVersionModel(Base):
     )
 
 
-async def resolve_version_filename(
+async def resolve_version(
     session: AsyncSession, script: SystemScriptsModel, version: int | None
-) -> str:
-    """Разрешить путь файла нужной версии скрипта.
+) -> tuple[str, int]:
+    """Разрешить файл и номер нужной версии скрипта.
 
     ``version=None`` — всегда latest. Если версия указана, но такой записи
     больше нет (удалена/не найдена) — тихий фоллбэк на latest (см. задачу:
@@ -127,17 +141,28 @@ async def resolve_version_filename(
     :arg session: активная сессия БД.
     :arg script: модель скрипта (источник ``filename``/``current_version``).
     :arg version: желаемый номер версии или ``None`` (latest).
-    :return: путь файла версии (относительно LUA_SCRIPTS_DIR).
+    :return: (путь файла относительно LUA_SCRIPTS_DIR, фактически исполненная версия)
+        — второе значение нужно для провенанса (какая версия реально отработала).
     """
     if version is None or version == script.current_version:
-        return script.filename
+        return script.filename, script.current_version
     row = await session.scalar(
         select(LuaScriptVersionModel).where(
             LuaScriptVersionModel.script_id == script.id,
             LuaScriptVersionModel.version == version,
         )
     )
-    return row.filename if row is not None else script.filename
+    if row is None:
+        return script.filename, script.current_version
+    return row.filename, row.version
+
+
+async def resolve_version_filename(
+    session: AsyncSession, script: SystemScriptsModel, version: int | None
+) -> str:
+    """Совместимая обёртка над :func:`resolve_version` — только путь файла."""
+    filename, _ = await resolve_version(session, script, version)
+    return filename
 
 
 class SystemScriptsMngr:
@@ -264,51 +289,132 @@ class SystemScriptsMngr:
             ) from exc
         return target
 
+    def _check_lock_version(
+        self, row: SystemScriptsModel, expected: int | None
+    ) -> None:
+        """409, если клиент правит по устаревшему ``lock_version``.
+
+        ``expected=None`` — клиент не участвует в проверке (совместимость со
+        старыми вызовами/скриптами без concurrency-контроля).
+        """
+        if expected is not None and expected != row.lock_version:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "script was modified by someone else since you loaded it "
+                f"(lock_version: expected {expected}, actual {row.lock_version})",
+            )
+
     async def patch(self, script_id: int, data, actor_id: int | None = None) -> SystemScriptsModel:
         """Обновить тело и/или настройки скрипта (только переданные поля).
 
         Изменение ``code`` создаёт новую immutable-версию (``current_version + 1``)
-        в отдельном файле — старые версии не перезатираются.
+        в отдельном файле — старые версии не перезатираются. Если новое
+        содержимое побайтово совпадает с уже активной версией (sha256) —
+        это no-op по коду (не плодим версии на пустых "сохранить без правок").
 
         :arg script_id: id скрипта.
-        :arg data: схема с опциональными ``code``/``settings``/``commit_message``.
+        :arg data: схема с опциональными ``code``/``settings``/``commit_message``/
+            ``lock_version`` (ожидаемое значение — для optimistic concurrency).
         :arg actor_id: id актора (для истории версий).
+        :raises HTTPException: 409 при расхождении ``lock_version``.
         :return: обновлённая запись.
         """
         row = await self.by_id(script_id)
         if row is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "script not found")
+        self._check_lock_version(row, getattr(data, "lock_version", None))
 
         code = getattr(data, "code", None)
+        changed = False
         if code is not None:
-            base = str(Path(row.filename).parent)
-            new_version = row.current_version + 1
-            filename = f"{base}/v{new_version}.lua"
-            target = self._safe_target(filename)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(code, encoding="utf-8")
             sha256 = hashlib.sha256(code.encode()).hexdigest()
+            if sha256 != row.sha256:
+                base = str(Path(row.filename).parent)
+                new_version = row.current_version + 1
+                filename = f"{base}/v{new_version}.lua"
+                target = self._safe_target(filename)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(code, encoding="utf-8")
 
-            row.filename = filename
-            row.sha256 = sha256
-            row.current_version = new_version
-            self.s.add(
-                LuaScriptVersionModel(
-                    script_id=row.id,
-                    version=new_version,
-                    filename=filename,
-                    sha256=sha256,
-                    commit_message=getattr(data, "commit_message", None),
-                    created_by=actor_id,
+                row.filename = filename
+                row.sha256 = sha256
+                row.current_version = new_version
+                self.s.add(
+                    LuaScriptVersionModel(
+                        script_id=row.id,
+                        version=new_version,
+                        filename=filename,
+                        sha256=sha256,
+                        commit_message=getattr(data, "commit_message", None),
+                        created_by=actor_id,
+                    )
                 )
-            )
+                changed = True
 
         settings = getattr(data, "settings", None)
         if settings is not None:
             row.settings = dict(settings)
+            changed = True
 
+        if changed:
+            row.lock_version += 1
         await self.s.flush()
         return row
+
+    async def activate_version(
+        self,
+        script_id: int,
+        version: int,
+        actor_id: int | None = None,
+        expected_lock_version: int | None = None,
+    ) -> SystemScriptsModel:
+        """Сделать существующую (историческую) версию активной — откат без новой записи.
+
+        В отличие от ``patch()`` не создаёт новый файл: просто переставляет
+        указатель ``current_version``/``filename``/``sha256`` на уже
+        существующий снимок версии.
+
+        :raises HTTPException: 404, если версии не существует; 409 при
+            расхождении ``lock_version``.
+        """
+        row = await self.by_id(script_id)
+        if row is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "script not found")
+        self._check_lock_version(row, expected_lock_version)
+
+        target_version = await self.get_version(script_id, version)
+        if target_version is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "script version not found")
+
+        row.filename = target_version.filename
+        row.sha256 = target_version.sha256
+        row.current_version = target_version.version
+        row.lock_version += 1
+        await self.s.flush()
+        return row
+
+    async def diff(
+        self, script_id: int, from_version: int, to_version: int
+    ) -> list[str]:
+        """Построить unified diff между двумя версиями скрипта.
+
+        :raises HTTPException: 404, если одна из версий не найдена.
+        :return: строки unified diff (``difflib``), готовые к склейке.
+        """
+        v_from = await self.get_version(script_id, from_version)
+        v_to = await self.get_version(script_id, to_version)
+        if v_from is None or v_to is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "script version not found")
+        code_from = await self.read_code_at(v_from.filename)
+        code_to = await self.read_code_at(v_to.filename)
+        return list(
+            difflib.unified_diff(
+                code_from.splitlines(keepends=True),
+                code_to.splitlines(keepends=True),
+                fromfile=f"v{from_version}",
+                tofile=f"v{to_version}",
+            )
+        )
 
     async def list_versions(self, script_id: int) -> list[LuaScriptVersionModel]:
         """Список версий скрипта (новые сверху)."""
@@ -401,4 +507,5 @@ __all__ = [
     "SystemScriptsMngr",
     "LuaScriptVersionModel",
     "resolve_version_filename",
+    "resolve_version",
 ]

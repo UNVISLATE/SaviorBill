@@ -29,6 +29,10 @@ class LuaScript(BaseModel):
     )
     is_active: bool
     current_version: int = 1
+    lock_version: int = Field(
+        default=0,
+        description="Optimistic concurrency counter (send back unchanged on save)",
+    )
 
     @classmethod
     def from_model(cls, m) -> "LuaScript":  # noqa: ANN001 — SystemScriptsModel
@@ -57,6 +61,7 @@ class LuaScriptDetail(LuaScript):
             settings=m.settings,
             is_active=m.is_active,
             current_version=m.current_version,
+            lock_version=m.lock_version,
             code=code,
             version=version if version is not None else m.current_version,
         )
@@ -139,6 +144,54 @@ class LuaScriptPatch(BaseModel):
         max_length=512,
         description="Commit message for the new version (only used if code changed)",
     )
+    lock_version: int | None = Field(
+        default=None,
+        description=(
+            "Expected lock_version (optimistic concurrency) — 409 if it no "
+            "longer matches the stored value"
+        ),
+    )
+
+
+class LuaScriptActivate(BaseModel):
+    """Activate an existing historical version (rollback without a new file)."""
+
+    lock_version: int | None = Field(
+        default=None, description="Expected lock_version (optimistic concurrency)"
+    )
+
+
+class LuaScriptLint(BaseModel):
+    """Compile-check arbitrary Lua code (no DB/file side effects)."""
+
+    code: str = Field(min_length=1, max_length=100_000, description="Lua code to lint")
+
+
+class LuaScriptLintResult(BaseModel):
+    """Lint result."""
+
+    ok: bool
+    error: str | None = None
+
+
+class LuaScriptTestRun(BaseModel):
+    """Sandboxed test-run of a script (draft or saved) with a fake ctx."""
+
+    code: str | None = Field(
+        default=None,
+        max_length=100_000,
+        description="Code to test-run (defaults to the script's saved current version)",
+    )
+    ctx: dict = Field(default_factory=dict, description="Fake ctx passed to handle(ctx)")
+
+
+class LuaScriptTestRunResult(BaseModel):
+    """Sandboxed test-run result."""
+
+    public: dict = Field(default_factory=dict)
+    private: dict = Field(default_factory=dict)
+    logs: list = Field(default_factory=list)
+    error: str | None = None
 
 
 __all__ = [
@@ -148,4 +201,9 @@ __all__ = [
     "LuaScriptVersionDetail",
     "LuaScriptUpload",
     "LuaScriptPatch",
+    "LuaScriptActivate",
+    "LuaScriptLint",
+    "LuaScriptLintResult",
+    "LuaScriptTestRun",
+    "LuaScriptTestRunResult",
 ]

@@ -90,6 +90,10 @@ class UserPaymentsModel(Base):
     paid_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Провенанс: версия lua-скрипта платёжного провайдера, реально
+    # исполнившая последнее action (пин на провайдере мог с тех пор
+    # измениться). NULL — не lua-провайдер.
+    lua_script_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class UserPaymentsMngr:

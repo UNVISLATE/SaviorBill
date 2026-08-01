@@ -15,6 +15,11 @@ from .script import (
     LuaScriptVersionDetail,
     LuaScriptUpload,
     LuaScriptPatch,
+    LuaScriptActivate,
+    LuaScriptLint,
+    LuaScriptLintResult,
+    LuaScriptTestRun,
+    LuaScriptTestRunResult,
 )
 from .meta import LuaMeta
 
@@ -33,5 +38,10 @@ __all__ = [
     "LuaScriptVersionDetail",
     "LuaScriptUpload",
     "LuaScriptPatch",
+    "LuaScriptActivate",
+    "LuaScriptLint",
+    "LuaScriptLintResult",
+    "LuaScriptTestRun",
+    "LuaScriptTestRunResult",
     "LuaMeta",
 ]

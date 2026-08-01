@@ -24,6 +24,7 @@ def _row(filename: str, **overrides) -> SimpleNamespace:
         settings={},
         is_active=True,
         current_version=1,
+        lock_version=0,
     )
     base.update(overrides)
     return SimpleNamespace(**base)

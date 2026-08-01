@@ -37,6 +37,49 @@ function M.eval(payload)
   return { result = sbox.with_limits(chunk) }
 end
 
+--- lint: только скомпилировать код скрипта, ничего не выполняя.
+-- payload: { code = "..." }
+-- Проверяет синтаксис и что скрипт возвращает таблицу с handle(ctx) — без
+-- побочных эффектов (в отличие от eval/run_script*). Используется редактором
+-- перед сохранением/публикацией версии.
+function M.lint(payload)
+  assert(payload.code, "lint: требуется поле code")
+  local sandbox = {
+    json = cjson,
+    http = function() error("lint: http недоступен") end,
+    billing = setmetatable({}, {
+      __index = function() return function() error("lint: billing недоступен") end end,
+    }),
+    crypto = sbox.make_crypto(),
+    cache = { get = function() end, set = function() end, del = function() end, incr = function() end },
+    log = sbox.make_logger(),
+    tostring = tostring,
+    tonumber = tonumber,
+    pairs = pairs,
+    ipairs = ipairs,
+    type = type,
+    error = error,
+    assert = assert,
+    pcall = pcall,
+    string = sbox.limited_string(),
+    table = table,
+    math = math,
+    os = { time = os.time, date = os.date },
+  }
+  local chunk, err = load(payload.code, "lint", "t", sandbox)
+  if not chunk then
+    return { ok = false, error = tostring(err) }
+  end
+  local ok, mod = pcall(chunk)
+  if not ok then
+    return { ok = false, error = "runtime error while loading module: " .. tostring(mod) }
+  end
+  if type(mod) ~= "table" or type(mod.handle) ~= "function" then
+    return { ok = false, error = "script must return a table with function handle(ctx)" }
+  end
+  return { ok = true }
+end
+
 --- http: выполнить внешний HTTP-запрос (интеграции, вебхуки).
 -- payload: { url, method?, headers?, body? }
 function M.http(payload)
@@ -148,6 +191,71 @@ function M.run_script(payload)
   local res = sbox.with_limits(mod.handle, strip_null(payload.ctx or {}))
   if type(res) ~= "table" then
     error("run_script: handle должен вернуть таблицу { public, private }")
+  end
+  return {
+    public = res.public or {},
+    private = res.private or {},
+    state = res.state,
+    expires_at = res.expires_at,
+    next_run = res.next_run,
+    logs = log_entries,
+  }
+end
+
+--- run_script_sandbox: как run_script, но с заглушенными http/billing —
+-- безопасный test-run для редактора (без реальных внешних вызовов).
+-- payload: { code = "...", ctx = { ... } } — код передаётся напрямую (можно
+-- гонять несохранённый черновик), а не читается из файла.
+function M.run_script_sandbox(payload)
+  assert(payload.code, "run_script_sandbox: требуется поле code")
+
+  local logger, log_entries = sbox.make_logger()
+  local stub_http = function(p)
+    logger.warn("http вызов подавлен в песочнице test-run: " .. tostring(p and p.url))
+    return { status = 0, body = "", error = "sandboxed: external http disabled" }
+  end
+  local stub_billing = setmetatable({}, {
+    __index = function(_, cmd)
+      return function()
+        logger.warn("billing." .. tostring(cmd) .. " подавлен в песочнице test-run")
+        return { ok = false, error = "sandboxed: billing commands disabled" }
+      end
+    end,
+  })
+
+  local sandbox = {
+    json = cjson,
+    http = stub_http,
+    billing = stub_billing,
+    crypto = sbox.make_crypto(),
+    cache = sbox.make_cache(),
+    log = logger,
+    tostring = tostring,
+    tonumber = tonumber,
+    pairs = pairs,
+    ipairs = ipairs,
+    type = type,
+    error = error,
+    assert = assert,
+    pcall = pcall,
+    string = sbox.limited_string(),
+    table = table,
+    math = math,
+    os = { time = os.time, date = os.date },
+  }
+  local chunk, lerr = load(payload.code, "@test-run", "t", sandbox)
+  if not chunk then
+    error("run_script_sandbox/compile: " .. tostring(lerr))
+  end
+
+  local mod = sbox.with_limits(chunk)
+  if type(mod) ~= "table" or type(mod.handle) ~= "function" then
+    error("run_script_sandbox: скрипт должен вернуть таблицу с функцией handle(ctx)")
+  end
+
+  local res = sbox.with_limits(mod.handle, strip_null(payload.ctx or {}))
+  if type(res) ~= "table" then
+    error("run_script_sandbox: handle должен вернуть таблицу { public, private }")
   end
   return {
     public = res.public or {},
