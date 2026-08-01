@@ -17,7 +17,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from dependencies.sec import make_secbox
+from dependencies.mail import build_mail_svc
 from dependencies.payment import PayMngr
+from dependencies.triggers import build_dispatcher
 from dependencies.usersvc import UserServicesMngr
 from enums import PayStatus, UsvcStatus
 from models.service import ServiceModel
@@ -110,7 +112,20 @@ class BillingLoop:
         )
 
     async def _pay_mngr(self, session: AsyncSession) -> PayMngr:
-        return PayMngr(session, await self._bus(session), make_secbox(self.cfg))
+        """`PayMngr` с диспетчером триггеров.
+
+        Раньше диспетчер не передавался вовсе, из-за чего фоновые события
+        биллинга не порождали уведомлений, а анти-петля триггеров была
+        отключена (`settings is None`, см. AUDIT.md §3.2).
+        """
+        settings = SystemSettingsMngr(
+            session, self.vk, make_secbox(self.cfg), self.cfg.SETTINGS_CACHE_TTL
+        )
+        bus = await self._bus(session)
+        dispatcher = build_dispatcher(
+            session, settings, bus, await build_mail_svc(settings), self.cfg
+        )
+        return PayMngr(session, bus, make_secbox(self.cfg), dispatcher)
 
     async def _usvc_mngr(self, session: AsyncSession) -> UserServicesMngr:
         return UserServicesMngr(

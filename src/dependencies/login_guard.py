@@ -18,6 +18,11 @@ _DEFAULT_WINDOW_SEC = 900  # 15 минут
 
 _ACC_PREFIX = "login:fail:acc:"
 _IP_PREFIX = "login:fail:ip:"
+# Счётчик по паре логин+IP: общий IP-счётчик за офисом/NAT блокировал всех
+# сразу, поэтому порог по «чистому» IP поднят множителем ниже (AUDIT.md §2.1).
+_PAIR_PREFIX = "login:fail:pair:"
+# Во сколько раз порог по одному лишь IP выше порога по логину.
+_IP_THRESHOLD_FACTOR = 4
 
 
 def client_ip(request: Request) -> str:
@@ -53,18 +58,21 @@ class LoginGuard:
         в любом случае).
         """
         acc_key, ip_key = _ACC_PREFIX + login, _IP_PREFIX + ip
+        pair_key = f"{_PAIR_PREFIX}{ip}:{login}"
         try:
             max_attempts, _ = await self._limits()
-            acc_n, ip_n = await self.vk.mget([acc_key, ip_key])
-            acc_n, ip_n = int(acc_n or 0), int(ip_n or 0)
-            if acc_n < max_attempts and ip_n < max_attempts:
+            acc_n, ip_n, pair_n = await self.vk.mget([acc_key, ip_key, pair_key])
+            acc_n, ip_n, pair_n = int(acc_n or 0), int(ip_n or 0), int(pair_n or 0)
+            ip_limit = max_attempts * _IP_THRESHOLD_FACTOR
+            if acc_n < max_attempts and pair_n < max_attempts and ip_n < ip_limit:
                 return
             ttl_acc = await self.vk.ttl(acc_key)
             ttl_ip = await self.vk.ttl(ip_key)
+            ttl_pair = await self.vk.ttl(pair_key)
         except VALKEY_ERRORS as exc:
             note_degraded("login_guard", exc)
             return
-        retry_after = max(ttl_acc or 0, ttl_ip or 0, 1)
+        retry_after = max(ttl_acc or 0, ttl_ip or 0, ttl_pair or 0, 1)
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             detail="too many failed login attempts, try again later",
@@ -72,25 +80,33 @@ class LoginGuard:
         )
 
     async def record_fail(self, login: str, ip: str) -> None:
-        """Учесть неудачную попытку по обоим ключам (логин + IP)."""
+        """Учесть неудачную попытку по логину, IP и их паре."""
         try:
             _, window = await self._limits()
-            for key in (_ACC_PREFIX + login, _IP_PREFIX + ip):
+            keys = (
+                _ACC_PREFIX + login,
+                _IP_PREFIX + ip,
+                f"{_PAIR_PREFIX}{ip}:{login}",
+            )
+            for key in keys:
                 n = await self.vk.incr(key)
                 if n == 1:
                     await self.vk.expire(key, window)
         except VALKEY_ERRORS as exc:
             note_degraded("login_guard", exc)
 
-    async def clear(self, login: str) -> None:
-        """Сбросить счётчик неудач конкретного логина при успешном входе.
+    async def clear(self, login: str, ip: str | None = None) -> None:
+        """Сбросить счётчики неудач логина при успешном входе.
 
-        IP-счётчик умышленно НЕ сбрасывается — иначе атакующий, зная один
-        валидный пароль, мог бы периодически "обнулять" IP-счётчик и
-        продолжать перебор по другим логинам с того же IP.
+        Общий IP-счётчик умышленно НЕ сбрасывается — иначе атакующий, зная
+        один валидный пароль, мог бы периодически "обнулять" его и продолжать
+        перебор по другим логинам с того же IP. Счётчик пары логин+IP сбросить
+        можно: он относится к конкретному успешно вошедшему пользователю.
         """
         try:
             await self.vk.delete(_ACC_PREFIX + login)
+            if ip is not None:
+                await self.vk.delete(f"{_PAIR_PREFIX}{ip}:{login}")
         except VALKEY_ERRORS as exc:
             note_degraded("login_guard", exc)
 

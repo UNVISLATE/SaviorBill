@@ -140,10 +140,6 @@ class ServiceMngr:
             stmt = stmt.where(ServiceModel.catalog_id == catalog_id)
         return stmt.order_by(ServiceModel.id)
 
-    async def list_all(self) -> list[ServiceModel]:
-        rows = await self.s.scalars(self.stmt_all())
-        return list(rows)
-
     def stmt_all(self) -> Select:
         """Базовый select всех услуг (для пагинации)."""
         return select(ServiceModel).order_by(ServiceModel.id)

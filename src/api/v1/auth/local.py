@@ -113,7 +113,7 @@ async def login(
         acc.pass_hash = hash_pass(body.password)
     await mngr.touch_login(acc)
     await mngr.s.commit()
-    await guard.clear(body.login)
+    await guard.clear(body.login, ip)
     return await tokens.issue_tracked(
         acc, ip=ip, user_agent=request.headers.get("user-agent")
     )

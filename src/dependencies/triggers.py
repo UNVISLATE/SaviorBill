@@ -29,6 +29,22 @@ def get_trigger_mngr(
     return TriggerMngr(session)
 
 
+def build_dispatcher(
+    session: AsyncSession,
+    settings: SystemSettingsMngr,
+    bus: LuaBus,
+    mail,  # noqa: ANN001 — MailSvc, импорт создал бы цикл с dependencies.mail
+    cfg: AppConfig,
+) -> TriggerDispatcher:
+    """Собрать диспетчер без FastAPI-зависимостей (нужен фоновым задачам)."""
+    templates = EmailMngr(session, cfg.EMAIL_TEMPLATES_DIR)
+    actions = {
+        EmailAction.key: EmailAction(EmailSender(mail, templates), templates),
+        LuaAction.key: LuaAction(bus, session),
+    }
+    return TriggerDispatcher(TriggerMngr(session), actions, settings)
+
+
 async def get_dispatcher(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
@@ -44,13 +60,8 @@ async def get_dispatcher(
     :return: ``TriggerDispatcher``.
     """
     cfg: AppConfig = request.app.state.settings
-    templates = EmailMngr(session, cfg.EMAIL_TEMPLATES_DIR)
     mail = await build_mail_svc(settings)
-    actions = {
-        EmailAction.key: EmailAction(EmailSender(mail, templates), templates),
-        LuaAction.key: LuaAction(bus, session),
-    }
-    return TriggerDispatcher(TriggerMngr(session), actions, settings)
+    return build_dispatcher(session, settings, bus, mail, cfg)
 
 
-__all__ = ["get_trigger_mngr", "get_dispatcher"]
+__all__ = ["build_dispatcher", "get_trigger_mngr", "get_dispatcher"]

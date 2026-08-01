@@ -53,6 +53,12 @@ dlq_pending = Gauge(
     ["queue"],
 )
 
+trigger_failures_total = Counter(
+    "trigger_failures_total",
+    "Действия триггеров, исчерпавшие попытки и не выполнившиеся",
+    ["event", "action"],
+)
+
 __all__ = [
     "worker_jobs_pending",
     "worker_jobs_reclaimed_total",
@@ -61,4 +67,5 @@ __all__ = [
     "bus_signature_rejected_total",
     "valkey_degraded_total",
     "dlq_pending",
+    "trigger_failures_total",
 ]

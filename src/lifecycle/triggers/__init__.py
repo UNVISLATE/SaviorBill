@@ -6,6 +6,7 @@ import logging
 
 from models.system_settings import SystemSettingsMngr
 from models.triggers import TriggerMngr
+from telemetry.metrics import trigger_failures_total
 
 from .base import BaseAction, dig
 from .email_action import EmailAction
@@ -124,12 +125,15 @@ class TriggerDispatcher:
                 )
                 continue
             ok = False
+            last_error: str | None = None
             for attempt in range(1, max(1, max_retries) + 1):
                 try:
                     if await action.run(event, ctx, trig.config or {}):
                         ok = True
                         break
-                except Exception:  # noqa: BLE001 — триггер не должен ломать операцию
+                    last_error = "action returned false"
+                except Exception as exc:  # noqa: BLE001 — триггер не ломает операцию
+                    last_error = str(exc)[:512]
                     log.exception(
                         "триггер #%s (%s/%s): ошибка, попытка %s/%s",
                         trig.id,
@@ -140,6 +144,24 @@ class TriggerDispatcher:
                     )
             if ok:
                 done += 1
+            else:
+                # Раньше провал терялся в логах отдельными строками попыток:
+                # ни итогового события, ни метрики — недоставленные письма
+                # замечали постфактум (см. AUDIT.md §3.3).
+                #
+                # В аудит-журнал это не пишется намеренно: fire() вызывается и
+                # до, и после commit() вызывающей транзакции, поэтому запись
+                # либо потерялась бы, либо преждевременно закоммитила чужую
+                # работу. Сигнал для оператора — метрика.
+                trigger_failures_total.labels(event=event, action=trig.action).inc()
+                log.error(
+                    "триггер #%s (%s/%s): исчерпаны все %s попыток: %s",
+                    trig.id,
+                    event,
+                    trig.action,
+                    max_retries,
+                    last_error,
+                )
         return done
 
 

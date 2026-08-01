@@ -45,8 +45,12 @@ _STATE_TTL = 600
 # попытки без сброса самой заявки на привязку.
 _PENDING = "oauth:pendinglink:"
 _PENDING_CODE = "oauth:pendinglink:code:"
+_PENDING_FAIL = "oauth:pendinglink:fail:"
 _PENDING_TTL = 600
 _CODE_DIGITS = 6
+# 6 цифр за 10 минут без счётчика — 10^6 попыток, т.е. гарантированный подбор
+# и захват чужого аккаунта через OAuth (см. AUDIT.md §2.2).
+_PENDING_MAX_FAILS = 5
 
 
 def build_lua_request(request: Request) -> LuaRequest:
@@ -367,6 +371,13 @@ class OAuthSvc:
             )
         stored_code = await self.vk.get(_PENDING_CODE + pending_token)
         if stored_code is None or not hmac.compare_digest(stored_code, code):
+            fails = await self.vk.incr(_PENDING_FAIL + pending_token)
+            if fails == 1:
+                await self.vk.expire(_PENDING_FAIL + pending_token, _PENDING_TTL)
+            if fails >= _PENDING_MAX_FAILS:
+                # Заявка сгорает целиком: повторный вход создаст новую с новым
+                # кодом, но перебор в рамках одной заявки становится бесполезен.
+                await self._drop_pending(pending_token)
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid code")
 
         payload = json.loads(raw)
@@ -394,10 +405,14 @@ class OAuthSvc:
             conn.email = payload.get("email")
             conn.raw = payload.get("raw") or {}
 
-        await self.vk.delete(_PENDING + pending_token)
-        await self.vk.delete(_PENDING_CODE + pending_token)
+        await self._drop_pending(pending_token)
         await self.s.flush()
         return acc
+
+    async def _drop_pending(self, pending_token: str) -> None:
+        await self.vk.delete(_PENDING + pending_token)
+        await self.vk.delete(_PENDING_CODE + pending_token)
+        await self.vk.delete(_PENDING_FAIL + pending_token)
 
     async def link_to_existing(
         self, acc: UserModel, slug: str, user: OAuthUser

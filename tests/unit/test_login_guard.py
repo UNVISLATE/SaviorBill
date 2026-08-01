@@ -55,12 +55,13 @@ async def test_check_allows_when_under_threshold():
 
 
 @pytest.mark.asyncio
-async def test_record_fail_increments_both_keys():
+async def test_record_fail_increments_all_three_keys():
     vk = _FakeValkey()
     guard = LoginGuard(vk, _FakeSettings(max_attempts=3))
     await guard.record_fail("alice", "1.2.3.4")
     assert vk._vals["login:fail:acc:alice"] == 1
     assert vk._vals["login:fail:ip:1.2.3.4"] == 1
+    assert vk._vals["login:fail:pair:1.2.3.4:alice"] == 1
 
 
 @pytest.mark.asyncio
@@ -75,26 +76,39 @@ async def test_check_blocks_after_max_attempts_by_login():
 
 
 @pytest.mark.asyncio
-async def test_check_blocks_after_max_attempts_by_ip():
+async def test_shared_ip_does_not_block_others_at_the_login_threshold():
+    """NAT/офис: неудачи одного пользователя не запирают соседей."""
     vk = _FakeValkey()
     guard = LoginGuard(vk, _FakeSettings(max_attempts=2))
     await guard.record_fail("alice", "9.9.9.9")
-    await guard.record_fail("bob", "9.9.9.9")  # разные логины, тот же IP
+    await guard.record_fail("alice", "9.9.9.9")
+    # alice за своим порогом (и по логину, и по паре) — заблокирована.
+    with pytest.raises(HTTPException):
+        await guard.check("alice", "9.9.9.9")
+    # Сосед с того же IP всё ещё может войти.
+    await guard.check("bob", "9.9.9.9")
+
+
+@pytest.mark.asyncio
+async def test_check_blocks_by_ip_at_the_wider_threshold():
+    vk = _FakeValkey()
+    guard = LoginGuard(vk, _FakeSettings(max_attempts=2))
+    # Порог по «чистому» IP — max_attempts * 4.
+    for i in range(8):
+        await guard.record_fail(f"user{i}", "9.9.9.9")
     with pytest.raises(HTTPException) as exc:
         await guard.check("carol", "9.9.9.9")
     assert exc.value.status_code == 429
 
 
 @pytest.mark.asyncio
-async def test_clear_resets_login_but_not_ip_counter():
+async def test_clear_resets_login_and_pair_but_not_ip_counter():
     vk = _FakeValkey()
     guard = LoginGuard(vk, _FakeSettings(max_attempts=2))
     await guard.record_fail("alice", "5.5.5.5")
     await guard.record_fail("alice", "5.5.5.5")
-    await guard.clear("alice")
-    # Логин-счётчик сброшен — доступ снова разрешён по логину.
+    await guard.clear("alice", "5.5.5.5")
     assert vk._vals.get("login:fail:acc:alice") is None
-    # IP-счётчик НЕ сброшен успешным входом (умышленно, см. §6.3 плана).
+    assert vk._vals.get("login:fail:pair:5.5.5.5:alice") is None
+    # Общий IP-счётчик НЕ сбрасывается успешным входом (см. §6.3 плана).
     assert vk._vals["login:fail:ip:5.5.5.5"] == 2
-    with pytest.raises(HTTPException):
-        await guard.check("mallory", "5.5.5.5")
