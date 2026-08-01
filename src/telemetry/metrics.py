@@ -40,10 +40,18 @@ bus_signature_rejected_total = Counter(
     ["bus"],
 )
 
+valkey_degraded_total = Counter(
+    "valkey_degraded_total",
+    "Запросы, обслуженные в деградированном режиме из-за недоступности Valkey "
+    "(rate-limit/lockout/трекинг сессий пропущены)",
+    ["component"],
+)
+
 __all__ = [
     "worker_jobs_pending",
     "worker_jobs_reclaimed_total",
     "worker_jobs_failed_total",
     "lua_script_duration_seconds",
     "bus_signature_rejected_total",
+    "valkey_degraded_total",
 ]

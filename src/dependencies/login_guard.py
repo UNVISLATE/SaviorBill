@@ -11,6 +11,7 @@ from fastapi import Depends, HTTPException, Request, status
 
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
+from utils.degrade import VALKEY_ERRORS, note_degraded
 
 _DEFAULT_MAX_ATTEMPTS = 5
 _DEFAULT_WINDOW_SEC = 900  # 15 минут
@@ -46,28 +47,40 @@ class LoginGuard:
         Пароль в этом случае вовсе не проверяется — блокировка сообщает лишь
         факт "слишком много попыток", это не создаёт новой тайминг-утечки о
         существовании аккаунта (см. §6.3 плана).
+
+        При недоступности Valkey попытка пропускается: без счётчиков блокировка
+        всё равно не работает, а отказ во входе всем — хуже (пароль проверяется
+        в любом случае).
         """
-        max_attempts, _ = await self._limits()
         acc_key, ip_key = _ACC_PREFIX + login, _IP_PREFIX + ip
-        acc_n, ip_n = await self.vk.mget([acc_key, ip_key])
-        acc_n, ip_n = int(acc_n or 0), int(ip_n or 0)
-        if acc_n >= max_attempts or ip_n >= max_attempts:
+        try:
+            max_attempts, _ = await self._limits()
+            acc_n, ip_n = await self.vk.mget([acc_key, ip_key])
+            acc_n, ip_n = int(acc_n or 0), int(ip_n or 0)
+            if acc_n < max_attempts and ip_n < max_attempts:
+                return
             ttl_acc = await self.vk.ttl(acc_key)
             ttl_ip = await self.vk.ttl(ip_key)
-            retry_after = max(ttl_acc or 0, ttl_ip or 0, 1)
-            raise HTTPException(
-                status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="too many failed login attempts, try again later",
-                headers={"Retry-After": str(retry_after)},
-            )
+        except VALKEY_ERRORS as exc:
+            note_degraded("login_guard", exc)
+            return
+        retry_after = max(ttl_acc or 0, ttl_ip or 0, 1)
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too many failed login attempts, try again later",
+            headers={"Retry-After": str(retry_after)},
+        )
 
     async def record_fail(self, login: str, ip: str) -> None:
         """Учесть неудачную попытку по обоим ключам (логин + IP)."""
-        _, window = await self._limits()
-        for key in (_ACC_PREFIX + login, _IP_PREFIX + ip):
-            n = await self.vk.incr(key)
-            if n == 1:
-                await self.vk.expire(key, window)
+        try:
+            _, window = await self._limits()
+            for key in (_ACC_PREFIX + login, _IP_PREFIX + ip):
+                n = await self.vk.incr(key)
+                if n == 1:
+                    await self.vk.expire(key, window)
+        except VALKEY_ERRORS as exc:
+            note_degraded("login_guard", exc)
 
     async def clear(self, login: str) -> None:
         """Сбросить счётчик неудач конкретного логина при успешном входе.
@@ -76,7 +89,10 @@ class LoginGuard:
         валидный пароль, мог бы периодически "обнулять" IP-счётчик и
         продолжать перебор по другим логинам с того же IP.
         """
-        await self.vk.delete(_ACC_PREFIX + login)
+        try:
+            await self.vk.delete(_ACC_PREFIX + login)
+        except VALKEY_ERRORS as exc:
+            note_degraded("login_guard", exc)
 
 
 def get_login_guard(

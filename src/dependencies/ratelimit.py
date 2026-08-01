@@ -14,6 +14,7 @@ from core.config import AppConfig
 from dependencies.settings import get_settings_mngr
 from models.system_settings import SystemSettingsMngr
 from security.ratelimit import LimitRule, RateLimiter
+from utils.degrade import VALKEY_ERRORS, note_degraded
 
 log = logging.getLogger("saviorbill.ratelimit")
 
@@ -111,9 +112,15 @@ def rate_limit(scope: str, kind: LimitKind = LimitKind.DEFAULT) -> Callable:
         cfg: AppConfig = request.app.state.settings
         if not cfg.RATE_LIMIT_ENABLED:
             return
-        rule = await _resolve_rule(settings, cfg, scope, kind)
-        limiter = RateLimiter(request.app.state.valkey)
-        res = await limiter.hit(scope, _client_ident(request, cred), rule)
+        # Valkey недоступен — пропускаем запрос, а не роняем весь роут:
+        # лимитер вспомогательный, отказ в обслуживании хуже отсутствия лимита.
+        try:
+            rule = await _resolve_rule(settings, cfg, scope, kind)
+            limiter = RateLimiter(request.app.state.valkey)
+            res = await limiter.hit(scope, _client_ident(request, cred), rule)
+        except VALKEY_ERRORS as exc:
+            note_degraded("ratelimit", exc)
+            return
         if not res.allowed:
             raise HTTPException(
                 status.HTTP_429_TOO_MANY_REQUESTS,

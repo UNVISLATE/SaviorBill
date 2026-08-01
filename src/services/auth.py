@@ -11,6 +11,7 @@ from models.system_settings import SystemSettingsMngr
 from schemas.auth import TokenPair
 from core.config import AppConfig
 from utils.datetime_utils import timestamp_now
+from utils.degrade import VALKEY_ERRORS, note_degraded
 from security.sec import jwt as jwtu
 
 _bearer = HTTPBearer(auto_error=False)
@@ -82,13 +83,21 @@ class TokenSvc:
         ip: str | None = None,
         user_agent: str | None = None,
     ) -> TokenPair:
-        """Выпустить пару токенов и завести запись об активной сессии."""
+        """Выпустить пару токенов и завести запись об активной сессии.
+
+        Трекинг сессии вспомогательный: при недоступности Valkey токены всё
+        равно выдаются, иначе падение кэша полностью закрывает вход. Отзыв
+        refresh-токенов (``revoke``/``is_revoked``) остаётся fail-closed.
+        """
         pair = self.issue(acc)
-        claims = self._decode_refresh(pair.refresh_token)
-        now = timestamp_now()
-        await self._save_session(
-            acc.id, claims, ip=ip, user_agent=user_agent, created_at=now
-        )
+        try:
+            claims = self._decode_refresh(pair.refresh_token)
+            now = timestamp_now()
+            await self._save_session(
+                acc.id, claims, ip=ip, user_agent=user_agent, created_at=now
+            )
+        except VALKEY_ERRORS as exc:
+            note_degraded("session_tracking", exc)
         return pair
 
     async def _session_ttl(self) -> int:

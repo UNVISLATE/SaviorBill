@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.auth import get_current_acc
@@ -57,6 +57,9 @@ async def link_start(
     "/oauth/{provider}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Unlink OAuth provider",
+    description="Unlinks an external account. Refuses with 409 if it is the "
+    "last remaining way to sign in (no password and no other provider), "
+    "which would lock the user out permanently.",
     dependencies=[Depends(require_perm("user.oauth.edit"))],
 )
 async def unlink(
@@ -72,6 +75,21 @@ async def unlink(
     )
     if conn is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "connection not found")
+    if not acc.has_pass:
+        others = await session.scalar(
+            select(func.count())
+            .select_from(UserOauthModel)
+            .where(
+                UserOauthModel.account_id == acc.id,
+                UserOauthModel.id != conn.id,
+            )
+        )
+        if not others:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "cannot unlink the last sign-in method: set a password or link "
+                "another provider first",
+            )
     await session.delete(conn)
     await session.commit()
 
