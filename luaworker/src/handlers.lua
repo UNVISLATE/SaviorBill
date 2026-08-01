@@ -26,7 +26,7 @@ function M.eval(payload)
     tonumber = tonumber,
     pairs = pairs,
     ipairs = ipairs,
-    string = string,
+    string = sbox.limited_string(),
     table = table,
     math = math,
   }
@@ -34,7 +34,7 @@ function M.eval(payload)
   if not chunk then
     error("eval/compile: " .. tostring(err))
   end
-  return { result = chunk() }
+  return { result = sbox.with_limits(chunk) }
 end
 
 --- http: выполнить внешний HTTP-запрос (интеграции, вебхуки).
@@ -130,7 +130,7 @@ function M.run_script(payload)
     error = error,
     assert = assert,
     pcall = pcall,
-    string = string,
+    string = sbox.limited_string(),
     table = table,
     math = math,
     os = { time = os.time, date = os.date },
@@ -140,12 +140,12 @@ function M.run_script(payload)
     error("run_script/compile: " .. tostring(lerr))
   end
 
-  local mod = chunk()
+  local mod = sbox.with_limits(chunk)
   if type(mod) ~= "table" or type(mod.handle) ~= "function" then
     error("run_script: скрипт должен вернуть таблицу с функцией handle(ctx)")
   end
 
-  local res = mod.handle(strip_null(payload.ctx or {}))
+  local res = sbox.with_limits(mod.handle, strip_null(payload.ctx or {}))
   if type(res) ~= "table" then
     error("run_script: handle должен вернуть таблицу { public, private }")
   end

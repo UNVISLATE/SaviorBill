@@ -182,6 +182,56 @@ M.to_hex = to_hex
 M.encode_json = cjson.encode
 M.decode_json = cjson.decode
 
+-- Ограничения ресурсов для пользовательского кода -------------------------
+--
+-- Без них `while true do end` в скрипте занимает процесс воркера навсегда
+-- (питоновский таймаут на стороне billing прерывает только ожидание ответа,
+-- но не само выполнение), а `string.rep("x", 2^30)` мгновенно съедает память
+-- (см. AUDIT.md §1.3 SEC-H4, §1.4 SEC-M1).
+
+local DEFAULT_MAX_INSTRUCTIONS = 50000000
+local DEFAULT_MAX_STRING_BYTES = 1048576
+
+--- Копия стандартного `string` с ограниченным `rep`.
+function M.limited_string()
+  local max_bytes = tonumber(env("LUA_MAX_STRING_BYTES", tostring(DEFAULT_MAX_STRING_BYTES)))
+  local safe = setmetatable({}, { __index = string })
+  safe.rep = function(s, n, sep)
+    n = tonumber(n) or 0
+    if n > 0 then
+      local unit = #tostring(s) + #tostring(sep or "")
+      if unit * n > max_bytes then
+        error("string.rep: результат больше " .. max_bytes .. " байт")
+      end
+    end
+    return string.rep(s, n, sep)
+  end
+  return safe
+end
+
+--- Выполнить `fn(...)` с лимитом на число выполненных инструкций.
+-- Хук ставится на текущую корутину; `debug` в песочницу не пробрасывается,
+-- поэтому снять лимит изнутри скрипта нельзя.
+function M.with_limits(fn, ...)
+  local budget = tonumber(env("LUA_MAX_INSTRUCTIONS", tostring(DEFAULT_MAX_INSTRUCTIONS)))
+  -- Считаем пачками: хук на каждую инструкцию сам по себе дорог.
+  local step = 1000000
+  local used = 0
+  debug.sethook(function()
+    used = used + step
+    if used >= budget then
+      debug.sethook()
+      error("превышен лимит в " .. budget .. " инструкций", 2)
+    end
+  end, "", step)
+  local res = table.pack(pcall(fn, ...))
+  debug.sethook()
+  if not res[1] then
+    error(res[2], 0)
+  end
+  return table.unpack(res, 2, res.n)
+end
+
 -- HMAC-SHA256(hex) — используется в main.lua для подписи шины lua:tasks/
 -- lua:results, а также доступен как sbox.make_crypto()
 -- внутри пользовательских скриптов.

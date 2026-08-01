@@ -1,4 +1,4 @@
-FROM alpine:3.20
+FROM alpine:3.20 AS base
 
 # Lua 5.4 + luarocks и тулчейн для сборки C-роков (luasocket/luasec/cjson).
 RUN apk add --no-cache \
@@ -14,6 +14,19 @@ RUN apk add --no-cache \
 
 WORKDIR /app
 COPY src/ /app/
+
+
+# Тесты песочницы гоняются при сборке: падение = образ не собирается
+# (тот же приём, что в src/Dockerfile и mediaworker/Dockerfile).
+FROM base AS tests
+
+COPY tests/ /app/tests/
+RUN lua tests/sandbox_test.lua && touch /app/.tests-passed
+
+
+FROM base AS runtime
+
+COPY --from=tests /app/.tests-passed /app/.tests-passed
 
 ENV VALKEY_HOST=valkey \
     VALKEY_PORT=6379 \
