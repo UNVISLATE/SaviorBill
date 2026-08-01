@@ -16,18 +16,33 @@ from security.owner_guard import (
 pytestmark = pytest.mark.unit
 
 
-def _role(key):
-    return SimpleNamespace(key=key, name=key)
+def _role(key, protected=None):
+    return SimpleNamespace(
+        id=hash(key) & 0xFFFF,
+        key=key,
+        name=key,
+        is_protected=(key == "owner") if protected is None else protected,
+    )
 
 
-def _acc(role_key):
-    return SimpleNamespace(id=1, role=_role(role_key) if role_key else None)
+def _acc(role_key, protected=None):
+    return SimpleNamespace(
+        id=1, role=_role(role_key, protected) if role_key else None
+    )
 
 
 def test_owner_role_is_protected():
     assert is_protected_role(_role("owner")) is True
     assert is_protected_role(_role("admin")) is False
     assert is_protected_role(None) is False
+
+
+def test_protection_follows_the_flag_not_the_key():
+    """Флаг is_protected распространяет защиту на любую роль без правки кода."""
+    custom = _role("compliance", protected=True)
+    assert is_protected_role(custom) is True
+    with pytest.raises(HTTPException):
+        assert_role_editable(custom)
 
 
 def test_admin_cannot_modify_owner_account():

@@ -302,9 +302,14 @@ class TestChangePasswordBlockedWhenDisabled:
         from security.sec.pwd import hash_pass
 
         settings = _FakeSettings(method=METHOD_AUTHENTICATED)
-        acc = SimpleNamespace(has_pass=True, pass_hash=hash_pass("old12345"))
+        acc = SimpleNamespace(id=1, has_pass=True, pass_hash=hash_pass("old12345"))
         mngr = SimpleNamespace(s=SimpleNamespace(commit=AsyncMock()))
+        tokens = SimpleNamespace(revoke_all_sessions=AsyncMock())
         body = PasswordChange(current_password="old12345", new_password="new12345")
-        await change_password(body, acc=acc, mngr=mngr, settings=settings)
+        await change_password(
+            body, acc=acc, mngr=mngr, settings=settings, tokens=tokens
+        )
         mngr.s.commit.assert_awaited_once()
         assert acc.pass_hash != hash_pass("old12345")  # updated to new hash
+        # Смена пароля обрывает выданные сессии.
+        tokens.revoke_all_sessions.assert_awaited_once_with(1)

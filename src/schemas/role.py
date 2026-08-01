@@ -12,8 +12,11 @@ class Role(BaseModel):
 
     id: int
     name: str
+    key: str | None = None
     title: str | None = None
     is_system: bool
+    # Read-only: роль нельзя редактировать/выдавать через API (см. owner_guard).
+    is_protected: bool
     admin_login_allowed: bool
     perms: dict
 

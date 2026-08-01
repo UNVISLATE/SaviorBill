@@ -164,6 +164,23 @@ class TokenSvc:
         await self.vk.delete(key)
         return True
 
+    async def revoke_all_sessions(self, account_id: int) -> int:
+        """Завершить все сессии аккаунта (смена пароля, роли, бан).
+
+        Отзываются refresh-токены: выданный ранее access живёт до своего
+        короткого TTL, но прав он не даёт — RBAC на каждом запросе читает роль
+        из БД, так что бан вступает в силу сразу.
+
+        :return: сколько сессий было отозвано.
+        """
+        revoked = 0
+        prefix = f"{_SESSION}{account_id}:"
+        async for key in self.vk.scan_iter(match=prefix + "*"):
+            jti = key.split(":", 2)[2] if isinstance(key, str) else key
+            if await self.revoke_session(account_id, jti):
+                revoked += 1
+        return revoked
+
     def _decode_refresh(self, token: str) -> jwtu.JWTToken:
         claims = jwtu.decode_jwt(
             token, self.cfg.JWT_SECRET, self.cfg.JWT_ALG, self.cfg.JWT_ISS

@@ -86,6 +86,10 @@ _BASE_PERMS: dict[str, dict] = {
 # остальные системные/пользовательские роли — нет, доступ включается вручную).
 _ADMIN_LOGIN_ALLOWED: frozenset[str] = frozenset({"owner", "admin", "manager"})
 
+# Неприкасаемые роли: не выдаются, не редактируются и не удаляются через API,
+# их носителей может менять только носитель той же роли (см. owner_guard).
+_PROTECTED_KEYS: frozenset[str] = frozenset({"owner"})
+
 _TITLES: dict[str, str] = {
     "owner": "Owner",
     "admin": "Administrator",
@@ -119,6 +123,7 @@ async def create_base_roles(
                 title=_TITLES.get(key, name.title()),
                 key=key,
                 is_system=key in _SYSTEM_KEYS,
+                is_protected=key in _PROTECTED_KEYS,
                 admin_login_allowed=key in _ADMIN_LOGIN_ALLOWED,
                 perms=perms,
             )
@@ -127,6 +132,11 @@ async def create_base_roles(
             log.info("created base role %r (key=%s)", name, key)
         elif role.key != key:
             role.key = key
+            await session.flush()
+        # Защищённость базовых ролей восстанавливаем и для уже существующих:
+        # флаг не редактируется через API, его источник истины — этот список.
+        if role.is_protected != (key in _PROTECTED_KEYS):
+            role.is_protected = key in _PROTECTED_KEYS
             await session.flush()
         out[key] = role
     return out

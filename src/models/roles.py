@@ -48,6 +48,12 @@ class Role(Base):
     )
     # Системные роли нельзя удалять из админки.
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Неприкасаемая роль: её нельзя выдать, отредактировать или удалить через
+    # API, а её носителей может менять только носитель той же роли
+    # (см. security/owner_guard.py). Через API не выставляется.
+    is_protected: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     # Явный допуск роли к входу в админку (независимо от состава perms).
     admin_login_allowed: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False

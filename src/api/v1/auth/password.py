@@ -10,9 +10,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, status
 
+from dependencies.auth import get_token_svc
 from dependencies.password import ResetSvc, get_reset_svc
 from dependencies.ratelimit import LimitKind, rate_limit
 from schemas.auth import PassResetConfirm, PassResetRequest
+from services.auth import TokenSvc
 
 router = APIRouter()
 
@@ -51,14 +53,18 @@ async def request_reset(
 async def confirm_reset(
     body: PassResetConfirm,
     svc: ResetSvc = Depends(get_reset_svc),
+    tokens: TokenSvc = Depends(get_token_svc),
 ) -> None:
     """Подтвердить сброс пароля кодом/токеном.
 
     :arg body: ``code``/токен и новый ``password`` обязательны; ``email``
         обязателен в режиме кода, для ссылки-токена может быть опущен.
     """
-    await svc.confirm(body.code, body.password, email=body.email)
+    acc = await svc.confirm(body.code, body.password, email=body.email)
     await svc.s.commit()
+    # Сброс пароля обрывает все прежние сессии — иначе тот, кто и вынудил
+    # сброс, сохраняет доступ по старому refresh (AUDIT.md §1.5 LOW-4).
+    await tokens.revoke_all_sessions(acc.id)
 
 
 __all__ = ["router"]

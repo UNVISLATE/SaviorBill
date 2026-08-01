@@ -6,7 +6,7 @@ import valkey.asyncio as valkey
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from dependencies.auth import UserMngr, get_acc_mngr, get_current_acc
+from dependencies.auth import UserMngr, get_acc_mngr, get_current_acc, get_token_svc
 from dependencies.db import get_db_session
 from dependencies.media import get_media_mngr
 from dependencies.password import METHOD_DISABLED, resolve_reset_method
@@ -20,6 +20,7 @@ from models.user_oauth import UserOauthMngr
 from schemas.auth import Account, AvatarSet, MePatch, PasswordChange
 from security.sec.pwd import hash_pass, verify_pass
 from services.account import account_response, release_old_avatar
+from services.auth import TokenSvc
 
 router = APIRouter()
 
@@ -112,6 +113,7 @@ async def change_password(
     acc: UserModel = Depends(get_current_acc),
     mngr: UserMngr = Depends(get_acc_mngr),
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
+    tokens: TokenSvc = Depends(get_token_svc),
 ) -> None:
     if await resolve_reset_method(settings) == METHOD_DISABLED:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "password change is disabled")
@@ -124,6 +126,9 @@ async def change_password(
             )
     acc.pass_hash = hash_pass(body.new_password)
     await mngr.s.commit()
+    # Смена пароля обязана обрывать чужие сессии: иначе украденный refresh
+    # продолжает ротироваться и после смены (AUDIT.md §1.3 SEC-H1).
+    await tokens.revoke_all_sessions(acc.id)
 
 
 @router.put(

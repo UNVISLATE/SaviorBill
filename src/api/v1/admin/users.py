@@ -287,6 +287,7 @@ async def edit_user(
     user_id: int,
     body: UserPatch,
     session: AsyncSession = Depends(get_db_session),
+    tokens: TokenSvc = Depends(get_token_svc),
     caller: UserModel = Depends(require_perm("admin.user.edit")),
 ) -> User:
     """Частично обновить аккаунт.
@@ -299,7 +300,8 @@ async def edit_user(
     # иначе любое новое поле UserPatch обошло бы точечные проверки ниже.
     assert_can_modify_account(caller, acc)
     data = body.model_dump(exclude_unset=True)
-    if "role_id" in data and data["role_id"] != acc.role_id:
+    role_changed = "role_id" in data and data["role_id"] != acc.role_id
+    if role_changed:
         caller_perms = caller.role.perms if caller.role else None
         if not (caller.role and caller.role.key == "owner") and not has_perm(
             caller_perms, "admin.user.role.edit"
@@ -332,6 +334,10 @@ async def edit_user(
         meta={"fields": sorted(data.keys())},
     )
     await session.commit()
+    if role_changed:
+        # Роль (в т.ч. бан) сменена — обрываем выданные сессии, чтобы старый
+        # refresh нельзя было ротировать дальше (AUDIT.md §1.3 SEC-H2).
+        await tokens.revoke_all_sessions(acc.id)
     return User.from_model(acc)
 
 
