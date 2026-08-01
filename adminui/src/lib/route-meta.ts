@@ -23,6 +23,7 @@ export const routeMeta: RouteMeta[] = [
   { path: "/system/overview", title: "Обзор" },
   { path: "/system/instances", title: "Инстансы" },
   { path: "/system/tasks", title: "Задачи" },
+  { path: "/system/dlq", title: "DLQ" },
 
   { path: "/settings", title: "Настройки" },
   { path: "/settings/ratelimits", title: "Rate limiting" },
