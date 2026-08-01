@@ -1,35 +1,51 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import * as monaco from "monaco-editor"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
+import { api } from "@/api/api.ts"
 import { ensureMonacoWorkers } from "@/lib/monaco-setup"
-import {
-  clearVersions,
-  listVersions,
-  pushVersion,
-  type LuaScriptVersion,
-} from "@/components/lua/LuaScriptVersions"
+import { toastError, toastSuccess } from "@/lib/toast"
 import { Button } from "@/components/shadsnui/button"
 import { Input } from "@/components/shadsnui/input"
+import { Textarea } from "@/components/shadsnui/textarea"
 import { Badge } from "@/components/shadsnui/badge"
 import { Separator } from "@/components/shadsnui/separator"
 import { Skeleton } from "@/components/shadsnui/skeleton"
-import { toastError, toastSuccess } from "@/lib/toast"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/shadsnui/alert-dialog"
+
+export interface LuaScriptVersion {
+  version: number
+  sha256: string | null
+  commit_message: string | null
+  created_at: string
+  created_by: number | null
+}
+
+export interface LuaScriptVersionDetail extends LuaScriptVersion {
+  code: string
+}
 
 export interface LuaEditorProps {
-  /** id скрипта — используется как ключ версионирования и для сабмита. */
   scriptId: number
-  /** Текущий код скрипта, загруженный с сервера (см. GET /admin/lua/{id}). */
   initialCode: string
-  /** Логин текущего админа — пишется в запись версии как автор (может быть null). */
-  authorLogin: string | null
+  /** Текущая версия скрипта (для подсветки в списке версий). */
+  currentVersion: number
+  /** Счётчик оптимистичной блокировки — присылается назад при PATCH/activate;
+   * расхождение с сервером даёт 409 (кто-то другой сохранил раньше). */
+  lockVersion: number
   /** Есть ли у текущего пользователя право редактировать (lua.edit). */
   canEdit: boolean
-  /**
-   * Сохранить новую версию кода на сервере (PATCH /admin/lua/{id}).
-   * Бросает исключение при ошибке — компонент сам покажет toast и не будет
-   * считать версию сохранённой (localStorage не обновится).
-   */
-  onSave: (code: string) => Promise<void>
+  /** Есть ли у текущего пользователя право на sandboxed test-run (lua.test). */
+  canTest: boolean
 }
 
 function formatDateTime(iso: string): string {
@@ -42,34 +58,70 @@ function formatDateTime(iso: string): string {
   })
 }
 
+function errDetail(err: unknown): string | undefined {
+  if (err && typeof err === "object" && "response" in err) {
+    // @ts-expect-error — axios error shape
+    const detail = err.response?.data?.detail
+    if (typeof detail === "string") return detail
+  }
+  return undefined
+}
+
 /**
- * Редактор Lua-скрипта: Monaco-editor (lua, vs-dark) + панель версий с
- * diff-сравнением текущего кода с любой прошлой версией + коммит-сообщение
- * при сохранении.
+ * Редактор Lua-скрипта: Monaco-editor (lua, vs-dark) + панель версий
+ * (реальная серверная история, см. Ф3 — `GET /admin/lua/{id}/versions`),
+ * diff с любой прошлой версией, откат (`activate`, без создания нового
+ * файла), Lint и sandboxed Test-run.
  *
- * Версии хранятся на клиенте (см. `LuaScriptVersions.ts`) — сервер сейчас
- * хранит только последний код скрипта, без истории.
+ * Раньше версии жили только в localStorage браузера — серверный API версий
+ * (миграция 0008, потом Ф3) не использовался вообще (см. PLAN.md Ф6).
  */
 export function LuaEditor({
   scriptId,
   initialCode,
-  authorLogin,
+  currentVersion,
+  lockVersion,
   canEdit,
-  onSave,
+  canTest,
 }: LuaEditorProps) {
+  const qc = useQueryClient()
   const editorHostRef = useRef<HTMLDivElement>(null)
   const diffHostRef = useRef<HTMLDivElement>(null)
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const diffEditorRef = useRef<monaco.editor.IStandaloneDiffEditor | null>(null)
 
-  const [versions, setVersions] = useState<LuaScriptVersion[]>(() =>
-    listVersions(scriptId),
-  )
-  const [diffAgainst, setDiffAgainst] = useState<LuaScriptVersion | null>(null)
+  const [diffAgainst, setDiffAgainst] = useState<number | null>(null)
   const [commitMessage, setCommitMessage] = useState("")
-  const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [ready, setReady] = useState(false)
+  const [conflict, setConflict] = useState(false)
+  const [activateTarget, setActivateTarget] = useState<number | null>(null)
+  const [lintResult, setLintResult] = useState<{ ok: boolean; error?: string | null } | null>(null)
+  const [testRunOpen, setTestRunOpen] = useState(false)
+  const [testCtx, setTestCtx] = useState("{}")
+  const [testResult, setTestResult] = useState<{
+    public: unknown
+    private: unknown
+    logs: unknown[]
+    error?: string | null
+  } | null>(null)
+
+  const { data: versions } = useQuery({
+    queryKey: ["admin-lua-versions", scriptId],
+    queryFn: async () =>
+      (await api.get<LuaScriptVersion[]>(`/v1/admin/lua/${scriptId}/versions`)).data,
+  })
+
+  const { data: diffCode } = useQuery({
+    queryKey: ["admin-lua-version-code", scriptId, diffAgainst],
+    queryFn: async () =>
+      (
+        await api.get<LuaScriptVersionDetail>(
+          `/v1/admin/lua/${scriptId}/versions/${diffAgainst}`,
+        )
+      ).data.code,
+    enabled: diffAgainst !== null,
+  })
 
   // Инициализация редактора — один раз на маунт компонента.
   useEffect(() => {
@@ -94,6 +146,11 @@ export function LuaEditor({
       setDirty(editor.getValue() !== initialCode)
     })
 
+    // Ctrl+S — сохранить (та же логика, что и кнопка).
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+      saveRef.current?.()
+    })
+
     return () => {
       sub.dispose()
       editor.dispose()
@@ -107,16 +164,10 @@ export function LuaEditor({
 
   // Diff-редактор — создаётся лениво, когда выбрана версия для сравнения.
   useEffect(() => {
-    if (!diffAgainst || !diffHostRef.current || !editorRef.current) return
+    if (diffAgainst === null || diffCode === undefined || !diffHostRef.current || !editorRef.current) return
 
-    const originalModel = monaco.editor.createModel(
-      diffAgainst.code,
-      "lua",
-    )
-    const modifiedModel = monaco.editor.createModel(
-      editorRef.current.getValue(),
-      "lua",
-    )
+    const originalModel = monaco.editor.createModel(diffCode, "lua")
+    const modifiedModel = monaco.editor.createModel(editorRef.current.getValue(), "lua")
 
     const diffEditor = monaco.editor.createDiffEditor(diffHostRef.current, {
       theme: "vs-dark",
@@ -134,77 +185,195 @@ export function LuaEditor({
       modifiedModel.dispose()
       diffEditorRef.current = null
     }
-  }, [diffAgainst])
+  }, [diffAgainst, diffCode])
 
-  const refreshVersions = useCallback(() => {
-    setVersions(listVersions(scriptId))
-  }, [scriptId])
-
-  async function handleSave() {
-    const editor = editorRef.current
-    if (!editor) return
-    const code = editor.getValue()
-    if (!code.trim()) {
-      toastError("Код скрипта не может быть пустым")
-      return
-    }
-    if (!commitMessage.trim()) {
-      toastError("Укажите описание изменений (commit message)")
-      return
-    }
-    setSaving(true)
-    try {
-      await onSave(code)
-      pushVersion(scriptId, code, commitMessage, authorLogin)
-      refreshVersions()
+  const save = useMutation({
+    mutationFn: async () => {
+      const editor = editorRef.current
+      if (!editor) throw new Error("editor not ready")
+      const code = editor.getValue()
+      return (
+        await api.patch(`/v1/admin/lua/${scriptId}`, {
+          code,
+          commit_message: commitMessage.trim() || undefined,
+          lock_version: lockVersion,
+        })
+      ).data
+    },
+    onSuccess: () => {
       setCommitMessage("")
       setDirty(false)
+      setConflict(false)
       toastSuccess("Новая версия скрипта сохранена")
-    } catch (err) {
-      toastError(
-        "Не удалось сохранить скрипт",
-        err instanceof Error ? err.message : undefined,
-      )
-    } finally {
-      setSaving(false)
+      void qc.invalidateQueries({ queryKey: ["admin-lua-script", scriptId] })
+      void qc.invalidateQueries({ queryKey: ["admin-lua-scripts"] })
+      void qc.invalidateQueries({ queryKey: ["admin-lua-versions", scriptId] })
+    },
+    onError: (err: unknown) => {
+      // @ts-expect-error — axios error shape
+      if (err?.response?.status === 409) {
+        setConflict(true)
+        toastError(
+          "Скрипт изменили в другой вкладке/другим админом",
+          "Обновите страницу, чтобы не потерять чужие правки.",
+        )
+        return
+      }
+      toastError("Не удалось сохранить скрипт", errDetail(err))
+    },
+  })
+
+  // Ref нужен, чтобы Ctrl+S-команда (зарегистрированная один раз в
+  // маунт-эффекте) всегда видела актуальную функцию сохранения, а не ту, что
+  // была на момент создания редактора.
+  const saveRef = useRef<() => void>(() => {})
+  useEffect(() => {
+    saveRef.current = () => {
+      if (canEdit && dirty && !save.isPending) save.mutate()
     }
-  }
+  }, [canEdit, dirty, save])
 
-  function handleRestore(version: LuaScriptVersion) {
-    const editor = editorRef.current
-    if (!editor) return
-    editor.setValue(version.code)
-    setDirty(true)
-    setDiffAgainst(null)
-    setCommitMessage(`Откат к версии №${version.version}`)
-  }
+  const activate = useMutation({
+    mutationFn: async (version: number) =>
+      (
+        await api.post(`/v1/admin/lua/${scriptId}/versions/${version}/activate`, {
+          lock_version: lockVersion,
+        })
+      ).data,
+    onSuccess: (_data, version) => {
+      toastSuccess(`Версия №${version} стала активной`)
+      setActivateTarget(null)
+      setDiffAgainst(null)
+      void qc.invalidateQueries({ queryKey: ["admin-lua-script", scriptId] })
+      void qc.invalidateQueries({ queryKey: ["admin-lua-scripts"] })
+      void qc.invalidateQueries({ queryKey: ["admin-lua-versions", scriptId] })
+    },
+    onError: (err: unknown) => {
+      // @ts-expect-error — axios error shape
+      if (err?.response?.status === 409) {
+        setConflict(true)
+        toastError("Скрипт изменили в другой вкладке/другим админом", "Обновите страницу.")
+        return
+      }
+      toastError("Не удалось активировать версию", errDetail(err))
+    },
+  })
 
-  function handleClearHistory() {
-    clearVersions(scriptId)
-    refreshVersions()
-    setDiffAgainst(null)
-    toastSuccess("Локальная история версий очищена")
-  }
+  const lint = useMutation({
+    mutationFn: async () => {
+      const editor = editorRef.current
+      if (!editor) throw new Error("editor not ready")
+      return (await api.post<{ ok: boolean; error?: string | null }>("/v1/admin/lua/lint", { code: editor.getValue() })).data
+    },
+    onSuccess: (data) => {
+      setLintResult(data)
+      if (data.ok) toastSuccess("Скрипт компилируется без ошибок")
+      else toastError("Ошибка в скрипте", data.error ?? undefined)
+    },
+    onError: (err: unknown) => toastError("Не удалось проверить скрипт", errDetail(err)),
+  })
+
+  const testRun = useMutation({
+    mutationFn: async () => {
+      const editor = editorRef.current
+      if (!editor) throw new Error("editor not ready")
+      let ctx: unknown
+      try {
+        ctx = JSON.parse(testCtx || "{}")
+      } catch {
+        throw new Error("ctx должен быть валидным JSON")
+      }
+      return (
+        await api.post(`/v1/admin/lua/${scriptId}/test-run`, {
+          code: editor.getValue(),
+          ctx,
+        })
+      ).data
+    },
+    onSuccess: (data) => {
+      setTestResult(data)
+      if (data.error) toastError("Test-run завершился ошибкой", data.error)
+      else toastSuccess("Test-run выполнен (песочница — без реальных http/billing)")
+    },
+    onError: (err: unknown) =>
+      toastError(
+        "Не удалось выполнить test-run",
+        err instanceof Error && err.message === "ctx должен быть валидным JSON"
+          ? err.message
+          : errDetail(err),
+      ),
+  })
+
+  const refreshVersions = useCallback(() => {
+    void qc.invalidateQueries({ queryKey: ["admin-lua-versions", scriptId] })
+  }, [qc, scriptId])
 
   return (
     <div className="flex h-full min-h-0 gap-4">
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">Lua</Badge>
+            <Badge variant="outline">v{currentVersion}</Badge>
             {dirty && <Badge variant="secondary">не сохранено</Badge>}
-            {diffAgainst && (
-              <Badge variant="secondary">
-                сравнение с версией №{diffAgainst.version}
-              </Badge>
+            {conflict && <Badge variant="destructive">конфликт версий — обновите страницу</Badge>}
+            {diffAgainst !== null && (
+              <Badge variant="secondary">сравнение с версией №{diffAgainst}</Badge>
             )}
           </div>
-          {diffAgainst && (
-            <Button size="sm" variant="outline" onClick={() => setDiffAgainst(null)}>
-              Закрыть diff
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {canTest && (
+              <Button size="sm" variant="outline" onClick={() => setTestRunOpen((v) => !v)}>
+                Test-run
+              </Button>
+            )}
+            {canEdit && (
+              <Button size="sm" variant="outline" disabled={lint.isPending} onClick={() => lint.mutate()}>
+                {lint.isPending ? "Проверка…" : "Lint"}
+              </Button>
+            )}
+            {diffAgainst !== null && (
+              <Button size="sm" variant="outline" onClick={() => setDiffAgainst(null)}>
+                Закрыть diff
+              </Button>
+            )}
+          </div>
         </div>
+
+        {lintResult && (
+          <div
+            className={
+              "rounded-md border px-3 py-2 text-xs " +
+              (lintResult.ok
+                ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-600"
+                : "border-destructive/30 bg-destructive/10 text-destructive")
+            }
+          >
+            {lintResult.ok ? "Компилируется без ошибок." : lintResult.error}
+          </div>
+        )}
+
+        {testRunOpen && (
+          <div className="space-y-2 rounded-md border p-3">
+            <label className="text-xs font-medium text-muted-foreground">
+              ctx (JSON) — передаётся в handle(ctx) в песочнице (http/billing заглушены)
+            </label>
+            <Textarea
+              value={testCtx}
+              onChange={(e) => setTestCtx(e.target.value)}
+              rows={3}
+              className="font-mono text-xs"
+            />
+            <Button size="sm" disabled={testRun.isPending} onClick={() => testRun.mutate()}>
+              {testRun.isPending ? "Выполняется…" : "Запустить"}
+            </Button>
+            {testResult && (
+              <pre className="max-h-40 overflow-auto rounded-md bg-muted/60 p-2 text-xs">
+                {JSON.stringify(testResult, null, 2)}
+              </pre>
+            )}
+          </div>
+        )}
 
         <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border">
           {!ready && (
@@ -218,12 +387,12 @@ export function LuaEditor({
           <div
             ref={editorHostRef}
             className="h-full w-full"
-            style={{ display: diffAgainst ? "none" : "block" }}
+            style={{ display: diffAgainst !== null ? "none" : "block" }}
           />
           <div
             ref={diffHostRef}
             className="h-full w-full"
-            style={{ display: diffAgainst ? "block" : "none" }}
+            style={{ display: diffAgainst !== null ? "block" : "none" }}
           />
         </div>
 
@@ -237,11 +406,11 @@ export function LuaEditor({
                 value={commitMessage}
                 onChange={(e) => setCommitMessage(e.target.value)}
                 placeholder="например, исправлена обработка ошибки таймаута"
-                disabled={saving}
+                disabled={save.isPending}
               />
             </div>
-            <Button onClick={handleSave} disabled={saving || !dirty}>
-              {saving ? "Сохранение…" : "Сохранить версию"}
+            <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty}>
+              {save.isPending ? "Сохранение…" : "Сохранить версию (Ctrl+S)"}
             </Button>
           </div>
         )}
@@ -252,58 +421,57 @@ export function LuaEditor({
       <div className="flex w-72 shrink-0 flex-col gap-2">
         <div className="flex items-center justify-between">
           <h3 className="text-sm font-semibold">Версии</h3>
-          {versions.length > 0 && (
-            <Button size="sm" variant="ghost" onClick={handleClearHistory}>
-              Очистить
-            </Button>
-          )}
+          <Button size="sm" variant="ghost" onClick={refreshVersions}>
+            Обновить
+          </Button>
         </div>
         <p className="text-xs text-muted-foreground">
-          Локальная история (в этом браузере) — сервер хранит только
-          последний код.
+          История версий на сервере — дедуп по содержимому (сохранение без
+          правок не плодит новых версий).
         </p>
         <div className="flex-1 space-y-1.5 overflow-y-auto pr-1">
-          {versions.length === 0 && (
+          {!versions && (
+            <div className="space-y-1.5">
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-16 w-full" />
+            </div>
+          )}
+          {versions?.length === 0 && (
             <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">
               Пока нет сохранённых версий
             </p>
           )}
-          {versions.map((v) => (
-            <div
-              key={v.version}
-              className="space-y-1.5 rounded-md border p-2.5 text-sm"
-            >
+          {versions?.map((v) => (
+            <div key={v.version} className="space-y-1.5 rounded-md border p-2.5 text-sm">
               <div className="flex items-center justify-between gap-2">
-                <span className="font-medium">№{v.version}</span>
-                <span className="text-xs text-muted-foreground">
-                  {formatDateTime(v.createdAt)}
+                <span className="font-medium">
+                  №{v.version}
+                  {v.version === currentVersion && (
+                    <Badge variant="secondary" className="ml-1.5 text-[10px]">активна</Badge>
+                  )}
                 </span>
+                <span className="text-xs text-muted-foreground">{formatDateTime(v.created_at)}</span>
               </div>
-              <p className="line-clamp-2 text-xs text-muted-foreground">
-                {v.message}
-              </p>
-              {v.authorLogin && (
-                <p className="text-xs text-muted-foreground">
-                  автор: {v.authorLogin}
-                </p>
+              {v.commit_message && (
+                <p className="line-clamp-2 text-xs text-muted-foreground">{v.commit_message}</p>
               )}
               <div className="flex gap-1.5">
                 <Button
                   size="sm"
                   variant="outline"
                   className="h-7 flex-1 px-2 text-xs"
-                  onClick={() => setDiffAgainst(v)}
+                  onClick={() => setDiffAgainst(v.version)}
                 >
                   Diff
                 </Button>
-                {canEdit && (
+                {canEdit && v.version !== currentVersion && (
                   <Button
                     size="sm"
                     variant="outline"
                     className="h-7 flex-1 px-2 text-xs"
-                    onClick={() => handleRestore(v)}
+                    onClick={() => setActivateTarget(v.version)}
                   >
-                    Восстановить
+                    Активировать
                   </Button>
                 )}
               </div>
@@ -311,6 +479,27 @@ export function LuaEditor({
           ))}
         </div>
       </div>
+
+      <AlertDialog open={activateTarget !== null} onOpenChange={(v) => !v && setActivateTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Активировать версию №{activateTarget}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Скрипт начнёт исполняться версией №{activateTarget} немедленно —
+              без создания нового файла (откат к уже сохранённому снимку).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={activate.isPending}
+              onClick={() => activateTarget !== null && activate.mutate(activateTarget)}
+            >
+              Активировать
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

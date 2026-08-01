@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
@@ -17,21 +17,24 @@ interface LuaScript {
   actions: string[]
   settings: Record<string, unknown>
   is_active: boolean
+  current_version: number
+  lock_version: number
 }
 
 interface LuaScriptDetail extends LuaScript {
   code: string
+  version: number
 }
 
 /** Страница управления Lua-скриптами: список слева, редактор с версиями справа. */
 export function LuaScriptsPage() {
-  const qc = useQueryClient()
-  const { can, me } = useAuth()
+  const { can } = useAuth()
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [search, setSearch] = useState("")
 
   const canRead = can("lua.read")
   const canEdit = can("lua.edit")
+  const canTest = can("lua.test")
 
   const { data: scripts, isLoading: scriptsLoading } = useQuery({
     queryKey: ["admin-lua-scripts"],
@@ -55,13 +58,6 @@ export function LuaScriptsPage() {
         (s.name ?? "").toLowerCase().includes(q)
       )
     }) ?? []
-
-  async function handleSave(code: string) {
-    if (selectedId === null) return
-    await api.patch(`/v1/admin/lua/${selectedId}`, { code })
-    await qc.invalidateQueries({ queryKey: ["admin-lua-script", selectedId] })
-    await qc.invalidateQueries({ queryKey: ["admin-lua-scripts"] })
-  }
 
   if (!canRead) {
     return (
@@ -154,9 +150,10 @@ export function LuaScriptsPage() {
               key={detail.id}
               scriptId={detail.id}
               initialCode={detail.code}
-              authorLogin={me?.login ?? null}
+              currentVersion={detail.current_version}
+              lockVersion={detail.lock_version}
               canEdit={canEdit}
-              onSave={handleSave}
+              canTest={canTest}
             />
           )}
         </div>
