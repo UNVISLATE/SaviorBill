@@ -168,18 +168,22 @@ class AppConfig(BaseSettings):
     TASKLOG_TTL: int = Field(default=604_800)  # 7 дней
 
     # Загрузка медиа
-    # Порог «маленького» файла (аватарки/иконки): до него хватает media.upload,
-    # выше - нужно право media.uploadlarge.
+    # Порог «маленького» файла (аватарки/иконки): до него хватает media.upload.image,
+    # выше - нужно право media.upload.video.
     MEDIA_SMALL_MAX_BYTES: int = Field(default=1_048_576)  # 1 MiB
     # Жёсткий потолок размера любого загружаемого файла.
-    MEDIA_MAX_BYTES: int = Field(default=524_288_000)  # 500 MiB (media.uploadlarge)
-    # Лимит загрузок в час для обычных пользователей (без media.uploadlarge);
-    # у аккаунтов с media.uploadlarge часовой лимит не применяется вовсе.
+    MEDIA_MAX_BYTES: int = Field(default=524_288_000)  # 500 MiB (media.upload.video)
+    # Лимит загрузок в час для обычных пользователей (без media.upload.video);
+    # у аккаунтов с media.upload.video часовой лимит не применяется вовсе.
     MEDIA_UPLOADS_PER_HOUR: int = Field(default=30)
     # Максимум медиа-файлов на пользователя (обычная роль); превышение —
-    # жёсткий отказ при загрузке нового файла (без media.uploadlarge/
+    # жёсткий отказ при загрузке нового файла (без media.upload.video/
     # admin.media.upload лимит не применяется).
     USER_MEDIA_LIMIT: int = Field(default=5)
+    # Суммарный объём хранимых медиа на аккаунт (см. AUDIT.md §1.4 HIGH-2 —
+    # media.upload.video раньше не имел потолка на общий объём вообще).
+    MEDIA_QUOTA_IMAGE_BYTES: int = Field(default=52_428_800)  # 50 MiB
+    MEDIA_QUOTA_VIDEO_BYTES: int = Field(default=2_147_483_648)  # 2 GiB
     # Стрим задач медиа (конвертация/удаление) в Valkey.
     MEDIA_TASK_STREAM: str = Field(default="media:tasks")
     # Приблизительный потолок длины media:tasks (см. LUA_TASK_STREAM_MAXLEN выше).

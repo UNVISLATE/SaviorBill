@@ -271,4 +271,21 @@ async def seed(engine: AsyncEngine):
                     {"login": login},
                 )
 
+        async def verify_user(self, login: str) -> None:
+            """Перевести аккаунт из guest в user (как после подтверждения email).
+
+            Новые регистрации получают guest (см. dependencies/oauth.py,
+            models/user.py) — с D3 (PLAN.md) у guest нет прав на медиа-
+            загрузку вообще, поэтому тестам, проверяющим загрузку медиа
+            обычным пользователем, нужен явно верифицированный аккаунт.
+            """
+            async with engine.begin() as c:
+                await c.execute(
+                    text(
+                        "UPDATE accounts SET role_id=(SELECT id FROM roles WHERE key='user') "
+                        "WHERE login=:login"
+                    ),
+                    {"login": login},
+                )
+
     return Seeder()

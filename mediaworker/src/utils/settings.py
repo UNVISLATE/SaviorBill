@@ -75,5 +75,22 @@ class SettingsResolver:
     async def user_media_limit(self) -> int:
         return await self.get_int("user.media.limit", self.cfg.user_media_limit)
 
+    async def quota_image_bytes(self) -> int:
+        """Общий лимит суммарного объёма хранимых медиа (без media.upload.video)."""
+        return await self.get_int(
+            "media.quota.image_bytes", self.cfg.quota_image_bytes
+        )
+
+    async def quota_video_bytes(self) -> int:
+        """Общий лимит суммарного объёма хранимых медиа (с media.upload.video).
+
+        До этой настройки у ``media.upload.video`` не было вообще никакого
+        потолка на суммарный объём — только на размер одного файла (см.
+        AUDIT.md §1.4 HIGH-2): можно было бесконечно копить 500 MiB файлы.
+        """
+        return await self.get_int(
+            "media.quota.video_bytes", self.cfg.quota_video_bytes
+        )
+
 
 __all__ = ["SettingsResolver"]

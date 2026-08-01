@@ -91,12 +91,20 @@ class Config(BaseSettings):
     MEDIA_STATUS_TTL: int = Field(default=3600)
     MEDIA_BAN_SECONDS: int = Field(default=180)
     MEDIA_KEEP_ORIGINAL: bool = Field(default=False)
-    MEDIA_MAX_BYTES: int = Field(default=524_288_000)  # 500 MiB (media.uploadlarge)
+    MEDIA_MAX_BYTES: int = Field(default=524_288_000)  # 500 MiB (media.upload.video)
     MEDIA_SMALL_MAX_BYTES: int = Field(default=1_048_576)  # 1 MiB
     MEDIA_UPLOADS_PER_HOUR: int = Field(default=30)
     # Максимум медиа-файлов на пользователя (обычная роль); превышение —
     # жёсткий отказ при загрузке нового файла, без авто-удаления старых.
     USER_MEDIA_LIMIT: int = Field(default=5)
+    # Суммарный объём хранимых медиа на аккаунт (§1.4 HIGH-2 AUDIT.md: раньше
+    # у media.upload.video не было вообще никакого потолка на общий объём —
+    # только на размер одного файла, т.е. можно было копить 500 MiB файлы
+    # без ограничения количества). Реалистичные дефолты: обычный
+    # фото-загрузчик (аватар+пара картинок) укладывается в 50 MiB с запасом;
+    # видео-тариф — в 2 GiB.
+    MEDIA_QUOTA_IMAGE_BYTES: int = Field(default=52_428_800)  # 50 MiB
+    MEDIA_QUOTA_VIDEO_BYTES: int = Field(default=2_147_483_648)  # 2 GiB
 
     # --- Параметры конвертации ---
     MEDIA_WEBP_QUALITY: int = Field(default=82)
@@ -287,6 +295,14 @@ class Config(BaseSettings):
     @property
     def user_media_limit(self) -> int:
         return self.USER_MEDIA_LIMIT
+
+    @property
+    def quota_image_bytes(self) -> int:
+        return self.MEDIA_QUOTA_IMAGE_BYTES
+
+    @property
+    def quota_video_bytes(self) -> int:
+        return self.MEDIA_QUOTA_VIDEO_BYTES
 
     @property
     def webp_quality(self) -> int:

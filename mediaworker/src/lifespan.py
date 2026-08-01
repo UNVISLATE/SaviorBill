@@ -68,7 +68,7 @@ async def lifespan(app: FastAPI):
         signing_key=cfg.BUS_SIGNING_KEY,
     )
     proc_log = ProcLog(vk, max_jobs=cfg.proclog_max_jobs, ttl=cfg.proclog_ttl)
-    worker = Worker(cfg, vk, storage, settings, task_log, proc_log)
+    worker = Worker(cfg, vk, storage, settings, task_log, proc_log, db)
 
     app.state.cfg = cfg
     app.state.vk = vk

@@ -57,7 +57,7 @@ _BASE_PERMS: dict[str, dict] = {
         },
         # Явные админ-права на медиа: "upload" — без ограничения по размеру
         # вообще; "manage_any" — доступ к preview/thumb/avatar ЧУЖОГО медиа.
-        # Не совпадают с media.uploadlarge (только лимит размера) — см.
+        # Не совпадают с media.upload.video (только лимит размера) — см.
         # §2.2 AUDIT.md.
         "admin": {"media": {"upload": True, "manage_any": True}},
     },
@@ -69,15 +69,18 @@ _BASE_PERMS: dict[str, dict] = {
         "purchases": True,
         "promo": True,
         "triggers": {"read": True},
-        "media": {"upload": True},
+        "media": {"upload": {"image": True}},
     },
     # Системная, зарезервирована на будущее (интеграция с AIOSupport)
     "support": {},
     # Системная, зарезервирована на будущее (медиа-партнерка)
     "media": {},
     # Обычный (верифицированный) пользователь: полный доступ к своим данным.
-    "user": {"media": {"upload": True}, "user": {"*": True}},
-    "guest": {"media": {"upload": True}, "user": {"*": True}},
+    "user": {"media": {"upload": {"image": True}}, "user": {"*": True}},
+    # Гость: медиа-загрузка (даже фото) запрещена на уровне права, не только
+    # квоты (см. IMPLEMENTATION_PLAN.md/PLAN.md D3) — до полной верификации
+    # аккаунт не должен занимать хранилище.
+    "guest": {"user": {"*": True}},
     # Заблокированный: видит свой профиль/бан-флаг, ничего больше.
     "banned": {"user": {"profile": {"read": True}}},
 }

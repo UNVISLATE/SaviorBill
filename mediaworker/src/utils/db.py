@@ -116,5 +116,38 @@ class DB:
             "SELECT count(*) FROM system_media WHERE owner_id = $1", owner_id
         )
 
+    async def bytes_used_for_owner(self, owner_id: int) -> int:
+        """Суммарный объём (байт) уже сохранённых медиа аккаунта (квота, см.
+        AUDIT.md §1.4 HIGH-2 — media.upload.video раньше не имел потолка на
+        общий объём вообще, только на размер одного файла)."""
+        assert self.pool is not None
+        total = await self.pool.fetchval(
+            "SELECT coalesce(sum(size), 0) FROM system_media WHERE owner_id = $1",
+            owner_id,
+        )
+        return int(total or 0)
+
+    async def find_by_hash(self, content_hash: str, backend: str) -> dict | None:
+        """Найти уже сохранённый физический файл с тем же содержимым (дедуп).
+
+        Ищет среди ГОТОВЫХ (``status='ready'``) записей — не среди ещё
+        обрабатываемых/упавших, чтобы не связать новый токен с файлом,
+        который сам может исчезнуть при неуспешной публикации.
+
+        :return: ``{"path", "mime", "size"}`` первой найденной записи или
+            ``None``, если совпадений нет.
+        """
+        assert self.pool is not None
+        row = await self.pool.fetchrow(
+            "SELECT path, mime, size FROM system_media "
+            "WHERE content_hash = $1 AND backend = $2 AND status = 'ready' "
+            "ORDER BY id LIMIT 1",
+            content_hash,
+            backend,
+        )
+        if row is None:
+            return None
+        return {"path": row["path"], "mime": row["mime"], "size": row["size"]}
+
 
 __all__ = ["DB", "Account"]

@@ -187,6 +187,7 @@ class MediaResults:
                     meta=meta or None,
                     status=data.get("status", "ready"),
                     tag=data.get("tag") or None,
+                    content_hash=data.get("content_hash") or None,
                 )
             await session.commit()
         await clear_attempts(self.vk, key)

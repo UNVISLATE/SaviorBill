@@ -36,7 +36,7 @@ class PreviewOrderIn(BaseModel):
 async def _owned_media(mngr: SystemMediaMngr, token: str, acc: UserModel) -> object:
     """Найти медиа по токену и проверить, что запрашивающий — владелец либо
     имеет право ``admin.media.manage_any`` (доступ к чужому медиа отдельно
-    от ``media.uploadlarge``, который только про лимит размера)."""
+    от ``media.upload.video``, который только про лимит размера)."""
     media = await mngr.by_token(token)
     if media is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")

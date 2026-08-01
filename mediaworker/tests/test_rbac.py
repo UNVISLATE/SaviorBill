@@ -4,19 +4,19 @@ from utils.rbac import has_perm
 
 
 def test_none_perms_denied():
-    assert has_perm(None, "media.upload") is False
-    assert has_perm({}, "media.upload") is False
+    assert has_perm(None, "media.upload.image") is False
+    assert has_perm({}, "media.upload.image") is False
 
 
 def test_exact_and_inherited():
-    assert has_perm({"media": {"upload": True}}, "media.upload") is True
+    assert has_perm({"media": {"upload": True}}, "media.upload.image") is True
     # родитель открыт целиком -> дочерние разрешены
-    assert has_perm({"media": True}, "media.uploadlarge") is True
+    assert has_perm({"media": True}, "media.upload.video") is True
 
 
 def test_wildcard_level():
-    assert has_perm({"media": {"*": True}}, "media.uploadlarge") is True
+    assert has_perm({"media": {"*": True}}, "media.upload.video") is True
 
 
 def test_unrelated_denied():
-    assert has_perm({"orders": {"read": True}}, "media.upload") is False
+    assert has_perm({"orders": {"read": True}}, "media.upload.image") is False

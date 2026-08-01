@@ -5,7 +5,7 @@
 показывает **только собственный эффективный лимит вызывающего** — если
 передан валидный Bearer-токен. Специально НЕ раскрываем:
 
-- существование более высокого тарифа (``media.uploadlarge``) и его точные
+- существование более высокого тарифа (``media.upload.video``) и его точные
   числа — иначе обычный пользователь узнает, до какого размера можно давить
   файлами/сколько раз в час, и легче спланировать обход анти-абьюз защиты;
 - какие-либо лимиты анонимному вызывающему вообще (без токена — ``limits: null``).
@@ -29,8 +29,8 @@ from utils.settings import SettingsResolver
 
 router = APIRouter()
 
-_PERM_SMALL = "media.upload"
-_PERM_LARGE = "media.uploadlarge"
+_PERM_SMALL = "media.upload.image"
+_PERM_LARGE = "media.upload.video"
 _PERM_ADMIN_UNLIMITED = "admin.media.upload"
 
 # Держим в одном месте с upload.py::_TAG_RE (дублирование ради независимости

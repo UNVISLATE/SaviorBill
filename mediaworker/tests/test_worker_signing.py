@@ -45,7 +45,7 @@ class _FakeVk:
 def _make_worker() -> tuple[Worker, _FakeVk]:
     vk = _FakeVk()
     worker = Worker(
-        cfg=_FakeCfg(), vk=vk, storage=None, settings=None, task_log=None, proc_log=None
+        cfg=_FakeCfg(), vk=vk, storage=None, settings=None, task_log=None, proc_log=None, db=None
     )
     return worker, vk
 

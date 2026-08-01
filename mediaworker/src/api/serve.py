@@ -30,7 +30,7 @@ from utils.telemetry import inject_carrier
 
 router = APIRouter()
 
-_PERM_LARGE = "media.uploadlarge"
+_PERM_LARGE = "media.upload.video"
 # Отдельное право на доступ к preview/thumb ЧУЖОГО медиа — не совпадает с
 # _PERM_LARGE (тот только про лимит размера, см. §2.2 AUDIT.md).
 _PERM_MANAGE_ANY = "admin.media.manage_any"

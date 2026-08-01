@@ -63,6 +63,13 @@ class SystemMediaModel(Base):
     )
     # Метка для UI (админка/клиент) — до 16 символов, латиница+цифры.
     tag: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # Sha256 главного (main) варианта — для дедупа физических файлов между
+    # разными токенами/владельцами (см. PLAN.md, mediaworker
+    # utils/worker.py::_convert + utils/storage.py::link_or_copy). NULL —
+    # старые записи (до этой миграции) или дедуп не сработал (best-effort).
+    content_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     variants: Mapped[dict] = mapped_column(
         JSON, default=dict, server_default="{}", nullable=False
     )
@@ -122,6 +129,7 @@ class SystemMediaMngr:
         variants: dict | None = None,
         meta: dict | None = None,
         tag: str | None = None,
+        content_hash: str | None = None,
     ) -> SystemMediaModel:
         media = SystemMediaModel(
             kind=kind,
@@ -134,6 +142,7 @@ class SystemMediaMngr:
             meta=meta or {},
             status=status,
             tag=tag,
+            content_hash=content_hash,
             **({"token": token} if token else {}),
         )
         self.s.add(media)
@@ -159,6 +168,7 @@ class SystemMediaMngr:
         meta: dict | None = None,
         status: str = "ready",
         tag: str | None = None,
+        content_hash: str | None = None,
     ) -> SystemMediaModel:
         """Идемпотентно записать готовое медиа по ``token`` (insert или update).
 
@@ -179,6 +189,7 @@ class SystemMediaMngr:
                 variants=variants or {},
                 meta=meta or {},
                 tag=tag,
+                content_hash=content_hash,
             )
         media.kind = kind
         media.path = path
@@ -193,6 +204,8 @@ class SystemMediaMngr:
         media.status = status
         if tag is not None:
             media.tag = tag
+        if content_hash is not None:
+            media.content_hash = content_hash
         await self.s.flush()
         return media
 

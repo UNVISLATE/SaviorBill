@@ -86,6 +86,34 @@ class Storage:
             dst = self.media_fs_path(key)
             os.replace(src_path, dst)
 
+    async def link_or_copy(self, key: str, src_path: str, existing_key: str) -> bool:
+        """Дедуп по содержимому (fs-only): хардлинк вместо копирования новых байт.
+
+        Вызывающий (``worker.py::_publish``) уже проверил, что физический
+        файл ``existing_key`` содержит побайтово идентичные данные (тот же
+        sha256, см. ``Worker._convert``). Хардлинк — сам по себе
+        reference-counted на уровне ФС: удаление одного из имён (``key`` или
+        ``existing_key``) не трогает данные, пока жива хотя бы одна ссылка
+        (см. ``delete()``) — отдельный счётчик в БД не нужен.
+
+        S3 хардлинков не имеет — там просто ``return False`` (вызывающий
+        сохранит обычным ``put_final``, без экономии места; полноценный s3
+        дедуп через CopyObject — за рамками этой реализации).
+
+        :return: ``True`` при успехе (``src_path`` уже удалён), ``False`` —
+            нужно вызвать ``put_final`` как обычно (иная ФС/файл исчез).
+        """
+        if self.cfg.backend == "s3":
+            return False
+        dst = self.media_fs_path(key)
+        existing = self.media_fs_path(existing_key)
+        try:
+            os.link(existing, dst)
+        except OSError:
+            return False
+        self._safe_unlink(src_path)
+        return True
+
     async def delete(self, paths: list[str]) -> None:
         """Удалить файлы из хранилища (best-effort)."""
         if self.cfg.backend == "s3":

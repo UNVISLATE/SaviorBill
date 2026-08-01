@@ -201,30 +201,46 @@ SETTINGS: tuple[SettingDef, ...] = (
         "MEDIA_SMALL_MAX_BYTES",
         type="int",
         group="media",
-        desc="Лимит байт для аккаунтов без media.uploadlarge",
+        desc="Лимит байт для аккаунтов без media.upload.video",
     ),
     SettingDef(
         "media.max_bytes",
         "MEDIA_MAX_BYTES",
         type="int",
         group="media",
-        desc="Лимит байт для аккаунтов с media.uploadlarge",
+        desc="Лимит байт для аккаунтов с media.upload.video",
     ),
     SettingDef(
         "media.uploads_per_hour",
         "MEDIA_UPLOADS_PER_HOUR",
         type="int",
         group="media",
-        desc="Загрузок в час для аккаунтов без media.uploadlarge "
-        "(у media.uploadlarge часовой лимит не применяется)",
+        desc="Загрузок в час для аккаунтов без media.upload.video "
+        "(у media.upload.video часовой лимит не применяется)",
     ),
     SettingDef(
         "user.media.limit",
         "USER_MEDIA_LIMIT",
         type="int",
         group="media",
-        desc="Максимум медиа-файлов на аккаунт (без media.uploadlarge/"
+        desc="Максимум медиа-файлов на аккаунт (без media.upload.video/"
         "admin.media.upload — у них лимит не применяется)",
+    ),
+    SettingDef(
+        "media.quota.image_bytes",
+        "MEDIA_QUOTA_IMAGE_BYTES",
+        type="int",
+        group="media",
+        desc="Суммарный объём хранимых медиа на аккаунт без media.upload.video "
+        "(SUM(size) по всем его system_media)",
+    ),
+    SettingDef(
+        "media.quota.video_bytes",
+        "MEDIA_QUOTA_VIDEO_BYTES",
+        type="int",
+        group="media",
+        desc="Суммарный объём хранимых медиа на аккаунт с media.upload.video "
+        "(раньше такого потолка не было вообще — см. AUDIT.md §1.4 HIGH-2)",
     ),
     # Валюта инстанса и конвертация зачислений
     SettingDef(

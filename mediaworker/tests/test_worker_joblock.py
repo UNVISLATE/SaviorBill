@@ -44,7 +44,7 @@ class _FakeVk:
 
 
 def _make_worker(vk: _FakeVk) -> Worker:
-    return Worker(cfg=_FakeCfg(), vk=vk, storage=None, settings=None, task_log=None, proc_log=None)
+    return Worker(cfg=_FakeCfg(), vk=vk, storage=None, settings=None, task_log=None, proc_log=None, db=None)
 
 
 async def test_duplicate_in_flight_task_is_skipped_not_handled(monkeypatch):

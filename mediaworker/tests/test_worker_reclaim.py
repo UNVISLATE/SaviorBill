@@ -77,7 +77,7 @@ def _make_worker(pending, rows):
     vk = _FakeVk(pending, rows)
     task_log = _FakeTaskLog()
     worker = Worker(
-        cfg=_FakeCfg(), vk=vk, storage=None, settings=None, task_log=task_log, proc_log=None
+        cfg=_FakeCfg(), vk=vk, storage=None, settings=None, task_log=task_log, proc_log=None, db=None
     )
     return worker, vk, task_log
 

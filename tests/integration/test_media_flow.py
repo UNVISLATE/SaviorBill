@@ -23,9 +23,15 @@ _PNG = base64.b64decode(
 )
 
 
-async def _access(new_user) -> str:
-    _login, _pwd, tokens = await new_user()
-    return tokens["access_token"]
+async def _access(http: httpx.AsyncClient, new_user, seed) -> str:
+    """Зарегистрировать и сразу верифицировать (guest -> user) — с D3 (PLAN.md)
+    у guest нет права на медиа-загрузку вообще, а /auth/register создаёт
+    именно guest (см. dependencies/oauth.py, models/user.py)."""
+    login, pwd, _tokens = await new_user()
+    await seed.verify_user(login)
+    r = await http.post("/api/v1/auth/login", json={"login": login, "password": pwd})
+    r.raise_for_status()
+    return r.json()["access_token"]
 
 
 async def _upload(token_access: str, *, tag: str | None = None) -> str:
@@ -61,8 +67,8 @@ async def _upload(token_access: str, *, tag: str | None = None) -> str:
     return body["token"]
 
 
-async def test_media_upload_convert_register(http, new_user):
-    token_access = await _access(new_user)
+async def test_media_upload_convert_register(http, new_user, seed):
+    token_access = await _access(http, new_user, seed)
     token = await _upload(token_access, tag="cover1")
 
     async def _status():
@@ -78,12 +84,12 @@ async def test_media_upload_convert_register(http, new_user):
     assert data["tag"] == "cover1"
 
 
-async def test_media_op_status_after_convert(http, new_user):
+async def test_media_op_status_after_convert(http, new_user, seed):
     """`worker_jobs` (см. models/worker_jobs.py) отражает финальный op-статус
 
     конвейера конвертации; тот же источник, что и /status/{token}, поэтому
     оба не могут "разойтись" в терминальном состоянии."""
-    token_access = await _access(new_user)
+    token_access = await _access(http, new_user, seed)
     token = await _upload(token_access)
 
     await wait_until(
@@ -99,8 +105,8 @@ async def test_media_op_status_after_convert(http, new_user):
     assert body["finished_at"] is not None
 
 
-async def test_media_op_status_unknown_op(http, new_user):
-    token_access = await _access(new_user)
+async def test_media_op_status_unknown_op(http, new_user, seed):
+    token_access = await _access(http, new_user, seed)
     token = await _upload(token_access)
     resp = await http.get(f"/api/v1/media/{token}/ops/thumb_replace/status")
     assert resp.status_code == 404, resp.text
@@ -113,7 +119,7 @@ async def test_media_upload_requires_auth(new_user):
 
 
 async def test_admin_media_list_and_cleanup(http, new_user, seed):
-    token_access = await _access(new_user)
+    token_access = await _access(http, new_user, seed)
     token = await _upload(token_access)
 
     await wait_until(
@@ -157,12 +163,12 @@ async def _state(http, token: str) -> str:
     return resp.json().get("state")
 
 
-async def test_mediaworker_status_includes_jobs(new_user):
+async def test_mediaworker_status_includes_jobs(http, new_user, seed):
     """Собственный (не billing) статус mediaworker отдаёт сводку job'ов —
     не только терминальный ``ready``/``failed``, но и что именно произошло
     (какие ffmpeg-запуски, их op/state) — см. ``api/status.py``.
     """
-    token_access = await _access(new_user)
+    token_access = await _access(http, new_user, seed)
     token = await _upload(token_access, tag="jobsfield")
 
     async def _mw_status():
@@ -180,9 +186,9 @@ async def test_mediaworker_status_includes_jobs(new_user):
     assert job["status"] == "ready"
 
 
-async def test_mediaworker_logs_requires_perm(new_user):
+async def test_mediaworker_logs_requires_perm(http, new_user, seed):
     """Обычный пользователь без ``logs.read`` не должен видеть чужие job'ы."""
-    token_access = await _access(new_user)
+    token_access = await _access(http, new_user, seed)
     async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=30) as mw:
         resp = await mw.get(
             "/api/media/logs/jobs", headers={"Authorization": f"Bearer {token_access}"}
@@ -194,7 +200,7 @@ async def test_mediaworker_logs_admin_can_read_job_and_progress(http, new_user, 
     """Админ (``logs.read``) видит список job'ов, метаданные и снимок прогресса
     напрямую через mediaworker — без прыжка через billing.
     """
-    token_access = await _access(new_user)
+    token_access = await _access(http, new_user, seed)
     token = await _upload(token_access, tag="logsread")
 
     await wait_until(

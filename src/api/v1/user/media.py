@@ -28,7 +28,7 @@ router = APIRouter()
 
 # Права, снимающие лимит user.media.limit — те же, что и в mediaworker
 # (см. mediaworker/src/api/upload.py::_PERM_LARGE + admin.media.upload).
-_UNLIMITED_PERMS = ("media.uploadlarge", "admin.media.upload")
+_UNLIMITED_PERMS = ("media.upload.video", "admin.media.upload")
 
 
 class MyMediaPage(Page[Media]):
@@ -37,7 +37,7 @@ class MyMediaPage(Page[Media]):
     quota_limit: int | None = Field(
         default=None,
         description="Max media files for this account, or null if unlimited "
-        "(media.uploadlarge/admin.media.upload perms lift the limit)",
+        "(media.upload.video/admin.media.upload perms lift the limit)",
     )
 
 

@@ -10,6 +10,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import random
@@ -30,6 +31,7 @@ from .convert import (
     probe_media,
 )
 from .bus_sign import sign_fields, verify_fields
+from .db import DB
 from .keys import file_key, job_lock_key, opstatus_key, status_key
 from .proclog import ProcLog
 from .settings import SettingsResolver
@@ -45,6 +47,16 @@ from .telemetry import inject_carrier, span_from_carrier
 # в stdout).
 
 
+def _sha256_file(path: str) -> str:
+    """Sha256 файла по чанкам (не грузим целиком в память — файл может быть
+    видео в сотни MiB, см. media.upload.video)."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
 class Worker:
     """Обработчик потока медиа-задач."""
 
@@ -56,6 +68,7 @@ class Worker:
         settings: SettingsResolver,
         task_log: TaskLog,
         proc_log: ProcLog,
+        db: DB,
     ) -> None:
         self.cfg = cfg
         self.vk = vk
@@ -63,6 +76,7 @@ class Worker:
         self.settings = settings
         self.task_log = task_log
         self.proc_log = proc_log
+        self.db = db
         # Ограничители одновременно обрабатываемых задач (backpressure).
         # "convert" делится на 2 пула по виду медиа — иначе одна долгая
         # видео-конвертация занимает слот, который могла бы использовать
@@ -382,11 +396,26 @@ class Worker:
         elif op == "delete":
             await self._delete(data)
 
-    async def _publish(self, variant: Variant) -> tuple[str, int]:
-        """Переместить вариант в хранилище; вернуть ключ и размер."""
+    async def _publish(
+        self, variant: Variant, dedup_of: str | None = None
+    ) -> tuple[str, int]:
+        """Переместить вариант в хранилище; вернуть ключ и размер.
+
+        :arg dedup_of: ключ уже сохранённого физического файла с ИДЕНТИЧНЫМ
+            содержимым (тот же sha256, см. ``_convert``) — вместо копирования
+            новых байт создаём хардлинк (``Storage.link_or_copy``), экономя
+            место на диске. Ссылка ФС сама выполняет reference counting: при
+            удалении одного из токенов остальные хардлинки (и сами байты)
+            не затрагиваются — это работает только для backend=fs; s3 просто
+            падает обратно на обычную загрузку (``put_final``).
+        """
         tmp = os.path.join(self.cfg.uploads_dir, variant.key)
         size = os.path.getsize(tmp)
-        await self.storage.put_final(variant.key, tmp, variant.mime)
+        linked = dedup_of is not None and await self.storage.link_or_copy(
+            variant.key, tmp, dedup_of
+        )
+        if not linked:
+            await self.storage.put_final(variant.key, tmp, variant.mime)
         return variant.key, size
 
     def _variant_dict(self, token: str, v: Variant, size: int | None) -> dict:
@@ -432,6 +461,11 @@ class Worker:
         tag = data.get("tag") or None
         owner_id = data.get("owner_id")
         video_allowed = data.get("video_allowed") == "1"
+        # admin.media.upload — единственное по-настоящему безлимитное право
+        # (см. AUDIT.md §2.2), пробрасывается через очередь так же, как
+        # video_allowed (см. upload.py::upload_file) — квота на общий объём
+        # (см. ниже, перед emit_result) для него не проверяется вовсе.
+        is_unlimited = data.get("unlimited") == "1"
         cpu_used_raw = data.get("cpu_used") or ""
         crf_raw = data.get("crf") or ""
         cpu_used = int(cpu_used_raw) if cpu_used_raw.isdigit() else None
@@ -463,7 +497,7 @@ class Worker:
         # Право на kind файла проверяется здесь, не на приёме (HTTP) — сам
         # kind определяется по сигнатуре файла только сейчас, в фоне (см.
         # IMPLEMENTATION_PLAN.md §0.1.3). media.upload — только фото;
-        # media.uploadlarge/admin.media.upload разрешают video (флаг
+        # media.upload.video/admin.media.upload разрешают video (флаг
         # video_allowed прокинут из upload.py при приёме файла).
         if not video_allowed:
             try:
@@ -569,8 +603,29 @@ class Worker:
         # а не оригинал src — интересует то, что реально отдаётся клиенту.
         main_tmp = os.path.join(self.cfg.uploads_dir, variants[0].key)
         meta = await probe_media(main_tmp)
+
+        # Дедуп по содержимому (global, см. PLAN.md): если где-то уже лежит
+        # готовый файл с тем же sha256 (тот же backend), делаем хардлинк
+        # вместо повторной записи байт на диск (см. _publish/Storage.link_or_copy).
+        # Только для main-варианта — thumb/preview генерируются заново каждый
+        # раз и почти никогда не совпадают побайтово даже для одинаковых
+        # исходников (случайный кадр превью, разный список параметров сжатия).
+        content_hash: str | None = None
+        dedup_path: str | None = None
+        if self.db is not None:
+            try:
+                content_hash = await asyncio.to_thread(_sha256_file, main_tmp)
+                hit = await self.db.find_by_hash(content_hash, self.cfg.backend)
+                if hit:
+                    dedup_path = hit["path"]
+            except Exception:  # noqa: BLE001 — дедуп best-effort, не должен ронять конвертацию
+                content_hash = content_hash or None
+                dedup_path = None
+
         for v in variants:
-            key, size = await self._publish(v)
+            key, size = await self._publish(
+                v, dedup_of=dedup_path if v is variants[0] else None
+            )
             sizes[key] = size
             # Кэш ключей вариантов для serve() — как для s3, так и для fs.
             await self.vk.hset(file_key(token), mapping={v.name: v.key})
@@ -591,6 +646,37 @@ class Worker:
         main = variants[0]
         thumb_v = next((v for v in variants if v.name == "thumb"), None)
         preview_vs = [v for v in variants if v.name.startswith("preview.")]
+
+        # Финальная (точная) проверка суммарной квоты — до сих пор знали
+        # только заявленный клиентом Content-Length, а не реальный размер
+        # ПОСЛЕ конвертации. admin.media.upload (is_unlimited) не проверяем
+        # вовсе; media.upload.video/media.upload.image — по своим потолкам
+        # (см. AUDIT.md §1.4 HIGH-2 — раньше media.upload.video не имел
+        # потолка на общий объём вообще).
+        if owner_id and self.db is not None and not is_unlimited:
+            quota = (
+                await self.settings.quota_video_bytes()
+                if video_allowed
+                else await self.settings.quota_image_bytes()
+            )
+            try:
+                used_before = await self.db.bytes_used_for_owner(int(owner_id))
+            except Exception:  # noqa: BLE001 — best-effort, не должно ронять конвертацию
+                used_before = 0
+            new_total = sum(sizes.values())
+            if used_before + new_total > quota:
+                await self.storage.delete(list(sizes.keys()))
+                await self._set_status(
+                    token, state="failed", error="storage quota exceeded"
+                )
+                await self.task_log.record(
+                    kind="media", op="convert", token_or_cid=token, state="failed",
+                    detail="storage quota exceeded", owner_id=owner_id or None,
+                )
+                await self.proc_log.finish_job(job_id, "failed")
+                self.storage._safe_unlink(src)
+                return
+
         result_variants = {
             "media": self._variant_dict(token, main, sizes.get(main.key)),
             "thumb": self._variant_dict(token, thumb_v, sizes.get(thumb_v.key)) if thumb_v else None,
@@ -612,6 +698,8 @@ class Worker:
             result["tag"] = tag
         if main.key in sizes:
             result["size"] = str(sizes[main.key])
+        if content_hash:
+            result["content_hash"] = content_hash
         if owner_id:
             result["owner_id"] = str(owner_id)
         await self._emit_result(result)

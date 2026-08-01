@@ -38,8 +38,8 @@ from utils.telemetry import inject_carrier
 
 router = APIRouter()
 
-_PERM_SMALL = "media.upload"
-_PERM_LARGE = "media.uploadlarge"
+_PERM_SMALL = "media.upload.image"
+_PERM_LARGE = "media.upload.video"
 # Админское право без ограничений по размеру вообще (не совпадает с
 # _PERM_LARGE, у которого есть потолок MEDIA_MAX_BYTES — см. §2.2 AUDIT.md).
 _PERM_ADMIN_UNLIMITED = "admin.media.upload"
@@ -56,7 +56,7 @@ _TAG_RE = re.compile(r"^[A-Za-z0-9]{1,16}$")
 
 # Пресеты скорости/качества VP9 (см. IMPLEMENTATION_PLAN.md §1.5): значение —
 # cpu-used для libvpx-vp9 (0 — медленнее/лучше качество, 8 — быстрее/хуже).
-# media.uploadlarge всегда получает "fast" (пользователи с большими файлами не
+# media.upload.video всегда получает "fast" (пользователи с большими файлами не
 # должны иметь возможность выбрать медленный пресет и забить очередь конвертации
 # надолго); admin.media.upload может выбрать любой + переопределить CRF.
 _VIDEO_PRESETS: dict[str, int] = {"fast": 8, "balanced": 5, "quality": 2}
@@ -75,7 +75,7 @@ return data
 async def _enforce_hourly_limit(
     request: Request, acc_id: int, perms: dict | None
 ) -> None:
-    """Лимит загрузок в час для обычных пользователей (кроме media.uploadlarge
+    """Лимит загрузок в час для обычных пользователей (кроме media.upload.video
     и admin.media.upload)."""
     if has_perm(perms, _PERM_LARGE) or has_perm(perms, _PERM_ADMIN_UNLIMITED):
         return
@@ -100,7 +100,7 @@ async def _enforce_media_count_limit(
 
     Жёсткий отказ при превышении — без авто-удаления старых файлов
     (пользователь должен сам удалить что-то, чтобы загрузить новое).
-    Не применяется к правам, снимающим ограничение размера (uploadlarge/
+    Не применяется к правам, снимающим ограничение размера (media.upload.video/
     admin.media.upload) — те же роли, что не упираются в размер файла, не
     должны упираться и в счётчик.
     """
@@ -114,6 +114,40 @@ async def _enforce_media_count_limit(
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             f"media count limit reached ({limit}); delete something first",
+        )
+
+
+async def _enforce_storage_quota(
+    request: Request, acc_id: int, perms: dict | None
+) -> None:
+    """Суммарный объём (байт) уже сохранённых медиа не должен превышать квоту.
+
+    В отличие от лимита размера ОДНОГО файла, это лимит на ОБЩИЙ объём —
+    раньше он отсутствовал для ``media.upload.video`` вообще (см. AUDIT.md
+    §1.4 HIGH-2), позволяя копить неограниченное число файлов по 500 MiB
+    каждый. ``admin.media.upload`` остаётся без потолка — это единственное
+    по-настоящему безлимитное право.
+
+    Проверяется здесь предварительно (по уже сохранённым файлам — точный
+    итоговый размер нового файла после конвертации ещё не известен), финальная
+    проверка — в mediaworker после конвертации (см. ``utils/worker.py::
+    _convert``), где точный размер уже есть.
+    """
+    if has_perm(perms, _PERM_ADMIN_UNLIMITED):
+        return
+    settings: SettingsResolver = request.app.state.settings
+    db = request.app.state.db
+    is_large = has_perm(perms, _PERM_LARGE)
+    quota = (
+        await settings.quota_video_bytes()
+        if is_large
+        else await settings.quota_image_bytes()
+    )
+    used = await db.bytes_used_for_owner(acc_id)
+    if used >= quota:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            f"storage quota reached ({quota} bytes used); delete something first",
         )
 
 
@@ -133,7 +167,7 @@ async def request_upload_token(
 
     ``preset``/``crf`` — управление скоростью/качеством конвертации видео
     (см. IMPLEMENTATION_PLAN.md §1.5): доступны только для
-    ``admin.media.upload`` (полный выбор пресета + CRF); ``media.uploadlarge``
+    ``admin.media.upload`` (полный выбор пресета + CRF); ``media.upload.video``
     всегда получает самый быстрый пресет независимо от переданных значений;
     ``media.upload`` видео вообще не грузит (см. ``video_allowed`` ниже), эти
     параметры для него ни на что не влияют.
@@ -192,6 +226,7 @@ async def request_upload_token(
 
     await _enforce_hourly_limit(request, acc_id, perms)
     await _enforce_media_count_limit(request, acc_id, perms)
+    await _enforce_storage_quota(request, acc_id, perms)
 
     token = uuid.uuid4().hex
     uptoken_hkey = uptoken_key(token)
@@ -201,7 +236,7 @@ async def request_upload_token(
             "owner": str(acc_id),
             "tag": tag or "",
             "max_bytes": str(max_bytes),
-            # Флаг права media.uploadlarge/admin.media.upload — переносим на
+            # Флаг права media.upload.video/admin.media.upload — переносим на
             # шаг 2, чтобы решить, банить ли IP за подложный Content-Length
             # (см. upload_file).
             "large": "1" if (is_large or is_unlimited) else "0",
@@ -210,6 +245,11 @@ async def request_upload_token(
             # определяется по сигнатуре файла только в фоне (worker.py),
             # поэтому решение принимается здесь и переносится через очередь.
             "video_allowed": "1" if (is_large or is_unlimited) else "0",
+            # admin.media.upload — единственное по-настоящему безлимитное
+            # право (без потолка на общий объём хранимых медиа тоже, см.
+            # worker.py::_convert). Переносим на шаг 2 и дальше в задачу
+            # конвертации так же, как video_allowed.
+            "unlimited": "1" if is_unlimited else "0",
             "cpu_used": str(cpu_used),
             "crf": str(crf) if crf is not None else "",
         },
@@ -279,6 +319,7 @@ async def upload_file(request: Request, upload_token: str) -> dict:
     max_bytes = int(payload.get("max_bytes", cfg.small_max_bytes))
     is_large = payload.get("large") == "1"
     video_allowed = payload.get("video_allowed") == "1"
+    is_unlimited = payload.get("unlimited") == "1"
     cpu_used = payload.get("cpu_used") or ""
     crf = payload.get("crf") or ""
 
@@ -292,7 +333,7 @@ async def upload_file(request: Request, upload_token: str) -> dict:
         size = await storage.save_stream(media_token, request.stream(), max_bytes)
     except ValueError:
         if is_large:
-            # Аккаунт с media.uploadlarge соврал про Content-Length — не бан,
+            # Аккаунт с media.upload.video соврал про Content-Length — не бан,
             # это, скорее всего, свой человек, а не атака: просто отказ.
             raise HTTPException(
                 status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "не надо баловаться XD"
@@ -321,6 +362,7 @@ async def upload_file(request: Request, upload_token: str) -> dict:
                     # проверить без лишнего похода в БД, поэтому переносим
                     # флаг через очередь (см. worker.py::_convert).
                     "video_allowed": "1" if video_allowed else "0",
+                    "unlimited": "1" if is_unlimited else "0",
                     "cpu_used": cpu_used,
                     "crf": crf,
                 }
