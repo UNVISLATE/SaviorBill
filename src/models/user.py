@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from models import Base
 from models.roles import Role
 from enums import BaseRole
+from schemas.types import normalize_email
 from utils.datetime_utils import utc_now
 
 if TYPE_CHECKING:
@@ -135,7 +136,18 @@ class UserMngr:
         return await self.s.scalar(select(UserModel).where(UserModel.login == login))
 
     async def by_email(self, email: str) -> UserModel | None:
-        return await self.s.scalar(select(UserModel).where(UserModel.email == email))
+        """Найти аккаунт по email без учёта регистра.
+
+        Адреса нормализуются на входе (:data:`schemas.types.NormEmail`), но
+        сравнение через ``lower()`` защищает и от старых записей, созданных до
+        нормализации.
+        """
+        norm = normalize_email(email)
+        if norm is None:
+            return None
+        return await self.s.scalar(
+            select(UserModel).where(func.lower(UserModel.email) == norm)
+        )
 
     async def by_login_or_email(self, identifier: str) -> UserModel | None:
         """Найти аккаунт по логину, а если не нашли — по email (для входа).
@@ -190,7 +202,7 @@ class UserMngr:
         acc = UserModel(
             login=login,
             pass_hash=pass_hash,
-            email=email,
+            email=normalize_email(email),
             role_id=role.id if role else None,
             ref_code=await self._gen_ref_code(),
             referred_by=referrer.id if referrer else None,

@@ -7,6 +7,8 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from schemas.types import OptNormEmail
+
 
 def _media_url(token: str | None) -> str | None:
     """Относительный URL медиа (см. ``schemas.media``)."""
@@ -20,7 +22,7 @@ class Reg(BaseModel):
     password: str = Field(
         min_length=8, max_length=128, description="Password (8–128 chars)"
     )
-    email: str | None = Field(
+    email: OptNormEmail = Field(
         default=None, max_length=255, description="Email (optional)"
     )
     ref_code: str | None = Field(
@@ -175,7 +177,7 @@ class MePatch(BaseModel):
     login: str | None = Field(
         default=None, min_length=3, max_length=64, description="New login (optional)"
     )
-    email: str | None = Field(
+    email: OptNormEmail = Field(
         default=None,
         max_length=255,
         description="New email; may reset verification",

@@ -157,22 +157,25 @@ class ResetSvc:
                 raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid code")
 
         key = _RESET + norm
-        stored = await self.vk.get(key)
+        # GETDEL атомарен: без него два параллельных confirm успевали оба
+        # пройти сравнение до того, как первый удалит ключ (AUDIT.md §2.1).
+        stored = await self.vk.getdel(key)
         if stored is None:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, "code not requested or expired"
             )
         if not hmac.compare_digest(stored, code):
             fails = await self.vk.incr(_RESET_FAIL + norm)
-            if fails >= _MAX_FAILS:
-                await self.vk.delete(key)
+            if fails < _MAX_FAILS:
+                # Ключ уже забран GETDEL — возвращаем, чтобы пользователь мог
+                # доввести код; после _MAX_FAILS не возвращаем вовсе.
+                await self.vk.set(key, stored, ex=await self._ttl())
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid code")
 
         acc = await UserMngr(self.s).by_email(norm)
         if acc is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
 
-        await self.vk.delete(key)
         await self.vk.delete(_RESET_FAIL + norm)
         await self.vk.delete(_RESET_TOKEN_IDX + code)
         acc.pass_hash = hash_pass(new_pass)

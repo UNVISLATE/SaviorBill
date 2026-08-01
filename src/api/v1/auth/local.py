@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.exc import IntegrityError
 
 from dependencies.auth import (
     UserMngr,
@@ -56,7 +57,13 @@ async def register(
     acc = await mngr.create(
         body.login, hash_pass(body.password), body.email, ref_by=body.ref_code
     )
-    await mngr.s.commit()
+    try:
+        await mngr.s.commit()
+    except IntegrityError:
+        # Две параллельные регистрации проходят проверку выше до того, как
+        # любая из них закоммитится — уникальный индекс ловит вторую.
+        await mngr.s.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "account already exists") from None
 
     # Триггеры регистрации (best-effort, не ломают регистрацию).
     await triggers.fire(

@@ -8,6 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from schemas.types import OptNormEmail
+
 
 class User(BaseModel):
     """User account."""
@@ -37,7 +39,7 @@ class UserCreateAdmin(BaseModel):
 
     login: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=8, max_length=256)
-    email: str | None = Field(default=None, max_length=255)
+    email: OptNormEmail = Field(default=None, max_length=255)
     role_id: int | None = Field(
         default=None, description="Starting role; defaults to 'user' if omitted"
     )
@@ -46,7 +48,7 @@ class UserCreateAdmin(BaseModel):
 class UserPatch(BaseModel):
     """Update user account."""
 
-    email: str | None = Field(
+    email: OptNormEmail = Field(
         default=None, max_length=255, description="New email (optional)"
     )
     role_id: int | None = Field(

@@ -32,6 +32,9 @@ class _FakeValkey:
     async def get(self, key: str) -> str | None:
         return self._vals.get(key)
 
+    async def getdel(self, key: str) -> str | None:
+        return self._vals.pop(key, None)
+
     async def delete(self, key: str) -> None:
         self._vals.pop(key, None)
 
@@ -200,6 +203,20 @@ class TestConfirm:
             await svc.confirm("000000", "NewPass123", email="alice@example.com")
         assert exc.value.status_code == 400
         assert vk._vals["reset:pwd:fail:alice@example.com"] == "1"
+        # Код возвращён на место — пользователь может доввести его сам.
+        assert vk._vals["reset:pwd:alice@example.com"] == "123456"
+
+    @pytest.mark.asyncio
+    async def test_confirm_consumes_code_atomically(self) -> None:
+        """Второе подтверждение тем же кодом не проходит (GETDEL, AUDIT.md §2.1)."""
+        vk = _FakeValkey()
+        await vk.set("reset:pwd:alice@example.com", "123456")
+        svc, patcher = _svc(vk, _FakeSettings(), _FakeSender(), _acc())
+        with patcher:
+            await svc.confirm("123456", "NewPass123", email="alice@example.com")
+        with patcher, pytest.raises(HTTPException) as exc:
+            await svc.confirm("123456", "OtherPass123", email="alice@example.com")
+        assert exc.value.status_code == 400
 
 
 class TestResolveResetMethod:
