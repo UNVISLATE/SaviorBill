@@ -12,6 +12,7 @@ from models.roles import Role as RoleModel
 from models.user import UserModel
 from schemas.role import PermsCatalog, RoleCreate, Role, RolePatch
 from services.audit import audit
+from security.owner_guard import assert_role_editable
 from security.rbac import all_perms, perms_tree
 
 router = APIRouter()
@@ -92,10 +93,7 @@ async def update_role(
     role = await session.get(RoleModel, role_id)
     if role is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "role not found")
-    if role.key == "owner":
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "the owner role cannot be edited via API"
-        )
+    assert_role_editable(role)
     data = body.model_dump(exclude_unset=True)
     if "title" in data:
         role.title = data["title"]

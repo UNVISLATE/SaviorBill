@@ -14,6 +14,11 @@ from dependencies.db import get_db_session
 from dependencies.auth import get_token_svc
 from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
+from security.owner_guard import (
+    assert_account_deletable,
+    assert_can_modify_account,
+    assert_role_assignable,
+)
 from security.rbac import has_perm, reg_perm
 from dependencies.valkey import get_valkey_client
 from models.promo_codes import PromoCodesModel
@@ -207,10 +212,7 @@ async def create_user(
         role = await session.get(Role, body.role_id)
         if role is None:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown role_id")
-        if role.key == "owner":
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, "the owner role cannot be assigned"
-            )
+        assert_role_assignable(role)
         role_key = role.key
 
     acc = await mngr.create(body.login, hash_pass(body.password), body.email, role_key=role_key)
@@ -281,6 +283,7 @@ async def user_profile_admin(
     "additionally requires `admin.user.role.edit`.",
 )
 async def edit_user(
+    request: Request,
     user_id: int,
     body: UserPatch,
     session: AsyncSession = Depends(get_db_session),
@@ -292,6 +295,9 @@ async def edit_user(
     :return: обновлённый аккаунт.
     """
     acc = await _get_user(session, user_id)
+    # До разбора отдельных полей: защищённый аккаунт правит только он сам —
+    # иначе любое новое поле UserPatch обошло бы точечные проверки ниже.
+    assert_can_modify_account(caller, acc)
     data = body.model_dump(exclude_unset=True)
     if "role_id" in data and data["role_id"] != acc.role_id:
         caller_perms = caller.role.perms if caller.role else None
@@ -302,15 +308,8 @@ async def edit_user(
                 status.HTTP_403_FORBIDDEN,
                 "insufficient permissions: admin.user.role.edit",
             )
-        if acc.role and acc.role.key == "owner":
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, "the owner role cannot be changed"
-            )
         new_role = await session.get(Role, data["role_id"]) if data["role_id"] else None
-        if new_role is not None and new_role.key == "owner":
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN, "the owner role cannot be assigned"
-            )
+        assert_role_assignable(new_role)
     if ("balance" in data or "bonus_balance" in data) and not (
         caller.role and caller.role.key == "owner"
     ):
@@ -322,6 +321,16 @@ async def edit_user(
             )
     for field, value in data.items():
         setattr(acc, field, value)
+    await audit(
+        session,
+        action="admin.user.edit",
+        actor_id=caller.id,
+        actor_role=caller.role.name if caller.role else None,
+        target_type="user",
+        target_id=str(acc.id),
+        ip=request.client.host if request.client else None,
+        meta={"fields": sorted(data.keys())},
+    )
     await session.commit()
     return User.from_model(acc)
 
@@ -341,8 +350,7 @@ async def delete_user(
     caller: UserModel = Depends(require_perm("admin.user.delete")),
 ) -> None:
     acc = await _get_user(session, user_id)
-    if acc.role and acc.role.key == "owner":
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "the owner cannot be deleted")
+    assert_account_deletable(acc)
     login = acc.login
     await audit(
         session,
@@ -374,10 +382,7 @@ async def adjust_balance(
     caller: UserModel = Depends(require_perm("admin.user.balance.edit")),
 ) -> User:
     acc = await _get_user(session, user_id)
-    if acc.role and acc.role.key == "owner":
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "the owner's balance cannot be adjusted"
-        )
+    assert_can_modify_account(caller, acc)
     field = "balance" if body.kind == "main" else "bonus_balance"
     current: Decimal = getattr(acc, field)
     new_value = current + body.amount
@@ -529,29 +534,37 @@ async def user_sessions(
 @router.delete(
     "/{user_id}/sessions/{jti}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_perm("admin.user.sessions.manage"))],
     summary="Revoke a user session",
     description="Force-terminates a single active session (denylists its refresh token).",
 )
 async def revoke_user_session(
+    request: Request,
     user_id: int,
     jti: str,
     session: AsyncSession = Depends(get_db_session),
     tokens: TokenSvc = Depends(get_token_svc),
+    caller: UserModel = Depends(require_perm("admin.user.sessions.manage")),
 ) -> None:
     acc = await _get_user(session, user_id)
-    if acc.role and acc.role.key == "owner":
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, "the owner's sessions cannot be managed"
-        )
+    assert_can_modify_account(caller, acc)
     if not await tokens.revoke_session(user_id, jti):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
+    await audit(
+        session,
+        action="admin.user.session.revoke",
+        actor_id=caller.id,
+        actor_role=caller.role.name if caller.role else None,
+        target_type="user",
+        target_id=str(acc.id),
+        ip=request.client.host if request.client else None,
+        meta={"jti": jti},
+    )
+    await session.commit()
 
 
 @router.put(
     "/{user_id}/avatar",
     response_model=Account,
-    dependencies=[Depends(require_perm("admin.media.manage_any"))],
     summary="Force-set user avatar (admin)",
     description=(
         "Set a user's avatar to any media (not just the user's own) — "
@@ -566,8 +579,10 @@ async def set_user_avatar(
     session: AsyncSession = Depends(get_db_session),
     media: SystemMediaMngr = Depends(get_media_mngr),
     vk: valkey.Valkey = Depends(get_valkey_client),
+    caller: UserModel = Depends(require_perm("admin.media.manage_any")),
 ) -> Account:
     acc = await _get_user(session, user_id)
+    assert_can_modify_account(caller, acc)
     if body.media_id is not None:
         m = await media.by_id(body.media_id)
         if m is None:
@@ -575,6 +590,16 @@ async def set_user_avatar(
 
     old_media_id = acc.avatar_media_id
     acc.avatar_media_id = body.media_id
+    await audit(
+        session,
+        action="admin.user.avatar.set",
+        actor_id=caller.id,
+        actor_role=caller.role.name if caller.role else None,
+        target_type="user",
+        target_id=str(acc.id),
+        ip=request.client.host if request.client else None,
+        meta={"media_id": body.media_id, "previous_media_id": old_media_id},
+    )
     await session.commit()
     await session.refresh(acc)
 
