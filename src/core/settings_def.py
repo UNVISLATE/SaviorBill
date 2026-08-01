@@ -217,6 +217,64 @@ SETTINGS: tuple[SettingDef, ...] = (
         desc="Максимум медиа-файлов на аккаунт (без media.uploadlarge/"
         "admin.media.upload — у них лимит не применяется)",
     ),
+    # Валюта инстанса и конвертация зачислений
+    SettingDef(
+        "billing.currency",
+        None,
+        group="billing",
+        desc="Базовая валюта инстанса (ISO-код). Баланс аккаунта ведётся "
+        "только в ней; платежи в других валютах конвертируются при зачислении",
+    ),
+    SettingDef(
+        "billing.fx.source",
+        None,
+        group="billing",
+        desc="Источник курсов: 'manual' (только billing.fx.rates) или 'api' "
+        "(внешний JSON-API, ручные курсы имеют приоритет)",
+    ),
+    SettingDef(
+        "billing.fx.rates",
+        None,
+        type="json",
+        group="billing",
+        desc='Ручные курсы вида {"USD": "95.5"} — сколько базовой валюты стоит '
+        "одна единица указанной",
+    ),
+    SettingDef(
+        "billing.fx.api_url",
+        None,
+        group="billing",
+        desc="URL JSON-API с курсами (для billing.fx.source=api)",
+    ),
+    SettingDef(
+        "billing.fx.api_path",
+        None,
+        group="billing",
+        desc="Точечный путь до объекта с курсами в ответе API (напр. "
+        "'data.rates'); пусто — курсы лежат в корне ответа",
+    ),
+    SettingDef(
+        "billing.fx.api_quote",
+        None,
+        group="billing",
+        desc="Направление котировки в ответе API: 'base_per_unit' (сколько "
+        "базовой валюты за 1 иностранную) или 'unit_per_base' (обратное)",
+    ),
+    SettingDef(
+        "billing.fx.cache_ttl_sec",
+        None,
+        type="int",
+        group="billing",
+        desc="TTL кэша курсов, полученных из API, секунды",
+    ),
+    SettingDef(
+        "billing.fx.markup_percent",
+        None,
+        type="int",
+        group="billing",
+        desc="Спред при конвертации, % — на столько уменьшается зачисляемая "
+        "сумма (0 — конвертация по курсу без наценки)",
+    ),
     # Заказы: повтор выдачи и компенсация при окончательном провале
     SettingDef(
         "orders.delivery.max_attempts",

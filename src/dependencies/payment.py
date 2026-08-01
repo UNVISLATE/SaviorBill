@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.db import get_db_session
 from lua.deps import get_lua_bus_configured
 from dependencies.sec import make_secbox
+from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr
 from enums import PayAction, PayStatus, PayTarget
@@ -32,6 +33,7 @@ from models.user_services import UserServicesModel
 from lua.schemas import LuaRequest
 from services.account import lock_account
 from services.audit import audit
+from services.fx import FxRates
 from lua.context import LuaRunner
 from utils.datetime_utils import utc_now
 from lua.bus import LuaBus
@@ -47,12 +49,14 @@ class PayMngr:
         bus: LuaBus,
         box: SecBox,
         dispatcher: TriggerDispatcher | None = None,
+        fx: FxRates | None = None,
     ) -> None:
         self.s = session
         self.bus = bus
         self.box = box
         self.runner = LuaRunner(bus)
         self.dispatcher = dispatcher
+        self.fx = fx
 
     # --- доступ к провайдеру/секретам/скрипту ----------------------------
     async def _provider(
@@ -327,12 +331,13 @@ class PayMngr:
         else:  # возврат пополнения баланса
             acc = await lock_account(self.s, payment.account_id)
             if acc is not None:
-                # Списываем не больше суммы этого платежа и не больше того,
-                # что реально ещё есть на балансе — старые/чужие средства
-                # не трогаем и в минус не уходим.
-                deduct = min(acc.balance, payment.amount)
+                # Списываем ровно то, что было зачислено (с учётом конвертации),
+                # не больше остатка на балансе — старые/чужие средства не
+                # трогаем и в минус не уходим.
+                credited = payment.base_amount or payment.amount
+                deduct = min(acc.balance, credited)
                 acc.balance -= deduct
-                shortfall = payment.amount - deduct
+                shortfall = credited - deduct
                 payment.private_data = {
                     **(payment.private_data or {}),
                     "refund": {
@@ -350,7 +355,7 @@ class PayMngr:
                         target_id=payment.id,
                         result="warn",
                         meta={
-                            "amount": str(payment.amount),
+                            "amount": str(credited),
                             "deducted": str(deduct),
                             "shortfall": str(shortfall),
                             "account_id": payment.account_id,
@@ -420,7 +425,22 @@ class PayMngr:
                 if promo_id:
                     await self._redeem_promo(promo_id, payment, usvc)
         else:  # пополнение баланса
-            acc.balance += payment.amount
+            acc.balance += await self._credited_amount(payment)
+
+    async def _credited_amount(self, payment: UserPaymentsModel) -> Decimal:
+        """Сумма зачисления в базовой валюте инстанса.
+
+        Без конвертации платёж в USD прибавлялся к рублёвому балансу как есть
+        (см. AUDIT.md §2.3). Отсутствие курса — ошибка: вебхук ответит 5xx,
+        провайдер повторит доставку, а оператор успеет задать курс.
+        """
+        if self.fx is None:
+            return payment.amount
+        credited, rate, base = await self.fx.to_base(payment.amount, payment.currency)
+        payment.base_amount = credited
+        payment.base_currency = base
+        payment.fx_rate = rate
+        return credited
 
     async def _redeem_promo(
         self, promo_id: int, payment: UserPaymentsModel, usvc: UserServicesModel
@@ -498,9 +518,11 @@ async def get_pay_mngr(
     session: AsyncSession = Depends(get_db_session),
     dispatcher: TriggerDispatcher = Depends(get_dispatcher),
     bus: LuaBus = Depends(get_lua_bus_configured),
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> PayMngr:
     cfg = request.app.state.settings
-    return PayMngr(session, bus, make_secbox(cfg), dispatcher)
+    fx = FxRates(settings, request.app.state.valkey)
+    return PayMngr(session, bus, make_secbox(cfg), dispatcher, fx)
 
 
 def get_pay_providers_mngr(

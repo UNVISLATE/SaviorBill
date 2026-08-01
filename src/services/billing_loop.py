@@ -30,6 +30,7 @@ from models.user_services import UserServicesModel
 from services.account import lock_account
 from services.audit import audit
 from services.dlq import DeadLetters
+from services.fx import FxRates
 from core.config import AppConfig
 from utils.datetime_utils import utc_now
 from lua.bus import LuaBus
@@ -125,7 +126,13 @@ class BillingLoop:
         dispatcher = build_dispatcher(
             session, settings, bus, await build_mail_svc(settings), self.cfg
         )
-        return PayMngr(session, bus, make_secbox(self.cfg), dispatcher)
+        return PayMngr(
+            session,
+            bus,
+            make_secbox(self.cfg),
+            dispatcher,
+            FxRates(settings, self.vk),
+        )
 
     async def _usvc_mngr(self, session: AsyncSession) -> UserServicesMngr:
         return UserServicesMngr(

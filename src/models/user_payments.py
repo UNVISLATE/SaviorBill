@@ -66,6 +66,14 @@ class UserPaymentsModel(Base):
 
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False)
     currency: Mapped[str] = mapped_column(String(8), default="RUB", nullable=False)
+    # Результат конвертации в базовую валюту инстанса (см. services/fx.py).
+    # Заполняется при зачислении; возврат списывает именно base_amount, а не
+    # пересчитывает сумму по сегодняшнему курсу.
+    base_amount: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 2), nullable=True
+    )
+    base_currency: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(24, 10), nullable=True)
     status: Mapped[str] = mapped_column(
         String(16), default=PayStatus.PENDING, index=True, nullable=False
     )
