@@ -53,5 +53,5 @@ export const navGroups: NavGroup[] = [
 export const footerNavItems: NavItem[] = [
   { title: "Аудит", url: "/audit", icon: FileClock, perm: "audit.read" },
   { title: "Система", url: "/system", icon: MonitorCog, perm: "system.stats.read" },
-  { title: "Настройки", url: "/settings", icon: Settings, perm: "settings.read" }
+  { title: "Настройки", url: "/settings", icon: Settings, perm: "settings.raw.read" }
 ]

@@ -17,7 +17,7 @@ interface AuthContextValue {
   me: AdminMe | undefined
   isLoading: boolean
   isAuthenticated: boolean
-  login: (login: string, password: string) => Promise<void>
+  login: (login: string, password: string, totp?: string) => Promise<void>
   logout: () => void
   can: (perm: string) => boolean
 }
@@ -58,8 +58,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       me: meQuery.data,
       isLoading: meQuery.isLoading,
       isAuthenticated: hasToken && !meQuery.isError,
-      async login(login: string, password: string) {
-        const res = await api.post("/v1/auth/login", { login, password })
+      async login(login: string, password: string, totp?: string) {
+        let res
+        try {
+          res = await api.post("/v1/auth/login", { login, password, totp })
+        } catch (err) {
+          const detail =
+            err && typeof err === "object" && "response" in err
+              ? // @ts-expect-error — axios error shape
+                (err.response?.data?.detail as string | undefined)
+              : undefined
+          if (detail === "totp required") throw new Error("TOTP_REQUIRED")
+          if (detail === "invalid totp") throw new Error("TOTP_INVALID")
+          throw new Error("LOGIN_FAILED")
+        }
         setTokens(res.data)
         try {
           // Гейт на вход в админку — на бэкенде (role.admin_login_allowed),

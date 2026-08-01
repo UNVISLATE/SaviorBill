@@ -1,9 +1,9 @@
-import { useRef, useState } from "react"
-import { CreditCard, ImageIcon, PackageOpen, ShieldAlert, Ticket, Trash2, UserRound } from "lucide-react"
+import { useEffect, useRef, useState } from "react"
+import { CreditCard, ImageIcon, PackageOpen, ShieldAlert, ShieldCheck, Ticket, Trash2, UserRound } from "lucide-react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { cn } from "@/lib/utils"
-import { api } from "@/api/api.ts"
+import { api, TOTP_SETUP_REQUIRED_EVENT } from "@/api/api.ts"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useAuth } from "@/hooks/use-auth"
 import { useProfileDialog } from "@/hooks/use-profile-dialog"
@@ -39,16 +39,27 @@ import { ProfilePaymentsSection } from "@/components/profile/ProfilePaymentsSect
 import { ProfileMediaSection, type MediaSectionHandle } from "@/components/profile/ProfileMediaSection"
 import { ProfilePromocodesSection } from "@/components/profile/ProfilePromocodesSection"
 import { ProfileSessionsSection } from "@/components/profile/ProfileSessionsSection"
+import { ProfileTwoFASection } from "@/components/profile/ProfileTwoFASection"
 
-type Section = "profile" | "services" | "payments" | "media" | "promocodes" | "sessions"
+type Section = "profile" | "services" | "payments" | "media" | "promocodes" | "sessions" | "security"
 
-const ALL_SECTIONS: { id: Section; title: string; icon: typeof UserRound; viewOnly?: boolean }[] = [
+const ALL_SECTIONS: {
+  id: Section
+  title: string
+  icon: typeof UserRound
+  viewOnly?: boolean
+  ownOnly?: boolean
+}[] = [
   { id: "profile", title: "Профиль", icon: UserRound },
   { id: "media", title: "Медиа", icon: ImageIcon },
   { id: "services", title: "Товары/услуги", icon: PackageOpen },
   { id: "payments", title: "Платежи", icon: CreditCard },
   { id: "promocodes", title: "Промокоды", icon: Ticket, viewOnly: true },
   { id: "sessions", title: "Сессии", icon: ShieldAlert, viewOnly: true },
+  // Управлять 2FA можно только за себя — админ не должен включать/выключать
+  // второй фактор чужого аккаунта (backend тоже это не позволяет, эндпоинты
+  // только под /user/me/2fa).
+  { id: "security", title: "Безопасность", icon: ShieldCheck, ownOnly: true },
 ]
 
 function SectionContent({
@@ -67,6 +78,7 @@ function SectionContent({
   if (section === "media") return <ProfileMediaSection ref={mediaRef} mode={mode} userId={userId} />
   if (section === "promocodes") return <ProfilePromocodesSection userId={userId} />
   if (section === "sessions") return <ProfileSessionsSection userId={userId} />
+  if (section === "security") return <ProfileTwoFASection />
   return <ProfileOverviewSection mode={mode} userId={userId} />
 }
 
@@ -189,14 +201,33 @@ function DeleteUserButton({ userId, login, isOwnerTarget }: { userId: number; lo
  * пользователей в админке) — общий layout, разный источник данных секций
  * (см. IMPLEMENTATION_PLAN.md §4). Монтируется один раз в App.tsx. */
 export function ProfileDialogHost() {
-  const { isOpen, target, closeProfile, isBusy } = useProfileDialog()
+  const { isOpen, target, closeProfile, isBusy, openProfile } = useProfileDialog()
   const isMobile = useIsMobile()
   const [section, setSection] = useState<Section>("profile")
   const [dragActive, setDragActive] = useState(false)
   const mediaRef = useRef<MediaSectionHandle>(null)
   const mode = target.mode
   const userId = target.mode === "view" ? target.userId : undefined
-  const sections = ALL_SECTIONS.filter((s) => !s.viewOnly || mode === "view")
+  const sections = ALL_SECTIONS.filter(
+    (s) => (!s.viewOnly || mode === "view") && (!s.ownOnly || mode === "own"),
+  )
+
+  // 403 totp_setup_required (см. dependencies/twofa.py) — 2FA обязательна
+  // настройкой инстанса, но у аккаунта не включена: любое админ-действие
+  // отклоняется, пока это не исправлено. Вместо немого 403 сразу открываем
+  // профиль на вкладке "Безопасность".
+  useEffect(() => {
+    function onTotpRequired() {
+      openProfile()
+      setSection("security")
+      toastError(
+        "Нужна двухфакторная аутентификация",
+        "Для вашей роли она обязательна настройкой инстанса — включите её здесь, чтобы продолжить работать в админке.",
+      )
+    }
+    window.addEventListener(TOTP_SETUP_REQUIRED_EVENT, onTotpRequired)
+    return () => window.removeEventListener(TOTP_SETUP_REQUIRED_EVENT, onTotpRequired)
+  }, [openProfile])
 
   // Заголовок для чужого профиля — отдельный лёгкий запрос (не блокирует
   // рендер секций, которые грузят свои данные сами).

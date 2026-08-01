@@ -13,6 +13,11 @@ export function LoginPage() {
   const location = useLocation()
   const [loginValue, setLoginValue] = useState("")
   const [password, setPassword] = useState("")
+  const [totp, setTotp] = useState("")
+  // Второй фактор запрашивается только ПОСЛЕ первой попытки (backend не
+  // разглашает заранее, включена ли 2FA у аккаунта — иначе форма выдавала бы
+  // это простым перебором логина).
+  const [totpRequired, setTotpRequired] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
 
@@ -26,17 +31,22 @@ export function LoginPage() {
     setError(null)
     setPending(true)
     try {
-      await login(loginValue, password)
+      await login(loginValue, password, totp || undefined)
     } catch (err) {
-      // Анти-энумерация (см. src/api/v1/auth/local.py) — backend не различает
-      // "нет такого логина" и "неверный пароль", UI повторяет ту же анонимность.
-      // Отдельно — явный отказ, если роль не допущена к входу в админку
-      // (role.admin_login_allowed=false), это не связано с анти-энумерацией.
-      setError(
-        err instanceof Error && err.message === "ACCESS_DENIED"
-          ? "Доступ запрещён: у вашей роли нет прав на вход в админ-панель"
-          : "Неверный логин или пароль",
-      )
+      if (err instanceof Error && err.message === "TOTP_REQUIRED") {
+        setTotpRequired(true)
+        setError(null)
+      } else if (err instanceof Error && err.message === "TOTP_INVALID") {
+        setTotpRequired(true)
+        setError("Неверный код 2FA")
+      } else if (err instanceof Error && err.message === "ACCESS_DENIED") {
+        setError("Доступ запрещён: у вашей роли нет прав на вход в админ-панель")
+      } else {
+        // Анти-энумерация (см. src/api/v1/auth/local.py) — backend не
+        // различает "нет такого логина" и "неверный пароль", UI повторяет ту
+        // же анонимность.
+        setError("Неверный логин или пароль")
+      }
     } finally {
       setPending(false)
     }
@@ -74,7 +84,8 @@ export function LoginPage() {
                 value={loginValue}
                 onChange={(e) => setLoginValue(e.target.value)}
                 required
-                autoFocus
+                autoFocus={!totpRequired}
+                disabled={totpRequired}
               />
             </Field>
 
@@ -87,9 +98,26 @@ export function LoginPage() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                disabled={totpRequired}
               />
-              {error && <FieldError>{error}</FieldError>}
             </Field>
+
+            {totpRequired && (
+              <Field>
+                <FieldLabel htmlFor="totp">Код 2FA</FieldLabel>
+                <Input
+                  id="totp"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  placeholder="6 цифр или код восстановления"
+                  value={totp}
+                  onChange={(e) => setTotp(e.target.value)}
+                  required
+                  autoFocus
+                />
+              </Field>
+            )}
+            {error && <FieldError>{error}</FieldError>}
 
             <Button type="submit" className="w-full" disabled={pending}>
               {pending ? "Вход…" : "Войти"}

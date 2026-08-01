@@ -1,5 +1,8 @@
 import { createContext, useContext, useState, type ReactNode } from "react"
 
+import { useAuth } from "@/hooks/use-auth"
+import { resolveProfileTarget } from "@/hooks/use-profile-target"
+
 /** Свой профиль (auth-контекст) или чужой (по id, admin-просмотр). Общий
  * Dialog/Drawer, меняется только источник данных секций — см.
  * IMPLEMENTATION_PLAN.md §4. */
@@ -20,6 +23,7 @@ interface ProfileDialogContextValue {
 const ProfileDialogContext = createContext<ProfileDialogContextValue | null>(null)
 
 export function ProfileDialogProvider({ children }: { children: ReactNode }) {
+  const { me } = useAuth()
   const [isOpen, setIsOpen] = useState(false)
   const [isBusy, setIsBusy] = useState(false)
   const [target, setTarget] = useState<ProfileTarget>({ mode: "own" })
@@ -32,7 +36,9 @@ export function ProfileDialogProvider({ children }: { children: ReactNode }) {
       setIsOpen(true)
     },
     openUserProfile: (userId: number) => {
-      setTarget({ mode: "view", userId })
+      // Свой же id из списка пользователей -> открыть как "свой" профиль,
+      // а не как "чужой" (см. use-profile-target.ts).
+      setTarget(resolveProfileTarget(userId, me?.id))
       setIsOpen(true)
     },
     closeProfile: () => setIsOpen(false),
@@ -50,3 +56,4 @@ export function useProfileDialog(): ProfileDialogContextValue {
   if (!ctx) throw new Error("useProfileDialog must be used within ProfileDialogProvider")
   return ctx
 }
+

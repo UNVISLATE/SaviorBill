@@ -4,6 +4,11 @@ import { clearTokens, getAccessToken, getRefreshToken, setTokens } from "@/api/t
 
 /** Событие: сессия истекла (refresh не удался) — слушает AuthProvider. */
 export const AUTH_LOGOUT_EVENT = "sb-admin:logout"
+/** Событие: 2FA обязательна настройкой инстанса, но не включена у аккаунта —
+ * backend отвечает 403 `totp_setup_required` на ЛЮБОЕ админ-действие (кроме
+ * /admin/me и самих роутов настройки 2FA), см. dependencies/twofa.py.
+ * Слушает ProfileDialogHost, чтобы сразу открыть профиль вместо немого 403. */
+export const TOTP_SETUP_REQUIRED_EVENT = "sb-admin:totp-setup-required"
 
 export const api = axios.create({
   // Каждый роутер (admin/auth/user/...) уже несёт полный "/api/v1/..." префикс
@@ -55,6 +60,12 @@ api.interceptors.response.use(
         return api(cfg)
       }
       window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT))
+    }
+    if (
+      error.response?.status === 403 &&
+      (error.response.data as { detail?: string } | undefined)?.detail === "totp_setup_required"
+    ) {
+      window.dispatchEvent(new Event(TOTP_SETUP_REQUIRED_EVENT))
     }
     return Promise.reject(error)
   },

@@ -130,7 +130,7 @@ export function DataTable<T>({
         {toolbarExtra}
       </div>
 
-      <div className="rounded-lg border">
+      <div className="overflow-x-auto rounded-lg border">
         <Table>
           <TableHeader>
             <TableRow>
