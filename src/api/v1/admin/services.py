@@ -88,6 +88,10 @@ async def create_service(
 ) -> ServiceAdmin:
     svc = await mngr.create(body.model_dump())
     await mngr.s.commit()
+    # commit истощает (expire) все атрибуты, включая attachments — их читает
+    # ServiceAdmin.from_model синхронно; без явного refresh async-сессия не
+    # может догрузить связь на лету (упало бы MissingGreenlet).
+    await mngr.s.refresh(svc, attribute_names=["attachments"])
     return ServiceAdmin.from_model(svc)
 
 
@@ -105,6 +109,7 @@ async def update_service(
 ) -> ServiceAdmin:
     svc, warnings = await mngr.update(service_id, body.model_dump(exclude_unset=True))
     await mngr.s.commit()
+    await mngr.s.refresh(svc, attribute_names=["attachments"])
     return ServiceAdmin.from_model(svc, warnings=warnings)
 
 
@@ -142,7 +147,7 @@ async def add_attachment(
         service_id, body.media_id, tag=body.tag, position=body.position
     )
     await mngr.s.commit()
-    await mngr.s.refresh(att)
+    await mngr.s.refresh(att, attribute_names=["media"])
     return Attachment.from_model(att)
 
 

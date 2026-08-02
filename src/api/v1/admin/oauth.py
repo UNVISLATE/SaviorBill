@@ -110,6 +110,10 @@ async def create_provider(
     )
     session.add(cfg)
     await session.commit()
+    # commit истощает атрибуты — icon читается синхронно в from_model, без
+    # явного refresh async-сессия не сможет догрузить связь (см. тот же
+    # фикс в services.py::create_service/update_service).
+    await session.refresh(cfg, attribute_names=["icon"])
     return OAuthProvider.from_model(cfg)
 
 
@@ -140,6 +144,7 @@ async def update_provider(
     for field, value in data.items():
         setattr(cfg, field, value)
     await session.commit()
+    await session.refresh(cfg, attribute_names=["icon"])
     return OAuthProvider.from_model(cfg)
 
 
