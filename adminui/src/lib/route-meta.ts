@@ -38,6 +38,7 @@ export const routeMeta: RouteMeta[] = [
   { path: "/settings/currency", title: "Валюта и курсы" },
   { path: "/settings/branding", title: "Брендирование" },
   { path: "/settings/ratelimits", title: "Rate limiting" },
+  { path: "/settings/domains", title: "Заблокированные домены" },
   { path: "/settings/raw", title: "Raw settings" },
   { path: "/settings/roles", title: "Роли" },
 ]
