@@ -142,9 +142,9 @@ PROVIDERS: tuple[FxProvider, ...] = (
         title="Frankfurter (ЕЦБ)",
         needs_key=False,
         signup_url=None,
-        build_url=lambda base, _key: f"https://api.frankfurter.app/latest?from={base}",
+        build_url=lambda base, _key: f"https://api.frankfurter.dev/v1/latest?base={base}",
         parse=_parse_flat_unit_per_base("rates"),
-        note="Данные ЕЦБ, без ключа и лимитов. Только основные валюты, без криптовалют.",
+        note="Данные ЕЦБ, без ключа и лимитов. Только валюты ЕЦБ — RUB там нет, для рублёвой базы не подойдёт.",
     ),
     FxProvider(
         key="erapi",
@@ -198,15 +198,27 @@ async def fetch_rates(provider: FxProvider, base: str, api_key: str) -> dict[str
 
     url = provider.build_url(base, api_key)
     try:
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
+        # follow_redirects — сервисы курсов периодически переезжают на новый
+        # домен и отвечают 301 (так случилось с api.frankfurter.app); без
+        # этого источник просто переставал работать без внятной причины.
+        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             payload = resp.json()
     except httpx.HTTPStatusError as exc:
-        raise FxProviderError(
-            f"{provider.title}: HTTP {exc.response.status_code}"
-            + (" — вероятно, неверный API-ключ" if exc.response.status_code in (401, 403) else "")
-        ) from exc
+        code = exc.response.status_code
+        if code in (401, 403):
+            hint = " — вероятно, неверный или просроченный API-ключ"
+        elif code == 404:
+            hint = (
+                f" — источник не знает базовую валюту {base}"
+                " (проверьте, что он её котирует)"
+            )
+        elif code == 429:
+            hint = " — превышен лимит запросов, увеличьте TTL кэша курсов"
+        else:
+            hint = ""
+        raise FxProviderError(f"{provider.title}: HTTP {code}{hint}") from exc
     except (httpx.HTTPError, ValueError) as exc:
         raise FxProviderError(f"{provider.title}: {exc}") from exc
 
