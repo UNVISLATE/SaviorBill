@@ -8,14 +8,9 @@ import { useProfileDialog } from "@/hooks/use-profile-dialog"
 import { useDataTableQuery } from "@/hooks/use-data-table"
 import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
 import { ChartCard } from "@/components/charts/ChartCard"
+import { StatCard } from "@/components/charts/StatCard"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from "@/components/shadsnui/card"
 import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
 import {
@@ -95,36 +90,6 @@ const PERIODS = [
   { value: "30", label: "30 дней", statKey: "registered_30d" },
   { value: "90", label: "90 дней", statKey: "registered_90d" },
 ] as const
-
-/** Компактная карточка-метрика: значение крупно + динамика бейджем. */
-function StatCard({
-  label,
-  value,
-  delta,
-  deltaLabel,
-}: {
-  label: string
-  value: number | string | undefined
-  delta?: number
-  deltaLabel?: string
-}) {
-  return (
-    <Card size="sm" className="justify-between">
-      <CardHeader>
-        <CardDescription>{label}</CardDescription>
-      </CardHeader>
-      <CardContent className="flex items-baseline gap-2">
-        <span className="text-2xl font-semibold tabular-nums">{value ?? "—"}</span>
-        {delta !== undefined && delta > 0 && (
-          <Badge variant="outline" className="text-emerald-500">
-            +{delta}
-            {deltaLabel && <span className="ml-1 font-normal text-muted-foreground">{deltaLabel}</span>}
-          </Badge>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
 
 /** Карточка "регистрации": группа кнопок-периодов над графиком (через
  * общий ChartCard), под группой — сумма за выбранный период. */
