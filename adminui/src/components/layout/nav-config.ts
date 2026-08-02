@@ -43,7 +43,10 @@ export const navGroups: NavGroup[] = [
   {
     title: "Пользователи",
     items: [
-        { title: "Пользователи", url: "/users", icon: Users, perm: "users.read" }
+        { title: "Пользователи", url: "/users", icon: Users, perm: "users.read" },
+        { title: "Заказы", url: "/orders", icon: ShoppingCart, perm: "orders.read" },
+        { title: "Платежи", url: "/purchases", icon: Receipt, perm: "purchases.read" },
+        { title: "Промокоды", url: "/promo", icon: Ticket, perm: "promo.catalogs.read" },
     ],
   },
   {
@@ -52,14 +55,6 @@ export const navGroups: NavGroup[] = [
         { title: "Каталоги", url: "/catalog", icon: FolderTree, perm: "catalogs.read" },
         { title: "Услуги", url: "/services", icon: Package, perm: "services.read" },
         { title: "Медиатека", url: "/media", icon: Images, perm: "media.read" },
-    ],
-  },
-  {
-    title: "Продажи",
-    items: [
-        { title: "Заказы", url: "/orders", icon: ShoppingCart, perm: "orders.read" },
-        { title: "Платежи", url: "/purchases", icon: Receipt, perm: "purchases.read" },
-        { title: "Промокоды", url: "/promo", icon: Ticket, perm: "promo.catalogs.read" },
     ],
   },
   {

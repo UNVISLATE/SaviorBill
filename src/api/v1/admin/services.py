@@ -35,15 +35,19 @@ _SORT_FIELDS = {"id", "name", "price", "is_active", "created_at", "catalog_id"}
     dependencies=[Depends(require_perm("services.read"))],
     summary="Services",
     description="`q` searches name/description (fuzzy fallback on name); "
-    f"`sort` accepts {'/'.join(sorted(_SORT_FIELDS))}.",
+    f"`sort` accepts {'/'.join(sorted(_SORT_FIELDS))}; "
+    "`catalog_id` filters to a single catalog.",
 )
 async def list_services(
     pp: PageParams = Depends(page_params),
     q: str | None = Depends(q_param),
     sort: str | None = Depends(sort_param),
+    catalog_id: int | None = None,
     mngr: ServiceMngr = Depends(get_service_mngr),
 ) -> Page[ServiceAdmin]:
     stmt = apply_sort(mngr.stmt_all(), ServiceModel, sort, _SORT_FIELDS)
+    if catalog_id is not None:
+        stmt = stmt.where(ServiceModel.catalog_id == catalog_id)
     items, total, has_more = await paginate_search(
         mngr.s,
         stmt,

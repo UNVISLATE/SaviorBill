@@ -53,6 +53,7 @@ docker-compose.override.yml
 /AUDIT.md
 /CLOUD.md
 /IMPLEMENTATION_PLAN.md
+/PLAN.md
 /CLAUDE.md
 /WS_ROUTES.md
 /FEATURE_ROADMAP.md

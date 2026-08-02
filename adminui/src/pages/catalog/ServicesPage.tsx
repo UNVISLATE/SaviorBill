@@ -187,6 +187,7 @@ export function ServicesPage() {
   const navigate = useNavigate()
   const table = useDataTableQuery()
   const [creating, setCreating] = useState(false)
+  const [catalogFilter, setCatalogFilter] = useState("")
   const canCreate = can("services.create")
 
   const { data: catalogs } = useQuery({
@@ -197,7 +198,7 @@ export function ServicesPage() {
   const catalogName = (id: number | null) => catalogs?.find((c) => c.id === id)?.name
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["admin-services", table.limit, table.offset, table.sort, table.search],
+    queryKey: ["admin-services", table.limit, table.offset, table.sort, table.search, catalogFilter],
     queryFn: async () =>
       (
         await api.get<Page<ServiceRow>>("/v1/admin/services", {
@@ -206,6 +207,7 @@ export function ServicesPage() {
             offset: table.offset,
             sort: table.sort ?? undefined,
             q: table.search || undefined,
+            catalog_id: catalogFilter || undefined,
           },
         })
       ).data,
@@ -215,7 +217,7 @@ export function ServicesPage() {
   const columns: DataTableColumn<ServiceRow>[] = [
     { key: "id", header: "ID", render: (s) => <span className="font-mono text-xs">{s.id}</span> },
     { key: "name", header: "Название", render: (s) => <span className="font-medium">{s.name}</span> },
-    { header: "Каталог", render: (s) => catalogName(s.catalog_id) ?? "—" },
+    { key: "catalog_id", header: "Каталог", render: (s) => catalogName(s.catalog_id) ?? "—" },
     {
       key: "price",
       header: "Цена",
@@ -266,6 +268,21 @@ export function ServicesPage() {
         hasMore={data?.has_more ?? false}
         onLimitChange={table.changeLimit}
         onOffsetChange={table.setOffset}
+        toolbarExtra={
+          <Select value={catalogFilter || "all"} onValueChange={(v) => setCatalogFilter(v === "all" ? "" : (v ?? ""))}>
+            <SelectTrigger className="w-48">
+              <SelectValue placeholder="Все каталоги" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все каталоги</SelectItem>
+              {catalogs?.map((c) => (
+                <SelectItem key={c.id} value={String(c.id)}>
+                  {c.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        }
       />
 
       <CreateServiceDialog open={creating} onOpenChange={setCreating} catalogs={catalogs} />

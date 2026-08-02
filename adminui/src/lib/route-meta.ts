@@ -40,6 +40,7 @@ export const routeMeta: RouteMeta[] = [
   { path: "/settings/branding", title: "Брендирование" },
   { path: "/settings/ratelimits", title: "Rate limiting" },
   { path: "/settings/domains", title: "Заблокированные домены" },
+  { path: "/settings/payment-providers", title: "Платёжные провайдеры" },
   { path: "/settings/raw", title: "Raw settings" },
   { path: "/settings/roles", title: "Роли" },
 ]

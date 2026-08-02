@@ -1,9 +1,10 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { FolderTree, MoreHorizontal, Plus, Trash2 } from "lucide-react"
+import { MoreHorizontal, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
+import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
 import { Button } from "@/components/shadsnui/button"
 import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
@@ -39,7 +40,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/shadsnui/dropdown-menu"
-import { Card, CardContent } from "@/components/shadsnui/card"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 interface Catalog {
@@ -212,24 +212,102 @@ function DeleteCatalogDialog({
 
 /** Плоский список каталогов с указанием родителя — иерархия у нас неглубокая
  * (1-2 уровня), полноценное дерево с drag&drop избыточно для текущих
- * потребностей; сортировка внутри каталога — полем `sort`. */
+ * потребностей. Таблица вместо карточек: список каталогов обычно длиннее
+ * экрана и карточки не несли доп. функционала — только занимали место.
+ * Пагинация не нужна — backend отдаёт каталоги одним списком, сортировка и
+ * поиск здесь чисто клиентские. */
 export function CatalogsPage() {
   const { can } = useAuth()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Catalog | null>(null)
   const [deleting, setDeleting] = useState<Catalog | null>(null)
+  const [search, setSearch] = useState("")
+  const [sort, setSort] = useState<string | null>(null)
 
   const canCreate = can("catalogs.create")
   const canEdit = can("catalogs.edit")
   const canDelete = can("catalogs.delete")
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-catalogs"],
     queryFn: async () => (await api.get<Catalog[]>("/v1/admin/catalogs")).data,
   })
 
   const byId = (id: number | null) => data?.find((c) => c.id === id)
-  const sorted = [...(data ?? [])].sort((a, b) => a.sort - b.sort || a.id - b.id)
+
+  const toggleSort = (field: string) => {
+    setSort((prev) => {
+      if (prev === field) return `-${field}`
+      if (prev === `-${field}`) return null
+      return field
+    })
+  }
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    let list = data ?? []
+    if (q) {
+      list = list.filter(
+        (c) => c.name.toLowerCase().includes(q) || c.slug.toLowerCase().includes(q),
+      )
+    }
+    const field = sort?.replace(/^-/, "") ?? "sort"
+    const dir = sort?.startsWith("-") ? -1 : 1
+    const sorted = [...list].sort((a, b) => {
+      const cmp =
+        field === "name"
+          ? a.name.localeCompare(b.name)
+          : field === "slug"
+            ? a.slug.localeCompare(b.slug)
+            : a.sort - b.sort
+      return cmp !== 0 ? cmp * dir : a.id - b.id
+    })
+    return sorted
+  }, [data, search, sort])
+
+  const columns: DataTableColumn<Catalog>[] = [
+    {
+      key: "name",
+      header: "Название",
+      render: (c) => (
+        <div className="flex items-center gap-2">
+          <span className="font-medium">{c.name}</span>
+          {!c.is_active && <Badge variant="destructive">неактивен</Badge>}
+        </div>
+      ),
+    },
+    { key: "slug", header: "Слаг", render: (c) => <span className="font-mono text-xs">{c.slug}</span> },
+    {
+      header: "Родитель",
+      render: (c) => (c.parent_id ? byId(c.parent_id)?.name ?? `#${c.parent_id}` : "— корень —"),
+    },
+    { header: "Описание", render: (c) => c.description ?? "—" },
+    { key: "sort", header: "Сортировка", render: (c) => c.sort },
+    {
+      header: "",
+      className: "w-10",
+      render: (c) =>
+        (canEdit || canDelete) && (
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon" className="size-8 shrink-0" onClick={(e) => e.stopPropagation()}>
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              }
+            />
+            <DropdownMenuContent align="end">
+              {canEdit && <DropdownMenuItem onClick={() => setEditing(c)}>Изменить</DropdownMenuItem>}
+              {canDelete && (
+                <DropdownMenuItem variant="destructive" onClick={() => setDeleting(c)}>
+                  <Trash2 className="size-4" /> Удалить
+                </DropdownMenuItem>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ),
+    },
+  ]
 
   return (
     <div className="space-y-4">
@@ -242,55 +320,27 @@ export function CatalogsPage() {
         )}
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
-      {!isLoading && sorted.length === 0 && (
-        <Card>
-          <CardContent className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
-            <FolderTree className="size-6" />
-            Каталогов пока нет — создайте первый, чтобы группировать услуги.
-          </CardContent>
-        </Card>
-      )}
-      {!isLoading && sorted.length > 0 && (
-        <div className="grid gap-2">
-          {sorted.map((c) => (
-            <Card key={c.id}>
-              <CardContent className="flex items-center justify-between gap-3 py-3">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate font-medium">{c.name}</span>
-                    <span className="font-mono text-xs text-muted-foreground">{c.slug}</span>
-                    {!c.is_active && <Badge variant="destructive">неактивен</Badge>}
-                  </div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">
-                    {c.parent_id ? `Внутри: ${byId(c.parent_id)?.name ?? `#${c.parent_id}`}` : "Корневой каталог"}
-                    {c.description ? ` · ${c.description}` : ""}
-                  </div>
-                </div>
-                {(canEdit || canDelete) && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger
-                      render={
-                        <Button variant="ghost" size="icon" className="size-8 shrink-0">
-                          <MoreHorizontal className="size-4" />
-                        </Button>
-                      }
-                    />
-                    <DropdownMenuContent align="end">
-                      {canEdit && <DropdownMenuItem onClick={() => setEditing(c)}>Изменить</DropdownMenuItem>}
-                      {canDelete && (
-                        <DropdownMenuItem variant="destructive" onClick={() => setDeleting(c)}>
-                          <Trash2 className="size-4" /> Удалить
-                        </DropdownMenuItem>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+      <DataTable
+        columns={columns}
+        data={filtered}
+        total={filtered.length}
+        isLoading={isLoading}
+        isError={isError}
+        getRowId={(c) => c.id}
+        onRowClick={canEdit ? (c) => setEditing(c) : undefined}
+        sort={sort}
+        onToggleSort={toggleSort}
+        searchValue={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="Поиск по названию/слагу…"
+        emptyMessage="Каталогов не найдено"
+        emptyHint={search ? "Попробуйте изменить запрос." : "Создайте первый каталог, чтобы группировать услуги."}
+        limit={filtered.length || 1}
+        offset={0}
+        hasMore={false}
+        onLimitChange={() => {}}
+        onOffsetChange={() => {}}
+      />
 
       <CatalogFormDialog open={creating} onOpenChange={setCreating} catalog={null} catalogs={data ?? []} />
       {editing && (

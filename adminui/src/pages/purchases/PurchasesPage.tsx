@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { MoreHorizontal, Plus, RefreshCw, Undo2 } from "lucide-react"
+import { RefreshCw, Undo2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
@@ -8,12 +8,6 @@ import { useDataTableQuery } from "@/hooks/use-data-table"
 import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
-import { Input } from "@/components/shadsnui/input"
-import { Label } from "@/components/shadsnui/label"
-import { Switch } from "@/components/shadsnui/switch"
-import { Textarea } from "@/components/shadsnui/textarea"
-import { Card, CardContent } from "@/components/shadsnui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/shadsnui/tabs"
 import {
   Dialog,
   DialogContent,
@@ -21,12 +15,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/shadsnui/dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/shadsnui/dropdown-menu"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 interface Payment {
@@ -41,17 +29,6 @@ interface Payment {
   public_data: Record<string, unknown>
   private_data: Record<string, unknown>
   created_at: string
-}
-
-interface Provider {
-  id: number
-  slug: string
-  title: string | null
-  enabled: boolean
-  currency: string
-  script_id: number | null
-  script_version: number | null
-  extra: Record<string, unknown>
 }
 
 interface Page<T> {
@@ -162,7 +139,9 @@ function PaymentDetailDialog({ payment, onOpenChange }: { payment: Payment; onOp
   )
 }
 
-function PaymentsTab() {
+/** Провайдеры настраиваются реже, чем просматриваются платежи — вынесены
+ * в «Настройки → Платёжные провайдеры» (см. PaymentProvidersSettings.tsx). */
+export function PurchasesPage() {
   const table = useDataTableQuery()
   const [detail, setDetail] = useState<Payment | null>(null)
 
@@ -199,7 +178,8 @@ function PaymentsTab() {
   ]
 
   return (
-    <>
+    <div className="space-y-4">
+      <h1 className="text-xl font-semibold">Платежи</h1>
       <DataTable
         columns={columns}
         data={data?.items ?? []}
@@ -222,191 +202,6 @@ function PaymentsTab() {
         onOffsetChange={table.setOffset}
       />
       {detail && <PaymentDetailDialog payment={detail} onOpenChange={(v) => !v && setDetail(null)} />}
-    </>
-  )
-}
-
-function ProviderFormDialog({
-  open,
-  onOpenChange,
-  provider,
-}: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  provider: Provider | null
-}) {
-  const isEdit = !!provider
-  const [slug, setSlug] = useState(provider?.slug ?? "")
-  const [title, setTitle] = useState(provider?.title ?? "")
-  const [currency, setCurrency] = useState(provider?.currency ?? "RUB")
-  const [enabled, setEnabled] = useState(provider?.enabled ?? false)
-  const [secretsText, setSecretsText] = useState("{}")
-  const qc = useQueryClient()
-
-  const save = useMutation({
-    mutationFn: async () => {
-      let secrets: unknown = {}
-      if (secretsText.trim()) {
-        try {
-          secrets = JSON.parse(secretsText)
-        } catch {
-          throw new Error("invalid json")
-        }
-      }
-      const body = { title: title || null, enabled, currency, secrets }
-      if (isEdit) return api.patch(`/v1/admin/purchases/providers/${provider!.id}`, body)
-      return api.post("/v1/admin/purchases/providers", { slug, ...body })
-    },
-    onSuccess: () => {
-      toastSuccess(isEdit ? "Провайдер обновлён" : "Провайдер создан")
-      onOpenChange(false)
-      void qc.invalidateQueries({ queryKey: ["admin-pay-providers"] })
-    },
-    onError: (e: unknown) =>
-      toastError(
-        isEdit ? "Не удалось обновить провайдера" : "Не удалось создать провайдера",
-        (e as Error).message === "invalid json" ? "secrets должен быть корректным JSON" : errDetail(e),
-      ),
-  })
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{isEdit ? "Изменить провайдера" : "Новый платёжный провайдер"}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          {!isEdit && (
-            <div className="space-y-1">
-              <Label>Слаг</Label>
-              <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="yookassa" autoFocus />
-            </div>
-          )}
-          <div className="space-y-1">
-            <Label>Название</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="ЮKassa" />
-          </div>
-          <div className="space-y-1">
-            <Label>Валюта</Label>
-            <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={8} />
-          </div>
-          <div className="flex items-center justify-between">
-            <Label>Включён</Label>
-            <Switch checked={enabled} onCheckedChange={setEnabled} />
-          </div>
-          <div className="space-y-1">
-            <Label>Секреты (JSON, шифруются на сервере)</Label>
-            <Textarea
-              className="font-mono text-xs"
-              rows={4}
-              value={secretsText}
-              onChange={(e) => setSecretsText(e.target.value)}
-              placeholder={isEdit ? "Оставьте {} чтобы не менять" : '{"shop_id": "...", "secret_key": "..."}'}
-            />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Отмена
-          </Button>
-          <Button
-            disabled={(!isEdit && slug.trim().length < 2) || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            {isEdit ? "Сохранить" : "Создать"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
-function ProvidersTab() {
-  const { can } = useAuth()
-  const [creating, setCreating] = useState(false)
-  const [editing, setEditing] = useState<Provider | null>(null)
-  const canCreate = can("purchases.providers.create")
-  const canEdit = can("purchases.providers.edit")
-
-  const { data, isLoading } = useQuery({
-    queryKey: ["admin-pay-providers"],
-    queryFn: async () => (await api.get<Provider[]>("/v1/admin/purchases/providers")).data,
-  })
-
-  return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
-        {canCreate && (
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> Добавить провайдера
-          </Button>
-        )}
-      </div>
-      {isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
-      {!isLoading && (data?.length ?? 0) === 0 && (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            Провайдеры ещё не настроены.
-          </CardContent>
-        </Card>
-      )}
-      <div className="grid gap-2">
-        {data?.map((p) => (
-          <Card key={p.id}>
-            <CardContent className="flex items-center justify-between gap-3 py-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{p.title ?? p.slug}</span>
-                  <span className="font-mono text-xs text-muted-foreground">{p.slug}</span>
-                  <Badge variant={p.enabled ? "default" : "outline"}>{p.enabled ? "включён" : "выключен"}</Badge>
-                </div>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Валюта: {p.currency}
-                  {p.script_id ? ` · Lua-скрипт #${p.script_id}` : ""}
-                </p>
-              </div>
-              {canEdit && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button variant="ghost" size="icon" className="size-8">
-                        <MoreHorizontal className="size-4" />
-                      </Button>
-                    }
-                  />
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => setEditing(p)}>Изменить</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-      <ProviderFormDialog open={creating} onOpenChange={setCreating} provider={null} />
-      {editing && (
-        <ProviderFormDialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)} provider={editing} />
-      )}
-    </div>
-  )
-}
-
-export function PurchasesPage() {
-  return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Платежи</h1>
-      <Tabs defaultValue="payments">
-        <TabsList>
-          <TabsTrigger value="payments">Платежи</TabsTrigger>
-          <TabsTrigger value="providers">Провайдеры</TabsTrigger>
-        </TabsList>
-        <TabsContent value="payments">
-          <PaymentsTab />
-        </TabsContent>
-        <TabsContent value="providers">
-          <ProvidersTab />
-        </TabsContent>
-      </Tabs>
     </div>
   )
 }
