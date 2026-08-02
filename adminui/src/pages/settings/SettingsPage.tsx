@@ -1,7 +1,9 @@
 import { Navigate, Route, Routes } from "react-router-dom"
-import { Gauge, ShieldCheck, SlidersHorizontal } from "lucide-react"
+import { Gauge, Palette, Settings2, ShieldCheck, SlidersHorizontal } from "lucide-react"
 
 import { SectionTabs } from "@/components/layout/SectionTabs"
+import { SettingsGeneral } from "./SettingsGeneral"
+import { SettingsBranding } from "./SettingsBranding"
 import { RateLimitSettings } from "./RateLimitSettings"
 import { RawSettingsEditor } from "./RawSettingsEditor"
 import { RolesPage } from "@/pages/roles/RolesPage"
@@ -16,13 +18,17 @@ export function SettingsPage() {
       <h1 className="text-xl font-semibold">Настройки</h1>
       <SectionTabs
         items={[
+          { title: "Основное", to: "/settings/general", icon: <Settings2 className="size-4" /> },
+          { title: "Брендирование", to: "/settings/branding", icon: <Palette className="size-4" /> },
           { title: "Rate limiting", to: "/settings/ratelimits", icon: <Gauge className="size-4" /> },
           { title: "Raw settings", to: "/settings/raw", icon: <SlidersHorizontal className="size-4" /> },
           { title: "Роли", to: "/settings/roles", icon: <ShieldCheck className="size-4" /> },
         ]}
       >
         <Routes>
-          <Route index element={<Navigate to="ratelimits" replace />} />
+          <Route index element={<Navigate to="general" replace />} />
+          <Route path="general" element={<SettingsGeneral />} />
+          <Route path="branding" element={<SettingsBranding />} />
           <Route path="ratelimits" element={<RateLimitSettings />} />
           <Route path="raw" element={<RawSettingsEditor />} />
           <Route path="roles" element={<RolesPage />} />

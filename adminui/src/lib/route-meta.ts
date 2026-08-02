@@ -26,6 +26,8 @@ export const routeMeta: RouteMeta[] = [
   { path: "/system/dlq", title: "DLQ" },
 
   { path: "/settings", title: "Настройки" },
+  { path: "/settings/general", title: "Основное" },
+  { path: "/settings/branding", title: "Брендирование" },
   { path: "/settings/ratelimits", title: "Rate limiting" },
   { path: "/settings/raw", title: "Raw settings" },
   { path: "/settings/roles", title: "Роли" },

@@ -2,6 +2,7 @@ import { ChevronRight } from "lucide-react"
 import { Outlet, useLocation, useNavigate } from "react-router-dom"
 
 import { useAuth } from "@/hooks/use-auth"
+import { useBranding } from "@/hooks/use-branding"
 import { footerNavItems, navGroups } from "@/components/layout/nav-config"
 import { Logo } from "@/components/layout/Logo"
 import { NavUser } from "@/components/layout/NavUser"
@@ -34,6 +35,7 @@ export function DashboardLayout() {
   const { can } = useAuth()
   const location = useLocation()
   const navigate = useNavigate()
+  const branding = useBranding()
 
   const visibleFooterItems = footerNavItems.filter((i) => !i.perm || can(i.perm))
 
@@ -43,9 +45,9 @@ export function DashboardLayout() {
       <Sidebar variant="inset" collapsible="icon">
         <SidebarHeader>
           <div className="flex items-center gap-2 px-2 py-1.5">
-            <Logo className="size-8" />
+            <Logo className="size-8" src={branding.logoUrl} />
             <span className="truncate text-lg font-semibold group-data-[collapsible=icon]:hidden">
-              SaviorBill Admin
+              {branding.name}
             </span>
           </div>
         </SidebarHeader>

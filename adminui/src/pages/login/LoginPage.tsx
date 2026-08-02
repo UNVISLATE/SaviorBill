@@ -3,6 +3,7 @@ import { Navigate, useLocation } from "react-router-dom"
 import { KeyRound, ShieldCheck } from "lucide-react"
 
 import { useAuth } from "@/hooks/use-auth"
+import { useBranding } from "@/hooks/use-branding"
 import { Button } from "@/components/shadsnui/button"
 import { Field, FieldError, FieldLabel } from "@/components/shadsnui/field"
 import { Input } from "@/components/shadsnui/input"
@@ -129,6 +130,7 @@ function TotpStep({
 
 export function LoginPage() {
   const { login, isAuthenticated } = useAuth()
+  const branding = useBranding()
   const location = useLocation()
   const [loginValue, setLoginValue] = useState("")
   const [password, setPassword] = useState("")
@@ -195,8 +197,8 @@ export function LoginPage() {
       />
       <div className="flex w-full max-w-sm flex-col gap-6">
         <div className="flex items-center gap-2 self-center font-medium">
-          <Logo className="size-9" />
-          <h1 className="text-lg font-semibold">SaviorBill Admin</h1>
+          <Logo className="size-9" src={branding.logoUrl} />
+          <h1 className="text-lg font-semibold">{branding.name}</h1>
         </div>
 
         {totpRequired ? (

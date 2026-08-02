@@ -1,6 +1,7 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom"
 
 import { DashboardLayout } from "@/components/layout/DashboardLayout.tsx"
+import { BrandingHead } from "@/components/layout/BrandingHead"
 import { LoginPage } from "@/pages/login/LoginPage"
 import { DashboardPage } from "@/pages/dashboard/DashboardPage"
 import { UsersPage } from "@/pages/users/UsersPage"
@@ -16,6 +17,7 @@ import { Toaster } from "@/components/shadsnui/sonner"
 export function App() {
   return (
     <ProfileDialogProvider>
+      <BrandingHead />
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
