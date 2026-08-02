@@ -3,6 +3,8 @@ import {
   FolderTree,
   Gauge,
   Package,
+  Receipt,
+  ShoppingCart,
   Settings,
   Users,
   MonitorCog,
@@ -44,6 +46,13 @@ export const navGroups: NavGroup[] = [
     items: [
         { title: "Каталоги", url: "/catalog", icon: FolderTree, perm: "catalogs.read" },
         { title: "Услуги", url: "/services", icon: Package, perm: "services.read" },
+    ],
+  },
+  {
+    title: "Продажи",
+    items: [
+        { title: "Заказы", url: "/orders", icon: ShoppingCart, perm: "orders.read" },
+        { title: "Платежи", url: "/purchases", icon: Receipt, perm: "purchases.read" },
     ],
   },
   {

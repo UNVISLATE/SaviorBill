@@ -20,6 +20,8 @@ export const routeMeta: RouteMeta[] = [
   { path: "/lua", title: "Скрипты" },
   { path: "/catalog", title: "Каталоги" },
   { path: "/services", title: "Услуги" },
+  { path: "/orders", title: "Заказы" },
+  { path: "/purchases", title: "Платежи" },
 
   { path: "/system", title: "Система" },
   { path: "/system/overview", title: "Обзор" },

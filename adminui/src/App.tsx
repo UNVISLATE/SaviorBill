@@ -12,6 +12,8 @@ import { LuaScriptsPage } from "@/pages/lua/LuaScriptsPage"
 import { CatalogsPage } from "@/pages/catalog/CatalogsPage"
 import { ServicesPage } from "@/pages/catalog/ServicesPage"
 import { ServiceDetailPage } from "@/pages/catalog/ServiceDetailPage"
+import { OrdersPage } from "@/pages/orders/OrdersPage"
+import { PurchasesPage } from "@/pages/purchases/PurchasesPage"
 import { ProtectedRoute } from "@/routes/ProtectedRoute"
 import { ProfileDialogProvider } from "@/hooks/use-profile-dialog"
 import { ProfileDialogHost } from "@/components/profile/ProfileDialogHost"
@@ -38,6 +40,8 @@ export function App() {
               <Route path="/catalog" element={<CatalogsPage />} />
               <Route path="/services" element={<ServicesPage />} />
               <Route path="/services/:id" element={<ServiceDetailPage />} />
+              <Route path="/orders" element={<OrdersPage />} />
+              <Route path="/purchases" element={<PurchasesPage />} />
             </Route>
           </Route>
         </Routes>
