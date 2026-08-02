@@ -129,6 +129,17 @@ class LuaScriptUpload(BaseModel):
 class LuaScriptPatch(BaseModel):
     """Update Lua script."""
 
+    name: str | None = Field(default=None, max_length=128, description="Display name")
+    kind: str | None = Field(
+        default=None, description="service | payment | auth | trigger | generic"
+    )
+    actions: list[str] | None = Field(
+        default=None, description="Supported script actions; replaces the list"
+    )
+    is_active: bool | None = Field(
+        default=None, description="Disabled scripts are refused at execution time"
+    )
+    description: str | None = Field(default=None, max_length=2048)
     code: str | None = Field(
         default=None,
         min_length=1,

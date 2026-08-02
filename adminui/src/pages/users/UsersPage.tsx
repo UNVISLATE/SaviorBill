@@ -91,7 +91,6 @@ interface RegDay {
 }
 
 const PERIODS = [
-  { value: "1", label: "1 день", statKey: "registered_1d" },
   { value: "7", label: "7 дней", statKey: "registered_7d" },
   { value: "30", label: "30 дней", statKey: "registered_30d" },
   { value: "90", label: "90 дней", statKey: "registered_90d" },
@@ -131,7 +130,7 @@ function StatCard({
  * общий ChartCard), под группой — сумма за выбранный период. */
 function RegistrationsCard({ stats }: { stats: UserStats | undefined }) {
   const [period, setPeriod] = useState<(typeof PERIODS)[number]["value"]>("30")
-  const current = PERIODS.find((p) => p.value === period) ?? PERIODS[2]
+  const current = PERIODS.find((p) => p.value === period) ?? PERIODS[1]
 
   const { data: byDay } = useQuery({
     queryKey: ["admin-users-stats-by-day", period],
@@ -154,7 +153,7 @@ function RegistrationsCard({ stats }: { stats: UserStats | undefined }) {
       periods={PERIODS}
       period={period}
       onPeriodChange={(v) => setPeriod(v as typeof period)}
-      totalLabel={`Всего за ${current.label}`}
+      totalLabel={`регистраций за ${current.label}`}
       totalValue={stats?.[current.statKey]}
       height={160}
     />

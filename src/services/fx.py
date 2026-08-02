@@ -13,11 +13,13 @@
     единица указанной.
 
 ``api``
-    Курсы забираются с внешнего JSON-API (`billing.fx.api_url`). Формат ответа
-    у сервисов разный, поэтому путь до объекта с курсами задаётся отдельно
-    (`billing.fx.api_path`, например ``data.rates``), а направление котировки —
-    флагом `billing.fx.api_quote`. Ручные курсы из `billing.fx.rates` при этом
-    имеют приоритет: ими можно перекрыть отдельную валюту, не отключая API.
+    Курсы забираются у готового провайдера (`billing.fx.provider`) — ЦБ РФ,
+    Frankfurter, ExchangeRate-API и т.п.; формат ответа каждого известен
+    заранее, см. `services/fx_providers.py`. Тем, кому нужен ключ, он
+    берётся из `billing.fx.api_key`. Отдельный вариант `provider=lua` —
+    курсы отдаёт Lua-скрипт, это способ подключить источник, которого нет в
+    списке. Ручные курсы из `billing.fx.rates` имеют приоритет: ими можно
+    перекрыть отдельную валюту, не отключая провайдера.
 
 Неизвестная валюта — это ошибка, а не повод зачислить сумму «как есть»:
 конвертация бросает исключение, вебхук отвечает 5xx, провайдер повторит
@@ -34,6 +36,13 @@ import httpx
 import valkey.asyncio as valkey
 
 from models.system_settings import SystemSettingsMngr
+from services.fx_providers import (
+    FxProviderError,
+    QUOTE_BASE_PER_UNIT,
+    QUOTE_UNIT_PER_BASE,
+    by_key,
+    fetch_rates,
+)
 from utils.degrade import VALKEY_ERRORS
 
 log = logging.getLogger("saviorbill.fx")
@@ -47,32 +56,25 @@ DEFAULT_CACHE_TTL = 900
 _CACHE_KEY = "fx:rates"
 _HTTP_TIMEOUT = 10.0
 
-#: Курс в ответе API — «сколько базовой валюты за одну единицу иностранной».
-QUOTE_BASE_PER_UNIT = "base_per_unit"
-#: Обратная котировка — «сколько иностранной валюты за одну единицу базовой».
-QUOTE_UNIT_PER_BASE = "unit_per_base"
-
 
 class FxError(Exception):
     """Курс недоступен — зачислять нельзя."""
 
 
-def _dig(data: dict, path: str):
-    """Достать вложенное значение по точечному пути (пустой путь — корень)."""
-    node = data
-    for part in filter(None, path.split(".")):
-        if not isinstance(node, dict) or part not in node:
-            return None
-        node = node[part]
-    return node
-
-
 class FxRates:
     """Чтение курсов и конвертация сумм в базовую валюту."""
 
-    def __init__(self, settings: SystemSettingsMngr, vk: valkey.Valkey) -> None:
+    def __init__(
+        self,
+        settings: SystemSettingsMngr,
+        vk: valkey.Valkey,
+        bus=None,  # noqa: ANN001 — LuaBus | None, для источника "lua"
+        session=None,  # noqa: ANN001 — AsyncSession | None, для источника "lua"
+    ) -> None:
         self.settings = settings
         self.vk = vk
+        self.bus = bus
+        self.session = session
 
     async def base_currency(self) -> str:
         value = await self.settings.get("billing.currency")
@@ -99,39 +101,71 @@ class FxRates:
         return out
 
     async def _api_rates(self) -> dict[str, Decimal]:
-        url = await self.settings.get("billing.fx.api_url")
-        if not url:
-            return {}
+        """Курсы от выбранного провайдера (`billing.fx.provider`) с кэшем."""
         cached = await self._cached()
         if cached is not None:
             return cached
 
-        path = (await self.settings.get("billing.fx.api_path")) or ""
-        quote = (
-            await self.settings.get("billing.fx.api_quote")
-        ) or QUOTE_BASE_PER_UNIT
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            payload = resp.json()
+        base = await self.base_currency()
+        provider_key = (await self.settings.get("billing.fx.provider")) or ""
+        api_key = (await self.settings.get("billing.fx.api_key")) or ""
 
-        node = _dig(payload if isinstance(payload, dict) else {}, path)
-        if not isinstance(node, dict):
-            raise FxError(f"fx api: no rates object at path {path!r}")
-
-        rates: dict[str, Decimal] = {}
-        for code, value in node.items():
-            try:
-                rate = Decimal(str(value))
-            except ArithmeticError:
-                continue
-            if rate <= 0:
-                continue
-            code = str(code).strip().upper()
-            rates[code] = (Decimal(1) / rate) if quote == QUOTE_UNIT_PER_BASE else rate
+        if provider_key == "lua":
+            rates = await self._lua_rates()
+        else:
+            provider = by_key(provider_key)
+            if provider is None:
+                raise FxError(
+                    f"fx: неизвестный провайдер курсов {provider_key!r} "
+                    "(см. billing.fx.provider)"
+                )
+            rates = await fetch_rates(provider, base, api_key)
 
         await self._cache(rates)
         return rates
+
+    async def _lua_rates(self) -> dict[str, Decimal]:
+        """Курсы из Lua-скрипта (`billing.fx.lua_slug`).
+
+        Скрипт должен вернуть ``{ public = { rates = { USD = "95.5", … } } }``
+        — «сколько базовой валюты за одну единицу указанной». Так подключается
+        любой источник, которого нет в списке готовых провайдеров.
+        """
+        if self.bus is None or self.session is None:
+            raise FxError("fx: источник 'lua' недоступен без шины LuaWorker")
+
+        from lua.context import LuaRunner
+        from models.system_scripts import SystemScriptsModel, resolve_version_filename
+        from sqlalchemy import select
+
+        slug = (await self.settings.get("billing.fx.lua_slug")) or ""
+        if not slug:
+            raise FxError("fx: не выбран Lua-скрипт (billing.fx.lua_slug)")
+        script = await self.session.scalar(
+            select(SystemScriptsModel).where(SystemScriptsModel.slug == slug)
+        )
+        if script is None or not script.is_active:
+            raise FxError(f"fx: Lua-скрипт {slug!r} не найден или выключен")
+
+        filename = await resolve_version_filename(self.session, script, None)
+        res = await LuaRunner(self.bus).run(
+            filename, script.kind, {"action": "rates"}, slug=script.slug
+        )
+        node = (res.get("public") or {}).get("rates")
+        if not isinstance(node, dict):
+            raise FxError(f"fx: скрипт {slug!r} не вернул public.rates")
+
+        out: dict[str, Decimal] = {}
+        for code, value in node.items():
+            try:
+                rate = Decimal(str(value))
+            except (ArithmeticError, ValueError):
+                continue
+            if rate > 0:
+                out[str(code).strip().upper()] = rate
+        if not out:
+            raise FxError(f"fx: скрипт {slug!r} вернул пустой список курсов")
+        return out
 
     async def _cached(self) -> dict[str, Decimal] | None:
         try:
@@ -171,6 +205,8 @@ class FxRates:
         if source == "api":
             try:
                 api = await self._api_rates()
+            except FxProviderError as exc:
+                raise FxError(str(exc)) from exc
             except (httpx.HTTPError, ValueError) as exc:
                 raise FxError(f"fx api unavailable: {exc}") from exc
             if currency in api:

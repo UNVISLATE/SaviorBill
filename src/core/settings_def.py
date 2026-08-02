@@ -255,7 +255,7 @@ SETTINGS: tuple[SettingDef, ...] = (
         None,
         group="billing",
         desc="Источник курсов: 'manual' (только billing.fx.rates) или 'api' "
-        "(внешний JSON-API, ручные курсы имеют приоритет)",
+        "(провайдер из billing.fx.provider; ручные курсы имеют приоритет)",
     ),
     SettingDef(
         "billing.fx.rates",
@@ -266,31 +266,32 @@ SETTINGS: tuple[SettingDef, ...] = (
         "одна единица указанной",
     ),
     SettingDef(
-        "billing.fx.api_url",
+        "billing.fx.provider",
         None,
         group="billing",
-        desc="URL JSON-API с курсами (для billing.fx.source=api)",
+        desc="Готовый источник курсов (cbr/frankfurter/erapi/exchangerate_api/"
+        "openexchangerates) либо 'lua' — курсы отдаёт скрипт billing.fx.lua_slug",
     ),
     SettingDef(
-        "billing.fx.api_path",
+        "billing.fx.api_key",
         None,
+        secret=True,
         group="billing",
-        desc="Точечный путь до объекта с курсами в ответе API (напр. "
-        "'data.rates'); пусто — курсы лежат в корне ответа",
+        desc="Ключ доступа к провайдеру курсов (нужен не всем)",
     ),
     SettingDef(
-        "billing.fx.api_quote",
+        "billing.fx.lua_slug",
         None,
         group="billing",
-        desc="Направление котировки в ответе API: 'base_per_unit' (сколько "
-        "базовой валюты за 1 иностранную) или 'unit_per_base' (обратное)",
+        desc="Slug Lua-скрипта, отдающего курсы (для billing.fx.provider=lua). "
+        'Скрипт должен вернуть { public = { rates = { USD = "95.5" } } }',
     ),
     SettingDef(
         "billing.fx.cache_ttl_sec",
         None,
         type="int",
         group="billing",
-        desc="TTL кэша курсов, полученных из API, секунды",
+        desc="TTL кэша курсов, полученных от провайдера, секунды",
     ),
     SettingDef(
         "billing.fx.markup_percent",

@@ -356,6 +356,31 @@ class SystemScriptsMngr:
             row.settings = dict(settings)
             changed = True
 
+        # Метаданные: вид скрипта и заявленные действия проверяются вместе —
+        # обязательные действия зависят от вида (payment без callback работать
+        # не будет), поэтому валидируем итоговую пару, а не каждое поле само
+        # по себе.
+        new_kind = getattr(data, "kind", None)
+        new_actions = getattr(data, "actions", None)
+        if new_kind is not None or new_actions is not None:
+            kind = new_kind if new_kind is not None else row.kind
+            actions = list(new_actions if new_actions is not None else row.actions or [])
+            self._check_actions(kind, actions)
+            row.kind = kind
+            row.actions = actions
+            changed = True
+
+        for field in ("name", "description"):
+            value = getattr(data, field, None)
+            if value is not None:
+                setattr(row, field, value)
+                changed = True
+
+        is_active = getattr(data, "is_active", None)
+        if is_active is not None:
+            row.is_active = is_active
+            changed = True
+
         if changed:
             row.lock_version += 1
         await self.s.flush()

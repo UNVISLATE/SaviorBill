@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from .fx import router as fx_router
 from .ratelimits import router as ratelimits_router
 from .raw import router as raw_router
 from .secrets import router as secrets_router
@@ -22,5 +23,6 @@ router.include_router(ratelimits_router, prefix="/ratelimits")
 router.include_router(raw_router, prefix="/raw")
 router.include_router(secrets_router, prefix="/secrets")
 router.include_router(ui_router, prefix="/ui")
+router.include_router(fx_router, prefix="/fx")
 
 __all__ = ["router"]

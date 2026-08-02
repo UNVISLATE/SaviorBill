@@ -7,7 +7,8 @@ from decimal import Decimal
 
 import pytest
 
-from services.fx import FxError, FxRates, QUOTE_UNIT_PER_BASE
+from services.fx import FxError, FxRates
+from services.fx_providers import FxProviderError, by_key, fetch_rates
 
 pytestmark = pytest.mark.unit
 
@@ -99,7 +100,8 @@ async def test_broken_rates_json_is_ignored_not_fatal():
 
 
 @pytest.mark.asyncio
-async def test_api_rates_are_read_by_path_and_cached(monkeypatch):
+async def test_provider_rates_are_parsed_and_cached(monkeypatch):
+    """Курсы провайдера разбираются по его формату и кладутся в кэш."""
     calls = {"n": 0}
 
     class _Resp:
@@ -108,7 +110,8 @@ async def test_api_rates_are_read_by_path_and_cached(monkeypatch):
 
         def json(self):
             calls["n"] += 1
-            return {"data": {"rates": {"USD": "90"}}}
+            # open.er-api.com отдаёт "сколько валюты за 1 базовую".
+            return {"rates": {"USD": "0.0111111111"}}
 
     class _Client:
         async def __aenter__(self):
@@ -120,30 +123,36 @@ async def test_api_rates_are_read_by_path_and_cached(monkeypatch):
         async def get(self, _url):
             return _Resp()
 
-    monkeypatch.setattr("services.fx.httpx.AsyncClient", lambda **_kw: _Client())
+    monkeypatch.setattr("services.fx_providers.httpx.AsyncClient", lambda **_kw: _Client())
     fx = _fx(
         **{
             "billing.fx.source": "api",
-            "billing.fx.api_url": "https://rates.example/api",
-            "billing.fx.api_path": "data.rates",
+            "billing.fx.provider": "erapi",
         }
     )
-    amount, rate, _ = await fx.to_base(Decimal("2"), "USD")
-    assert amount == Decimal("180.00") and rate == Decimal("90")
+    _, rate, _ = await fx.to_base(Decimal("1"), "USD")
+    assert rate.quantize(Decimal("1")) == Decimal("90")
 
-    # Второй вызов берёт курсы из кэша, а не ходит в API снова.
+    # Второй вызов берёт курсы из кэша, а не ходит в сеть снова.
     await fx.to_base(Decimal("1"), "USD")
     assert calls["n"] == 1
 
 
 @pytest.mark.asyncio
-async def test_inverse_quote_is_normalised(monkeypatch):
+async def test_cbr_parses_nominal(monkeypatch):
+    """У ЦБ курс указан за Nominal единиц — делим, иначе завышаем в разы."""
+
     class _Resp:
         def raise_for_status(self):
             pass
 
         def json(self):
-            return {"USD": "0.01"}  # 1 RUB = 0.01 USD
+            return {
+                "Valute": {
+                    "JPY": {"CharCode": "JPY", "Nominal": 100, "Value": 62.5},
+                    "USD": {"CharCode": "USD", "Nominal": 1, "Value": 90.0},
+                }
+            }
 
     class _Client:
         async def __aenter__(self):
@@ -155,28 +164,41 @@ async def test_inverse_quote_is_normalised(monkeypatch):
         async def get(self, _url):
             return _Resp()
 
-    monkeypatch.setattr("services.fx.httpx.AsyncClient", lambda **_kw: _Client())
-    fx = _fx(
-        **{
-            "billing.fx.source": "api",
-            "billing.fx.api_url": "https://rates.example/api",
-            "billing.fx.api_quote": QUOTE_UNIT_PER_BASE,
-        }
-    )
-    amount, _, _ = await fx.to_base(Decimal("1"), "USD")
-    assert amount == Decimal("100.00")
+    monkeypatch.setattr("services.fx_providers.httpx.AsyncClient", lambda **_kw: _Client())
+    rates = await fetch_rates(by_key("cbr"), "RUB", "")
+    assert rates["USD"] == Decimal("90.0")
+    assert rates["JPY"] == Decimal("0.625")
 
 
 @pytest.mark.asyncio
-async def test_manual_rate_overrides_api(monkeypatch):
-    def _boom(**_kw):
-        raise AssertionError("API не должен вызываться при ручном курсе")
+async def test_provider_needing_key_fails_without_one():
+    with pytest.raises(FxProviderError, match="ключ"):
+        await fetch_rates(by_key("exchangerate_api"), "RUB", "")
 
-    monkeypatch.setattr("services.fx.httpx.AsyncClient", _boom)
+
+@pytest.mark.asyncio
+async def test_cbr_rejects_non_rub_base():
+    with pytest.raises(FxProviderError, match="RUB"):
+        await fetch_rates(by_key("cbr"), "USD", "")
+
+
+@pytest.mark.asyncio
+async def test_unknown_provider_is_an_error():
+    fx = _fx(**{"billing.fx.source": "api", "billing.fx.provider": "nope"})
+    with pytest.raises(FxError, match="неизвестный провайдер"):
+        await fx.to_base(Decimal("1"), "USD")
+
+
+@pytest.mark.asyncio
+async def test_manual_rate_overrides_provider(monkeypatch):
+    def _boom(**_kw):
+        raise AssertionError("провайдер не должен вызываться при ручном курсе")
+
+    monkeypatch.setattr("services.fx_providers.httpx.AsyncClient", _boom)
     fx = _fx(
         **{
             "billing.fx.source": "api",
-            "billing.fx.api_url": "https://rates.example/api",
+            "billing.fx.provider": "erapi",
             "billing.fx.rates": json.dumps({"USD": "99"}),
         }
     )

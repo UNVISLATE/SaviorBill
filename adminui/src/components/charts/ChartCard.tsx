@@ -10,8 +10,9 @@ import {
 } from "recharts"
 
 import { cn } from "@/lib/utils"
+import { Button } from "@/components/shadsnui/button"
+import { ButtonGroup } from "@/components/shadsnui/button-group"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/shadsnui/card"
-import { ToggleGroup, ToggleGroupItem } from "@/components/shadsnui/toggle-group"
 
 export interface ChartCardSeries {
   key: string
@@ -162,9 +163,11 @@ export function ChartCardBody({
         </ResponsiveContainer>
       </div>
 
-      {totalLabel && (
-        <div className="mt-1 text-center text-sm text-muted-foreground">
-          {totalLabel}: <span className="font-semibold text-foreground">{totalValue ?? "—"}</span>
+      {/* Подпись суммы рисуем только когда карточка не показала её в шапке
+          (SystemOverview встраивает ChartCardBody в свою Card). */}
+      {totalLabel && totalValue !== undefined && (
+        <div className="px-4 pb-3 text-center text-sm text-muted-foreground">
+          {totalLabel}: <span className="font-semibold text-foreground">{totalValue}</span>
         </div>
       )}
     </>
@@ -172,9 +175,10 @@ export function ChartCardBody({
 }
 
 /**
- * Общая карточка графика: full-bleed область графика, группа кнопок периода
- * (overlay сверху справа) и подпись суммы под ней. Используется на страницах
- * Пользователей и Системы — единая точка правки внешнего вида всех графиков.
+ * Общая карточка графика: график занимает низ карточки целиком (full-bleed,
+ * без внутренних отступов и подписи снизу), заголовок с метрикой и
+ * переключателем периода — сверху. Диапазоны — один сегментированный
+ * контрол, а не россыпь отдельных кнопок.
  */
 export function ChartCard({
   title,
@@ -183,27 +187,54 @@ export function ChartCard({
   period,
   onPeriodChange,
   className,
+  totalLabel,
+  totalValue,
   ...body
 }: ChartCardProps) {
   return (
-    <Card className={cn("relative overflow-hidden", className)}>
-      <CardHeader className={cn(periods ? "flex-row items-start justify-between gap-3" : undefined)}>
-        <div>
+    <Card className={cn("relative gap-0 overflow-hidden pb-0", className)}>
+      <CardHeader className="flex-row items-start justify-between gap-3 pb-3">
+        <div className="space-y-1">
           <CardTitle>{title}</CardTitle>
-          {description && <CardDescription>{description}</CardDescription>}
+          {totalValue !== undefined ? (
+            <div className="flex items-baseline gap-2">
+              <span className="text-sm text-muted-foreground">
+                <span className="font-semibold text-foreground tabular-nums">{totalValue}</span>
+                {totalLabel ? ` ${totalLabel}` : ""}
+              </span>
+            </div>
+          ) : (
+            description && <CardDescription>{description}</CardDescription>
+          )}
         </div>
         {periods && period && onPeriodChange && (
-          <ToggleGroup value={[period]} onValueChange={(v) => v[0] && onPeriodChange(v[0])}>
+          <ButtonGroup>
             {periods.map((p) => (
-              <ToggleGroupItem key={p.value} value={p.value} size="sm">
+              <Button
+                key={p.value}
+                type="button"
+                size="sm"
+                variant="outline"
+                aria-pressed={p.value === period}
+                onClick={() => onPeriodChange(p.value)}
+                className={cn(
+                  "transition-colors",
+                  p.value === period && "bg-accent text-accent-foreground",
+                )}
+              >
                 {p.label}
-              </ToggleGroupItem>
+              </Button>
             ))}
-          </ToggleGroup>
+          </ButtonGroup>
         )}
       </CardHeader>
 
-      <CardContent className="px-0">
+      <CardContent
+        // Смена периода — новый key, чтобы график появлялся с анимацией
+        // входа, а не подменял точки без обратной связи.
+        key={period}
+        className="animate-in fade-in slide-in-from-bottom-1 px-0 duration-300"
+      >
         <ChartCardBody {...body} />
       </CardContent>
     </Card>
