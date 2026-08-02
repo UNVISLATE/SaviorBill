@@ -9,6 +9,12 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/shadsnui/alert
 import { Button } from "@/components/shadsnui/button"
 import { Field, FieldDescription, FieldLabel } from "@/components/shadsnui/field"
 import { Input } from "@/components/shadsnui/input"
+import {
+  InputOTP,
+  InputOTPGroup,
+  InputOTPSeparator,
+  InputOTPSlot,
+} from "@/components/shadsnui/input-otp"
 import { Skeleton } from "@/components/shadsnui/skeleton"
 import { Separator } from "@/components/shadsnui/separator"
 
@@ -220,14 +226,25 @@ export function ProfileTwoFASection() {
         <Separator />
         <Field>
           <FieldLabel htmlFor="confirm-code">Код из приложения</FieldLabel>
-          <Input
+          <InputOTP
             id="confirm-code"
-            inputMode="numeric"
-            placeholder="123456"
+            maxLength={6}
             value={confirmCode}
-            onChange={(e) => setConfirmCode(e.target.value)}
+            onChange={setConfirmCode}
             autoFocus
-          />
+          >
+            <InputOTPGroup>
+              <InputOTPSlot index={0} />
+              <InputOTPSlot index={1} />
+              <InputOTPSlot index={2} />
+            </InputOTPGroup>
+            <InputOTPSeparator />
+            <InputOTPGroup>
+              <InputOTPSlot index={3} />
+              <InputOTPSlot index={4} />
+              <InputOTPSlot index={5} />
+            </InputOTPGroup>
+          </InputOTP>
           <FieldDescription>Введите текущий код, чтобы подтвердить настройку.</FieldDescription>
         </Field>
         <div className="flex gap-2">

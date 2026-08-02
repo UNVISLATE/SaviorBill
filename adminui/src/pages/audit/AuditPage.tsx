@@ -1,9 +1,16 @@
+import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/api/api.ts"
 import { useDataTableQuery } from "@/hooks/use-data-table"
 import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
 import { Badge } from "@/components/shadsnui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/shadsnui/dialog"
 
 interface AuditEntry {
   id: number
@@ -69,6 +76,7 @@ const columns: DataTableColumn<AuditEntry>[] = [
 
 export function AuditPage() {
   const table = useDataTableQuery()
+  const [detail, setDetail] = useState<AuditEntry | null>(null)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-audit", table.limit, table.offset, table.sort, table.search],
@@ -100,6 +108,7 @@ export function AuditPage() {
         isLoading={isLoading}
         isError={isError}
         getRowId={(e) => e.id}
+        onRowClick={setDetail}
         sort={table.sort}
         onToggleSort={table.toggleSort}
         searchValue={table.searchInput}
@@ -111,6 +120,64 @@ export function AuditPage() {
         onLimitChange={table.changeLimit}
         onOffsetChange={table.setOffset}
       />
+
+      <Dialog open={!!detail} onOpenChange={(open) => !open && setDetail(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Запись аудита #{detail?.id}</DialogTitle>
+          </DialogHeader>
+          {detail && (
+            <div className="space-y-3 text-sm">
+              <dl className="grid grid-cols-[8rem_1fr] gap-y-1.5">
+                <dt className="text-muted-foreground">Время</dt>
+                <dd>{new Date(detail.ts).toLocaleString()}</dd>
+                <dt className="text-muted-foreground">Актор</dt>
+                <dd>
+                  {detail.actor_account_id != null ? (
+                    <>
+                      #{detail.actor_account_id}
+                      {detail.actor_role && <span className="text-muted-foreground"> · {detail.actor_role}</span>}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">система</span>
+                  )}
+                </dd>
+                <dt className="text-muted-foreground">Действие</dt>
+                <dd className="font-medium">{detail.action}</dd>
+                <dt className="text-muted-foreground">Цель</dt>
+                <dd>
+                  {detail.target_type ? (
+                    <>
+                      {detail.target_type}
+                      {detail.target_id && <span className="text-muted-foreground"> #{detail.target_id}</span>}
+                    </>
+                  ) : (
+                    "—"
+                  )}
+                </dd>
+                <dt className="text-muted-foreground">Результат</dt>
+                <dd>
+                  <Badge variant={detail.result === "ok" ? "outline" : "destructive"}>{detail.result}</Badge>
+                </dd>
+                <dt className="text-muted-foreground">IP</dt>
+                <dd>{detail.ip ?? "—"}</dd>
+              </dl>
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium text-muted-foreground">
+                  Технические детали (meta)
+                </p>
+                {Object.keys(detail.meta).length > 0 ? (
+                  <pre className="max-h-72 overflow-auto rounded-md border bg-muted/40 p-3 text-xs">
+                    {JSON.stringify(detail.meta, null, 2)}
+                  </pre>
+                ) : (
+                  <p className="text-xs text-muted-foreground">пусто</p>
+                )}
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
