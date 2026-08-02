@@ -7,6 +7,7 @@ import { uploadOwnMedia } from "@/api/media-upload.ts"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { useSettingsMap } from "@/hooks/use-settings-map"
+import { ThemeSettings } from "./ThemeSettings"
 import { Button } from "@/components/shadsnui/button"
 import {
   Card,
@@ -249,11 +250,13 @@ export function SettingsBranding() {
         title="Admin-панель"
         description="Название и иконки этой панели — применяются к шапке, экрану входа и вкладке браузера."
       />
+      <ThemeSettings scope="admin" />
       <ScopeCard
         scope="client"
         title="Клиентское приложение"
         description="То же для витрины: клиент читает эти значения через публичный эндпоинт брендинга."
       />
+      <ThemeSettings scope="client" />
     </div>
   )
 }

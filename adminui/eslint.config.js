@@ -8,7 +8,15 @@ import { defineConfig, globalIgnores } from 'eslint/config'
 export default defineConfig([
   // "примерыизсшм" — reference-примеры от пользователя (shadcn dashboard шаблоны),
   // не часть приложения и не участвуют в сборке; линтить их не нужно.
-  globalIgnores(['dist', 'примерыизсшм']),
+  //
+  // fill-picker — вендорный color picker, поставленный через shadcn CLI
+  // (amplo.ale.design). Это чужой код: правки в нём затрутся при следующем
+  // обновлении компонента, поэтому под наши правила его не подгоняем.
+  globalIgnores([
+    'dist',
+    'примерыизсшм',
+    'src/components/shadsnui/fill-picker',
+  ]),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
