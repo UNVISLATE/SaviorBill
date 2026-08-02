@@ -12,6 +12,7 @@ import { LuaScriptsPage } from "@/pages/lua/LuaScriptsPage"
 import { CatalogsPage } from "@/pages/catalog/CatalogsPage"
 import { ServicesPage } from "@/pages/catalog/ServicesPage"
 import { ServiceDetailPage } from "@/pages/catalog/ServiceDetailPage"
+import { MediaLibraryPage } from "@/pages/media/MediaLibraryPage"
 import { OrdersPage } from "@/pages/orders/OrdersPage"
 import { PurchasesPage } from "@/pages/purchases/PurchasesPage"
 import { PromoPage } from "@/pages/promo/PromoPage"
@@ -44,6 +45,7 @@ export function App() {
               <Route path="/catalog" element={<CatalogsPage />} />
               <Route path="/services" element={<ServicesPage />} />
               <Route path="/services/:id" element={<ServiceDetailPage />} />
+              <Route path="/media" element={<MediaLibraryPage />} />
               <Route path="/orders" element={<OrdersPage />} />
               <Route path="/purchases" element={<PurchasesPage />} />
               <Route path="/promo" element={<PromoPage />} />

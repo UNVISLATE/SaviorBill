@@ -2,6 +2,7 @@ import {
   FileClock,
   FolderTree,
   Gauge,
+  Images,
   KeyRound,
   Mail,
   Package,
@@ -50,6 +51,7 @@ export const navGroups: NavGroup[] = [
     items: [
         { title: "Каталоги", url: "/catalog", icon: FolderTree, perm: "catalogs.read" },
         { title: "Услуги", url: "/services", icon: Package, perm: "services.read" },
+        { title: "Медиатека", url: "/media", icon: Images, perm: "media.read" },
     ],
   },
   {

@@ -23,6 +23,7 @@ export const routeMeta: RouteMeta[] = [
   { path: "/oauth", title: "OAuth-вход" },
   { path: "/catalog", title: "Каталоги" },
   { path: "/services", title: "Услуги" },
+  { path: "/media", title: "Медиатека" },
   { path: "/orders", title: "Заказы" },
   { path: "/purchases", title: "Платежи" },
   { path: "/promo", title: "Промокоды" },
