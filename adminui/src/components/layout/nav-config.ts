@@ -10,6 +10,7 @@ import {
   Users,
   MonitorCog,
   ScrollText,
+  Zap,
 } from "lucide-react"
 
 /**
@@ -60,7 +61,8 @@ export const navGroups: NavGroup[] = [
   {
     title: "Автоматизация",
     items: [
-        { title: "Скрипты", url: "/lua", icon: ScrollText, perm: "lua.read" }
+        { title: "Скрипты", url: "/lua", icon: ScrollText, perm: "lua.read" },
+        { title: "Триггеры", url: "/triggers", icon: Zap, perm: "triggers.read" },
     ]
   }
 ]
