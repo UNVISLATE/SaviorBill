@@ -1,6 +1,8 @@
 import {
   FileClock,
+  FolderTree,
   Gauge,
+  Package,
   Settings,
   Users,
   MonitorCog,
@@ -35,6 +37,13 @@ export const navGroups: NavGroup[] = [
     title: "Пользователи",
     items: [
         { title: "Пользователи", url: "/users", icon: Users, perm: "users.read" }
+    ],
+  },
+  {
+    title: "Каталог",
+    items: [
+        { title: "Каталоги", url: "/catalog", icon: FolderTree, perm: "catalogs.read" },
+        { title: "Услуги", url: "/services", icon: Package, perm: "services.read" },
     ],
   },
   {

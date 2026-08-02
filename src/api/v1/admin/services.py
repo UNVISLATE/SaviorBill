@@ -60,6 +60,21 @@ async def list_services(
     )
 
 
+@router.get(
+    "/{service_id}",
+    response_model=ServiceAdmin,
+    dependencies=[Depends(require_perm("services.read"))],
+    summary="Service",
+)
+async def get_service(
+    service_id: int, mngr: ServiceMngr = Depends(get_service_mngr)
+) -> ServiceAdmin:
+    svc = await mngr.by_id(service_id)
+    if svc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
+    return ServiceAdmin.from_model(svc)
+
+
 @router.post(
     "",
     response_model=ServiceAdmin,

@@ -9,6 +9,9 @@ import { AuditPage } from "@/pages/audit/AuditPage"
 import { SystemPage } from "@/pages/system/SystemPage"
 import { SettingsPage } from "@/pages/settings/SettingsPage"
 import { LuaScriptsPage } from "@/pages/lua/LuaScriptsPage"
+import { CatalogsPage } from "@/pages/catalog/CatalogsPage"
+import { ServicesPage } from "@/pages/catalog/ServicesPage"
+import { ServiceDetailPage } from "@/pages/catalog/ServiceDetailPage"
 import { ProtectedRoute } from "@/routes/ProtectedRoute"
 import { ProfileDialogProvider } from "@/hooks/use-profile-dialog"
 import { ProfileDialogHost } from "@/components/profile/ProfileDialogHost"
@@ -32,6 +35,9 @@ export function App() {
               <Route path="/settings/*" element={<SettingsPage />} />
               <Route path="/lua" element={<LuaScriptsPage />} />
               <Route path="/lua/:scriptId" element={<LuaScriptsPage />} />
+              <Route path="/catalog" element={<CatalogsPage />} />
+              <Route path="/services" element={<ServicesPage />} />
+              <Route path="/services/:id" element={<ServiceDetailPage />} />
             </Route>
           </Route>
         </Routes>
