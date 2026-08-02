@@ -1,8 +1,9 @@
 import { Navigate, Route, Routes } from "react-router-dom"
-import { Gauge, Palette, Settings2, ShieldCheck, SlidersHorizontal } from "lucide-react"
+import { Coins, Gauge, Palette, Settings2, ShieldCheck, SlidersHorizontal } from "lucide-react"
 
 import { SectionTabs } from "@/components/layout/SectionTabs"
 import { SettingsGeneral } from "./SettingsGeneral"
+import { CurrencySettings } from "./CurrencySettings"
 import { SettingsBranding } from "./SettingsBranding"
 import { RateLimitSettings } from "./RateLimitSettings"
 import { RawSettingsEditor } from "./RawSettingsEditor"
@@ -19,6 +20,7 @@ export function SettingsPage() {
       <SectionTabs
         items={[
           { title: "Основное", to: "/settings/general", icon: <Settings2 className="size-4" /> },
+          { title: "Валюта и курсы", to: "/settings/currency", icon: <Coins className="size-4" /> },
           { title: "Брендирование", to: "/settings/branding", icon: <Palette className="size-4" /> },
           { title: "Rate limiting", to: "/settings/ratelimits", icon: <Gauge className="size-4" /> },
           { title: "Raw settings", to: "/settings/raw", icon: <SlidersHorizontal className="size-4" /> },
@@ -28,6 +30,7 @@ export function SettingsPage() {
         <Routes>
           <Route index element={<Navigate to="general" replace />} />
           <Route path="general" element={<SettingsGeneral />} />
+          <Route path="currency" element={<CurrencySettings />} />
           <Route path="branding" element={<SettingsBranding />} />
           <Route path="ratelimits" element={<RateLimitSettings />} />
           <Route path="raw" element={<RawSettingsEditor />} />

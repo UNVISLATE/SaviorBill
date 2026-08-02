@@ -27,6 +27,7 @@ export const routeMeta: RouteMeta[] = [
 
   { path: "/settings", title: "Настройки" },
   { path: "/settings/general", title: "Основное" },
+  { path: "/settings/currency", title: "Валюта и курсы" },
   { path: "/settings/branding", title: "Брендирование" },
   { path: "/settings/ratelimits", title: "Rate limiting" },
   { path: "/settings/raw", title: "Raw settings" },

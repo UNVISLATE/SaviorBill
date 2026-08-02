@@ -342,8 +342,10 @@ export function SettingsSection({
   description?: string
   fields: SettingFieldSpec[]
   footerNote?: ReactNode
-  /** Доп. кнопки в футере (например «Проверить подключение»). */
-  actions?: ReactNode
+  /** Доп. кнопки в футере. Функция получает ТЕКУЩИЕ (черновые) значения
+   * секции — чтобы, например, кнопка проверки источника работала с тем, что
+   * выбрано сейчас, а не с последним сохранённым. */
+  actions?: ReactNode | ((current: Record<string, string>) => ReactNode)
 }) {
   const qc = useQueryClient()
   const { map, isLoading } = useSettingsMap()
@@ -445,14 +447,16 @@ export function SettingsSection({
         })}
       </CardContent>
       {(dirty || footerNote || actions) && (
-        <CardFooter className="flex-wrap justify-between gap-2">
-          <span className="text-xs text-muted-foreground">
-            {dirty ? `Изменено полей: ${changedKeys.length}` : footerNote}
-          </span>
-          <div className="flex items-center gap-2">
-            {!dirty && actions}
+        <CardFooter className="flex-col items-stretch gap-3">
+          {actions && (
+            <div>{typeof actions === "function" ? actions(current) : actions}</div>
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground">
+              {dirty ? `Изменено полей: ${changedKeys.length}` : footerNote}
+            </span>
             {dirty && (
-              <>
+              <div className="flex items-center gap-2">
                 <Button size="sm" variant="ghost" onClick={reset} disabled={save.isPending}>
                   Отменить
                 </Button>
@@ -460,7 +464,7 @@ export function SettingsSection({
                   {save.isPending && <Loader2 className="size-4 animate-spin" />}
                   Сохранить
                 </Button>
-              </>
+              </div>
             )}
           </div>
         </CardFooter>

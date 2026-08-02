@@ -1,4 +1,3 @@
-import { CurrencySettings } from "./CurrencySettings"
 import { SettingsSection } from "./SettingsSection"
 
 /**
@@ -6,14 +5,15 @@ import { SettingsSection } from "./SettingsSection"
  * Raw-редактор и знания точных ключей. Каждая секция — карточка со своей
  * кнопкой сохранения (появляется только при изменении).
  *
+ * Валюта и курсы живут на отдельной вкладке (`/settings/currency`) — там
+ * своя логика с источниками и проверкой, в общий список она не помещается.
+ *
  * Раскладка — CSS-колонки: на широком экране карточки встают в два столбца и
  * заполняют место справа, на узком схлопываются в один.
  */
 export function SettingsGeneral() {
   return (
     <div className="columns-1 gap-4 xl:columns-2 [&>*]:break-inside-avoid">
-      <CurrencySettings />
-
       <SettingsSection
         title="Безопасность"
         fields={[
