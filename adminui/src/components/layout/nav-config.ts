@@ -2,6 +2,8 @@ import {
   FileClock,
   FolderTree,
   Gauge,
+  KeyRound,
+  Mail,
   Package,
   Receipt,
   ShoppingCart,
@@ -63,6 +65,8 @@ export const navGroups: NavGroup[] = [
     items: [
         { title: "Скрипты", url: "/lua", icon: ScrollText, perm: "lua.read" },
         { title: "Триггеры", url: "/triggers", icon: Zap, perm: "triggers.read" },
+        { title: "Email-шаблоны", url: "/email-templates", icon: Mail, perm: "email.read" },
+        { title: "OAuth-вход", url: "/oauth", icon: KeyRound, perm: "oauth.read" },
     ]
   }
 ]

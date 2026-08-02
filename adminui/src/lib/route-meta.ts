@@ -19,6 +19,8 @@ export const routeMeta: RouteMeta[] = [
   { path: "/audit", title: "Аудит" },
   { path: "/lua", title: "Скрипты" },
   { path: "/triggers", title: "Триггеры" },
+  { path: "/email-templates", title: "Email-шаблоны" },
+  { path: "/oauth", title: "OAuth-вход" },
   { path: "/catalog", title: "Каталоги" },
   { path: "/services", title: "Услуги" },
   { path: "/orders", title: "Заказы" },

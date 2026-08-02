@@ -16,6 +16,8 @@ import { OrdersPage } from "@/pages/orders/OrdersPage"
 import { PurchasesPage } from "@/pages/purchases/PurchasesPage"
 import { PromoPage } from "@/pages/promo/PromoPage"
 import { TriggersPage } from "@/pages/triggers/TriggersPage"
+import { EmailTemplatesPage } from "@/pages/email/EmailTemplatesPage"
+import { OAuthProvidersPage } from "@/pages/oauth/OAuthProvidersPage"
 import { ProtectedRoute } from "@/routes/ProtectedRoute"
 import { ProfileDialogProvider } from "@/hooks/use-profile-dialog"
 import { ProfileDialogHost } from "@/components/profile/ProfileDialogHost"
@@ -46,6 +48,8 @@ export function App() {
               <Route path="/purchases" element={<PurchasesPage />} />
               <Route path="/promo" element={<PromoPage />} />
               <Route path="/triggers" element={<TriggersPage />} />
+              <Route path="/email-templates" element={<EmailTemplatesPage />} />
+              <Route path="/oauth" element={<OAuthProvidersPage />} />
             </Route>
           </Route>
         </Routes>
