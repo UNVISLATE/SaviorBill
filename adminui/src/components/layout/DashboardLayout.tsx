@@ -1,29 +1,22 @@
-import { ChevronRight } from "lucide-react"
 import { Outlet, useLocation, useNavigate } from "react-router-dom"
 
 import { useAuth } from "@/hooks/use-auth"
 import { useBranding } from "@/hooks/use-branding"
 import { footerNavItems, navGroups } from "@/components/layout/nav-config"
 import { Logo } from "@/components/layout/Logo"
+import { NavMain } from "@/components/layout/NavMain"
 import { NavUser } from "@/components/layout/NavUser"
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/shadsnui/collapsible"
 import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarInset,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarProvider,
+  SidebarRail,
   SidebarSeparator,
   SidebarTrigger,
 } from "@/components/shadsnui/sidebar"
@@ -52,43 +45,7 @@ export function DashboardLayout() {
           </div>
         </SidebarHeader>
         <SidebarContent>
-          {navGroups.map((group) => {
-            const items = group.items.filter((i) => !i.perm || can(i.perm))
-            if (items.length === 0) return null
-            return (
-              <Collapsible key={group.title} defaultOpen>
-                <SidebarGroup>
-                  <CollapsibleTrigger
-                    nativeButton={false}
-                    render={
-                      <SidebarGroupLabel className="group flex w-full cursor-pointer items-center justify-between">
-                        <span>{group.title}</span>
-                        <ChevronRight className="size-3.5 transition-transform group-data-[panel-open]:rotate-90" />
-                      </SidebarGroupLabel>
-                    }
-                  />
-                  <CollapsibleContent>
-                    <SidebarGroupContent>
-                      <SidebarMenu>
-                        {items.map((item) => (
-                          <SidebarMenuItem key={item.url}>
-                            <SidebarMenuButton
-                              tooltip={item.title}
-                              isActive={location.pathname === item.url}
-                              onClick={() => navigate(item.url)}
-                            >
-                              <item.icon />
-                              <span>{item.title}</span>
-                            </SidebarMenuButton>
-                          </SidebarMenuItem>
-                        ))}
-                      </SidebarMenu>
-                    </SidebarGroupContent>
-                  </CollapsibleContent>
-                </SidebarGroup>
-              </Collapsible>
-            )
-          })}
+          <NavMain groups={navGroups} />
         </SidebarContent>
         <SidebarFooter>
           {visibleFooterItems.length > 0 && (
@@ -112,6 +69,7 @@ export function DashboardLayout() {
           )}
           <NavUser />
         </SidebarFooter>
+        <SidebarRail />
       </Sidebar>
       <SidebarInset>
         <header className="flex h-12 items-center gap-2 border-b px-4">

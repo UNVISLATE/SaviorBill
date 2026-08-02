@@ -30,18 +30,22 @@ export interface NavItem {
 
 export interface NavGroup {
   title: string
+  /** Иконка категории — показывается на сайдбаре в свёрнутом (icon-rail) виде. */
+  icon: typeof Gauge
   items: NavItem[]
 }
 
 export const navGroups: NavGroup[] = [
   {
     title: "Обзор",
+    icon: Gauge,
     items: [
         { title: "Дашборд", url: "/", icon: Gauge }
     ],
   },
   {
     title: "Пользователи",
+    icon: Users,
     items: [
         { title: "Пользователи", url: "/users", icon: Users, perm: "users.read" },
         { title: "Заказы", url: "/orders", icon: ShoppingCart, perm: "orders.read" },
@@ -51,6 +55,7 @@ export const navGroups: NavGroup[] = [
   },
   {
     title: "Каталог",
+    icon: FolderTree,
     items: [
         { title: "Каталоги", url: "/catalog", icon: FolderTree, perm: "catalogs.read" },
         { title: "Услуги", url: "/services", icon: Package, perm: "services.read" },
@@ -59,6 +64,7 @@ export const navGroups: NavGroup[] = [
   },
   {
     title: "Автоматизация",
+    icon: Zap,
     items: [
         { title: "Скрипты", url: "/lua", icon: ScrollText, perm: "lua.read" },
         { title: "Триггеры", url: "/triggers", icon: Zap, perm: "triggers.read" },
