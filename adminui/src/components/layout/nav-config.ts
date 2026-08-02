@@ -6,6 +6,7 @@ import {
   Receipt,
   ShoppingCart,
   Settings,
+  Ticket,
   Users,
   MonitorCog,
   ScrollText,
@@ -53,6 +54,7 @@ export const navGroups: NavGroup[] = [
     items: [
         { title: "Заказы", url: "/orders", icon: ShoppingCart, perm: "orders.read" },
         { title: "Платежи", url: "/purchases", icon: Receipt, perm: "purchases.read" },
+        { title: "Промокоды", url: "/promo", icon: Ticket, perm: "promo.catalogs.read" },
     ],
   },
   {

@@ -22,6 +22,7 @@ export const routeMeta: RouteMeta[] = [
   { path: "/services", title: "Услуги" },
   { path: "/orders", title: "Заказы" },
   { path: "/purchases", title: "Платежи" },
+  { path: "/promo", title: "Промокоды" },
 
   { path: "/system", title: "Система" },
   { path: "/system/overview", title: "Обзор" },

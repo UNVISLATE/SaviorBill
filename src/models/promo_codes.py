@@ -246,6 +246,20 @@ class PromoCodesMngr:
         promo.used_count += 1
         await self.s.flush()
 
+    async def set_active(self, code_id: int, is_active: bool) -> PromoCodesModel:
+        """Включить/выключить конкретный код (не удаляя историю активаций).
+
+        :arg code_id: идентификатор кода.
+        :arg is_active: новое значение флага.
+        :return: обновлённый промокод.
+        """
+        promo = await self.s.get(PromoCodesModel, code_id)
+        if promo is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "promo code not found")
+        promo.is_active = is_active
+        await self.s.flush()
+        return promo
+
     def discount_for(self, catalog: PromoCatalogsModel, service) -> Decimal:
         """Рассчитать скидку каталога для услуги.
 

@@ -19,6 +19,7 @@ from schemas.promo import (
     PromoCatalogPatch,
     PromoCode,
     PromoCodeBatch,
+    PromoCodeToggle,
 )
 from utils.pagination import (
     PageParams,
@@ -153,6 +154,23 @@ async def create_codes(
     )
     await mngr.s.commit()
     return [PromoCode.from_model(r) for r in rows]
+
+
+@router.patch(
+    "/codes/{code_id}",
+    response_model=PromoCode,
+    dependencies=[Depends(require_perm("promo.codes.edit"))],
+    summary="Toggle promo code",
+    description="Activate/deactivate a single promo code without deleting its history.",
+)
+async def set_code_active(
+    code_id: int,
+    body: PromoCodeToggle,
+    mngr: PromoCodesMngr = Depends(get_promo_mngr),
+) -> PromoCode:
+    promo = await mngr.set_active(code_id, body.is_active)
+    await mngr.s.commit()
+    return PromoCode.from_model(promo)
 
 
 __all__ = ["router"]

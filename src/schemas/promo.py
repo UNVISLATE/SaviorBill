@@ -195,6 +195,12 @@ class PromoCodeBatch(BaseModel):
     )
 
 
+class PromoCodeToggle(BaseModel):
+    """Activate/deactivate a single promo code."""
+
+    is_active: bool = Field(description="New active flag")
+
+
 class PromoQuote(BaseModel):
     """Discount preview for a service before ordering."""
 
@@ -217,6 +223,7 @@ __all__ = [
     "PromoCatalogPatch",
     "PromoCode",
     "PromoCodeBatch",
+    "PromoCodeToggle",
     "PromoUse",
     "PromoQuote",
 ]
