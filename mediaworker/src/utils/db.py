@@ -110,19 +110,35 @@ class DB:
         return {"status": row["status"], "mime": row["mime"], "variants": variants or {}}
 
     async def media_count_for_owner(self, owner_id: int) -> int:
-        """Число медиа-файлов, принадлежащих аккаунту (для лимита user.media.limit)."""
+        """Число медиа-файлов, принадлежащих аккаунту (для лимита user.media.limit).
+
+        Текущая аватарка исключается из счёта — она "слот", а не обычная
+        загрузка: иначе просто наличие аватарки постоянно съедает единицу
+        лимита, и переключение аватарки лишний раз давит на квоту (см.
+        AUDIT.md §4).
+        """
         assert self.pool is not None
         return await self.pool.fetchval(
-            "SELECT count(*) FROM system_media WHERE owner_id = $1", owner_id
+            "SELECT count(*) FROM system_media sm "
+            "JOIN accounts a ON a.id = $1 "
+            "WHERE sm.owner_id = $1 "
+            "AND (a.avatar_media_id IS NULL OR sm.id != a.avatar_media_id)",
+            owner_id,
         )
 
     async def bytes_used_for_owner(self, owner_id: int) -> int:
         """Суммарный объём (байт) уже сохранённых медиа аккаунта (квота, см.
         AUDIT.md §1.4 HIGH-2 — media.upload.video раньше не имел потолка на
-        общий объём вообще, только на размер одного файла)."""
+        общий объём вообще, только на размер одного файла).
+
+        Текущая аватарка исключена из суммы — см. ``media_count_for_owner``.
+        """
         assert self.pool is not None
         total = await self.pool.fetchval(
-            "SELECT coalesce(sum(size), 0) FROM system_media WHERE owner_id = $1",
+            "SELECT coalesce(sum(sm.size), 0) FROM system_media sm "
+            "JOIN accounts a ON a.id = $1 "
+            "WHERE sm.owner_id = $1 "
+            "AND (a.avatar_media_id IS NULL OR sm.id != a.avatar_media_id)",
             owner_id,
         )
         return int(total or 0)

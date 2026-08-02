@@ -167,6 +167,9 @@ async def set_avatar(
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, "avatar must be an image, not " + m.kind
             )
+        # Подтверждено в срок — снимаем дедлайн авто-удаления кандидата
+        # (см. BillingLoop._exec_media_expire / AUDIT.md §4).
+        await media.confirm(m)
 
     old_media_id = acc.avatar_media_id
     acc.avatar_media_id = body.media_id

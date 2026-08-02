@@ -242,6 +242,24 @@ SETTINGS: tuple[SettingDef, ...] = (
         desc="Суммарный объём хранимых медиа на аккаунт с media.upload.video "
         "(раньше такого потолка не было вообще — см. AUDIT.md §1.4 HIGH-2)",
     ),
+    SettingDef(
+        "media.avatar_attach_deadline_sec",
+        None,
+        type="int",
+        group="media",
+        desc="Сколько секунд ждать подтверждения загруженного кандидата "
+        "аватарки (PUT /me/avatar), прежде чем автоматически удалить его — "
+        "иначе брошенные попытки подбора фото навсегда съедают слот "
+        "user.media.limit (см. AUDIT.md §4)",
+    ),
+    SettingDef(
+        "media.auto_cleanup_interval_sec",
+        None,
+        type="int",
+        group="media",
+        desc="Как часто BillingLoop сам прогоняет очистку осиротевших медиа "
+        "(тот же orphans(), что и ручной POST /admin/media/cleanup)",
+    ),
     # Валюта инстанса и конвертация зачислений
     SettingDef(
         "billing.currency",

@@ -593,6 +593,9 @@ async def set_user_avatar(
         m = await media.by_id(body.media_id)
         if m is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
+        # Тот же порядок, что и в self-service /me/avatar: подтверждение
+        # снимает дедлайн авто-удаления кандидата (AUDIT.md §4).
+        await media.confirm(m)
 
     old_media_id = acc.avatar_media_id
     acc.avatar_media_id = body.media_id

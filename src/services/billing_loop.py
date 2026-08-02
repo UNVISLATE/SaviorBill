@@ -22,12 +22,14 @@ from dependencies.payment import PayMngr
 from dependencies.triggers import build_dispatcher
 from dependencies.usersvc import UserServicesMngr
 from enums import PayStatus, UsvcStatus
+from messaging.mediabus import MediaBus
 from models.service import ServiceModel
+from models.system_media import SystemMediaMngr
 from models.system_settings import SystemSettingsMngr
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel
-from services.account import lock_account
+from services.account import drop_media, lock_account
 from services.audit import audit
 from services.dlq import DeadLetters
 from services.fx import FxRates
@@ -43,6 +45,8 @@ log = logging.getLogger("saviorbill.billing")
 _SVC = "svc:"  # истечение услуги (ref = user_services.id)
 _PAY = "pay:"  # перепроверка платежа (ref = user_payments.id)
 _DLV = "dlv:"  # повтор выдачи услуги после ошибки (ref = user_services.id)
+_MED = "med:"  # дедлайн подтверждения кандидата медиа (ref = system_media.id)
+_MED_CLEANUP_INTERVAL_FALLBACK = 600
 
 _DELIVERY_MAX_ATTEMPTS = 3
 _DELIVERY_BACKOFF_SEC = 60
@@ -83,6 +87,8 @@ class BillingLoop:
         # Ограничитель параллелизма задач одной итерации (backpressure).
         self._sem = asyncio.Semaphore(cfg.BILLING_CONCURRENCY)
         self._dlq = DeadLetters(vk, cfg)
+        # Следующий момент автопрогона очистки осиротевших медиа (unix-время).
+        self._next_media_cleanup_at: float = 0.0
 
     # --- ресурсы -----------------------------------------------------------
     async def _bus(self, session: AsyncSession) -> LuaBus:
@@ -276,6 +282,7 @@ class BillingLoop:
         async with self.sm() as session:
             await self._refill(session)
             await self._seed_failed_deliveries(session)
+            await self._maybe_auto_cleanup_media(session)
         await self._dlq.refresh_metrics()
 
     async def _process_one(self, member: str) -> None:
@@ -313,6 +320,8 @@ class BillingLoop:
             await self._exec_pay_recheck(session, int(member[len(_PAY) :]))
         elif member.startswith(_DLV):
             await self._exec_delivery_retry(session, int(member[len(_DLV) :]))
+        elif member.startswith(_MED):
+            await self._exec_media_expire(session, int(member[len(_MED) :]))
         # неизвестный член — уже удалён claim'ом, делать нечего.
 
     async def _delivery_limits(self, session: AsyncSession) -> tuple[int, int]:
@@ -498,6 +507,69 @@ class BillingLoop:
         else:
             nxt = utc_now() + timedelta(seconds=self.cfg.BILLING_PAY_RECHECK_INTERVAL)
             await self.vk.zadd(self._qkey, {member: _score(nxt)})
+
+    # --- дедлайн подтверждения кандидата медиа (напр. tag=avatar) ----------
+    async def _exec_media_expire(self, session: AsyncSession, media_id: int) -> None:
+        """Удалить неподтверждённого кандидата медиа по истечении дедлайна.
+
+        Проставляется ``services/media_results.py`` при конвертации
+        ``tag=avatar``-загрузок; снимается при подтверждении (``PUT
+        /me/avatar`` — ``SystemMediaMngr.confirm()``). Если к моменту claim'а
+        медиа всё же стало чьей-то аватаркой (гонка между подтверждением и
+        протухшим таймером), просто снимаем дедлайн и ничего не удаляем.
+        """
+        mngr = SystemMediaMngr(session)
+        media = await mngr.by_id(media_id)
+        if media is None:
+            return
+        is_avatar = await session.scalar(
+            select(UserModel.id).where(UserModel.avatar_media_id == media_id).limit(1)
+        )
+        if is_avatar is not None:
+            await mngr.confirm(media)
+            return
+        bus = MediaBus(
+            self.vk,
+            self.cfg.MEDIA_TASK_STREAM,
+            self.cfg.MEDIA_TASK_STREAM_MAXLEN,
+            signing_key=self.cfg.BUS_SIGNING_KEY,
+        )
+        await drop_media(mngr, bus, media)
+        log.info("billing-loop: unconfirmed avatar candidate media=%s expired", media_id)
+
+    # --- автоматическая очистка осиротевших медиа ---------------------------
+    async def _maybe_auto_cleanup_media(self, session: AsyncSession) -> None:
+        """Периодически прогонять ту же чистку, что и ручной admin cleanup.
+
+        Раньше ``SystemMediaMngr.orphans()`` вызывался только вручную
+        (``POST /admin/media/cleanup``) — брошенные загрузки копились до тех
+        пор, пока администратор сам не нажмёт кнопку (см. AUDIT.md §4).
+        """
+        now = utc_now().timestamp()
+        if now < self._next_media_cleanup_at:
+            return
+        settings = SystemSettingsMngr(
+            session, self.vk, make_secbox(self.cfg), self.cfg.SETTINGS_CACHE_TTL
+        )
+        interval = await settings.get_int(
+            "media.auto_cleanup_interval_sec", _MED_CLEANUP_INTERVAL_FALLBACK
+        )
+        self._next_media_cleanup_at = now + (interval or _MED_CLEANUP_INTERVAL_FALLBACK)
+        grace = await settings.get_int("media.cleanup_grace_sec", 3600)
+        mngr = SystemMediaMngr(session)
+        orphans = await mngr.orphans(grace_sec=grace or 0)
+        if not orphans:
+            return
+        bus = MediaBus(
+            self.vk,
+            self.cfg.MEDIA_TASK_STREAM,
+            self.cfg.MEDIA_TASK_STREAM_MAXLEN,
+            signing_key=self.cfg.BUS_SIGNING_KEY,
+        )
+        for media in orphans:
+            await drop_media(mngr, bus, media)
+        await session.commit()
+        log.info("billing-loop: auto-cleanup deleted %d orphan media", len(orphans))
 
 
 __all__ = ["BillingLoop"]

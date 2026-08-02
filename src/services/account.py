@@ -106,8 +106,20 @@ async def release_old_avatar(
     await media.delete(old)
 
 
+async def drop_media(mngr: SystemMediaMngr, bus: MediaBus, media: SystemMediaModel) -> None:
+    """Удалить запись медиа и поставить задачу удаления ВСЕХ файлов из хранилища
+    (main + thumb + previews — иначе thumb/previews остаются мусором).
+
+    Общий хелпер для ручной (``admin/media.py::cleanup_media``) и
+    автоматической (``BillingLoop``) очистки осиротевших медиа.
+    """
+    await bus.enqueue_delete(media.backend, all_storage_keys(media))
+    await mngr.delete(media)
+
+
 __all__ = [
     "account_response",
+    "drop_media",
     "is_media_still_used",
     "lock_account",
     "release_old_avatar",

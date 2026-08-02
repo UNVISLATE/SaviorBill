@@ -16,10 +16,11 @@ from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
-from models.system_media import SystemMediaMngr, SystemMediaModel, all_storage_keys
+from models.system_media import SystemMediaMngr, SystemMediaModel
 from models.user import UserModel
 from schemas.media import Media
 from schemas.page import Page
+from services.account import drop_media
 from services.audit import audit
 from core.config import AppConfig
 from messaging.mediabus import MediaBus
@@ -82,13 +83,6 @@ async def list_media(
     return Page(items=items, total=total, limit=limit, offset=offset, has_more=has_more)
 
 
-async def _drop(mngr: SystemMediaMngr, bus: MediaBus, media: SystemMediaModel) -> None:
-    """Удалить запись медиа и поставить задачу удаления ВСЕХ файлов из хранилища
-    (main + thumb + previews — иначе thumb/previews остаются мусором)."""
-    await bus.enqueue_delete(media.backend, all_storage_keys(media))
-    await mngr.delete(media)
-
-
 @router.delete(
     "/{media_id}",
     status_code=status.HTTP_204_NO_CONTENT,
@@ -104,7 +98,7 @@ async def delete_media(
     media = await mngr.by_id(media_id)
     if media is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
-    await _drop(mngr, _bus(request, vk), media)
+    await drop_media(mngr, _bus(request, vk), media)
     await audit(
         mngr.s,
         action="media.delete",
@@ -170,7 +164,7 @@ async def cleanup_media(
     grace = await settings.get_int("media.cleanup_grace_sec", 3600)
     orphans = await mngr.orphans(grace_sec=grace or 0)
     for media in orphans:
-        await _drop(mngr, bus, media)
+        await drop_media(mngr, bus, media)
     await mngr.s.commit()
     return {"deleted": len(orphans)}
 

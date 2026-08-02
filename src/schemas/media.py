@@ -52,6 +52,12 @@ class Media(BaseModel):
     size: int | None = None
     owner_id: int | None = None
     created_at: datetime
+    expires_at: datetime | None = Field(
+        default=None,
+        description="Confirmation deadline for pending candidates (e.g. "
+        "tag=avatar not yet attached via PUT /me/avatar) — auto-deleted by "
+        "BillingLoop if it passes unconfirmed. Null for regular media.",
+    )
     media: MediaVariant | None = Field(default=None, description="Main file variant")
     thumb: MediaVariant | None = Field(
         default=None,
@@ -85,6 +91,7 @@ class Media(BaseModel):
             size=m.size,
             owner_id=m.owner_id,
             created_at=m.created_at,
+            expires_at=m.expires_at,
             media=variants.get("media"),
             thumb=variants.get("thumb"),
             previews=variants.get("previews") or [],

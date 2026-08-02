@@ -76,6 +76,12 @@ class SystemMediaModel(Base):
     meta: Mapped[dict] = mapped_column(
         JSON, default=dict, server_default="{}", nullable=False
     )
+    # Дедлайн подтверждения для неподтверждённых кандидатов (напр. tag=avatar,
+    # см. BillingLoop._exec_media_expire) — NULL для обычных медиа, не
+    # участвующих в этом механизме.
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class SystemMediaMngr:
@@ -130,6 +136,7 @@ class SystemMediaMngr:
         meta: dict | None = None,
         tag: str | None = None,
         content_hash: str | None = None,
+        expires_at: datetime | None = None,
     ) -> SystemMediaModel:
         media = SystemMediaModel(
             kind=kind,
@@ -143,6 +150,7 @@ class SystemMediaMngr:
             status=status,
             tag=tag,
             content_hash=content_hash,
+            expires_at=expires_at,
             **({"token": token} if token else {}),
         )
         self.s.add(media)
@@ -169,6 +177,7 @@ class SystemMediaMngr:
         status: str = "ready",
         tag: str | None = None,
         content_hash: str | None = None,
+        expires_at: datetime | None = None,
     ) -> SystemMediaModel:
         """Идемпотентно записать готовое медиа по ``token`` (insert или update).
 
@@ -190,6 +199,7 @@ class SystemMediaMngr:
                 meta=meta or {},
                 tag=tag,
                 content_hash=content_hash,
+                expires_at=expires_at,
             )
         media.kind = kind
         media.path = path
@@ -206,8 +216,16 @@ class SystemMediaMngr:
             media.tag = tag
         if content_hash is not None:
             media.content_hash = content_hash
+        if expires_at is not None:
+            media.expires_at = expires_at
         await self.s.flush()
         return media
+
+    async def confirm(self, media: SystemMediaModel) -> None:
+        """Снять дедлайн подтверждения (кандидат стал реальной аватаркой)."""
+        if media.expires_at is not None:
+            media.expires_at = None
+            await self.s.flush()
 
     async def set_tag(self, media: SystemMediaModel, tag: str | None) -> None:
         """Изменить метку медиа (админка/клиент) — не влияет на файл/конверсию."""

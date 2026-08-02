@@ -27,8 +27,16 @@ from utils.retry import attempts, clear_attempts
 from telemetry.otel import span_from_carrier
 from telemetry.metrics import bus_signature_rejected_total
 from security.sec.bus_sign import verify_fields
+from dependencies.sec import make_secbox
+from models.system_settings import SystemSettingsMngr
+from utils.datetime_utils import utc_now
+from datetime import timedelta
 
 log = logging.getLogger("saviorbill.media")
+
+# Тот же префикс, что и ``billing_loop._MED`` — общая ZSET-очередь биллинга,
+# один "словарь" префиксов на всю систему (см. billing_loop.py).
+_MED_PREFIX = "med:"
 
 
 class MediaResults:
@@ -175,9 +183,25 @@ class MediaResults:
                 variants = json.loads(data.get("variants") or "{}")
                 owner = data.get("owner_id")
                 meta = json.loads(data.get("meta") or "{}")
-                await mngr.upsert(
+                kind = data.get("kind", "image")
+                status_ = data.get("status", "ready")
+                tag = data.get("tag") or None
+                expires_at = None
+                if tag == "avatar" and kind == "image" and status_ == "ready":
+                    # Кандидат аватарки: не подтвердят через PUT /me/avatar в
+                    # течение дедлайна — авто-удалит BillingLoop (см.
+                    # AUDIT.md §4, слот квоты не должен вечно занимать
+                    # брошенную попытку подбора фото).
+                    settings = SystemSettingsMngr(
+                        session, self.vk, make_secbox(self.cfg), self.cfg.SETTINGS_CACHE_TTL
+                    )
+                    deadline = await settings.get_int(
+                        "media.avatar_attach_deadline_sec", 900
+                    )
+                    expires_at = utc_now() + timedelta(seconds=deadline or 900)
+                media_row = await mngr.upsert(
                     token=data["token"],
-                    kind=data.get("kind", "image"),
+                    kind=kind,
                     path=data["path"],
                     backend=data.get("backend", "fs"),
                     mime=data.get("mime") or None,
@@ -185,10 +209,16 @@ class MediaResults:
                     owner_id=int(owner) if owner else None,
                     variants=variants,
                     meta=meta or None,
-                    status=data.get("status", "ready"),
-                    tag=data.get("tag") or None,
+                    status=status_,
+                    tag=tag,
                     content_hash=data.get("content_hash") or None,
+                    expires_at=expires_at,
                 )
+                if expires_at is not None:
+                    await self.vk.zadd(
+                        self.cfg.BILLING_QUEUE_KEY,
+                        {f"{_MED_PREFIX}{media_row.id}": expires_at.timestamp()},
+                    )
             await session.commit()
         await clear_attempts(self.vk, key)
 
