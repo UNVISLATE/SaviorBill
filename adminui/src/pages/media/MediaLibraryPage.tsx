@@ -1,13 +1,14 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ImageOff, PlayCircle, Sparkles, Trash2 } from "lucide-react"
+import { ImageOff, PlayCircle, Sparkles, Trash2, Video } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { useDataTableQuery } from "@/hooks/use-data-table"
+import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
+import { MediaLightbox } from "@/components/profile/MediaLightbox"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
-import { Input } from "@/components/shadsnui/input"
 import {
   Select,
   SelectContent,
@@ -56,6 +57,12 @@ const STATUS_VARIANT: Record<string, "default" | "outline" | "destructive" | "se
   failed: "destructive",
 }
 
+const STATUS_LABEL: Record<string, string> = {
+  ready: "готово",
+  processing: "обработка",
+  failed: "ошибка",
+}
+
 function fmtBytes(n: number | null): string {
   if (n === null) return "—"
   if (n < 1024) return `${n} Б`
@@ -78,39 +85,17 @@ function errDetail(e: unknown): string | undefined {
   return undefined
 }
 
-function MediaCard({ m, canDelete, onDelete }: { m: MediaItem; canDelete: boolean; onDelete: () => void }) {
+function Thumb({ m }: { m: MediaItem }) {
+  const src = m.thumb?.url ?? (m.kind === "image" && m.status === "ready" ? m.url : null)
   return (
-    <div className="group relative overflow-hidden rounded-md border bg-muted">
-      <div className="flex aspect-square items-center justify-center">
-        {m.thumb?.url ? (
-          <img src={m.thumb.url} alt={m.tag ?? ""} className="size-full object-cover" />
-        ) : m.kind === "image" && m.status === "ready" ? (
-          <img src={m.url} alt={m.tag ?? ""} className="size-full object-cover" />
-        ) : m.kind === "video" ? (
-          <PlayCircle className="size-8 text-muted-foreground" />
-        ) : (
-          <ImageOff className="size-8 text-muted-foreground" />
-        )}
-      </div>
-      <div className="absolute inset-x-0 top-0 flex items-center justify-between gap-1 p-1">
-        <Badge variant={STATUS_VARIANT[m.status] ?? "outline"} className="text-[10px]">
-          {m.status}
-        </Badge>
-        {canDelete && (
-          <Button
-            variant="destructive"
-            size="icon"
-            className="size-6 opacity-0 transition-opacity group-hover:opacity-100"
-            onClick={onDelete}
-          >
-            <Trash2 className="size-3" />
-          </Button>
-        )}
-      </div>
-      <div className="space-y-0.5 p-1.5 text-[11px]">
-        <p className="truncate font-mono text-muted-foreground">{m.tag ?? `#${m.id}`}</p>
-        <p className="text-muted-foreground">{fmtBytes(m.size)}{m.owner_id ? ` · #${m.owner_id}` : ""}</p>
-      </div>
+    <div className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
+      {src ? (
+        <img src={src} alt="" className="size-full object-cover" />
+      ) : m.kind === "video" ? (
+        <PlayCircle className="size-4 text-muted-foreground" />
+      ) : (
+        <ImageOff className="size-4 text-muted-foreground" />
+      )}
     </div>
   )
 }
@@ -120,6 +105,7 @@ export function MediaLibraryPage() {
   const table = useDataTableQuery()
   const [kindFilter, setKindFilter] = useState<string>("all")
   const [cleanupOpen, setCleanupOpen] = useState(false)
+  const [previewIndex, setPreviewIndex] = useState<number | null>(null)
   const canDelete = can("media.delete")
   const canCleanup = can("media.cleanup")
   const qc = useQueryClient()
@@ -141,6 +127,7 @@ export function MediaLibraryPage() {
   })
 
   const items = (data?.items ?? []).filter((m) => kindFilter === "all" || m.kind === kindFilter)
+  const previewItem = previewIndex !== null ? items[previewIndex] : null
 
   const del = useMutation({
     mutationFn: async (id: number) => api.delete(`/v1/admin/media/${id}`),
@@ -162,6 +149,59 @@ export function MediaLibraryPage() {
     onError: (e: unknown) => toastError("Не удалось выполнить очистку", errDetail(e)),
   })
 
+  const columns: DataTableColumn<MediaItem>[] = [
+    {
+      header: "",
+      className: "w-14",
+      render: (m) => <Thumb m={m} />,
+    },
+    {
+      key: "tag",
+      header: "Тег / ID",
+      render: (m) => <span className="font-mono text-xs">{m.tag ?? `#${m.id}`}</span>,
+    },
+    {
+      key: "kind",
+      header: "Тип",
+      render: (m) => (m.kind === "video" ? "видео" : "изображение"),
+    },
+    {
+      key: "status",
+      header: "Статус",
+      render: (m) => <Badge variant={STATUS_VARIANT[m.status] ?? "outline"}>{STATUS_LABEL[m.status] ?? m.status}</Badge>,
+    },
+    { key: "size", header: "Размер", render: (m) => fmtBytes(m.size) },
+    {
+      header: "Владелец",
+      render: (m) => (m.owner_id ? <span className="font-mono text-xs">#{m.owner_id}</span> : "—"),
+    },
+    {
+      key: "created_at",
+      header: "Загружено",
+      render: (m) => new Date(m.created_at).toLocaleString(),
+    },
+    ...(canDelete
+      ? [
+          {
+            header: "",
+            render: (m: MediaItem) => (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  del.mutate(m.id)
+                }}
+              >
+                <Trash2 className="size-4" />
+              </Button>
+            ),
+          } satisfies DataTableColumn<MediaItem>,
+        ]
+      : []),
+  ]
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -173,61 +213,63 @@ export function MediaLibraryPage() {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <Input
-          value={table.searchInput}
-          onChange={(e) => table.setSearchInput(e.target.value)}
-          placeholder="Поиск по тегу/mime…"
-          className="max-w-xs"
-        />
-        <Select value={kindFilter} onValueChange={(v) => setKindFilter(v ?? "all")}>
-          <SelectTrigger className="w-40">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Все типы</SelectItem>
-            <SelectItem value="image">Изображения</SelectItem>
-            <SelectItem value="video">Видео</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      <DataTable
+        columns={columns}
+        data={items}
+        total={data?.total ?? 0}
+        isLoading={isLoading}
+        isError={isError}
+        getRowId={(m) => m.id}
+        onRowClick={(m) => setPreviewIndex(items.findIndex((i) => i.id === m.id))}
+        sort={table.sort}
+        onToggleSort={table.toggleSort}
+        searchValue={table.searchInput}
+        onSearchChange={table.setSearchInput}
+        searchPlaceholder="Поиск по тегу/mime…"
+        emptyMessage="Ничего не найдено"
+        emptyHint={table.search ? "Попробуйте изменить запрос." : "Здесь появятся загруженные файлы."}
+        limit={table.limit}
+        offset={table.offset}
+        hasMore={data?.has_more ?? false}
+        onLimitChange={table.changeLimit}
+        onOffsetChange={table.setOffset}
+        toolbarExtra={
+          <Select value={kindFilter} onValueChange={(v) => setKindFilter(v ?? "all")}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Все типы</SelectItem>
+              <SelectItem value="image">Изображения</SelectItem>
+              <SelectItem value="video">Видео</SelectItem>
+            </SelectContent>
+          </Select>
+        }
+      />
 
-      {isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
-      {isError && <p className="text-sm text-destructive">Не удалось загрузить медиатеку.</p>}
-      {!isLoading && !isError && items.length === 0 && (
-        <p className="py-10 text-center text-sm text-muted-foreground">Ничего не найдено.</p>
+      {previewItem && (
+        <MediaLightbox
+          onClose={() => setPreviewIndex(null)}
+          onPrev={items.length > 1 ? () => setPreviewIndex((i) => ((i ?? 0) - 1 + items.length) % items.length) : undefined}
+          onNext={items.length > 1 ? () => setPreviewIndex((i) => ((i ?? 0) + 1) % items.length) : undefined}
+          caption={
+            <>
+              {STATUS_LABEL[previewItem.status] ?? previewItem.status} · {fmtBytes(previewItem.size)} ·{" "}
+              {previewItem.mime ?? "—"} · загружено {new Date(previewItem.created_at).toLocaleString()}
+            </>
+          }
+        >
+          {previewItem.kind === "image" && previewItem.status === "ready" ? (
+            <img src={previewItem.url} alt="" className="max-h-[75vh] max-w-full object-contain" />
+          ) : previewItem.kind === "video" && previewItem.status === "ready" ? (
+            <video src={previewItem.url} controls autoPlay className="max-h-[75vh] max-w-full" />
+          ) : (
+            <div className="flex h-64 w-64 items-center justify-center bg-muted text-muted-foreground">
+              <Video className="size-8" />
+            </div>
+          )}
+        </MediaLightbox>
       )}
-      {!isLoading && items.length > 0 && (
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-8">
-          {items.map((m) => (
-            <MediaCard key={m.id} m={m} canDelete={canDelete} onDelete={() => del.mutate(m.id)} />
-          ))}
-        </div>
-      )}
-
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          {data?.total ?? 0} всего · показано {items.length}
-        </span>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={table.offset === 0}
-            onClick={() => table.setOffset(Math.max(0, table.offset - table.limit))}
-          >
-            Назад
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!data?.has_more}
-            onClick={() => table.setOffset(table.offset + table.limit)}
-          >
-            Далее
-          </Button>
-        </div>
-      </div>
 
       <AlertDialog open={cleanupOpen} onOpenChange={setCleanupOpen}>
         <AlertDialogContent>
