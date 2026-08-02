@@ -53,7 +53,7 @@ export function SystemTasks() {
         <div>
           <h2 className="text-lg font-semibold">Задачи</h2>
           <p className="text-sm text-muted-foreground">
-            Последние {data?.length ?? 0} фактов из журнала фоновых тасков (кольцевой буфер в Valkey).
+            Последние {data?.length ?? 0} событий фоновых задач.
           </p>
         </div>
         <Select value={service} onValueChange={(v) => setService(v as "media" | "lua")}>

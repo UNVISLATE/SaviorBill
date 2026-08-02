@@ -218,6 +218,8 @@ function GroupTable({ group, onBack }: { group: string; onBack: () => void }) {
         searchValue={table.searchInput}
         onSearchChange={table.setSearchInput}
         searchPlaceholder="Поиск по ключу…"
+        emptyMessage="Настроек нет"
+        emptyHint="В этой группе пока не задано ни одного ключа."
         limit={table.limit}
         offset={table.offset}
         hasMore={data?.has_more ?? false}
@@ -417,11 +419,10 @@ export function RawSettingsEditor() {
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Raw-редактирование настроек</h2>
+          <h2 className="text-lg font-semibold">Raw-настройки</h2>
           <p className="text-sm text-muted-foreground">
-            Прямой доступ к таблице settings (key-value), сгруппированный по префиксам.
-            Секретные и системные ключи скрыты от редактирования — ими управляют
-            профильные разделы админки.
+            Прямой доступ к таблице settings. Секретные и системные ключи
+            только для чтения.
           </p>
         </div>
         {!openGroup && (

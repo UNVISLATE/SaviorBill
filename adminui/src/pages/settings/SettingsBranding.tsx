@@ -1,193 +1,259 @@
 import { useRef, useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Loader2, UploadCloud } from "lucide-react"
+import { useMutation, useQueryClient } from "@tanstack/react-query"
+import { ImageOff, Loader2, Trash2, Upload } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { uploadOwnMedia } from "@/api/media-upload.ts"
 import { toastError, toastSuccess } from "@/lib/toast"
+import { cn } from "@/lib/utils"
+import { useSettingsMap } from "@/hooks/use-settings-map"
 import { Button } from "@/components/shadsnui/button"
-import { Field, FieldDescription, FieldLabel } from "@/components/shadsnui/field"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/shadsnui/card"
 import { Input } from "@/components/shadsnui/input"
-import { Separator } from "@/components/shadsnui/separator"
+import { Label } from "@/components/shadsnui/label"
 import { Skeleton } from "@/components/shadsnui/skeleton"
 
-interface SettingRawOut {
-  key: string
-  value: string | null
-}
+type Scope = "admin" | "client"
+type Asset = "logo" | "favicon"
 
-interface Page<T> {
-  items: T[]
-}
-
-function mediaUrl(token: string | null | undefined): string | null {
+function mediaUrl(token: string | undefined | null): string | null {
   return token ? `/api/media/${token}` : null
 }
 
-/** Загрузка+привязка логотипа/favicon одного scope ("admin"|"client"). */
-function ImagePicker({
+/** Загрузка изображения и запись его токена в `ui.{scope}.{asset}`. */
+function AssetSlot({
   scope,
-  field,
+  asset,
   label,
-  currentToken,
-  onUploaded,
+  note,
+  token,
+  onDone,
 }: {
-  scope: "admin" | "client"
-  field: "logo" | "favicon"
+  scope: Scope
+  asset: Asset
   label: string
-  currentToken: string | null | undefined
-  onUploaded: () => void
+  note: string
+  token: string
+  onDone: () => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
 
+  const write = useMutation({
+    mutationFn: async (value: string) =>
+      api.post(`/v1/admin/settings/ui/${scope}.${asset}`, { value }),
+    onSuccess: () => {
+      toastSuccess(`${label} обновлён`)
+      setPreview(null)
+      onDone()
+    },
+    onError: () => toastError(`Не удалось сохранить ${label.toLowerCase()}`),
+  })
+
   const upload = useMutation({
     mutationFn: async (file: File) => {
-      const { token } = await uploadOwnMedia(file, { tag: `${scope}-${field}` })
-      await api.post(`/v1/admin/settings/ui/${scope}.${field}`, { value: token })
-      return token
+      // tag — метка для админки; сервер требует до 16 символов, только
+      // латиница и цифры (никаких дефисов, см. mediaworker _TAG_RE).
+      const { token: uploaded } = await uploadOwnMedia(file, { tag: `${scope}${asset}` })
+      await api.post(`/v1/admin/settings/ui/${scope}.${asset}`, { value: uploaded })
     },
     onSuccess: () => {
       toastSuccess(`${label} обновлён`)
       setPreview(null)
-      onUploaded()
+      onDone()
     },
-    onError: (err: unknown) =>
+    onError: (err: unknown) => {
+      setPreview(null)
       toastError(
         `Не удалось загрузить ${label.toLowerCase()}`,
         err instanceof Error ? err.message : undefined,
-      ),
+      )
+    },
   })
 
-  function pick(file: File | undefined) {
-    if (!file) return
-    setPreview(URL.createObjectURL(file))
-    upload.mutate(file)
-  }
-
-  const shownUrl = preview ?? mediaUrl(currentToken)
+  const busy = upload.isPending || write.isPending
+  const shown = preview ?? mediaUrl(token)
 
   return (
-    <Field>
-      <FieldLabel>{label}</FieldLabel>
-      <div className="flex items-center gap-3">
-        <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/40">
-          {shownUrl ? (
-            <img src={shownUrl} alt="" className="size-full object-contain" />
-          ) : (
-            <UploadCloud className="size-5 text-muted-foreground" />
-          )}
-        </div>
-        <div className="flex flex-col gap-1">
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={upload.isPending}
-            onClick={() => inputRef.current?.click()}
-          >
-            {upload.isPending && <Loader2 className="size-4 animate-spin" />}
-            Загрузить файл
-          </Button>
-          <FieldDescription>PNG/WebP, без обрезки — целиком, без кропа.</FieldDescription>
-        </div>
-        <input
-          ref={inputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => {
-            pick(e.target.files?.[0])
-            e.target.value = ""
-          }}
-        />
+    <div className="flex items-center gap-4">
+      <div
+        className={cn(
+          "flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/30",
+          busy && "opacity-50",
+        )}
+      >
+        {shown ? (
+          <img src={shown} alt="" className="size-full object-contain" />
+        ) : (
+          <ImageOff className="size-5 text-muted-foreground/60" />
+        )}
       </div>
-    </Field>
+
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium">{label}</p>
+        <p className="text-xs text-muted-foreground">{note}</p>
+      </div>
+
+      <div className="flex shrink-0 gap-1">
+        <Button size="sm" variant="outline" disabled={busy} onClick={() => inputRef.current?.click()}>
+          {busy ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+          {token ? "Заменить" : "Загрузить"}
+        </Button>
+        {token && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8 text-muted-foreground hover:text-destructive"
+            disabled={busy}
+            onClick={() => write.mutate("")}
+            title="Сбросить к значению по умолчанию"
+          >
+            <Trash2 className="size-4" />
+          </Button>
+        )}
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0]
+          if (file) {
+            setPreview(URL.createObjectURL(file))
+            upload.mutate(file)
+          }
+          e.target.value = ""
+        }}
+      />
+    </div>
   )
 }
 
-function ScopeSection({ scope, title }: { scope: "admin" | "client"; title: string }) {
+function ScopeCard({
+  scope,
+  title,
+  description,
+}: {
+  scope: Scope
+  title: string
+  description: string
+}) {
   const qc = useQueryClient()
-  const { data, isLoading } = useQuery({
-    queryKey: ["admin-settings-ui", scope],
-    queryFn: async () =>
-      (
-        await api.get<Page<SettingRawOut>>("/v1/admin/settings/raw", {
-          params: { group: "ui", limit: 100, q: `ui.${scope}.` },
-        })
-      ).data.items,
-  })
+  const { map, isLoading } = useSettingsMap()
+  const savedName = map.get(`ui.${scope}.name`) ?? ""
   const [name, setName] = useState<string | null>(null)
+  const currentName = name ?? savedName
+  const dirty = currentName !== savedName
 
-  const byKey = (suffix: string) => data?.find((r) => r.key === `ui.${scope}.${suffix}`)?.value ?? null
-
-  const currentName = name ?? byKey("name") ?? ""
+  function refresh() {
+    void qc.invalidateQueries({ queryKey: ["admin-settings-all"] })
+    void qc.invalidateQueries({ queryKey: ["branding-admin"] })
+  }
 
   const saveName = useMutation({
     mutationFn: async () => api.post(`/v1/admin/settings/ui/${scope}.name`, { value: currentName }),
     onSuccess: () => {
       toastSuccess("Название сохранено")
-      void qc.invalidateQueries({ queryKey: ["admin-settings-ui", scope] })
+      setName(null)
+      refresh()
     },
     onError: () => toastError("Не удалось сохранить название"),
   })
 
-  function refresh() {
-    void qc.invalidateQueries({ queryKey: ["admin-settings-ui", scope] })
-  }
-
   if (isLoading) {
     return (
-      <section className="space-y-4">
-        <h3 className="text-sm font-semibold">{title}</h3>
-        <Skeleton className="h-24 w-full" />
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Skeleton className="h-9 w-full" />
+          <Skeleton className="h-14 w-full" />
+        </CardContent>
+      </Card>
     )
   }
 
   return (
-    <section className="space-y-4">
-      <h3 className="text-sm font-semibold">{title}</h3>
-      <Field>
-        <FieldLabel>Название</FieldLabel>
-        <div className="flex gap-2">
-          <Input value={currentName} onChange={(e) => setName(e.target.value)} />
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={saveName.isPending || currentName === (byKey("name") ?? "")}
-            onClick={() => saveName.mutate()}
-          >
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="flex items-center justify-between gap-6">
+          <Label htmlFor={`name-${scope}`} className="font-normal">
+            Название
+          </Label>
+          <Input
+            id={`name-${scope}`}
+            value={currentName}
+            onChange={(e) => setName(e.target.value)}
+            className="max-w-56"
+          />
+        </div>
+
+        <div className="space-y-4 border-t pt-4">
+          <AssetSlot
+            scope={scope}
+            asset="logo"
+            label="Логотип"
+            note="Показывается в шапке. PNG или WebP, отображается целиком без обрезки."
+            token={map.get(`ui.${scope}.logo`) ?? ""}
+            onDone={refresh}
+          />
+          <AssetSlot
+            scope={scope}
+            asset="favicon"
+            label="Favicon"
+            note="Иконка вкладки браузера. Квадратный PNG, лучше 32×32 или 64×64."
+            token={map.get(`ui.${scope}.favicon`) ?? ""}
+            onDone={refresh}
+          />
+        </div>
+      </CardContent>
+      {dirty && (
+        <CardFooter className="justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setName(null)} disabled={saveName.isPending}>
+            Отменить
+          </Button>
+          <Button size="sm" onClick={() => saveName.mutate()} disabled={saveName.isPending}>
+            {saveName.isPending && <Loader2 className="size-4 animate-spin" />}
             Сохранить
           </Button>
-        </div>
-      </Field>
-      <div className="grid gap-4 sm:grid-cols-2">
-        <ImagePicker scope={scope} field="logo" label="Логотип" currentToken={byKey("logo")} onUploaded={refresh} />
-        <ImagePicker scope={scope} field="favicon" label="Favicon" currentToken={byKey("favicon")} onUploaded={refresh} />
-      </div>
-    </section>
+        </CardFooter>
+      )}
+    </Card>
   )
 }
 
 /**
- * Брендирование admin-панели и клиентского приложения — раньше это была
- * пара строк, которые приходилось находить и редактировать в Raw settings
- * вручную (см. PLAN.md). Здесь же — то, чего до этой страницы не было
- * вообще: сама admin-панель теперь ЧИТАЕТ эти настройки (см.
- * `hooks/use-branding.ts`, `App.tsx`) — раньше `ui.admin.*` можно было
- * поменять через API, но интерфейс всё равно продолжал показывать
- * захардкоженные "SaviorBill Admin"/статичный логотип.
+ * Брендирование admin-панели и клиентского приложения. Логотип/favicon
+ * загружаются через обычный медиа-конвейер, в настройку пишется токен —
+ * знать его и вводить руками, как раньше через Raw settings, больше не нужно.
  */
 export function SettingsBranding() {
   return (
-    <div className="max-w-2xl space-y-8">
-      <p className="text-sm text-muted-foreground">
-        Изменения вступают в силу в открытых вкладках в течение минуты
-        (кэш браузера/ETag) — обычно достаточно обновить страницу.
-      </p>
-      <ScopeSection scope="admin" title="Admin-панель" />
-      <Separator />
-      <ScopeSection scope="client" title="Клиентское приложение" />
+    <div className="max-w-3xl space-y-4">
+      <ScopeCard
+        scope="admin"
+        title="Admin-панель"
+        description="Название и иконки этой панели — применяются к шапке, экрану входа и вкладке браузера."
+      />
+      <ScopeCard
+        scope="client"
+        title="Клиентское приложение"
+        description="То же для витрины: клиент читает эти значения через публичный эндпоинт брендинга."
+      />
     </div>
   )
 }

@@ -12,10 +12,12 @@ import { LuaScriptsPage } from "@/pages/lua/LuaScriptsPage"
 import { ProtectedRoute } from "@/routes/ProtectedRoute"
 import { ProfileDialogProvider } from "@/hooks/use-profile-dialog"
 import { ProfileDialogHost } from "@/components/profile/ProfileDialogHost"
+import { TooltipProvider } from "@/components/shadsnui/tooltip"
 import { Toaster } from "@/components/shadsnui/sonner"
 
 export function App() {
   return (
+    <TooltipProvider>
     <ProfileDialogProvider>
       <BrandingHead />
       <BrowserRouter>
@@ -37,6 +39,7 @@ export function App() {
       <ProfileDialogHost />
       <Toaster position="top-center" />
     </ProfileDialogProvider>
+    </TooltipProvider>
   )
 }
 

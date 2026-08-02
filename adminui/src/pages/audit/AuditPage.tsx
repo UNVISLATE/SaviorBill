@@ -114,6 +114,8 @@ export function AuditPage() {
         searchValue={table.searchInput}
         onSearchChange={table.setSearchInput}
         searchPlaceholder="Поиск по действию/цели…"
+        emptyMessage="Записей нет"
+        emptyHint={table.search ? "Попробуйте изменить запрос." : "Действия администраторов появятся здесь."}
         limit={table.limit}
         offset={table.offset}
         hasMore={data?.has_more ?? false}

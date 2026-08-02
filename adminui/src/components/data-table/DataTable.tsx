@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { ArrowDown, ArrowUp, ArrowUpDown, Search } from "lucide-react"
+import { ArrowDown, ArrowUp, ArrowUpDown, Search, SearchX } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import {
@@ -60,6 +60,8 @@ export interface DataTableProps<T> {
 
   toolbarExtra?: ReactNode
   emptyMessage?: string
+  /** Подсказка под заголовком пустого состояния (что сделать дальше). */
+  emptyHint?: ReactNode
 }
 
 /** Общая таблица со серверной сортировкой/поиском/пагинацией + выбором строк
@@ -88,6 +90,7 @@ export function DataTable<T>({
   onSelectedChange,
   toolbarExtra,
   emptyMessage = "Ничего не найдено.",
+  emptyHint,
 }: DataTableProps<T>) {
   const allIds = data.map(getRowId)
   const allSelected = selectable && data.length > 0 && allIds.every((id) => selected?.has(id))
@@ -192,12 +195,18 @@ export function DataTable<T>({
               </TableRow>
             )}
             {!isLoading && !isError && data.length === 0 && (
-              <TableRow>
+              <TableRow className="hover:bg-transparent">
                 <TableCell
                   colSpan={columns.length + (selectable ? 1 : 0)}
-                  className="py-8 text-center text-sm text-muted-foreground"
+                  className="py-12 text-center"
                 >
-                  {emptyMessage}
+                  <div className="flex flex-col items-center gap-1.5">
+                    <SearchX className="size-8 text-muted-foreground/40" />
+                    <p className="text-sm font-medium">{emptyMessage}</p>
+                    {emptyHint && (
+                      <p className="text-sm text-muted-foreground">{emptyHint}</p>
+                    )}
+                  </div>
                 </TableCell>
               </TableRow>
             )}

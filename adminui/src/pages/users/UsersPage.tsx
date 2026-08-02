@@ -10,6 +10,12 @@ import { DataTable, type DataTableColumn } from "@/components/data-table/DataTab
 import { ChartCard } from "@/components/charts/ChartCard"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+} from "@/components/shadsnui/card"
 import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
 import {
@@ -91,13 +97,33 @@ const PERIODS = [
   { value: "90", label: "90 дней", statKey: "registered_90d" },
 ] as const
 
-/** Карточка "всего пользователей" — просто число. */
-function TotalUsersCard({ total }: { total: number | undefined }) {
+/** Компактная карточка-метрика: значение крупно + динамика бейджем. */
+function StatCard({
+  label,
+  value,
+  delta,
+  deltaLabel,
+}: {
+  label: string
+  value: number | string | undefined
+  delta?: number
+  deltaLabel?: string
+}) {
   return (
-    <div className="rounded-lg border bg-card p-4">
-      <div className="text-xs text-muted-foreground">Пользователи всего</div>
-      <div className="text-2xl font-semibold">{total ?? "—"}</div>
-    </div>
+    <Card size="sm" className="justify-between">
+      <CardHeader>
+        <CardDescription>{label}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex items-baseline gap-2">
+        <span className="text-2xl font-semibold tabular-nums">{value ?? "—"}</span>
+        {delta !== undefined && delta > 0 && (
+          <Badge variant="outline" className="text-emerald-500">
+            +{delta}
+            {deltaLabel && <span className="ml-1 font-normal text-muted-foreground">{deltaLabel}</span>}
+          </Badge>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -414,7 +440,15 @@ export function UsersPage() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-[minmax(160px,220px)_1fr]">
-        <TotalUsersCard total={stats?.total} />
+        <div className="grid gap-3">
+          <StatCard
+            label="Всего пользователей"
+            value={stats?.total}
+            delta={stats?.registered_7d}
+            deltaLabel="за неделю"
+          />
+          <StatCard label="Сегодня" value={stats?.registered_1d} />
+        </div>
         <RegistrationsCard stats={stats} />
       </div>
 
@@ -431,6 +465,8 @@ export function UsersPage() {
         searchValue={table.searchInput}
         onSearchChange={table.setSearchInput}
         searchPlaceholder="Поиск по логину/email…"
+        emptyMessage="Пользователи не найдены"
+        emptyHint={table.search ? "Попробуйте изменить запрос." : "Здесь появятся зарегистрированные аккаунты."}
         limit={table.limit}
         offset={table.offset}
         hasMore={data?.has_more ?? false}

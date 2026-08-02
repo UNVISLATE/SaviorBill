@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { RotateCcw, Trash2 } from "lucide-react"
+import { CheckCircle2, RotateCcw, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
@@ -84,10 +84,9 @@ export function SystemDlq() {
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
         <div>
-          <h2 className="text-lg font-semibold">Мёртвые очереди (DLQ)</h2>
+          <h2 className="text-lg font-semibold">Мёртвые очереди</h2>
           <p className="text-sm text-muted-foreground">
-            Задачи, исчерпавшие попытки исполнения — без ручного разбора
-            остаются потерянными навсегда.
+            Задачи, исчерпавшие попытки. Без разбора теряются навсегда.
           </p>
         </div>
         <Select value={queue} onValueChange={(v) => v && setQueue(v)}>
@@ -132,8 +131,14 @@ export function SystemDlq() {
             )}
             {!isLoading && (current?.items.length ?? 0) === 0 && (
               <TableRow>
-                <TableCell colSpan={canRetry ? 3 : 2} className="py-8 text-center text-sm text-muted-foreground">
-                  Пусто — мёртвых задач в этой очереди нет.
+                <TableCell colSpan={canRetry ? 3 : 2} className="py-12 text-center">
+                  <div className="flex flex-col items-center gap-1.5">
+                    <CheckCircle2 className="size-8 text-emerald-500/50" />
+                    <p className="text-sm font-medium">Очередь пуста</p>
+                    <p className="text-sm text-muted-foreground">
+                      Проваленных задач нет.
+                    </p>
+                  </div>
                 </TableCell>
               </TableRow>
             )}

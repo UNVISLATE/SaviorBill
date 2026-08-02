@@ -327,8 +327,7 @@ export function LuaEditor({
         </Button>
       </div>
       <p className="text-xs text-muted-foreground">
-        История версий на сервере — дедуп по содержимому (сохранение без
-        правок не плодит новых версий).
+        Сохранение без правок не создаёт новую версию.
       </p>
       <div className="flex-1 space-y-1.5 overflow-y-auto pr-1">
         {!versions && (
