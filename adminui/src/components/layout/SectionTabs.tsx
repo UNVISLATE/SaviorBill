@@ -70,7 +70,6 @@ export function SectionTabs({
             }
           >
             {item.icon}
-            <span>{item.title}</span>
           </NavLink>
         ))}
       </nav>
