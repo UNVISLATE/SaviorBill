@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import * as monaco from "monaco-editor"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { History } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { ensureMonacoWorkers } from "@/lib/monaco-setup"
@@ -11,6 +12,12 @@ import { Textarea } from "@/components/shadsnui/textarea"
 import { Badge } from "@/components/shadsnui/badge"
 import { Separator } from "@/components/shadsnui/separator"
 import { Skeleton } from "@/components/shadsnui/skeleton"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/shadsnui/sheet"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -105,6 +112,7 @@ export function LuaEditor({
     logs: unknown[]
     error?: string | null
   } | null>(null)
+  const [versionsSheetOpen, setVersionsSheetOpen] = useState(false)
 
   const { data: versions } = useQuery({
     queryKey: ["admin-lua-versions", scriptId],
@@ -144,11 +152,6 @@ export function LuaEditor({
 
     const sub = editor.onDidChangeModelContent(() => {
       setDirty(editor.getValue() !== initialCode)
-    })
-
-    // Ctrl+S — сохранить (та же логика, что и кнопка).
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      saveRef.current?.()
     })
 
     return () => {
@@ -223,15 +226,22 @@ export function LuaEditor({
     },
   })
 
-  // Ref нужен, чтобы Ctrl+S-команда (зарегистрированная один раз в
-  // маунт-эффекте) всегда видела актуальную функцию сохранения, а не ту, что
-  // была на момент создания редактора.
-  const saveRef = useRef<() => void>(() => {})
+  // Ctrl+S — сохранить (та же логика, что и кнопка). Отдельный эффект с
+  // актуальными canEdit/dirty/save в зависимостях (переустанавливается при
+  // их смене) — без ref-хака "последний коллбэк": мутация ref вне
+  // рендера/эффекта создания редактора запрещена линтером проекта (см.
+  // react-hooks/immutability).
   useEffect(() => {
-    saveRef.current = () => {
-      if (canEdit && dirty && !save.isPending) save.mutate()
-    }
-  }, [canEdit, dirty, save])
+    const editor = editorRef.current
+    if (!editor) return
+    const sub = editor.onKeyDown((e) => {
+      if ((e.ctrlKey || e.metaKey) && e.keyCode === monaco.KeyCode.KeyS) {
+        e.preventDefault()
+        if (canEdit && dirty && !save.isPending) save.mutate()
+      }
+    })
+    return () => sub.dispose()
+  }, [canEdit, dirty, save, ready])
 
   const activate = useMutation({
     mutationFn: async (version: number) =>
@@ -308,8 +318,78 @@ export function LuaEditor({
     void qc.invalidateQueries({ queryKey: ["admin-lua-versions", scriptId] })
   }, [qc, scriptId])
 
+  const versionsList = (
+    <>
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Версии</h3>
+        <Button size="sm" variant="ghost" onClick={refreshVersions}>
+          Обновить
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        История версий на сервере — дедуп по содержимому (сохранение без
+        правок не плодит новых версий).
+      </p>
+      <div className="flex-1 space-y-1.5 overflow-y-auto pr-1">
+        {!versions && (
+          <div className="space-y-1.5">
+            <Skeleton className="h-16 w-full" />
+            <Skeleton className="h-16 w-full" />
+          </div>
+        )}
+        {versions?.length === 0 && (
+          <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">
+            Пока нет сохранённых версий
+          </p>
+        )}
+        {versions?.map((v) => (
+          <div key={v.version} className="space-y-1.5 rounded-md border p-2.5 text-sm">
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium">
+                №{v.version}
+                {v.version === currentVersion && (
+                  <Badge variant="secondary" className="ml-1.5 text-[10px]">активна</Badge>
+                )}
+              </span>
+              <span className="text-xs text-muted-foreground">{formatDateTime(v.created_at)}</span>
+            </div>
+            {v.commit_message && (
+              <p className="line-clamp-2 text-xs text-muted-foreground">{v.commit_message}</p>
+            )}
+            <div className="flex gap-1.5">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 flex-1 px-2 text-xs"
+                onClick={() => {
+                  setDiffAgainst(v.version)
+                  setVersionsSheetOpen(false)
+                }}
+              >
+                Diff
+              </Button>
+              {canEdit && v.version !== currentVersion && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 flex-1 px-2 text-xs"
+                  onClick={() => {
+                    setActivateTarget(v.version)
+                    setVersionsSheetOpen(false)
+                  }}
+                >
+                  Активировать
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  )
+
   return (
-    <div className="flex h-full min-h-0 gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-4 md:flex-row">
       <div className="flex min-w-0 flex-1 flex-col gap-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
@@ -337,6 +417,14 @@ export function LuaEditor({
                 Закрыть diff
               </Button>
             )}
+            <Button
+              size="sm"
+              variant="outline"
+              className="md:hidden"
+              onClick={() => setVersionsSheetOpen(true)}
+            >
+              <History className="size-4" /> Версии
+            </Button>
           </div>
         </div>
 
@@ -416,69 +504,27 @@ export function LuaEditor({
         )}
       </div>
 
-      <Separator orientation="vertical" className="h-full" />
+      <Separator orientation="vertical" className="hidden h-full md:block" />
 
-      <div className="flex w-72 shrink-0 flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Версии</h3>
-          <Button size="sm" variant="ghost" onClick={refreshVersions}>
-            Обновить
-          </Button>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          История версий на сервере — дедуп по содержимому (сохранение без
-          правок не плодит новых версий).
-        </p>
-        <div className="flex-1 space-y-1.5 overflow-y-auto pr-1">
-          {!versions && (
-            <div className="space-y-1.5">
-              <Skeleton className="h-16 w-full" />
-              <Skeleton className="h-16 w-full" />
-            </div>
-          )}
-          {versions?.length === 0 && (
-            <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">
-              Пока нет сохранённых версий
-            </p>
-          )}
-          {versions?.map((v) => (
-            <div key={v.version} className="space-y-1.5 rounded-md border p-2.5 text-sm">
-              <div className="flex items-center justify-between gap-2">
-                <span className="font-medium">
-                  №{v.version}
-                  {v.version === currentVersion && (
-                    <Badge variant="secondary" className="ml-1.5 text-[10px]">активна</Badge>
-                  )}
-                </span>
-                <span className="text-xs text-muted-foreground">{formatDateTime(v.created_at)}</span>
-              </div>
-              {v.commit_message && (
-                <p className="line-clamp-2 text-xs text-muted-foreground">{v.commit_message}</p>
-              )}
-              <div className="flex gap-1.5">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 flex-1 px-2 text-xs"
-                  onClick={() => setDiffAgainst(v.version)}
-                >
-                  Diff
-                </Button>
-                {canEdit && v.version !== currentVersion && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 flex-1 px-2 text-xs"
-                    onClick={() => setActivateTarget(v.version)}
-                  >
-                    Активировать
-                  </Button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+      {/* Десктоп — постоянная колонка справа. */}
+      <div className="hidden w-72 shrink-0 flex-col gap-2 md:flex">
+        {versionsList}
       </div>
+
+      {/* Мобильный — та же панель, но во всплывающей шторке по кнопке
+          "Версии" в тулбаре (см. PLAN.md Ф6: три resizable-панели на
+          десктопе, Sheet на мобильном — здесь панель одна, но принцип тот же:
+          не занимать драгоценную ширину экрана постоянно). */}
+      <Sheet open={versionsSheetOpen} onOpenChange={setVersionsSheetOpen}>
+        <SheetContent side="right" className="w-[85vw] max-w-sm">
+          <SheetHeader>
+            <SheetTitle>Версии</SheetTitle>
+          </SheetHeader>
+          <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-4 pb-4">
+            {versionsList}
+          </div>
+        </SheetContent>
+      </Sheet>
 
       <AlertDialog open={activateTarget !== null} onOpenChange={(v) => !v && setActivateTarget(null)}>
         <AlertDialogContent>

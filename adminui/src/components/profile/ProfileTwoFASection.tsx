@@ -58,15 +58,13 @@ export function ProfileTwoFASection() {
     onSuccess: (data) => {
       setSetup(data)
       setConfirmCode("")
+      setQrDataUrl(null)
     },
     onError: () => toastError("Не удалось начать настройку 2FA"),
   })
 
   useEffect(() => {
-    if (!setup) {
-      setQrDataUrl(null)
-      return
-    }
+    if (!setup) return
     let cancelled = false
     QRCode.toDataURL(setup.otpauth_url, { width: 220, margin: 1 })
       .then((url) => {

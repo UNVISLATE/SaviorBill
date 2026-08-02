@@ -27,6 +27,7 @@ export function App() {
               <Route path="/system/*" element={<SystemPage />} />
               <Route path="/settings/*" element={<SettingsPage />} />
               <Route path="/lua" element={<LuaScriptsPage />} />
+              <Route path="/lua/:scriptId" element={<LuaScriptsPage />} />
             </Route>
           </Route>
         </Routes>
