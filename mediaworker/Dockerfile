@@ -45,6 +45,13 @@ FROM base AS runtime
 
 COPY --from=tests /app/.tests-passed /app/.tests-passed
 
+# gosu — уронить привилегии после chown volume'а data/ (см. entrypoint.sh).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r -g 10001 app && useradd -r -u 10001 -g app app \
+    && chown -R app:app /app
+
 ENV VALKEY_HOST=valkey \
     VALKEY_PORT=6379 \
     VALKEY_DB=0 \
@@ -58,5 +65,6 @@ ENV VALKEY_HOST=valkey \
 
 EXPOSE 8080
 
-# host/port берутся из конфигурации (Config.HOST/PORT) через сам app.py.
-CMD ["python", "src/app.py"]
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+ENTRYPOINT ["/app/entrypoint.sh"]

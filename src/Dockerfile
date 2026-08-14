@@ -45,6 +45,16 @@ FROM base AS runtime
 
 COPY --from=tests /app/.unit-tests-passed /app/.unit-tests-passed
 
+# gosu — уронить привилегии до непривилегированного пользователя ПОСЛЕ того,
+# как entrypoint (ещё от root) успел chown'уть примонтированные volume'ы
+# (data/data-private приходят с хоста, где обычно принадлежат root — без
+# этого шага непривилегированный процесс не смог бы в них писать).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gosu \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -r -g 10001 app && useradd -r -u 10001 -g app app \
+    && chown -R app:app /app
+
 EXPOSE 8000
 
 COPY src/entrypoint.sh /app/entrypoint.sh

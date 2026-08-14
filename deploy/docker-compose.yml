@@ -45,7 +45,7 @@ services:
       DB_PORT: 5432
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-*}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?TRUSTED_PROXIES is required in .env (IP/CIDR of the caddy service, never "*")}
       PRIVATE_DATA_DIR: /app/private
     volumes:
       - ../data:/app/data:rw

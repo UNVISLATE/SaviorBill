@@ -28,6 +28,12 @@ FROM base AS runtime
 
 COPY --from=tests /app/.tests-passed /app/.tests-passed
 
+# /app/data монтируется read-only (см. deploy/docker-compose.yml) — chown не
+# нужен, непривилегированному пользователю достаточно обычных прав чтения.
+RUN addgroup -S -g 10001 app && adduser -S -u 10001 -G app app \
+    && chown -R app:app /app
+USER app
+
 ENV VALKEY_HOST=valkey \
     VALKEY_PORT=6379 \
     VALKEY_DB=0 \
