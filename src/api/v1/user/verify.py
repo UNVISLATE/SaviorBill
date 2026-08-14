@@ -24,7 +24,7 @@ router = APIRouter()
     description="Sends a short-lived verification code to the account email.",
     dependencies=[
         Depends(require_perm("user.profile.edit")),
-        Depends(rate_limit("mail.verify.request", LimitKind.MAIL)),
+        Depends(rate_limit("mail.verify.request", LimitKind.MAIL, require_auth=True)),
     ],
 )
 async def request_email(
@@ -47,7 +47,7 @@ async def request_email(
     description="Confirms the account email using the code from the message.",
     dependencies=[
         Depends(require_perm("user.profile.edit")),
-        Depends(rate_limit("mail.verify.confirm", LimitKind.MAIL)),
+        Depends(rate_limit("mail.verify.confirm", LimitKind.MAIL, require_auth=True)),
     ],
 )
 async def confirm_email(

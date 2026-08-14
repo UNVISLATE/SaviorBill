@@ -291,24 +291,30 @@ class PromoCodesMngr:
         :return: ``(valid, discount, reason)`` — ``reason`` заполнен только
             при ``valid=False``.
         """
+        # Единый ответ для всех "код не годится в принципе" случаев — иначе
+        # различие reason'ов (invalid/expired/limit reached/not-discount)
+        # позволяет перебором находить ещё не анонсированные промокоды по
+        # факту их существования в БД (см. AUDIT.md §2.3).
+        generic_invalid = "promo code is invalid"
+
         promo = await self.s.scalar(
             select(PromoCodesModel).where(PromoCodesModel.code == code)
         )
         if promo is None or not promo.is_active:
-            return False, Decimal("0"), "promo code is invalid"
+            return False, Decimal("0"), generic_invalid
 
         now = utc_now()
         if promo.valid_to and now > promo.valid_to:
-            return False, Decimal("0"), "promo code has expired"
+            return False, Decimal("0"), generic_invalid
         if promo.max_uses is not None and promo.used_count >= promo.max_uses:
-            return False, Decimal("0"), "usage limit reached"
+            return False, Decimal("0"), generic_invalid
 
         try:
             catalog = await self.catalog_of(promo)
-        except HTTPException as exc:
-            return False, Decimal("0"), str(exc.detail)
+        except HTTPException:
+            return False, Decimal("0"), generic_invalid
         if catalog.kind != PromoKind.DISCOUNT:
-            return False, Decimal("0"), "promo code is not a discount code"
+            return False, Decimal("0"), generic_invalid
 
         if acc is not None:
             from models.promo_use import PromoUseModel

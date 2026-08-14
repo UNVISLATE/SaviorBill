@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import AppConfig
 from dependencies.auth import get_current_acc
 from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.db import get_db_session
@@ -30,6 +31,7 @@ from schemas.page import Page
 from schemas.payment_provider import PayProviderPublic
 from schemas.payments import PaymentCreate, Payment
 from utils.pagination import PageParams, page_params, paginate
+from utils.urls import is_safe_return_url
 
 router = APIRouter()
 
@@ -86,10 +88,11 @@ async def my_purchases(
     ),
     dependencies=[
         Depends(require_perm("user.purchases.create")),
-        Depends(rate_limit("purchases.create", LimitKind.SENSITIVE)),
+        Depends(rate_limit("purchases.create", LimitKind.SENSITIVE, require_auth=True)),
     ],
 )
 async def create_purchase(
+    request: Request,
     body: PaymentCreate,
     acc: UserModel = Depends(get_current_acc),
     pay_mngr: PayMngr = Depends(get_pay_mngr),
@@ -98,6 +101,17 @@ async def create_purchase(
     promo_mngr: PromoCodesMngr = Depends(get_promo_mngr),
     triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> Payment:
+    if body.return_url:
+        cfg: AppConfig = request.app.state.settings
+        allowed = [*cfg.cors_origins_list, cfg.PUBLIC_URL.rstrip("/")]
+        if not is_safe_return_url(body.return_url, allowed):
+            # Провайдер оплаты доверенный — произвольный абсолютный URL здесь
+            # означает open redirect после оплаты (см. AUDIT.md §2.5).
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "return_url must be a relative path or a project origin",
+            )
+
     user_svc_id: int | None = None
     # Авторитетная сумма: для услуги — только server-side service.price
     # (body.amount для target=service запрещён самой схемой); для

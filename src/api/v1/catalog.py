@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from dependencies.catalog import (
     ServiceCatalogsMngr,
@@ -14,6 +14,8 @@ from dependencies.catalog import (
 )
 from dependencies.auth import get_current_acc_optional
 from dependencies.promo import PromoCodesMngr, get_promo_mngr
+from dependencies.ratelimit import LimitKind, authenticated_ident, enforce_rate_limit
+from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from enums import Delivery
 from models.user import UserModel
 from schemas.catalog import CatalogResponse
@@ -67,6 +69,8 @@ async def list_services(
 
 @router.get("/services/{service_id}", response_model=Service, summary="Service details")
 async def get_service(
+    request: Request,
+    response: Response,
     service_id: int,
     promo: str | None = Query(
         default=None, description="Preview discount for this promo code"
@@ -75,16 +79,32 @@ async def get_service(
     mngr: ServiceMngr = Depends(get_service_mngr),
     keys_mngr: ServiceKeysMngr = Depends(get_servicekeys_mngr),
     promo_mngr: PromoCodesMngr = Depends(get_promo_mngr),
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> Service:
     """Получить активную услугу по идентификатору.
 
     ``?promo=CODE`` — превью скидки без побочных эффектов (см.
     ``PromoCodesMngr.quote_for``); альтернатива отдельному
-    ``GET /promocodes/{code}/quote``.
+    ``GET /promocodes/{code}/quote``. Требует авторизации и лимитируется
+    отдельно — анонимный перебор кодов через этот путь исключён так же, как
+    и через основной эндпоинт (см. AUDIT.md §2.3).
     """
     svc = await mngr.get_active(service_id)
     result = await _with_stock(Service.from_model(svc), service_id, keys_mngr)
     if promo:
+        if acc is None:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                "authentication required to preview promo code",
+            )
+        await enforce_rate_limit(
+            request,
+            response,
+            settings,
+            authenticated_ident(acc),
+            "catalog.promo_quote",
+            LimitKind.SENSITIVE,
+        )
         valid, discount, reason = await promo_mngr.quote_for(promo, svc, acc)
         result = result.with_promo_quote(
             PromoQuote(

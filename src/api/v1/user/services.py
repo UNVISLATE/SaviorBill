@@ -63,7 +63,7 @@ async def my_services(
     ),
     dependencies=[
         Depends(require_perm("user.services.create")),
-        Depends(rate_limit("services.create", LimitKind.SENSITIVE)),
+        Depends(rate_limit("services.create", LimitKind.SENSITIVE, require_auth=True)),
     ],
 )
 async def create_service(

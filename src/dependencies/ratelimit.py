@@ -8,17 +8,16 @@ from enum import Enum
 from typing import Callable
 
 from fastapi import Depends, HTTPException, Request, Response, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from core.config import AppConfig
+from dependencies.auth import get_current_acc
 from dependencies.settings import get_settings_mngr
 from models.system_settings import SystemSettingsMngr
+from models.user import UserModel
 from security.ratelimit import LimitRule, RateLimiter
 from utils.degrade import VALKEY_ERRORS, note_degraded
 
 log = logging.getLogger("saviorbill.ratelimit")
-
-_bearer = HTTPBearer(auto_error=False)
 
 
 class LimitKind(str, Enum):
@@ -87,47 +86,56 @@ async def _resolve_rule(
     return _rule_for(cfg, kind)
 
 
-def _client_ident(request: Request, cred: HTTPAuthorizationCredentials | None) -> str:
-    """Идентификатор клиента: токен (если передан) либо IP."""
-    if cred is not None and cred.credentials:
-        # Не валидируем токен здесь — для лимита достаточно его как метки клиента.
-        return "tok:" + cred.credentials[-32:]
+def _client_ip(request: Request) -> str:
+    """IP клиента как ключ лимитера для публичных (неаутентифицированных) роутов.
+
+    Не используем сырой заголовок ``Authorization`` как альтернативу — он не
+    валидируется здесь, и атакующий, подставляя новый случайный Bearer на
+    каждый запрос, получал бы новый бакет лимитера и обходил ограничение
+    (см. AUDIT.md §2.1). Для приватных роутов используется
+    ``_authenticated_ident`` — ключ по уже провалидированному ``user_id``.
+    """
     host = request.client.host if request.client else "unknown"
     return "ip:" + host
 
 
-def rate_limit(scope: str, kind: LimitKind = LimitKind.DEFAULT) -> Callable:
+def _authenticated_ident(acc: UserModel) -> str:
+    """Ключ лимитера по уже провалидированному аккаунту (приватные роуты)."""
+    return "user:" + str(acc.id)
+
+
+def rate_limit(
+    scope: str, kind: LimitKind = LimitKind.DEFAULT, require_auth: bool = False
+) -> Callable:
     """Сконструировать зависимость лимита для роута.
 
     :arg scope: уникальное имя точки (для разделения счётчиков).
     :arg kind:  категория лимита (правило из конфигурации).
+    :arg require_auth: ``True`` для приватных роутов — ключ лимитера строится
+        по ``user_id`` из провалидированного здесь же access-токена (форсирует
+        аутентификацию раньше самого лимитера, а не полагается на порядок
+        выполнения соседних FastAPI-зависимостей). ``False`` (по умолчанию) —
+        публичный роут, ключ всегда IP, сырой ``Authorization`` не учитывается.
     """
 
-    async def _dep(
+    async def _dep_public(
         request: Request,
         response: Response,
-        cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
         settings: SystemSettingsMngr = Depends(get_settings_mngr),
     ) -> None:
-        cfg: AppConfig = request.app.state.settings
-        if not cfg.RATE_LIMIT_ENABLED:
-            return
-        # Valkey недоступен — пропускаем запрос, а не роняем весь роут:
-        # лимитер вспомогательный, отказ в обслуживании хуже отсутствия лимита.
-        try:
-            rule = await _resolve_rule(settings, cfg, scope, kind)
-            limiter = RateLimiter(request.app.state.valkey)
-            res = await limiter.hit(scope, _client_ident(request, cred), rule)
-        except VALKEY_ERRORS as exc:
-            note_degraded("ratelimit", exc)
-            return
-        if not res.allowed:
-            raise HTTPException(
-                status.HTTP_429_TOO_MANY_REQUESTS,
-                detail="too many requests, try again later",
-                headers={"Retry-After": str(res.retry_after)},
-            )
-        response.headers["X-RateLimit-Remaining"] = str(res.remaining)
+        await _enforce(request, response, settings, _client_ip(request), scope, kind)
+
+    async def _dep_authenticated(
+        request: Request,
+        response: Response,
+        acc: UserModel = Depends(get_current_acc),
+        settings: SystemSettingsMngr = Depends(get_settings_mngr),
+    ) -> None:
+        await _enforce(
+            request, response, settings, _authenticated_ident(acc), scope, kind
+        )
+
+    _dep = _dep_authenticated if require_auth else _dep_public
 
     # Метки для авто-документации ограничений в OpenAPI (см. utils/openapi.py).
     _dep._rate_limit_scope = scope
@@ -135,4 +143,52 @@ def rate_limit(scope: str, kind: LimitKind = LimitKind.DEFAULT) -> Callable:
     return _dep
 
 
-__all__ = ["LimitKind", "rate_limit"]
+async def _enforce(
+    request: Request,
+    response: Response,
+    settings: SystemSettingsMngr,
+    ident: str,
+    scope: str,
+    kind: LimitKind,
+) -> None:
+    cfg: AppConfig = request.app.state.settings
+    if not cfg.RATE_LIMIT_ENABLED:
+        return
+    # Valkey недоступен — пропускаем запрос, а не роняем весь роут:
+    # лимитер вспомогательный, отказ в обслуживании хуже отсутствия лимита.
+    try:
+        rule = await _resolve_rule(settings, cfg, scope, kind)
+        limiter = RateLimiter(request.app.state.valkey)
+        res = await limiter.hit(scope, ident, rule)
+    except VALKEY_ERRORS as exc:
+        note_degraded("ratelimit", exc)
+        return
+    if not res.allowed:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too many requests, try again later",
+            headers={"Retry-After": str(res.retry_after)},
+        )
+    response.headers["X-RateLimit-Remaining"] = str(res.remaining)
+
+
+async def enforce_rate_limit(
+    request: Request,
+    response: Response,
+    settings: SystemSettingsMngr,
+    ident: str,
+    scope: str,
+    kind: LimitKind = LimitKind.DEFAULT,
+) -> None:
+    """Публичная обёртка над ``_enforce`` для условного лимитирования вне
+    ``rate_limit()`` — когда лимит нужен только при определённом значении
+    query-параметра (см. ``catalog.py::get_service`` промо-превью)."""
+    await _enforce(request, response, settings, ident, scope, kind)
+
+
+def authenticated_ident(acc: UserModel) -> str:
+    """Публичный алиас :func:`_authenticated_ident` для использования вне модуля."""
+    return _authenticated_ident(acc)
+
+
+__all__ = ["LimitKind", "rate_limit", "enforce_rate_limit", "authenticated_ident"]

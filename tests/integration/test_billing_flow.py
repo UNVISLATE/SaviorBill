@@ -141,7 +141,7 @@ async def test_payment_topup_and_callback(http, new_user, seed):
             "amount": "40.00",
             "provider": provider,
             "target": "balance",
-            "return_url": "https://x.test/d",
+            "return_url": "/d",
         },
         headers=hdr,
     )
@@ -166,6 +166,23 @@ async def test_payment_topup_and_callback(http, new_user, seed):
 
     status_val = await wait_until(_fetch_status, lambda s: s == "paid", timeout=30)
     assert status_val == "paid"
+
+
+async def test_purchase_rejects_foreign_return_url(http, new_user, seed):
+    """Open-redirect через доверенный payment-провайдер (AUDIT.md §2.5)."""
+    provider = await seed.pay_provider(secret=CALLBACK_SECRET)
+    _, hdr = await _auth(http, new_user)
+    r = await http.post(
+        "/api/v1/user/purchases/create",
+        json={
+            "amount": "10.00",
+            "provider": provider,
+            "target": "balance",
+            "return_url": "https://evil.example.com/phish",
+        },
+        headers=hdr,
+    )
+    assert r.status_code == 400, r.text
 
 
 async def test_callback_bad_signature_rejected(http, new_user, seed):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from dependencies.auth import get_current_acc, get_current_acc_optional
+from dependencies.auth import get_current_acc
 from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.promo import PromoCodesMngr, get_promo_mngr
 from dependencies.ratelimit import LimitKind, rate_limit
@@ -22,17 +22,15 @@ router = APIRouter(prefix="/api/v1/promocodes", tags=["promocodes"])
     "/{code}/quote",
     response_model=PromoQuote,
     summary="Preview discount for a service",
-    description=(
-        "Non-mutating preview of the discount a code would give for a service. "
-        "Without authentication, per-user usage limits cannot be checked — "
-        "only the code's general validity (active/not expired/kind=discount)."
-    ),
-    dependencies=[Depends(rate_limit("promocodes.quote", LimitKind.DEFAULT))],
+    description="Non-mutating preview of the discount a code would give for a service.",
+    dependencies=[
+        Depends(rate_limit("promocodes.quote", LimitKind.SENSITIVE, require_auth=True))
+    ],
 )
 async def quote(
     code: str,
     service_id: int = Query(description="Service ID to quote the discount for"),
-    acc: UserModel | None = Depends(get_current_acc_optional),
+    acc: UserModel = Depends(get_current_acc),
     promo_mngr: PromoCodesMngr = Depends(get_promo_mngr),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
 ) -> PromoQuote:
@@ -54,7 +52,7 @@ async def quote(
     response_model=PromoResult,
     summary="Redeem promo code",
     description="Redeems `bonus` and `service` promo codes. Use discount codes when ordering a service.",
-    dependencies=[Depends(rate_limit("promocodes.redeem", LimitKind.SENSITIVE))],
+    dependencies=[Depends(rate_limit("promocodes.redeem", LimitKind.SENSITIVE, require_auth=True))],
 )
 async def redeem(
     body: PromoRedeem,

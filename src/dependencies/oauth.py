@@ -195,8 +195,13 @@ class OAuthSvc:
         return OAuthStart(authorize_url=authorize_url, state=state)
 
     async def _pop_state(self, slug: str, state: str) -> dict:
-        """Проверить и погасить state, вернуть сохранённую нагрузку."""
-        saved = await self.vk.get(_STATE + state)
+        """Проверить и атомарно погасить state, вернуть сохранённую нагрузку.
+
+        GETDEL атомарен: без него два параллельных callback-запроса с одним
+        state успевали оба пройти проверку "одноразовости" до того, как
+        первый удалит ключ (AUDIT.md §2.2).
+        """
+        saved = await self.vk.getdel(_STATE + state)
         if not saved:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid or expired state")
         try:
@@ -205,7 +210,6 @@ class OAuthSvc:
             payload = {"slug": saved}
         if payload.get("slug") != slug:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid or expired state")
-        await self.vk.delete(_STATE + state)
         return payload
 
     async def finish(

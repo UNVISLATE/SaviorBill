@@ -70,9 +70,10 @@ async def _upload(token_access: str, *, tag: str | None = None) -> str:
 async def test_media_upload_convert_register(http, new_user, seed):
     token_access = await _access(http, new_user, seed)
     token = await _upload(token_access, tag="cover1")
+    hdr = {"Authorization": f"Bearer {token_access}"}
 
     async def _status():
-        resp = await http.get(f"/api/v1/media/status/{token}")
+        resp = await http.get(f"/api/v1/media/status/{token}", headers=hdr)
         return resp.json()
 
     data = await wait_until(
@@ -84,6 +85,26 @@ async def test_media_upload_convert_register(http, new_user, seed):
     assert data["tag"] == "cover1"
 
 
+async def test_media_status_requires_owner(http, new_user, seed):
+    """Чужой токен (даже валидный аккаунт) не должен раскрывать статус."""
+    token_access = await _access(http, new_user, seed)
+    token = await _upload(token_access, tag="ownercheck")
+
+    other_login, other_pwd, _ = await new_user()
+    await seed.verify_user(other_login)
+    other = await http.post(
+        "/api/v1/auth/login", json={"login": other_login, "password": other_pwd}
+    )
+    other.raise_for_status()
+    other_hdr = {"Authorization": f"Bearer {other.json()['access_token']}"}
+
+    resp = await http.get(f"/api/v1/media/status/{token}", headers=other_hdr)
+    assert resp.status_code == 403, resp.text
+
+    anon = await http.get(f"/api/v1/media/status/{token}")
+    assert anon.status_code in (401, 403), anon.text
+
+
 async def test_media_op_status_after_convert(http, new_user, seed):
     """`worker_jobs` (см. models/worker_jobs.py) отражает финальный op-статус
 
@@ -91,12 +112,13 @@ async def test_media_op_status_after_convert(http, new_user, seed):
     оба не могут "разойтись" в терминальном состоянии."""
     token_access = await _access(http, new_user, seed)
     token = await _upload(token_access)
+    hdr = {"Authorization": f"Bearer {token_access}"}
 
     await wait_until(
-        lambda: _state(http, token), lambda s: s in ("ready", "failed"), timeout=60
+        lambda: _state(http, token, hdr), lambda s: s in ("ready", "failed"), timeout=60
     )
 
-    resp = await http.get(f"/api/v1/media/{token}/ops/convert/status")
+    resp = await http.get(f"/api/v1/media/{token}/ops/convert/status", headers=hdr)
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["token"] == token
@@ -108,7 +130,8 @@ async def test_media_op_status_after_convert(http, new_user, seed):
 async def test_media_op_status_unknown_op(http, new_user, seed):
     token_access = await _access(http, new_user, seed)
     token = await _upload(token_access)
-    resp = await http.get(f"/api/v1/media/{token}/ops/thumb_replace/status")
+    hdr = {"Authorization": f"Bearer {token_access}"}
+    resp = await http.get(f"/api/v1/media/{token}/ops/thumb_replace/status", headers=hdr)
     assert resp.status_code == 404, resp.text
 
 
@@ -121,9 +144,10 @@ async def test_media_upload_requires_auth(new_user):
 async def test_admin_media_list_and_cleanup(http, new_user, seed):
     token_access = await _access(http, new_user, seed)
     token = await _upload(token_access)
+    hdr = {"Authorization": f"Bearer {token_access}"}
 
     await wait_until(
-        lambda: _state(http, token),
+        lambda: _state(http, token, hdr),
         lambda s: s in ("ready", "failed"),
         timeout=60,
     )
@@ -158,8 +182,8 @@ async def test_admin_media_list_and_cleanup(http, new_user, seed):
     assert cl.json()["deleted"] >= 1
 
 
-async def _state(http, token: str) -> str:
-    resp = await http.get(f"/api/v1/media/status/{token}")
+async def _state(http, token: str, hdr: dict) -> str:
+    resp = await http.get(f"/api/v1/media/status/{token}", headers=hdr)
     return resp.json().get("state")
 
 
@@ -202,9 +226,10 @@ async def test_mediaworker_logs_admin_can_read_job_and_progress(http, new_user, 
     """
     token_access = await _access(http, new_user, seed)
     token = await _upload(token_access, tag="logsread")
+    hdr = {"Authorization": f"Bearer {token_access}"}
 
     await wait_until(
-        lambda: _state(http, token), lambda s: s in ("ready", "failed"), timeout=60
+        lambda: _state(http, token, hdr), lambda s: s in ("ready", "failed"), timeout=60
     )
 
     admin_login, _pwd, admin_tokens = await new_user()

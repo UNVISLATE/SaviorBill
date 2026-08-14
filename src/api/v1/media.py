@@ -33,6 +33,12 @@ class PreviewOrderIn(BaseModel):
     )
 
 
+async def _check_owner_or_403(acc: UserModel, owner_id: int | None) -> None:
+    perms = acc.role.perms if acc.role else None
+    if owner_id != acc.id and not has_perm(perms, "admin.media.manage_any"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "не владелец медиа")
+
+
 async def _owned_media(mngr: SystemMediaMngr, token: str, acc: UserModel) -> object:
     """Найти медиа по токену и проверить, что запрашивающий — владелец либо
     имеет право ``admin.media.manage_any`` (доступ к чужому медиа отдельно
@@ -40,9 +46,7 @@ async def _owned_media(mngr: SystemMediaMngr, token: str, acc: UserModel) -> obj
     media = await mngr.by_token(token)
     if media is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
-    perms = acc.role.perms if acc.role else None
-    if media.owner_id != acc.id and not has_perm(perms, "admin.media.manage_any"):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "не владелец медиа")
+    await _check_owner_or_403(acc, media.owner_id)
     return media
 
 
@@ -50,7 +54,8 @@ async def _owned_media(mngr: SystemMediaMngr, token: str, acc: UserModel) -> obj
     "/status/{token}",
     response_model=MediaStatus,
     summary="Media status",
-    description="Returns the processing status for uploaded media by token.",
+    description="Returns the processing status for uploaded media by token "
+    "(только владелец медиа либо admin.media.manage_any).",
 )
 async def media_status(
     request: Request,
@@ -58,14 +63,23 @@ async def media_status(
     vk: valkey.Valkey = Depends(get_valkey_client),
     mngr: SystemMediaMngr = Depends(get_media_mngr),
     jobs: WorkerJobsMngr = Depends(get_worker_jobs_mngr),
+    acc: UserModel = Depends(get_current_acc),
 ) -> MediaStatus:
     cfg: AppConfig = request.app.state.settings
     bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN, signing_key=cfg.BUS_SIGNING_KEY)
 
-    # Валкей — быстрый кэш для частого поллинга сразу после аплоада; не
-    # протухнет — ниже authoritative worker_jobs (БД), а не Валкей.
+    # Owner-check до выдачи статуса/ссылки/ошибки — токен мог утечь через
+    # логи/реферер/скриншот, обладание им не должно давать доступ к чужому
+    # медиа (см. AUDIT.md §2.4). Пока конвертация не завершена, строки в
+    # system_media (БД) ещё нет — её создаёт media_results consumer только
+    # по готовому результату — поэтому в кэш-хите проверяем owner_id из
+    # самого статус-хэша (mediaworker пишет его при приёме файла, см.
+    # mediaworker/api/upload.py), тот же паттерн, что и в WS-роуте mediaworker
+    # (apiws/v1/media.py::_owned_tokens).
     data = await bus.status(token)
     if data:
+        owner_raw = data.get("owner_id")
+        await _check_owner_or_403(acc, int(owner_raw) if owner_raw else None)
         return MediaStatus(
             token=token,
             state=data.get("state", "processing"),
@@ -79,19 +93,21 @@ async def media_status(
 
     # Кэш истёк/не создавался — authoritative источник: worker_jobs (БД), не
     # protuхает и одинаков для этого роута и для списков (см. models/worker_jobs.py).
-    job = await jobs.latest("media", token, op="convert")
     media = await mngr.by_token(token)
+    if media is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
+    await _check_owner_or_403(acc, media.owner_id)
+
+    job = await jobs.latest("media", token, op="convert")
     if job is not None and job.state not in ("ready",):
         return MediaStatus(
             token=token,
             state=job.state,
             url=None,
-            mime=media.mime if media else None,
-            tag=media.tag if media else None,
+            mime=media.mime,
+            tag=media.tag,
             error=job.error,
         )
-    if media is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
     return MediaStatus(
         token=token,
         state=media.status,
@@ -107,13 +123,17 @@ async def media_status(
     response_model=OpStatus,
     summary="Media sub-operation status",
     description="Status of a media sub-operation (preview_add/thumb_replace/...) "
-    "started after the main upload/convert (see GET /status/{token} for that).",
+    "started after the main upload/convert (see GET /status/{token} for that). "
+    "Только владелец медиа либо admin.media.manage_any.",
 )
 async def media_op_status(
     token: str,
     op: str,
     jobs: WorkerJobsMngr = Depends(get_worker_jobs_mngr),
+    mngr: SystemMediaMngr = Depends(get_media_mngr),
+    acc: UserModel = Depends(get_current_acc),
 ) -> OpStatus:
+    await _owned_media(mngr, token, acc)
     job = await jobs.latest("media", token, op=op)
     if job is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "job not found")
