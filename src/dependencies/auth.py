@@ -13,6 +13,7 @@ from models.user import UserModel, UserMngr
 from services.auth import TokenSvc
 from core.config import AppConfig
 from security.sec import jwt as jwtu
+from security.sec.cookies import ACCESS_COOKIE
 
 _bearer = HTTPBearer(auto_error=False)
 
@@ -44,13 +45,19 @@ async def get_current_acc(
     cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
     mngr: UserMngr = Depends(get_acc_mngr),
 ) -> UserModel:
-    """Достать аккаунт из access-токена (Authorization: Bearer ...)."""
-    if cred is None:
+    """Достать аккаунт из access-токена.
+
+    Источник токена: ``Authorization: Bearer`` (не-браузерные клиенты) либо,
+    если заголовка нет, httpOnly cookie ``sb_access`` (adminui, см.
+    ``security/sec/cookies.py``) — заголовок в приоритете, если передан.
+    """
+    token = cred.credentials if cred is not None else request.cookies.get(ACCESS_COOKIE)
+    if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bearer required")
     cfg = _cfg(request)
     try:
         claims = jwtu.decode_jwt(
-            cred.credentials, cfg.jwt_public_keys(), cfg.JWT_ALG, cfg.JWT_ISS
+            token, cfg.jwt_public_keys(), cfg.JWT_ALG, cfg.JWT_ISS
         )
     except jwtu.InvalidJWT as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
@@ -80,8 +87,6 @@ async def get_current_acc_optional(
     аккаунта нельзя проверить лимиты "на пользователя", но код всё равно
     можно предпоказать по его собственным правилам каталога).
     """
-    if cred is None:
-        return None
     try:
         return await get_current_acc(request, cred, mngr)
     except HTTPException:

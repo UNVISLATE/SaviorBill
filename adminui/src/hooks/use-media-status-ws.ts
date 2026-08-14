@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from "react"
 
-import { getAccessToken } from "@/api/tokens.ts"
-
 /** Снимок статуса конвертации одного media-токена (см. mediaworker ProcLog). */
 export interface MediaStatusSnap {
   state?: string
@@ -38,8 +36,6 @@ export function useMediaStatusStream(tokens: string[]): Record<string, MediaStat
       watchedRef.current = new Set()
       return
     }
-    const accessToken = getAccessToken()
-    if (!accessToken) return
 
     const proto = location.protocol === "https:" ? "wss" : "ws"
     const ws = new WebSocket(`${proto}://${location.host}/api/media/mine`)
@@ -47,7 +43,9 @@ export function useMediaStatusStream(tokens: string[]): Record<string, MediaStat
 
     ws.onopen = () => {
       watchedRef.current = new Set(tokens)
-      ws.send(JSON.stringify({ token: accessToken, watch: tokens }))
+      // Access-токен — httpOnly cookie (см. api/api.ts), браузер прикладывает
+      // её к хендшейку сам; JS ничего не читает и не шлёт явно.
+      ws.send(JSON.stringify({ watch: tokens }))
     }
     ws.onmessage = (ev) => {
       let msg: { type: string; items?: Record<string, MediaStatusSnap> }

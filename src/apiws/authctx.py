@@ -12,6 +12,7 @@ from starlette import status as ws_status
 from models.user import UserMngr, UserModel
 from security.rbac import has_perm
 from security.sec import jwt as jwtu
+from security.sec.cookies import ACCESS_COOKIE
 from utils.degrade import VALKEY_ERRORS, note_degraded
 
 # Периодичность повторной проверки токена/прав уже открытого соединения
@@ -122,8 +123,19 @@ async def authenticate_ws(ws: WebSocket) -> tuple[UserModel, int] | None:
 
         try:
             payload = json.loads(raw)
-            token = payload["token"]
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except (json.JSONDecodeError, TypeError):
+            await ws.close(code=4401)
+            return None
+        # ``token`` опционален во фрейме: для браузера основной путь — cookie
+        # ``sb_access`` (httpOnly, летит с WS-хендшейком автоматически, как с
+        # любым HTTP-запросом тому же (под)домену, см. security/sec/cookies.py);
+        # explicit-токен во фрейме остаётся для не-браузерных клиентов.
+        token = (
+            payload.get("token")
+            if isinstance(payload, dict)
+            else None
+        ) or ws.cookies.get(ACCESS_COOKIE)
+        if not token:
             await ws.close(code=4401)
             return None
 

@@ -17,6 +17,11 @@ from fastapi import HTTPException, Request, status
 from utils import security
 from utils.config import Config
 
+# Должно совпадать с billing (см. ``src/security/sec/cookies.py``) — общий
+# корневой домен (``AppConfig.cookie_domain``) делает эту cookie видимой и
+# billing, и mediaworker.
+ACCESS_COOKIE = "sb_access"
+
 
 def client_ip(request: Request) -> str:
     """IP клиента.
@@ -33,11 +38,19 @@ def client_ip(request: Request) -> str:
 
 
 def bearer(request: Request) -> str:
-    """Достать сырой Bearer-токен из заголовка Authorization; 401 если его нет."""
+    """Достать access-токен: заголовок Authorization в приоритете, иначе cookie.
+
+    Заголовок — для не-браузерных клиентов (скрипты, billing-to-mediaworker и
+    т.п.); cookie ``sb_access`` (httpOnly) — для adminui, см.
+    ``src/security/sec/cookies.py``. 401, если нет ни того, ни другого.
+    """
     auth = request.headers.get("authorization", "")
-    if not auth.lower().startswith("bearer "):
+    if auth.lower().startswith("bearer "):
+        return auth.split(" ", 1)[1].strip()
+    token = request.cookies.get(ACCESS_COOKIE)
+    if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bearer token required")
-    return auth.split(" ", 1)[1].strip()
+    return token
 
 
 async def authenticate(request: Request) -> int:
@@ -76,9 +89,12 @@ async def soft_authenticate(request: Request) -> int | None:
     """
     cfg: Config = request.app.state.cfg
     auth = request.headers.get("authorization", "")
-    if not auth.lower().startswith("bearer "):
+    if auth.lower().startswith("bearer "):
+        token = auth.split(" ", 1)[1].strip()
+    else:
+        token = request.cookies.get(ACCESS_COOKIE)
+    if not token:
         return None
-    token = auth.split(" ", 1)[1].strip()
     try:
         return security.account_id(
             token, cfg.jwt_public_keys(), cfg.jwt_alg, cfg.jwt_iss
@@ -88,6 +104,7 @@ async def soft_authenticate(request: Request) -> int | None:
 
 
 __all__ = [
+    "ACCESS_COOKIE",
     "client_ip",
     "bearer",
     "authenticate",

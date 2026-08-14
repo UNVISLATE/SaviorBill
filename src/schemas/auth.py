@@ -92,9 +92,14 @@ class TwoFADisable(BaseModel):
 
 
 class Refresh(BaseModel):
-    """Refresh token pair."""
+    """Refresh token pair.
 
-    refresh_token: str = Field(description="Refresh token")
+    ``refresh_token`` необязателен в теле: если не передан, берётся из
+    httpOnly cookie ``sb_refresh`` (см. ``api/v1/auth/local.py::_resolve_refresh_token``).
+    Тело оставлено для не-браузерных клиентов, у которых нет cookie-хранилища.
+    """
+
+    refresh_token: str | None = Field(default=None, description="Refresh token")
 
 
 class TokenPair(BaseModel):

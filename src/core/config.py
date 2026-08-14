@@ -19,6 +19,23 @@ APP_NAME = os.environ.get("APP_NAME", "SaviorBill")
 APP_VERSION = resolve_app_version(_BASE_DIR)
 
 
+def _root_domain(domain: str | None) -> str | None:
+    """Наивный "корневой домен" (последние 2 части хоста, без порта).
+
+    Не honor'ит составные публичные суффиксы (``co.uk`` и т.п.) — для целей
+    сравнения DOMAIN/MEDIA_DOMAIN этого достаточно (внутренний проект,
+    домены задаются оператором, не произвольным пользователем). ``None``/
+    ``localhost`` (без точки) возвращается как есть — сравнивать не с чем.
+    """
+    if not domain:
+        return None
+    host = domain.split(":", 1)[0].strip().lower()
+    parts = host.split(".")
+    if len(parts) < 2:
+        return host or None
+    return ".".join(parts[-2:])
+
+
 class AppConfig(BaseSettings):
     """Конфигурация приложения (постоянные ENV (настройки) + разовые seed4settings)."""
 
@@ -380,6 +397,28 @@ class AppConfig(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def _validate_cookie_domains(self) -> "AppConfig":
+        """DOMAIN и MEDIA_DOMAIN должны быть под одним регистрируемым доменом.
+
+        Auth-cookie (``sb_access``/``sb_refresh``, см. ``security/sec/cookies.py``)
+        ставится с ``Domain=<корневой домен>``, чтобы её видели оба сервиса
+        (billing и mediaworker) на разных поддоменах. Поддомены — любые,
+        но сам корневой домен должен совпадать, иначе cookie для одного
+        сервиса не долетит до другого (тихая поломка авторизации после
+        деплоя) — лучше не запускаться вовсе.
+        """
+        d1 = _root_domain(self.DOMAIN)
+        d2 = _root_domain(self.MEDIA_DOMAIN)
+        if d1 and d2 and d1 != d2:
+            raise ValueError(
+                f"DOMAIN ({self.DOMAIN!r}) и MEDIA_DOMAIN ({self.MEDIA_DOMAIN!r}) "
+                f"должны быть поддоменами одного корневого домена (сейчас "
+                f"{d1!r} != {d2!r}) — иначе auth-cookie не будет видна "
+                "одновременно billing и mediaworker"
+            )
+        return self
+
+    @model_validator(mode="after")
     def _validate_cors(self) -> "AppConfig":
         """Отклонить конфигурацию, невалидную по спецификации CORS.
 
@@ -436,6 +475,16 @@ class AppConfig(BaseSettings):
                 )
             )
         return f"{base.rstrip('/')}/api/media/docs"
+
+    @property
+    def cookie_domain(self) -> str | None:
+        """``Domain`` для auth-cookie: корневой домен из ``DOMAIN``/``MEDIA_DOMAIN``.
+
+        ``None`` в чистом dev без заданных доменов (localhost) — тогда
+        ``Set-Cookie`` не указывает ``Domain`` вовсе, и cookie видна только
+        хосту, который её выставил (обычный дефолт браузера).
+        """
+        return _root_domain(self.DOMAIN) or _root_domain(self.MEDIA_DOMAIN)
 
     @property
     def data_path(self) -> Path:

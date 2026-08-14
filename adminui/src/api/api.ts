@@ -1,7 +1,5 @@
 import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios"
 
-import { clearTokens, getAccessToken, getRefreshToken, setTokens } from "@/api/tokens.ts"
-
 /** Событие: сессия истекла (refresh не удался) — слушает AuthProvider. */
 export const AUTH_LOGOUT_EVENT = "sb-admin:logout"
 /** Событие: 2FA обязательна настройкой инстанса, но не включена у аккаунта —
@@ -14,33 +12,23 @@ export const api = axios.create({
   // Каждый роутер (admin/auth/user/...) уже несёт полный "/api/v1/..." префикс
   // сам (см. src/api/v1/admin/__init__.py) — здесь достаточно "/api".
   baseURL: "/api",
-})
-
-api.interceptors.request.use((config) => {
-  const token = getAccessToken()
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
+  // Access/refresh — httpOnly cookies (см. security/sec/cookies.py на
+  // стороне billing), не localStorage: браузер прикладывает их сам, JS их
+  // не видит и не может ни прочитать, ни вписать в заголовок Authorization.
+  withCredentials: true,
 })
 
 // Однополётный refresh — параллельные 401 не должны насоздать N параллельных
 // /auth/refresh (backend ротирует refresh_token, второй вызов инвалидировал бы
 // токен, который первый вызов ещё не успел сохранить).
-let refreshPromise: Promise<string | null> | null = null
+let refreshPromise: Promise<boolean> | null = null
 
-async function refreshAccessToken(): Promise<string | null> {
-  const refreshToken = getRefreshToken()
-  if (!refreshToken) return null
+async function refreshAccessToken(): Promise<boolean> {
   if (!refreshPromise) {
     refreshPromise = axios
-      .post("/api/v1/auth/refresh", { refresh_token: refreshToken })
-      .then((res) => {
-        setTokens(res.data)
-        return res.data.access_token as string
-      })
-      .catch(() => {
-        clearTokens()
-        return null
-      })
+      .post("/api/v1/auth/refresh", null, { withCredentials: true })
+      .then(() => true)
+      .catch(() => false)
       .finally(() => {
         refreshPromise = null
       })
@@ -54,9 +42,8 @@ api.interceptors.response.use(
     const cfg = error.config as (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined
     if (error.response?.status === 401 && cfg && !cfg._retried) {
       cfg._retried = true
-      const newToken = await refreshAccessToken()
-      if (newToken) {
-        cfg.headers.Authorization = `Bearer ${newToken}`
+      const refreshed = await refreshAccessToken()
+      if (refreshed) {
         return api(cfg)
       }
       window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT))

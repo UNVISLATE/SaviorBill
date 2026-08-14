@@ -3,8 +3,12 @@
 
 Копия схемы billing (``apiws/authctx.py::authorize_ws``): без токена в URL
 (история браузера/логи прокси) — клиент шлёт первым текстовым сообщением
-``{"token": "<access-JWT>"}`` сразу после установления соединения. Здесь —
-не переиспользование кода billing (отдельный деплоймент), а тот же паттерн
+``{"token": "<access-JWT>"}`` сразу после установления соединения (для
+не-браузерных клиентов) либо не шлёт ``token`` вовсе — тогда берём его из
+httpOnly cookie ``sb_access`` (браузер прикладывает её к WS-хендшейку
+автоматически, как к любому HTTP-запросу тому же (под)домену, см.
+``src/security/sec/cookies.py`` на стороне billing). Здесь — не
+переиспользование кода billing (отдельный деплоймент), а тот же паттерн
 поверх уже имеющихся в mediaworker примитивов (``utils/security.py`` —
 проверка JWT, ``utils/db.py`` — права роли из общей Postgres).
 """
@@ -17,6 +21,7 @@ import json
 from fastapi import WebSocket, WebSocketDisconnect
 
 from utils import security
+from utils.authctx import ACCESS_COOKIE
 from utils.config import Config
 from utils.rbac import has_perm
 
@@ -24,11 +29,12 @@ HANDSHAKE_TIMEOUT = 30
 
 
 async def authenticate_ws_payload(ws: WebSocket) -> tuple[int, dict] | None:
-    """Дождаться первого фрейма ``{"token": "<access-JWT>", ...}``, проверить
-    токен и вернуть ``(acc_id, payload)`` — ``payload`` целиком, чтобы роуты
-    с доп. полями в хендшейке (например ``watch: [...]`` в ``media/mine``) не
-    читали сырой фрейм второй раз. При любой неудаче сам закрывает соединение
-    кодом ``4401`` и возвращает ``None``.
+    """Дождаться первого фрейма (``{"token": "<access-JWT>", ...}``, ``token``
+    опционален, если он есть в cookie), проверить его и вернуть
+    ``(acc_id, payload)`` — ``payload`` целиком, чтобы роуты с доп. полями в
+    хендшейке (например ``watch: [...]`` в ``media/mine``) не читали сырой
+    фрейм второй раз. При любой неудаче сам закрывает соединение кодом
+    ``4401`` и возвращает ``None``.
     """
     try:
         raw = await asyncio.wait_for(ws.receive_text(), timeout=HANDSHAKE_TIMEOUT)
@@ -38,8 +44,14 @@ async def authenticate_ws_payload(ws: WebSocket) -> tuple[int, dict] | None:
 
     try:
         payload = json.loads(raw)
-        token = payload["token"]
-    except (json.JSONDecodeError, KeyError, TypeError):
+    except (json.JSONDecodeError, TypeError):
+        await ws.close(code=4401)
+        return None
+    if not isinstance(payload, dict):
+        await ws.close(code=4401)
+        return None
+    token = payload.get("token") or ws.cookies.get(ACCESS_COOKIE)
+    if not token:
         await ws.close(code=4401)
         return None
 

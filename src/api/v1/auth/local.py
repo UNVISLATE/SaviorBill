@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.exc import IntegrityError
 
 from dependencies.auth import (
@@ -20,6 +20,7 @@ from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.banned_email_domains import BannedEmailDomainsMngr
 from schemas.auth import Login, Refresh, Reg, TokenPair
 from security.sec import jwt as jwtu
+from security.sec.cookies import REFRESH_COOKIE, clear_auth_cookies, set_auth_cookies
 from security.sec.pwd import dummy_hash, hash_pass, needs_rehash, verify_pass
 from services.twofa import TotpSvc
 
@@ -28,6 +29,19 @@ def _cfg(request: Request):
     return request.app.state.settings
 
 router = APIRouter()
+
+
+def _resolve_refresh_token(request: Request, body_token: str | None) -> str:
+    """Достать refresh-токен из тела запроса либо из cookie.
+
+    Тело — для обратной совместимости с не-браузерными клиентами; cookie —
+    основной путь для adminui (``sb_refresh`` — httpOnly, недоступна JS, см.
+    ``security/sec/cookies.py``).
+    """
+    token = body_token or request.cookies.get(REFRESH_COOKIE)
+    if not token:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "refresh_token required")
+    return token
 
 
 @router.post(
@@ -44,6 +58,7 @@ router = APIRouter()
 async def register(
     body: Reg,
     request: Request,
+    response: Response,
     mngr: UserMngr = Depends(get_acc_mngr),
     banned_domains: BannedEmailDomainsMngr = Depends(get_banned_domains_mngr),
     tokens: TokenSvc = Depends(get_token_svc),
@@ -76,9 +91,13 @@ async def register(
         TriggerEvent.USER_REGISTERED,
         {"user": {"id": acc.id, "login": acc.login, "email": acc.email}},
     )
-    return await tokens.issue_tracked(
+    pair = await tokens.issue_tracked(
         acc, ip=client_ip(request), user_agent=request.headers.get("user-agent")
     )
+    set_auth_cookies(
+        response, tokens.cfg, access_token=pair.access_token, refresh_token=pair.refresh_token
+    )
+    return pair
 
 
 @router.post(
@@ -95,6 +114,7 @@ async def register(
 async def login(
     body: Login,
     request: Request,
+    response: Response,
     mngr: UserMngr = Depends(get_acc_mngr),
     tokens: TokenSvc = Depends(get_token_svc),
     guard: LoginGuard = Depends(get_login_guard),
@@ -135,9 +155,13 @@ async def login(
     await mngr.touch_login(acc)
     await mngr.s.commit()
     await guard.clear(body.login, ip)
-    return await tokens.issue_tracked(
+    pair = await tokens.issue_tracked(
         acc, ip=ip, user_agent=request.headers.get("user-agent")
     )
+    set_auth_cookies(
+        response, tokens.cfg, access_token=pair.access_token, refresh_token=pair.refresh_token
+    )
+    return pair
 
 
 @router.post(
@@ -148,17 +172,22 @@ async def login(
     dependencies=[Depends(rate_limit("auth.refresh", LimitKind.AUTH))],
 )
 async def refresh(
-    body: Refresh,
     request: Request,
+    response: Response,
+    body: Refresh | None = None,
     mngr: UserMngr = Depends(get_acc_mngr),
     tokens: TokenSvc = Depends(get_token_svc),
 ) -> TokenPair:
     """Ротация пары токенов по refresh-токену."""
+    refresh_token = _resolve_refresh_token(request, body.refresh_token if body else None)
     _, pair = await tokens.rotate(
-        body.refresh_token,
+        refresh_token,
         mngr,
         ip=client_ip(request),
         user_agent=request.headers.get("user-agent"),
+    )
+    set_auth_cookies(
+        response, tokens.cfg, access_token=pair.access_token, refresh_token=pair.refresh_token
     )
     return pair
 
@@ -170,13 +199,20 @@ async def refresh(
     description="Revokes the provided refresh token. Returns 204 even if it is already invalid.",
 )
 async def logout(
-    body: Refresh,
+    request: Request,
+    response: Response,
+    body: Refresh | None = None,
     tokens: TokenSvc = Depends(get_token_svc),
 ) -> None:
-    """Отозвать refresh-токен"""
+    """Отозвать refresh-токен и снять auth-cookie."""
+    clear_auth_cookies(response, tokens.cfg)
+    refresh_token = body.refresh_token if body else None
+    refresh_token = refresh_token or request.cookies.get(REFRESH_COOKIE)
+    if not refresh_token:
+        return
     try:
         claims = jwtu.decode_jwt(
-            body.refresh_token,
+            refresh_token,
             tokens.cfg.jwt_public_keys(),
             tokens.cfg.JWT_ALG,
             tokens.cfg.JWT_ISS,

@@ -1,9 +1,9 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { api, AUTH_LOGOUT_EVENT } from "@/api/api.ts"
 import { hasPerm, type PermNode } from "@/api/rbac.ts"
-import { clearTokens, getAccessToken, setTokens } from "@/api/tokens.ts"
+import { getErrorDetail, getErrorStatus } from "@/lib/api-error.ts"
 
 export interface AdminMe {
   id: number
@@ -26,17 +26,13 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient()
-  // React Query читает `enabled` только на своих собственных ре-рендерах.
-  // Просто читать getAccessToken() внутри `enabled` не работает: после
-  // login()/logout() ничего не заставляет AuthProvider перерендериться,
-  // поэтому query оставался залипшим в старом enabled=false и /admin/me
-  // никогда не запрашивался -> isAuthenticated не менялся -> не было редиректа.
-  const [hasToken, setHasToken] = useState(() => !!getAccessToken())
-
+  // Токены — httpOnly cookies (JS их не видит вовсе, см. api/api.ts), поэтому
+  // единственный способ узнать "залогинен ли клиент" — спросить сервер;
+  // `enabled: true` всегда, состояние сессии полностью определяется этим
+  // запросом (`isAuthenticated = !!me`), а не отдельным локальным флагом.
   const meQuery = useQuery({
     queryKey: ["admin-me"],
     queryFn: async () => (await api.get<AdminMe>("/v1/admin/me")).data,
-    enabled: hasToken,
     retry: false,
     staleTime: 60_000,
   })
@@ -44,8 +40,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // Сработавший refresh-фейл где-то в дереве запросов -> сбросить сессию везде.
     const onLogout = () => {
-      clearTokens()
-      setHasToken(false)
       qc.setQueryData(["admin-me"], undefined)
       qc.removeQueries({ queryKey: ["admin-me"] })
     }
@@ -57,50 +51,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       me: meQuery.data,
       isLoading: meQuery.isLoading,
-      isAuthenticated: hasToken && !meQuery.isError,
+      isAuthenticated: !!meQuery.data,
       async login(login: string, password: string, totp?: string) {
-        let res
         try {
-          res = await api.post("/v1/auth/login", { login, password, totp })
+          await api.post("/v1/auth/login", { login, password, totp })
         } catch (err) {
-          const detail =
-            err && typeof err === "object" && "response" in err
-              ? // @ts-expect-error — axios error shape
-                (err.response?.data?.detail as string | undefined)
-              : undefined
+          const detail = getErrorDetail(err)
           if (detail === "totp required") throw new Error("TOTP_REQUIRED")
           if (detail === "invalid totp") throw new Error("TOTP_INVALID")
           throw new Error("LOGIN_FAILED")
         }
-        setTokens(res.data)
         try {
           // Гейт на вход в админку — на бэкенде (role.admin_login_allowed),
-          // здесь только сразу подхватываем результат и, если роль не
-          // допущена, чистим токены, чтобы не оставлять "полу-залогиненную"
-          // сессию в сторейдже.
+          // здесь только сразу подхватываем результат; если роль не
+          // допущена — снимаем cookie через /auth/logout, чтобы не оставлять
+          // "полу-залогиненную" сессию.
           const me = await qc.fetchQuery({
             queryKey: ["admin-me"],
             queryFn: async () => (await api.get<AdminMe>("/v1/admin/me")).data,
           })
           qc.setQueryData(["admin-me"], me)
-          setHasToken(true)
         } catch (err) {
-          clearTokens()
-          setHasToken(false)
+          await api.post("/v1/auth/logout").catch(() => undefined)
           qc.removeQueries({ queryKey: ["admin-me"] })
-          const status =
-            err && typeof err === "object" && "response" in err
-              ? // @ts-expect-error — axios error shape
-                (err.response?.status as number | undefined)
-              : undefined
+          const status = getErrorStatus(err)
           throw new Error(
             status === 403 ? "ACCESS_DENIED" : "LOGIN_FAILED",
           )
         }
       },
       logout() {
-        clearTokens()
-        setHasToken(false)
+        api.post("/v1/auth/logout").catch(() => undefined)
         qc.setQueryData(["admin-me"], undefined)
         qc.removeQueries({ queryKey: ["admin-me"] })
       },
@@ -108,7 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return hasPerm(meQuery.data?.perms, perm)
       },
     }),
-    [meQuery.data, meQuery.isLoading, meQuery.isError, hasToken, qc],
+    [meQuery.data, meQuery.isLoading, qc],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

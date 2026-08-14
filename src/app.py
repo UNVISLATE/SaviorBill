@@ -6,6 +6,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from lifespan import lifespan
 from core.config import AppConfig, APP_NAME, APP_VERSION
+from security.csrf import CookieCSRFMiddleware
 from telemetry.otel import install_access_log_filter, setup_observability
 
 settings = AppConfig()
@@ -92,6 +93,9 @@ if settings.cors_origins_list:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# Defense-in-depth поверх SameSite=Strict на auth-cookie (см. security/csrf.py).
+app.add_middleware(CookieCSRFMiddleware, cfg=settings)
 
 # Доверять X-Forwarded-For/-Proto только если явно сконфигурирован список
 # реверс-прокси — иначе `request.client.host` (реальный TCP-peer) остаётся

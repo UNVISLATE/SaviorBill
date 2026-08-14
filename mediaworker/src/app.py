@@ -11,6 +11,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 from api import router
 from apiws import router as ws_router
 from lifespan import lifespan
+from utils.csrf import CookieCSRFMiddleware
 from utils.telemetry import install_access_log_filter, setup_observability
 from utils.version import resolve_app_version
 
@@ -61,6 +62,9 @@ if _cfg.trusted_proxies_list:
     app.add_middleware(
         ProxyHeadersMiddleware, trusted_hosts=_cfg.trusted_proxies_list
     )
+
+# Defense-in-depth поверх SameSite=Strict на auth-cookie (см. utils/csrf.py).
+app.add_middleware(CookieCSRFMiddleware, cfg=_cfg)
 
 app.include_router(router)
 app.include_router(ws_router, prefix="/api/media")
