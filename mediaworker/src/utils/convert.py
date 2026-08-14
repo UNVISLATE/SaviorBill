@@ -79,6 +79,29 @@ def _header_matches(header: bytes, signatures: list[tuple[bytes, int]]) -> bool:
     )
 
 
+async def sniff_and_rewind(stream, want: int = SIGNATURE_READ_BYTES):  # noqa: ANN001
+    """Прочитать первые ``want`` байт асинхронного потока байт (тело HTTP-запроса)
+    для определения реального типа файла ДО записи на диск (см. AUDIT.md
+    §4.1/§4.2), не теряя прочитанные куски — возвращает их вместе с
+    итератором, продолжающим отдавать тело как ни в чём не бывало.
+    """
+    buf = bytearray()
+    buffered: list[bytes] = []
+    async for chunk in stream:
+        buffered.append(chunk)
+        buf.extend(chunk)
+        if len(buf) >= want:
+            break
+
+    async def _rewound():
+        for c in buffered:
+            yield c
+        async for c in stream:
+            yield c
+
+    return bytes(buf[:want]), _rewound()
+
+
 def detect_kind(header: bytes) -> str | None:
     """Определить реальный вид медиа по сигнатуре байт.
 
@@ -98,6 +121,19 @@ def detect_kind(header: bytes) -> str | None:
     if _header_matches(header, _VIDEO_SIGNATURES):
         return "video"
     return None
+
+
+def sanitize_paths(text: str, *dirs: str) -> str:
+    """Замаскировать абсолютные пути сервера в сыром выводе ffmpeg/ffprobe
+    перед показом клиенту (см. AUDIT.md §4.4) — stderr обычно содержит полный
+    путь к input/output файлам (``uploads_dir``/``media_dir``), лишняя
+    диагностика для права ``system.jobs.read``."""
+    out = text
+    for d in dirs:
+        if not d:
+            continue
+        out = out.replace(d, "<mediaworker>")
+    return out
 
 
 @dataclass(slots=True)

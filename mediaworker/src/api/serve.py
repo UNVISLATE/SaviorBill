@@ -20,6 +20,7 @@ from utils import ipban
 from utils.authctx import authenticate, authorize, client_ip
 from utils.bus_sign import sign_fields
 from utils.config import Config
+from utils.convert import SIGNATURE_READ_BYTES, detect_kind, sniff_and_rewind
 from utils.keys import file_key, status_key
 from utils.rbac import has_perm
 from utils.openapi_auth import bearer_scheme
@@ -250,10 +251,16 @@ async def add_preview(
 
     if has_body:
         ip = client_ip(request)
-        try:
-            await storage.save_stream(
-                f"{token}.preview_src", request.stream(), max_bytes
+        header, body = await sniff_and_rewind(request.stream(), SIGNATURE_READ_BYTES)
+        # Загружаемый кадр должен быть изображением — ffmpeg одинаково легко
+        # "декодирует" видео как источник кадра, что подтверждало бы риск
+        # "видео вместо аватара/превью" (см. AUDIT.md §4.2) без явной проверки.
+        if detect_kind(header) != "image":
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY, "preview source must be an image"
             )
+        try:
+            await storage.save_stream(f"{token}.preview_src", body, max_bytes)
         except ValueError:
             if is_large:
                 raise HTTPException(
@@ -305,8 +312,13 @@ async def replace_thumb(
     _acc_id, is_large, max_bytes = await _authorize_media_owner(request, token)
 
     ip = client_ip(request)
+    header, body = await sniff_and_rewind(request.stream(), SIGNATURE_READ_BYTES)
+    if detect_kind(header) != "image":
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "thumb source must be an image"
+        )
     try:
-        await storage.save_stream(f"{token}.thumb_src", request.stream(), max_bytes)
+        await storage.save_stream(f"{token}.thumb_src", body, max_bytes)
     except ValueError:
         if is_large:
             raise HTTPException(

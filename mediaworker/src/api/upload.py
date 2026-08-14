@@ -28,6 +28,7 @@ from utils import ipban
 from utils.authctx import authenticate, authorize, client_ip
 from utils.bus_sign import sign_fields
 from utils.config import Config
+from utils.convert import SIGNATURE_READ_BYTES, detect_kind, sniff_and_rewind
 from utils.keys import rate_key, status_key, step2_rate_key, uptoken_key
 from utils.rbac import has_perm
 from utils.openapi_auth import bearer_scheme
@@ -329,8 +330,26 @@ async def upload_file(request: Request, upload_token: str) -> dict:
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
 
     media_token = uuid.uuid4().hex
+
+    # Ранняя валидация типа файла — сигнатура читается ДО записи на диск и до
+    # постановки в очередь (см. AUDIT.md §4.1): раньше файл сначала полностью
+    # писался на диск и уходил в очередь, реальный тип проверялся только в
+    # фоне (worker.py), что позволяло засорять uploads_dir и грузить очередь
+    # произвольным содержимым. Здесь же заодно отсекаем video без права
+    # video_allowed, не тратя диск/очередь на файл, который всё равно будет
+    # отклонён (тот же контроль в worker.py оставлен как defense-in-depth —
+    # на случай гонки/повторной постановки задачи).
+    header, body = await sniff_and_rewind(request.stream(), SIGNATURE_READ_BYTES)
+    sniffed_kind = detect_kind(header)
+    if sniffed_kind is None:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "unrecognized file type")
+    if sniffed_kind == "video" and not video_allowed:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "video not allowed for this account tier"
+        )
+
     try:
-        size = await storage.save_stream(media_token, request.stream(), max_bytes)
+        size = await storage.save_stream(media_token, body, max_bytes)
     except ValueError:
         if is_large:
             # Аккаунт с media.upload.video соврал про Content-Length — не бан,

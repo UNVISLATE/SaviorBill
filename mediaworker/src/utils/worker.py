@@ -29,6 +29,7 @@ from .convert import (
     make_thumb,
     probe_duration,
     probe_media,
+    sanitize_paths,
 )
 from .bus_sign import sign_fields, verify_fields
 from .db import DB
@@ -531,7 +532,11 @@ class Worker:
         job_id = await self.proc_log.start_job(op="convert", token=token)
 
         async def sink(chunk: str) -> None:
-            await self.proc_log.append(job_id, chunk)
+            # Маскируем абсолютные пути (см. AUDIT.md §4.4) — stderr ffmpeg
+            # обычно содержит полный путь к input/output на сервере.
+            await self.proc_log.append(
+                job_id, sanitize_paths(chunk, self.cfg.uploads_dir, self.cfg.media_dir)
+            )
 
         async def progress_sink(snapshot) -> None:  # noqa: ANN001 — ProgressSnapshot
             # Прогресс — вспомогательная телеметрия, не часть контракта
@@ -726,13 +731,22 @@ class Worker:
         job_id = await self.proc_log.start_job(op="preview_add", token=token)
 
         async def sink(chunk: str) -> None:
-            await self.proc_log.append(job_id, chunk)
+            await self.proc_log.append(
+                job_id, sanitize_paths(chunk, self.cfg.uploads_dir, self.cfg.media_dir)
+            )
 
         try:
             if source == "upload":
                 src = self.storage.orig_path(f"{token}.preview_src")
                 if not os.path.exists(src):
                     raise ConvertError("исходный кадр для превью не найден")
+                # Defense-in-depth: kind уже проверен на приёме (serve.py,
+                # см. AUDIT.md §4.2) — повторная дешёвая проверка на случай
+                # гонки/повторной постановки задачи из старой очереди.
+                with open(src, "rb") as f:
+                    header = f.read(SIGNATURE_READ_BYTES)
+                if detect_kind(header) != "image":
+                    raise ConvertError("исходный кадр для превью не является изображением")
                 at = None
             else:
                 src = os.path.join(self.cfg.media_dir, f"{token}.webm")
@@ -788,13 +802,22 @@ class Worker:
         job_id = await self.proc_log.start_job(op="thumb_replace", token=token)
 
         async def sink(chunk: str) -> None:
-            await self.proc_log.append(job_id, chunk)
+            await self.proc_log.append(
+                job_id, sanitize_paths(chunk, self.cfg.uploads_dir, self.cfg.media_dir)
+            )
 
         src = self.storage.orig_path(f"{token}.thumb_src")
         old_key = await self.vk.hget(file_key(token), "thumb")
         try:
             if not os.path.exists(src):
                 raise ConvertError("исходный файл для thumb не найден")
+            # Defense-in-depth: kind уже проверен на приёме (serve.py, см.
+            # AUDIT.md §4.2) — повторная дешёвая проверка на случай гонки/
+            # повторной постановки задачи из старой очереди.
+            with open(src, "rb") as f:
+                header = f.read(SIGNATURE_READ_BYTES)
+            if detect_kind(header) != "image":
+                raise ConvertError("исходный файл для thumb не является изображением")
             thumb = await make_thumb(self.cfg, src, self.cfg.uploads_dir, token, on_output=sink)
         except ConvertError as exc:
             await self._set_op_status(token, "thumb", state="failed", error=str(exc))
