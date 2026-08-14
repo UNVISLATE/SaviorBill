@@ -7,6 +7,7 @@ from dependencies.valkey import create_valkey_client
 from services.billing_loop import BillingLoop
 from services.media_results import MediaResults
 from services.media_job_events import MediaJobEvents
+from services.stats_broadcaster import StatsBroadcaster
 from core.config import AppConfig
 from bootstrap import bootstrap
 from bootstrap.init import init_system
@@ -90,6 +91,11 @@ async def lifespan(app: FastAPI):
     app.state.self_metrics = SelfMetricsPusher(app.state.valkey, config)
     await app.state.self_metrics.start()
 
+    # Единый фоновый поллер снапшота инстансов для WS system/stats — вместо
+    # отдельного Valkey-запроса на каждого клиента (см. AUDIT.md §3.5).
+    app.state.stats_broadcaster = StatsBroadcaster(app.state.valkey, config)
+    await app.state.stats_broadcaster.start()
+
     app.include_router(api_router)
     app.include_router(apiws_router)
     # Роуты добавлены — задокументировать требуемые права в OpenAPI.
@@ -98,6 +104,7 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        await app.state.stats_broadcaster.stop()
         await app.state.self_metrics.stop()
         await app.state.lua_metrics.stop()
         await app.state.media_job_events.stop()

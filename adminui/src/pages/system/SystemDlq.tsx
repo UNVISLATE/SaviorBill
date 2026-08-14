@@ -50,7 +50,7 @@ export function SystemDlq() {
   const { can } = useAuth()
   const qc = useQueryClient()
   const [queue, setQueue] = useState<string>("billing")
-  const canRetry = can("system.tasks.retry")
+  const canRetry = can("system.tasks.dlq.retry")
 
   const { data, isLoading } = useQuery({
     queryKey: ["system-dlq"],

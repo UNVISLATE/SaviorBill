@@ -251,6 +251,15 @@ class AppConfig(BaseSettings):
     RATE_LIMIT_SENSITIVE_MAX: int = Field(default=20)
     RATE_LIMIT_SENSITIVE_WINDOW: int = Field(default=60)
 
+    # WS pre-auth: окно ожидания первого фрейма с токеном (см. apiws/authctx.py)
+    # и лимит одновременных pre-auth соединений на IP — иначе тривиальный
+    # resource exhaustion: открыть много сокетов и не слать токен (AUDIT §3.1).
+    WS_HANDSHAKE_TIMEOUT_SEC: int = Field(default=10)
+    WS_PREAUTH_MAX_PER_IP: int = Field(default=20)
+    # Лимит размера входящего WS-фрейма (байт) — большой payload не должен
+    # парситься json.loads без ограничения (AUDIT §3.2).
+    WS_MAX_FRAME_BYTES: int = Field(default=16 * 1024)
+
     # Доверенные reverse-proxy (CSV IP/CIDR). По умолчанию пусто — X-Forwarded-For
     # полностью игнорируется, идентификатор клиента для rate-limit — только
     # `request.client.host` (реальный TCP-peer). Если задано — ASGI-миддлварь

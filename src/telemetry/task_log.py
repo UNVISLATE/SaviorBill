@@ -68,7 +68,9 @@ class TaskLog:
         await self.vk.publish(f"{_EVENTS_PREFIX}{kind}", raw)
 
     async def tail(self, kind: str, limit: int = 100) -> list[dict]:
-        """Последние ``limit`` фактов (от новых к старым)."""
+        """Последние ``limit`` фактов (от новых к старым), включая ``detail``/
+        ``trace_id`` — для права ``system.tasks.tail.read`` (сырая диагностика,
+        см. AUDIT.md §3.6)."""
         raw = await self.vk.lrange(f"{_PREFIX}{kind}", 0, limit - 1)
         out: list[dict] = []
         for item in raw:
@@ -77,6 +79,16 @@ class TaskLog:
             except (TypeError, ValueError):
                 continue
         return out
+
+    async def tail_summary(self, kind: str, limit: int = 100) -> list[dict]:
+        """Те же факты, но без ``detail``/``trace_id`` — для права
+        ``system.tasks.summary.read`` (кто/что/когда, без внутренней
+        диагностики ошибок, см. AUDIT.md §3.6)."""
+        return [_sanitize(entry) for entry in await self.tail(kind, limit)]
+
+
+def _sanitize(entry: dict) -> dict:
+    return {k: v for k, v in entry.items() if k not in ("detail", "trace_id")}
 
 
 __all__ = ["TaskLog"]

@@ -30,7 +30,7 @@ def _dlq(request: Request, vk: valkey.Valkey) -> DeadLetters:
 
 @router.get(
     "",
-    dependencies=[Depends(require_perm("system.tasks.read"))],
+    dependencies=[Depends(require_perm("system.tasks.dlq.read"))],
     summary="Dead-letter queues",
     description="Задачи, исчерпавшие попытки, по каждой мёртвой очереди: "
     "длина и последние записи.",
@@ -56,7 +56,7 @@ async def retry_dead_letter(
     entry_id: str,
     vk: valkey.Valkey = Depends(get_valkey_client),
     session: AsyncSession = Depends(get_db_session),
-    caller: UserModel = Depends(require_perm("system.tasks.retry")),
+    caller: UserModel = Depends(require_perm("system.tasks.dlq.retry")),
 ) -> None:
     if queue not in DLQ_QUEUES:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown queue")
@@ -86,7 +86,7 @@ async def drop_dead_letter(
     entry_id: str,
     vk: valkey.Valkey = Depends(get_valkey_client),
     session: AsyncSession = Depends(get_db_session),
-    caller: UserModel = Depends(require_perm("system.tasks.retry")),
+    caller: UserModel = Depends(require_perm("system.tasks.dlq.retry")),
 ) -> None:
     if queue not in DLQ_QUEUES:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "unknown queue")

@@ -44,14 +44,21 @@ _BASE_PERMS: dict[str, dict] = {
         "analytics": {"basic": {"read": True}},
         # Реалтайм-мониторинг ("Система" в админке): system.tasks.* — хвост
         # журнала media/lua тасков (billing, apiws/v1/tasks.py +
-        # admin/tasks/*); system.jobs.* — realtime-логи/прогресс ffmpeg
-        # (сами роуты на стороне mediaworker, см. mediaworker/src/api/logs.py);
+        # admin/tasks/*), разбит на summary (без detail/trace_id) и
+        # tail (сырая диагностика) + dlq (просмотр/повтор застрявших задач)
+        # — см. AUDIT.md §3.6, отдельное право на внутреннюю диагностику;
+        # system.jobs.* — realtime-логи/прогресс ffmpeg (сами роуты на
+        # стороне mediaworker, см. mediaworker/src/api/logs.py);
         # system.stats.* — heartbeat/CPU/RSS инстансов (§1, api/v1/system/
         # stats.py + apiws/v1/system_stats.py). instance.read отдельно от
         # read — доступ к деталям конкретного инстанса (какая джоба сейчас
         # выполняется) закрыт от обычного summary-уровня.
         "system": {
-            "tasks": {"read": True},
+            "tasks": {
+                "summary": {"read": True},
+                "tail": {"read": True},
+                "dlq": {"read": True, "retry": True},
+            },
             "jobs": {"read": True},
             "stats": {"read": True, "instance": {"read": True}},
         },
