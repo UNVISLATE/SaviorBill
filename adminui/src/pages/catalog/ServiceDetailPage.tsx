@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom"
 import { ArrowLeft, Eye, EyeOff, ImagePlus, KeyRound, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
@@ -83,15 +84,6 @@ interface Stock {
   out_of_stock: boolean
 }
 
-function errDetail(e: unknown): string | undefined {
-  if (e && typeof e === "object" && "response" in e) {
-    // @ts-expect-error — axios error shape
-    const d = e.response?.data?.detail
-    return typeof d === "string" ? d : undefined
-  }
-  return undefined
-}
-
 function GeneralTab({ service, catalogs }: { service: ServiceAdmin; catalogs: Catalog[] | undefined }) {
   const [name, setName] = useState(service.name)
   const [description, setDescription] = useState(service.description ?? "")
@@ -146,7 +138,7 @@ function GeneralTab({ service, catalogs }: { service: ServiceAdmin; catalogs: Ca
       void qc.invalidateQueries({ queryKey: ["admin-services"] })
     },
     onError: (e: unknown) => {
-      if ((e as Error).message !== "invalid json") toastError("Не удалось сохранить услугу", errDetail(e))
+      if ((e as Error).message !== "invalid json") toastError("Не удалось сохранить услугу", getErrorDetail(e))
     },
   })
 
@@ -279,7 +271,7 @@ function AttachmentsTab({ serviceId }: { serviceId: number }) {
       toastSuccess("Вложение добавлено")
       void qc.invalidateQueries({ queryKey: ["admin-service-attachments", serviceId] })
     },
-    onError: (e: unknown) => toastError("Не удалось добавить вложение", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось добавить вложение", getErrorDetail(e)),
   })
 
   const remove = useMutation({
@@ -288,7 +280,7 @@ function AttachmentsTab({ serviceId }: { serviceId: number }) {
       toastSuccess("Вложение удалено")
       void qc.invalidateQueries({ queryKey: ["admin-service-attachments", serviceId] })
     },
-    onError: (e: unknown) => toastError("Не удалось удалить вложение", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось удалить вложение", getErrorDetail(e)),
   })
 
   return (
@@ -367,7 +359,7 @@ function KeysTab({ serviceId }: { serviceId: number }) {
       void qc.invalidateQueries({ queryKey: ["admin-service-keys", serviceId] })
       void qc.invalidateQueries({ queryKey: ["admin-service-stock", serviceId] })
     },
-    onError: (e: unknown) => toastError("Не удалось импортировать ключи", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось импортировать ключи", getErrorDetail(e)),
   })
 
   const removeKey = useMutation({
@@ -377,7 +369,7 @@ function KeysTab({ serviceId }: { serviceId: number }) {
       void qc.invalidateQueries({ queryKey: ["admin-service-keys", serviceId] })
       void qc.invalidateQueries({ queryKey: ["admin-service-stock", serviceId] })
     },
-    onError: (e: unknown) => toastError("Не удалось удалить ключ", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось удалить ключ", getErrorDetail(e)),
   })
 
   const reveal = async (keyId: number) => {
@@ -389,7 +381,7 @@ function KeysTab({ serviceId }: { serviceId: number }) {
       const res = await api.get<{ value: string }>(`/v1/admin/services/${serviceId}/keys/${keyId}/reveal`)
       setRevealed((prev) => ({ ...prev, [keyId]: res.data.value }))
     } catch (e) {
-      toastError("Не удалось раскрыть ключ", errDetail(e))
+      toastError("Не удалось раскрыть ключ", getErrorDetail(e))
     }
   }
 

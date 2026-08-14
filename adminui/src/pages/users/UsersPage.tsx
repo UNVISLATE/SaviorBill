@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { MoreHorizontal, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { useProfileDialog } from "@/hooks/use-profile-dialog"
 import { useDataTableQuery } from "@/hooks/use-data-table"
@@ -166,12 +167,7 @@ function CreateUserDialog({
       void qc.invalidateQueries({ queryKey: ["admin-users-stats-by-day"] })
     },
     onError: (e: unknown) => {
-      const detail =
-        e && typeof e === "object" && "response" in e
-          ? // @ts-expect-error — axios error shape
-            e.response?.data?.detail
-          : undefined
-      toastError("Не удалось создать пользователя", typeof detail === "string" ? detail : undefined)
+      toastError("Не удалось создать пользователя", getErrorDetail(e))
     },
   })
 
@@ -249,12 +245,7 @@ function DeleteUserDialog({
       void qc.invalidateQueries({ queryKey: ["admin-users-stats-by-day"] })
     },
     onError: (e: unknown) => {
-      const detail =
-        e && typeof e === "object" && "response" in e
-          ? // @ts-expect-error — axios error shape
-            e.response?.data?.detail
-          : undefined
-      toastError("Не удалось удалить пользователя", typeof detail === "string" ? detail : undefined)
+      toastError("Не удалось удалить пользователя", getErrorDetail(e))
     },
   })
 

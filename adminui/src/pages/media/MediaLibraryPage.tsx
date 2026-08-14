@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ImageOff, PlayCircle, Sparkles, Trash2, Video } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { useDataTableQuery } from "@/hooks/use-data-table"
 import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
@@ -76,15 +77,6 @@ function fmtBytes(n: number | null): string {
   return `${v.toFixed(1)} ${units[i]}`
 }
 
-function errDetail(e: unknown): string | undefined {
-  if (e && typeof e === "object" && "response" in e) {
-    // @ts-expect-error — axios error shape
-    const d = e.response?.data?.detail
-    return typeof d === "string" ? d : undefined
-  }
-  return undefined
-}
-
 function Thumb({ m }: { m: MediaItem }) {
   const src = m.thumb?.url ?? (m.kind === "image" && m.status === "ready" ? m.url : null)
   return (
@@ -135,7 +127,7 @@ export function MediaLibraryPage() {
       toastSuccess("Медиа удалено")
       void qc.invalidateQueries({ queryKey: ["admin-media"] })
     },
-    onError: (e: unknown) => toastError("Не удалось удалить медиа", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось удалить медиа", getErrorDetail(e)),
   })
 
   const cleanup = useMutation({
@@ -146,7 +138,7 @@ export function MediaLibraryPage() {
       setCleanupOpen(false)
       void qc.invalidateQueries({ queryKey: ["admin-media"] })
     },
-    onError: (e: unknown) => toastError("Не удалось выполнить очистку", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось выполнить очистку", getErrorDetail(e)),
   })
 
   const columns: DataTableColumn<MediaItem>[] = [

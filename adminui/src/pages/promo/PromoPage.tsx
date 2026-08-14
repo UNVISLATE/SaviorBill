@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { MoreHorizontal, Plus, Ticket, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { useDataTableQuery } from "@/hooks/use-data-table"
 import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
@@ -80,15 +81,6 @@ interface Page<T> {
   has_more: boolean
 }
 
-function errDetail(e: unknown): string | undefined {
-  if (e && typeof e === "object" && "response" in e) {
-    // @ts-expect-error — axios error shape
-    const d = e.response?.data?.detail
-    return typeof d === "string" ? d : undefined
-  }
-  return undefined
-}
-
 const KIND_LABEL: Record<Catalog["kind"], string> = {
   bonus: "Бонус на баланс",
   discount: "Скидка",
@@ -136,7 +128,7 @@ function CatalogFormDialog({
       onOpenChange(false)
       void qc.invalidateQueries({ queryKey: ["admin-promo-catalogs"] })
     },
-    onError: (e: unknown) => toastError(isEdit ? "Не удалось обновить каталог" : "Не удалось создать каталог", errDetail(e)),
+    onError: (e: unknown) => toastError(isEdit ? "Не удалось обновить каталог" : "Не удалось создать каталог", getErrorDetail(e)),
   })
 
   return (
@@ -254,7 +246,7 @@ function DeleteCatalogDialog({
       onOpenChange(false)
       void qc.invalidateQueries({ queryKey: ["admin-promo-catalogs"] })
     },
-    onError: (e: unknown) => toastError("Не удалось удалить каталог", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось удалить каталог", getErrorDetail(e)),
   })
 
   return (
@@ -312,7 +304,7 @@ function IssueCodesDialog({
       onOpenChange(false)
       void qc.invalidateQueries({ queryKey: ["admin-promo-codes", catalogId] })
     },
-    onError: (e: unknown) => toastError("Не удалось выпустить коды", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось выпустить коды", getErrorDetail(e)),
   })
 
   return (
@@ -408,7 +400,7 @@ function CatalogCodesPanel({ catalog }: { catalog: Catalog }) {
     mutationFn: async (vars: { id: number; is_active: boolean }) =>
       api.patch(`/v1/admin/promo/codes/${vars.id}`, { is_active: vars.is_active }),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["admin-promo-codes", catalog.id] }),
-    onError: (e: unknown) => toastError("Не удалось изменить код", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось изменить код", getErrorDetail(e)),
   })
 
   const columns: DataTableColumn<Code>[] = [

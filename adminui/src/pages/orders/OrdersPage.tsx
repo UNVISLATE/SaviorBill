@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Plus } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { useDataTableQuery } from "@/hooks/use-data-table"
 import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
@@ -65,15 +66,6 @@ const STATUS_VARIANT: Record<string, "default" | "outline" | "destructive" | "se
   expired: "outline",
   failed: "destructive",
   cancelled: "destructive",
-}
-
-function errDetail(e: unknown): string | undefined {
-  if (e && typeof e === "object" && "response" in e) {
-    // @ts-expect-error — axios error shape
-    const d = e.response?.data?.detail
-    return typeof d === "string" ? d : undefined
-  }
-  return undefined
 }
 
 function OrderDetailDialog({ order, onOpenChange }: { order: Order; onOpenChange: (v: boolean) => void }) {
@@ -165,7 +157,7 @@ function GrantServiceDialog({ open, onOpenChange }: { open: boolean; onOpenChang
       reset()
       void qc.invalidateQueries({ queryKey: ["admin-orders"] })
     },
-    onError: (e: unknown) => toastError("Не удалось выдать услугу", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось выдать услугу", getErrorDetail(e)),
   })
 
   return (

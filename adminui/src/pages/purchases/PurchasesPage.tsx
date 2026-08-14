@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { RefreshCw, Undo2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { useDataTableQuery } from "@/hooks/use-data-table"
 import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
@@ -47,15 +48,6 @@ const STATUS_VARIANT: Record<string, "default" | "outline" | "destructive" | "se
   wait: "destructive",
 }
 
-function errDetail(e: unknown): string | undefined {
-  if (e && typeof e === "object" && "response" in e) {
-    // @ts-expect-error — axios error shape
-    const d = e.response?.data?.detail
-    return typeof d === "string" ? d : undefined
-  }
-  return undefined
-}
-
 function PaymentDetailDialog({ payment, onOpenChange }: { payment: Payment; onOpenChange: (v: boolean) => void }) {
   const { can } = useAuth()
   const qc = useQueryClient()
@@ -69,7 +61,7 @@ function PaymentDetailDialog({ payment, onOpenChange }: { payment: Payment; onOp
       void qc.invalidateQueries({ queryKey: ["admin-payments"] })
       onOpenChange(false)
     },
-    onError: (e: unknown) => toastError("Не удалось проверить платёж", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось проверить платёж", getErrorDetail(e)),
   })
 
   const refund = useMutation({
@@ -79,7 +71,7 @@ function PaymentDetailDialog({ payment, onOpenChange }: { payment: Payment; onOp
       void qc.invalidateQueries({ queryKey: ["admin-payments"] })
       onOpenChange(false)
     },
-    onError: (e: unknown) => toastError("Не удалось оформить возврат", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось оформить возврат", getErrorDetail(e)),
   })
 
   return (

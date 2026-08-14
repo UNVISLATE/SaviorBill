@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom"
 import { FileUp, UploadCloud } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/shadsnui/button"
@@ -157,12 +158,7 @@ export function CreateLuaScriptDialog({
       navigate(`/lua/${created.id}`)
     },
     onError: (err: unknown) => {
-      // @ts-expect-error — axios error shape
-      const detail = err?.response?.data?.detail
-      toastError(
-        "Не удалось создать скрипт",
-        typeof detail === "string" ? detail : undefined,
-      )
+      toastError("Не удалось создать скрипт", getErrorDetail(err))
     },
   })
 

@@ -4,6 +4,7 @@ import { useNavigate, useParams } from "react-router-dom"
 import { ArrowLeft, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useBreadcrumbExtra } from "@/hooks/use-breadcrumb"
@@ -96,12 +97,7 @@ export function LuaScriptsPage() {
       if (selectedId === deleteTarget?.id) navigate("/lua")
     },
     onError: (err: unknown) => {
-      // @ts-expect-error — axios error shape
-      const detailMsg = err?.response?.data?.detail
-      toastError(
-        "Не удалось удалить скрипт",
-        typeof detailMsg === "string" ? detailMsg : undefined,
-      )
+      toastError("Не удалось удалить скрипт", getErrorDetail(err))
     },
   })
 

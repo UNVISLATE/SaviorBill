@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Ban, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/shadsnui/button"
 import { Input } from "@/components/shadsnui/input"
@@ -31,15 +32,6 @@ interface BannedDomain {
   created_at: string
 }
 
-function errDetail(e: unknown): string | undefined {
-  if (e && typeof e === "object" && "response" in e) {
-    // @ts-expect-error — axios error shape
-    const d = e.response?.data?.detail
-    return typeof d === "string" ? d : undefined
-  }
-  return undefined
-}
-
 function AddDomainDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [domain, setDomain] = useState("")
   const [reason, setReason] = useState("")
@@ -58,7 +50,7 @@ function AddDomainDialog({ open, onOpenChange }: { open: boolean; onOpenChange: 
       reset()
       void qc.invalidateQueries({ queryKey: ["admin-banned-domains"] })
     },
-    onError: (e: unknown) => toastError("Не удалось добавить домен", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось добавить домен", getErrorDetail(e)),
   })
 
   return (
@@ -110,7 +102,7 @@ export function BannedDomainsSettings() {
       toastSuccess("Домен разблокирован")
       void qc.invalidateQueries({ queryKey: ["admin-banned-domains"] })
     },
-    onError: (e: unknown) => toastError("Не удалось разблокировать домен", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось разблокировать домен", getErrorDetail(e)),
   })
 
   return (

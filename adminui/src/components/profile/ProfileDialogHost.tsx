@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { cn } from "@/lib/utils"
 import { api, TOTP_SETUP_REQUIRED_EVENT } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useAuth } from "@/hooks/use-auth"
 import { useProfileDialog } from "@/hooks/use-profile-dialog"
@@ -147,12 +148,7 @@ function DeleteUserButton({ userId, login, isOwnerTarget }: { userId: number; lo
       void qc.invalidateQueries({ queryKey: ["admin-users-stats-by-day"] })
     },
     onError: (e: unknown) => {
-      const detail =
-        e && typeof e === "object" && "response" in e
-          ? // @ts-expect-error — axios error shape
-            e.response?.data?.detail
-          : undefined
-      toastError("Не удалось удалить пользователя", typeof detail === "string" ? detail : undefined)
+      toastError("Не удалось удалить пользователя", getErrorDetail(e))
     },
   })
 

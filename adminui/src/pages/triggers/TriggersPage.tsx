@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { MoreHorizontal, Plus, Trash2, Zap } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
@@ -78,15 +79,6 @@ const EVENT_LABEL: Record<string, string> = {
   "service.delivered": "Услуга выдана",
 }
 
-function errDetail(e: unknown): string | undefined {
-  if (e && typeof e === "object" && "response" in e) {
-    // @ts-expect-error — axios error shape
-    const d = e.response?.data?.detail
-    return typeof d === "string" ? d : undefined
-  }
-  return undefined
-}
-
 function TriggerFormDialog({
   open,
   onOpenChange,
@@ -145,7 +137,7 @@ function TriggerFormDialog({
     },
     onError: (e: unknown) => {
       if ((e as Error).message !== "invalid json") {
-        toastError(isEdit ? "Не удалось обновить триггер" : "Не удалось создать триггер", errDetail(e))
+        toastError(isEdit ? "Не удалось обновить триггер" : "Не удалось создать триггер", getErrorDetail(e))
       }
     },
   })
@@ -283,7 +275,7 @@ function DeleteTriggerDialog({
       onOpenChange(false)
       void qc.invalidateQueries({ queryKey: ["admin-triggers"] })
     },
-    onError: (e: unknown) => toastError("Не удалось удалить триггер", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось удалить триггер", getErrorDetail(e)),
   })
 
   return (

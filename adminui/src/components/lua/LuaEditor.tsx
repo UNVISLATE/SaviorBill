@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { History } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail, getErrorStatus } from "@/lib/api-error.ts"
 import { ensureMonacoWorkers } from "@/lib/monaco-setup"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { Button } from "@/components/shadsnui/button"
@@ -63,15 +64,6 @@ function formatDateTime(iso: string): string {
     hour: "2-digit",
     minute: "2-digit",
   })
-}
-
-function errDetail(err: unknown): string | undefined {
-  if (err && typeof err === "object" && "response" in err) {
-    // @ts-expect-error — axios error shape
-    const detail = err.response?.data?.detail
-    if (typeof detail === "string") return detail
-  }
-  return undefined
 }
 
 /**
@@ -213,8 +205,7 @@ export function LuaEditor({
       void qc.invalidateQueries({ queryKey: ["admin-lua-versions", scriptId] })
     },
     onError: (err: unknown) => {
-      // @ts-expect-error — axios error shape
-      if (err?.response?.status === 409) {
+      if (getErrorStatus(err) === 409) {
         setConflict(true)
         toastError(
           "Скрипт изменили в другой вкладке/другим админом",
@@ -222,7 +213,7 @@ export function LuaEditor({
         )
         return
       }
-      toastError("Не удалось сохранить скрипт", errDetail(err))
+      toastError("Не удалось сохранить скрипт", getErrorDetail(err))
     },
   })
 
@@ -259,13 +250,12 @@ export function LuaEditor({
       void qc.invalidateQueries({ queryKey: ["admin-lua-versions", scriptId] })
     },
     onError: (err: unknown) => {
-      // @ts-expect-error — axios error shape
-      if (err?.response?.status === 409) {
+      if (getErrorStatus(err) === 409) {
         setConflict(true)
         toastError("Скрипт изменили в другой вкладке/другим админом", "Обновите страницу.")
         return
       }
-      toastError("Не удалось активировать версию", errDetail(err))
+      toastError("Не удалось активировать версию", getErrorDetail(err))
     },
   })
 
@@ -280,7 +270,7 @@ export function LuaEditor({
       if (data.ok) toastSuccess("Скрипт компилируется без ошибок")
       else toastError("Ошибка в скрипте", data.error ?? undefined)
     },
-    onError: (err: unknown) => toastError("Не удалось проверить скрипт", errDetail(err)),
+    onError: (err: unknown) => toastError("Не удалось проверить скрипт", getErrorDetail(err)),
   })
 
   const testRun = useMutation({
@@ -310,7 +300,7 @@ export function LuaEditor({
         "Не удалось выполнить test-run",
         err instanceof Error && err.message === "ctx должен быть валидным JSON"
           ? err.message
-          : errDetail(err),
+          : getErrorDetail(err),
       ),
   })
 

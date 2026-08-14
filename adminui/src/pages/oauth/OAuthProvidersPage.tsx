@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { MoreHorizontal, Plus, ShieldCheck, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
@@ -63,15 +64,6 @@ interface LuaScript {
   kind: string
 }
 
-function errDetail(e: unknown): string | undefined {
-  if (e && typeof e === "object" && "response" in e) {
-    // @ts-expect-error — axios error shape
-    const d = e.response?.data?.detail
-    return typeof d === "string" ? d : undefined
-  }
-  return undefined
-}
-
 function ProviderFormDialog({
   open,
   onOpenChange,
@@ -124,7 +116,7 @@ function ProviderFormDialog({
     onError: (e: unknown) =>
       toastError(
         isEdit ? "Не удалось обновить провайдера" : "Не удалось создать провайдера",
-        (e as Error).message === "invalid json" ? "secrets должен быть корректным JSON" : errDetail(e),
+        (e as Error).message === "invalid json" ? "secrets должен быть корректным JSON" : getErrorDetail(e),
       ),
   })
 
@@ -235,7 +227,7 @@ function DeleteProviderDialog({
       onOpenChange(false)
       void qc.invalidateQueries({ queryKey: ["admin-oauth-providers"] })
     },
-    onError: (e: unknown) => toastError("Не удалось удалить провайдера", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось удалить провайдера", getErrorDetail(e)),
   })
 
   return (

@@ -6,6 +6,7 @@ import { useProfileDialog } from "@/hooks/use-profile-dialog"
 import { useInvalidateUserProfile, useUserProfile, type UserProfile } from "@/hooks/use-user-profile"
 import { useAuth } from "@/hooks/use-auth"
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { uploadOwnMedia } from "@/api/media-upload.ts"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/shadsnui/avatar"
@@ -83,12 +84,7 @@ function BalanceAdjustDialog({
       void qc.invalidateQueries({ queryKey: ["admin-user-profile", userId] })
     },
     onError: (e: unknown) => {
-      const detail =
-        e && typeof e === "object" && "response" in e
-          ? // @ts-expect-error — axios error shape
-            e.response?.data?.detail
-          : undefined
-      toastError("Не удалось изменить баланс", typeof detail === "string" ? detail : undefined)
+      toastError("Не удалось изменить баланс", getErrorDetail(e))
     },
   })
 
@@ -289,12 +285,7 @@ export function ProfileOverviewSection({
       invalidateProfile()
       toastSuccess("Роль изменена")
     } catch (e: unknown) {
-      const detail =
-        e && typeof e === "object" && "response" in e
-          ? // @ts-expect-error — axios error shape
-            e.response?.data?.detail
-          : undefined
-      toastError("Не удалось изменить роль", typeof detail === "string" ? detail : undefined)
+      toastError("Не удалось изменить роль", getErrorDetail(e))
     }
   }
 

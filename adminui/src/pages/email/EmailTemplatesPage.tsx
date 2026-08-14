@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Mail, MoreHorizontal, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
@@ -51,15 +52,6 @@ interface TemplateDetail extends Template {
   description?: string | null
 }
 
-function errDetail(e: unknown): string | undefined {
-  if (e && typeof e === "object" && "response" in e) {
-    // @ts-expect-error — axios error shape
-    const d = e.response?.data?.detail
-    return typeof d === "string" ? d : undefined
-  }
-  return undefined
-}
-
 function CreateTemplateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const [slug, setSlug] = useState("")
   const [name, setName] = useState("")
@@ -84,7 +76,7 @@ function CreateTemplateDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       reset()
       void qc.invalidateQueries({ queryKey: ["admin-email-templates"] })
     },
-    onError: (e: unknown) => toastError("Не удалось создать шаблон", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось создать шаблон", getErrorDetail(e)),
   })
 
   return (
@@ -173,7 +165,7 @@ function EditTemplateDialog({
       void qc.invalidateQueries({ queryKey: ["admin-email-templates"] })
       void qc.invalidateQueries({ queryKey: ["admin-email-template-detail", template.id] })
     },
-    onError: (e: unknown) => toastError("Не удалось сохранить шаблон", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось сохранить шаблон", getErrorDetail(e)),
   })
 
   const saveBody = useMutation({
@@ -182,7 +174,7 @@ function EditTemplateDialog({
       toastSuccess("Тело письма сохранено")
       void qc.invalidateQueries({ queryKey: ["admin-email-template-detail", template.id] })
     },
-    onError: (e: unknown) => toastError("Не удалось сохранить тело письма", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось сохранить тело письма", getErrorDetail(e)),
   })
 
   return (
@@ -251,7 +243,7 @@ function DeleteTemplateDialog({
       onOpenChange(false)
       void qc.invalidateQueries({ queryKey: ["admin-email-templates"] })
     },
-    onError: (e: unknown) => toastError("Не удалось удалить шаблон", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось удалить шаблон", getErrorDetail(e)),
   })
 
   return (

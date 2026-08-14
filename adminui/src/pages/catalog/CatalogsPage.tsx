@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { MoreHorizontal, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
 import { Button } from "@/components/shadsnui/button"
@@ -53,15 +54,6 @@ interface Catalog {
   is_active: boolean
 }
 
-function errDetail(e: unknown): string | undefined {
-  if (e && typeof e === "object" && "response" in e) {
-    // @ts-expect-error — axios error shape
-    const d = e.response?.data?.detail
-    return typeof d === "string" ? d : undefined
-  }
-  return undefined
-}
-
 function CatalogFormDialog({
   open,
   onOpenChange,
@@ -103,7 +95,7 @@ function CatalogFormDialog({
       void qc.invalidateQueries({ queryKey: ["admin-catalogs"] })
     },
     onError: (e: unknown) =>
-      toastError(isEdit ? "Не удалось обновить каталог" : "Не удалось создать каталог", errDetail(e)),
+      toastError(isEdit ? "Не удалось обновить каталог" : "Не удалось создать каталог", getErrorDetail(e)),
   })
 
   return (
@@ -183,7 +175,7 @@ function DeleteCatalogDialog({
       onOpenChange(false)
       void qc.invalidateQueries({ queryKey: ["admin-catalogs"] })
     },
-    onError: (e: unknown) => toastError("Не удалось удалить каталог", errDetail(e)),
+    onError: (e: unknown) => toastError("Не удалось удалить каталог", getErrorDetail(e)),
   })
 
   return (
