@@ -56,12 +56,37 @@ class AppConfig(BaseSettings):
     VALKEY_DB: int = Field(default=0)
 
     # Auth / JWT
-    JWT_SECRET: str | None = Field(default=None)
-    JWT_SECRET_FILE: str | None = Field(default=None)
-    JWT_ALG: str = Field(default="HS256")
+    # RS256 (асимметрия): billing подписывает access/refresh приватным ключом,
+    # mediaworker проверяет access-токены только публичным (см. AUDIT.md §1.1
+    # — раньше был общий HS-secret, компрометация mediaworker позволяла
+    # подделывать токены billing).
+    JWT_PRIVATE_KEY: str | None = Field(default=None)
+    JWT_PRIVATE_KEY_FILE: str | None = Field(default=None)
+    JWT_PUBLIC_KEY: str | None = Field(default=None)
+    JWT_PUBLIC_KEY_FILE: str | None = Field(default=None)
+    # Идентификатор текущего ключа (JWT-заголовок ``kid``) — нужен для ротации
+    # без мгновенного logout всех пользователей (см. AUDIT.md §1.5): новые
+    # токены подписываются текущим ключом, но токены с предыдущим ``kid``,
+    # выпущенные до ротации, ещё проверяются публичным ключом ниже, пока не
+    # истечёт grace-период (обычно — REFRESH_TOKEN_TTL).
+    JWT_KID: str | None = Field(default=None)
+    JWT_KID_FILE: str | None = Field(default=None)
+    # Предыдущий ключ (kid+публичный) — не секрет, хранится рядом с текущим
+    # публичным ключом. Используется только для верификации, никогда для
+    # подписи новых токенов. Отсутствует до первой ротации.
+    JWT_PUBLIC_KEY_PREV: str | None = Field(default=None)
+    JWT_PUBLIC_KEY_PREV_FILE: str | None = Field(default=None)
+    JWT_KID_PREV: str | None = Field(default=None)
+    JWT_KID_PREV_FILE: str | None = Field(default=None)
+    JWT_ALG: str = Field(default="RS256")
     ACCESS_TOKEN_TTL: int = Field(default=15 * 60)
     REFRESH_TOKEN_TTL: int = Field(default=30 * 24 * 60 * 60)
     JWT_ISS: str = Field(default="saviorbill")
+
+    # Папка приватного материала billing (приватный ключ JWT и т.п.) —
+    # НЕ монтируется в другие сервисы (в отличие от DATA_DIR, общего с
+    # mediaworker/luaworker). См. deploy/docker-compose.yml.
+    PRIVATE_DATA_DIR: str = Field(default="data-private")
 
     # Шифрование секретов (SecBox / Fernet)
     SECRETS_KEY: str | None = Field(default=None)
@@ -316,8 +341,29 @@ class AppConfig(BaseSettings):
             self.EMAIL_TEMPLATES_DIR = str(Path(self.DATA_DIR) / "email")
         if not self.SECRETS_KEY_PATH:
             self.SECRETS_KEY_PATH = str(Path(self.DATA_DIR) / "keys" / "secret.key")
-        if not self.JWT_SECRET_FILE:
-            self.JWT_SECRET_FILE = str(Path(self.DATA_DIR) / "keys" / "jwt.key")
+        if not self.JWT_PRIVATE_KEY_FILE:
+            self.JWT_PRIVATE_KEY_FILE = str(
+                Path(self.PRIVATE_DATA_DIR) / "jwt_private.pem"
+            )
+        if not self.JWT_PUBLIC_KEY_FILE:
+            # В общей data/ (см. AUDIT.md §1.1) — публичный ключ не секрет,
+            # его читает и mediaworker для верификации access-токенов.
+            self.JWT_PUBLIC_KEY_FILE = str(
+                Path(self.DATA_DIR) / "keys" / "jwt_public.pem"
+            )
+        # kid и предыдущий публичный ключ — тоже не секреты, лежат рядом с
+        # текущим публичным ключом в общей data/ (нужны mediaworker для
+        # верификации по key ring, см. AUDIT.md §1.5).
+        if not self.JWT_KID_FILE:
+            self.JWT_KID_FILE = str(Path(self.DATA_DIR) / "keys" / "jwt_kid.txt")
+        if not self.JWT_PUBLIC_KEY_PREV_FILE:
+            self.JWT_PUBLIC_KEY_PREV_FILE = str(
+                Path(self.DATA_DIR) / "keys" / "jwt_public_prev.pem"
+            )
+        if not self.JWT_KID_PREV_FILE:
+            self.JWT_KID_PREV_FILE = str(
+                Path(self.DATA_DIR) / "keys" / "jwt_kid_prev.txt"
+            )
         if not self.LUA_SERVICE_TOKEN_FILE:
             self.LUA_SERVICE_TOKEN_FILE = str(
                 Path(self.DATA_DIR) / "keys" / "lua_service.token"
@@ -346,6 +392,20 @@ class AppConfig(BaseSettings):
     def trusted_proxies_list(self) -> list[str]:
         """`TRUSTED_PROXIES` как список непустых IP/CIDR (CSV → list)."""
         return [p.strip() for p in self.TRUSTED_PROXIES.split(",") if p.strip()]
+
+    def jwt_public_keys(self) -> dict[str, str]:
+        """Key ring для верификации JWT: ``{kid: публичный_ключ_PEM}``.
+
+        Содержит текущий ключ и (если есть, в течение grace-периода после
+        ротации) предыдущий — так проверка токенов, выпущенных до ротации,
+        продолжает работать до их естественного истечения (см. AUDIT.md §1.5).
+        """
+        keys: dict[str, str] = {}
+        if self.JWT_KID and self.JWT_PUBLIC_KEY:
+            keys[self.JWT_KID] = self.JWT_PUBLIC_KEY
+        if self.JWT_KID_PREV and self.JWT_PUBLIC_KEY_PREV:
+            keys[self.JWT_KID_PREV] = self.JWT_PUBLIC_KEY_PREV
+        return keys
 
     @property
     def cors_origins_list(self) -> list[str]:

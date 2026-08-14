@@ -45,7 +45,7 @@ async def authenticate_ws_payload(ws: WebSocket) -> tuple[int, dict] | None:
 
     cfg: Config = ws.app.state.cfg
     try:
-        acc_id = security.account_id(token, cfg.resolve_jwt_secret(), cfg.jwt_alg, cfg.jwt_iss)
+        acc_id = security.account_id(token, cfg.jwt_public_keys(), cfg.jwt_alg, cfg.jwt_iss)
     except security.InvalidToken:
         await ws.close(code=4401)
         return None

@@ -50,7 +50,7 @@ async def get_current_acc(
     cfg = _cfg(request)
     try:
         claims = jwtu.decode_jwt(
-            cred.credentials, cfg.JWT_SECRET, cfg.JWT_ALG, cfg.JWT_ISS
+            cred.credentials, cfg.jwt_public_keys(), cfg.JWT_ALG, cfg.JWT_ISS
         )
     except jwtu.InvalidJWT as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc

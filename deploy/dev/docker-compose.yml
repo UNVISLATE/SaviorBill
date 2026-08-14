@@ -39,13 +39,13 @@ services:
       DB_NAME: ${DB_NAME:-saviorbill}
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
-      JWT_SECRET: ${JWT_SECRET:-}
       SECRETS_BACKEND: ${SECRETS_BACKEND:-file}
       SECRETS_KEY: ${SECRETS_KEY:-}
       PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8000}
       LUA_SERVICE_TOKEN: ${LUA_SERVICE_TOKEN:-dev-service-token}
       BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-dev-only-bus-signing-key-not-for-prod}
       DATA_DIR: /app/data
+      PRIVATE_DATA_DIR: /app/private
       LUA_SCRIPTS_DIR: /app/data/lua
       EMAIL_TEMPLATES_DIR: /app/data/email
       STORAGE_BACKEND: ${STORAGE_BACKEND:-fs}
@@ -61,6 +61,9 @@ services:
       BILLING_LOOP_ENABLED: ${BILLING_LOOP_ENABLED:-true}
     volumes:
       - ../../data:/app/data:rw
+      # Приватный ключ подписи JWT (RS256) — билинг-only, НЕ монтируется в
+      # mediaworker/luaworker (см. AUDIT.md, Phase 1).
+      - ../../data-private:/app/private:rw
     ports:
       - "8000:8000"
 
@@ -105,7 +108,6 @@ services:
       VALKEY_PORT: 6379
       VALKEY_DB: 0
       DATA_DIR: /app/data
-      JWT_SECRET: ${JWT_SECRET:-}
       BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-dev-only-bus-signing-key-not-for-prod}
       MEDIA_TASK_STREAM: media:tasks
       MEDIA_RESULT_STREAM: media:results

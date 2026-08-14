@@ -35,11 +35,10 @@ COPY deploy/test/pytest.ini /app/pytest.ini
 COPY tests/ /app/tests/
 
 ENV DB_PASS=build
-ARG JWT_SECRET
 
 # Гоняем ТОЛЬКО юнит-тесты (без внешних сервисов). Падение = сборка падает.
-RUN JWT_SECRET=${JWT_SECRET:-$(head -c 32 /dev/urandom | base64)} \
-    pytest -m unit && touch /app/.unit-tests-passed
+# JWT-ключевую пару (RS256) для тестов conftest.py генерирует сам — ARG/ENV не нужны.
+RUN pytest -m unit && touch /app/.unit-tests-passed
 
 
 FROM base AS runtime

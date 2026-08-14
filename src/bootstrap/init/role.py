@@ -97,6 +97,10 @@ _BASE_PERMS: dict[str, dict] = {
 # остальные системные/пользовательские роли — нет, доступ включается вручную).
 _ADMIN_LOGIN_ALLOWED: frozenset[str] = frozenset({"owner", "admin", "manager"})
 
+# Роли, которым запрещена выдача/обновление токенов вообще (см.
+# Role.allow_login, AUDIT.md §1.3). По умолчанию только ``banned``.
+_ALLOW_LOGIN_DENIED: frozenset[str] = frozenset({"banned"})
+
 # Неприкасаемые роли: не выдаются, не редактируются и не удаляются через API,
 # их носителей может менять только носитель той же роли (см. owner_guard).
 _PROTECTED_KEYS: frozenset[str] = frozenset({"owner"})
@@ -136,6 +140,7 @@ async def create_base_roles(
                 is_system=key in _SYSTEM_KEYS,
                 is_protected=key in _PROTECTED_KEYS,
                 admin_login_allowed=key in _ADMIN_LOGIN_ALLOWED,
+                allow_login=key not in _ALLOW_LOGIN_DENIED,
                 perms=perms,
             )
             session.add(role)

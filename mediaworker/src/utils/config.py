@@ -44,10 +44,19 @@ class Config(BaseSettings):
     # Явный DSN — переопределяет сборку из DB_* (необязателен).
     DB_DSN: str | None = Field(default=None)
 
-    # --- JWT (общий секрет с billing) ---
-    JWT_SECRET: str | None = Field(default=None)
-    JWT_SECRET_FILE: str | None = Field(default=None)
-    JWT_ALG: str = Field(default="HS256")
+    # --- JWT (billing подписывает access-токены RS256; mediaworker хранит
+    # только публичный ключ, читаемый из общего DATA_DIR/keys/) ---
+    JWT_PUBLIC_KEY: str | None = Field(default=None)
+    JWT_PUBLIC_KEY_FILE: str | None = Field(default=None)
+    # kid текущего ключа + предыдущий ключ (grace-период после ротации на
+    # billing, см. AUDIT.md §1.5) — все не секреты, читаются из общего DATA_DIR.
+    JWT_KID: str | None = Field(default=None)
+    JWT_KID_FILE: str | None = Field(default=None)
+    JWT_PUBLIC_KEY_PREV: str | None = Field(default=None)
+    JWT_PUBLIC_KEY_PREV_FILE: str | None = Field(default=None)
+    JWT_KID_PREV: str | None = Field(default=None)
+    JWT_KID_PREV_FILE: str | None = Field(default=None)
+    JWT_ALG: str = Field(default="RS256")
     JWT_ISS: str = Field(default="saviorbill")
 
     # --- Медиа-стримы Valkey ---
@@ -191,8 +200,16 @@ class Config(BaseSettings):
     @model_validator(mode="after")
     def _resolve_defaults(self) -> "Config":
         """Достроить пути из DATA_DIR, если не заданы явно."""
-        if not self.JWT_SECRET_FILE:
-            self.JWT_SECRET_FILE = str(Path(self.DATA_DIR) / "keys" / "jwt.key")
+        if not self.JWT_PUBLIC_KEY_FILE:
+            self.JWT_PUBLIC_KEY_FILE = str(Path(self.DATA_DIR) / "keys" / "jwt_public.pem")
+        if not self.JWT_KID_FILE:
+            self.JWT_KID_FILE = str(Path(self.DATA_DIR) / "keys" / "jwt_kid.txt")
+        if not self.JWT_PUBLIC_KEY_PREV_FILE:
+            self.JWT_PUBLIC_KEY_PREV_FILE = str(
+                Path(self.DATA_DIR) / "keys" / "jwt_public_prev.pem"
+            )
+        if not self.JWT_KID_PREV_FILE:
+            self.JWT_KID_PREV_FILE = str(Path(self.DATA_DIR) / "keys" / "jwt_kid_prev.txt")
         return self
 
     @model_validator(mode="after")
@@ -242,13 +259,32 @@ class Config(BaseSettings):
     def media_dir(self) -> str:
         return str(Path(self.DATA_DIR) / "media")
 
-    def resolve_jwt_secret(self) -> str:
-        """Актуальный JWT-секрет: ENV, иначе — свежее чтение файла ключа."""
-        if self.JWT_SECRET:
-            return self.JWT_SECRET
-        if self.JWT_SECRET_FILE and os.path.exists(self.JWT_SECRET_FILE):
-            return Path(self.JWT_SECRET_FILE).read_text(encoding="utf-8").strip()
+    def _read_or_env(self, env_val: str | None, file_path: str | None) -> str:
+        if env_val:
+            return env_val
+        if file_path and os.path.exists(file_path):
+            return Path(file_path).read_text(encoding="utf-8").strip()
         return ""
+
+    def jwt_public_keys(self) -> dict[str, str]:
+        """Key ring для верификации JWT: ``{kid: публичный_ключ_PEM}``.
+
+        Читает файлы заново при каждом вызове (не кэширует при старте) —
+        billing может ротировать ключ, пока mediaworker уже запущен, а перечитывать
+        файлы дешевле, чем требовать рестарта сервиса при каждой ротации.
+        Приватного ключа у mediaworker нет и быть не должно (см. AUDIT.md §1.1) —
+        только верификация access-токенов billing.
+        """
+        keys: dict[str, str] = {}
+        kid = self._read_or_env(self.JWT_KID, self.JWT_KID_FILE)
+        public = self._read_or_env(self.JWT_PUBLIC_KEY, self.JWT_PUBLIC_KEY_FILE)
+        if kid and public:
+            keys[kid] = public
+        prev_kid = self._read_or_env(self.JWT_KID_PREV, self.JWT_KID_PREV_FILE)
+        prev_public = self._read_or_env(self.JWT_PUBLIC_KEY_PREV, self.JWT_PUBLIC_KEY_PREV_FILE)
+        if prev_kid and prev_public:
+            keys[prev_kid] = prev_public
+        return keys
 
     # --- Алиасы для совместимости с кодом, использующим старые имена ---
 

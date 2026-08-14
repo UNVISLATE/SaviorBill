@@ -39,7 +39,7 @@ prod-down:
 	$(PROD) down
 
 unit:
-	PYTHONPATH=src DB_PASS=ci JWT_SECRET=ci-secret-ci-secret-ci-secret-32 pytest -c deploy/test/pytest.ini --rootdir=. -m unit
+	PYTHONPATH=src DB_PASS=ci pytest -c deploy/test/pytest.ini --rootdir=. -m unit
 
 mw-unit:
 	cd mediaworker && PYTHONPATH=src pytest -q

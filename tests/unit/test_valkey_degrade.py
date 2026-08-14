@@ -45,19 +45,24 @@ async def test_login_guard_record_and_clear_survive_valkey_outage():
     await guard.clear("alice")
 
 
-def _cfg():
+def _cfg(rsa_keypair):
+    priv, pub = rsa_keypair
+    kid = "test-kid"
     return SimpleNamespace(
-        JWT_SECRET="x" * 32,
-        JWT_ALG="HS256",
+        JWT_PRIVATE_KEY=priv,
+        JWT_PUBLIC_KEY=pub,
+        JWT_KID=kid,
+        JWT_ALG="RS256",
         JWT_ISS="saviorbill",
         ACCESS_TOKEN_TTL=900,
         REFRESH_TOKEN_TTL=86400,
+        jwt_public_keys=lambda: {kid: pub},
     )
 
 
 @pytest.mark.asyncio
-async def test_issue_tracked_still_returns_tokens_when_valkey_is_down():
+async def test_issue_tracked_still_returns_tokens_when_valkey_is_down(rsa_keypair):
     acc = SimpleNamespace(id=1, login="alice", role=None, is_active=True)
-    svc = TokenSvc(_cfg(), _DeadValkey())
+    svc = TokenSvc(_cfg(rsa_keypair), _DeadValkey())
     pair = await svc.issue_tracked(acc, ip="1.2.3.4", user_agent="ua")
     assert pair.access_token and pair.refresh_token

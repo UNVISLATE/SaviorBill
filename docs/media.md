@@ -23,8 +23,9 @@ upload-token, затем — сама передача файла. Это отд
 **Шаг 1 — `POST /api/media/upload?kind=image`** (`Authorization: Bearer <access-JWT>`,
 тело не нужно). Забаненный IP → `403` сразу.
 
-1. `mediaworker` валидирует access-JWT (общий `JWT_SECRET` / файл
-   `data/keys/jwt.key`) и читает права роли аккаунта из Postgres:
+1. `mediaworker` валидирует access-JWT публичным RS256-ключом billing (файл
+   `data/keys/jwt_public.pem`, общий read-only том — приватного ключа у
+   mediaworker нет) и читает права роли аккаунта из Postgres:
    - `admin.media.upload` → без ограничения по размеру вообще (админский
      доступ, не привязан к `MEDIA_MAX_BYTES`);
    - `media.upload.video` → `MEDIA_MAX_BYTES` (по умолчанию 50 MiB);
@@ -422,7 +423,7 @@ billing (`src/core/config.py`): `DOMAIN`, `MEDIAWORKER_URL`, `MEDIA_PUBLIC_URL`,
 (`fs`|`s3`) + `S3_*`. Метаданные медиа читает из БД.
 
 mediaworker (`mediaworker/src/config.py`): `VALKEY_*`, `DB_*` (Postgres напрямую),
-`JWT_SECRET`/`JWT_SECRET_FILE`/`JWT_ALG`/`JWT_ISS`, `DATA_DIR`, `MEDIA_GROUP/CONSUMER`,
+`JWT_PUBLIC_KEY`/`JWT_PUBLIC_KEY_FILE`/`JWT_ALG`/`JWT_ISS`, `DATA_DIR`, `MEDIA_GROUP/CONSUMER`,
 `MEDIA_MAX_BYTES`, `MEDIA_SMALL_MAX_BYTES`, `MEDIA_UPLOADS_PER_HOUR`, `ROLE_BANNED`,
 `MEDIA_KEEP_ORIGINAL`, `MEDIA_WEBP_QUALITY`, `MEDIA_WEBM_CRF`, `MEDIA_THUMB_SIZE`,
 `MEDIA_THUMB_QUALITY`, `MEDIA_DOCS_ENABLED`, `STORAGE_BACKEND` + `S3_*`.

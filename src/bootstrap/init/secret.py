@@ -23,7 +23,8 @@ def _secret_files(cfg: AppConfig) -> list[Path]:
     """
     candidates = [
         cfg.SECRETS_KEY_PATH,
-        cfg.JWT_SECRET_FILE,
+        cfg.JWT_PRIVATE_KEY_FILE,
+        cfg.JWT_PUBLIC_KEY_FILE,
         cfg.LUA_SERVICE_TOKEN_FILE,
         cfg.DB_PASS_FILE,
         cfg.SMTP_PASS_FILE,

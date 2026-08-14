@@ -58,6 +58,14 @@ class Role(Base):
     admin_login_allowed: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
     )
+    # Явный допуск роли к получению/обновлению токенов (логин, refresh).
+    # Не путать с RBAC-правами: роль может не иметь прав на действия, но
+    # всё равно логиниться (например, чтобы видеть причину блокировки).
+    # false здесь — жёсткий запрет входа независимо от perms (см. §1.3
+    # AUDIT.md, роль ``banned``).
+    allow_login: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default="true", nullable=False
+    )
     perms: Mapped[dict] = mapped_column(
         JSON, default=dict, server_default="{}", nullable=False
     )

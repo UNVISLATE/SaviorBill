@@ -38,24 +38,29 @@ class _FakeValkey:
                 yield key
 
 
-def _cfg():
+def _cfg(rsa_keypair):
+    priv, pub = rsa_keypair
+    kid = "test-kid"
     return SimpleNamespace(
-        JWT_SECRET="x" * 32,
-        JWT_ALG="HS256",
+        JWT_PRIVATE_KEY=priv,
+        JWT_PUBLIC_KEY=pub,
+        JWT_KID=kid,
+        JWT_ALG="RS256",
         JWT_ISS="saviorbill",
         ACCESS_TOKEN_TTL=900,
         REFRESH_TOKEN_TTL=86400,
+        jwt_public_keys=lambda: {kid: pub},
     )
 
 
 @pytest.mark.asyncio
-async def test_revoke_all_sessions_denylists_every_jti():
+async def test_revoke_all_sessions_denylists_every_jti(rsa_keypair):
     vk = _FakeValkey()
     for jti in ("a1", "b2", "c3"):
         vk.hashes[f"session:7:{jti}"] = {"exp": "99999999999"}
     vk.hashes["session:8:other"] = {"exp": "99999999999"}
 
-    svc = TokenSvc(_cfg(), vk)
+    svc = TokenSvc(_cfg(rsa_keypair), vk)
     assert await svc.revoke_all_sessions(7) == 3
 
     for jti in ("a1", "b2", "c3"):
@@ -66,6 +71,6 @@ async def test_revoke_all_sessions_denylists_every_jti():
 
 
 @pytest.mark.asyncio
-async def test_revoke_all_sessions_on_account_without_sessions():
-    svc = TokenSvc(_cfg(), _FakeValkey())
+async def test_revoke_all_sessions_on_account_without_sessions(rsa_keypair):
+    svc = TokenSvc(_cfg(rsa_keypair), _FakeValkey())
     assert await svc.revoke_all_sessions(42) == 0

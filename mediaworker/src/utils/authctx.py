@@ -46,7 +46,7 @@ async def authenticate(request: Request) -> int:
     token = bearer(request)
     try:
         return security.account_id(
-            token, cfg.resolve_jwt_secret(), cfg.jwt_alg, cfg.jwt_iss
+            token, cfg.jwt_public_keys(), cfg.jwt_alg, cfg.jwt_iss
         )
     except security.InvalidToken as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
@@ -81,7 +81,7 @@ async def soft_authenticate(request: Request) -> int | None:
     token = auth.split(" ", 1)[1].strip()
     try:
         return security.account_id(
-            token, cfg.resolve_jwt_secret(), cfg.jwt_alg, cfg.jwt_iss
+            token, cfg.jwt_public_keys(), cfg.jwt_alg, cfg.jwt_iss
         )
     except security.InvalidToken:
         return None

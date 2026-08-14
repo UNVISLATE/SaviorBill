@@ -87,7 +87,8 @@ async def register(
     summary="Login with password",
     description=(
         "Checks login and password and returns access and refresh tokens. "
-        "Blocked accounts can still log in but remain restricted by RBAC."
+        "Blocked accounts can still log in but remain restricted by RBAC, "
+        "unless their role has allow_login=false."
     ),
     dependencies=[Depends(rate_limit("auth.login", LimitKind.AUTH))],
 )
@@ -115,6 +116,9 @@ async def login(
 
     # is_active (бан) больше не блокирует вход — роль banned и так лишена
     # прав через RBAC; клиент получает токены + флаг is_active=false.
+    # Явный allow_login=false на роли — жёсткий запрет (см. Role.allow_login).
+    if acc.role is not None and not acc.role.allow_login:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "login not allowed for this role")
     if acc.totp_enabled:
         # Неверный второй фактор считаем такой же неудачей входа, как и
         # неверный пароль: иначе счётчик блокировки его не видит.
@@ -173,7 +177,7 @@ async def logout(
     try:
         claims = jwtu.decode_jwt(
             body.refresh_token,
-            tokens.cfg.JWT_SECRET,
+            tokens.cfg.jwt_public_keys(),
             tokens.cfg.JWT_ALG,
             tokens.cfg.JWT_ISS,
         )

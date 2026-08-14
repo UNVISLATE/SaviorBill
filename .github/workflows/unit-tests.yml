@@ -18,7 +18,6 @@ jobs:
         env:
           PYTHONPATH: src
           DB_PASS: ci
-          JWT_SECRET: ci-secret-ci-secret-ci-secret-32
         run: pytest -c deploy/test/pytest.ini --rootdir=. -m unit
 
   mediaworker-unit:

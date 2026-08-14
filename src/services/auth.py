@@ -49,20 +49,22 @@ class TokenSvc:
     def _access(self, acc: UserModel) -> str:
         return jwtu.make_access(
             str(acc.id),
-            self.cfg.JWT_SECRET,
+            self.cfg.JWT_PRIVATE_KEY,
             self.cfg.JWT_ALG,
             self.cfg.ACCESS_TOKEN_TTL,
             self.cfg.JWT_ISS,
+            self.cfg.JWT_KID,
             extra={"login": acc.login, "role": acc.role.name if acc.role else None},
         )
 
     def _refresh(self, acc: UserModel) -> str:
         return jwtu.make_refresh(
             str(acc.id),
-            self.cfg.JWT_SECRET,
+            self.cfg.JWT_PRIVATE_KEY,
             self.cfg.JWT_ALG,
             self.cfg.REFRESH_TOKEN_TTL,
             self.cfg.JWT_ISS,
+            self.cfg.JWT_KID,
         )
 
     def issue(
@@ -183,7 +185,7 @@ class TokenSvc:
 
     def _decode_refresh(self, token: str) -> jwtu.JWTToken:
         claims = jwtu.decode_jwt(
-            token, self.cfg.JWT_SECRET, self.cfg.JWT_ALG, self.cfg.JWT_ISS
+            token, self.cfg.jwt_public_keys(), self.cfg.JWT_ALG, self.cfg.JWT_ISS
         )
         if claims.typ != jwtu.REFRESH:
             raise jwtu.InvalidJWT("a refresh token was expected")
@@ -217,6 +219,8 @@ class TokenSvc:
         acc = await mngr.by_id(int(claims.sub))
         if acc is None:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "account unavailable")
+        if acc.role is not None and not acc.role.allow_login:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "login not allowed for this role")
 
         # Перенести created_at старой сессии на новую запись (та же "сессия"
         # с точки зрения пользователя, просто новый jti после ротации).

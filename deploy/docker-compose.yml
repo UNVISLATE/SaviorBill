@@ -46,8 +46,12 @@ services:
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-*}
+      PRIVATE_DATA_DIR: /app/private
     volumes:
       - ../data:/app/data:rw
+      # Приватный ключ подписи JWT (RS256) — билинг-only, НЕ монтируется в
+      # mediaworker/luaworker (см. AUDIT.md, Phase 1).
+      - ../data-private:/app/private:rw
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')\""]
       interval: 10s

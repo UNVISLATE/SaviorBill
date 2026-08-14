@@ -35,7 +35,7 @@ async def authenticate_ws(ws: WebSocket) -> UserModel | None:
 
     cfg = ws.app.state.settings
     try:
-        claims = jwtu.decode_jwt(token, cfg.JWT_SECRET, cfg.JWT_ALG, cfg.JWT_ISS)
+        claims = jwtu.decode_jwt(token, cfg.jwt_public_keys(), cfg.JWT_ALG, cfg.JWT_ISS)
     except jwtu.InvalidJWT:
         await ws.close(code=4401)
         return None

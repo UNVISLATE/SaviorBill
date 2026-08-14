@@ -18,6 +18,7 @@ class Role(BaseModel):
     # Read-only: роль нельзя редактировать/выдавать через API (см. owner_guard).
     is_protected: bool
     admin_login_allowed: bool
+    allow_login: bool
     perms: dict
 
     @classmethod
@@ -34,6 +35,9 @@ class RoleCreate(BaseModel):
     admin_login_allowed: bool = Field(
         default=False, description="Allow accounts with this role to log into the admin panel"
     )
+    allow_login: bool = Field(
+        default=True, description="Allow accounts with this role to obtain/refresh tokens at all"
+    )
     perms: dict = Field(
         default_factory=dict, description="Role permission tree (optional)"
     )
@@ -45,6 +49,9 @@ class RolePatch(BaseModel):
     title: str | None = Field(default=None, description="Display title")
     admin_login_allowed: bool | None = Field(
         default=None, description="Allow accounts with this role to log into the admin panel"
+    )
+    allow_login: bool | None = Field(
+        default=None, description="Allow accounts with this role to obtain/refresh tokens at all"
     )
     perms: dict | None = Field(default=None, description="Role permission tree")
 

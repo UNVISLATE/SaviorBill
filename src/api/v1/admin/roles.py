@@ -60,6 +60,7 @@ async def create_role(
         title=body.title,
         perms=body.perms,
         admin_login_allowed=body.admin_login_allowed,
+        allow_login=body.allow_login,
     )
     session.add(role)
     await session.flush()
@@ -99,6 +100,8 @@ async def update_role(
         role.title = data["title"]
     if "admin_login_allowed" in data:
         role.admin_login_allowed = data["admin_login_allowed"]
+    if "allow_login" in data:
+        role.allow_login = data["allow_login"]
     if "perms" in data:
         role.perms = data["perms"]
     await audit(

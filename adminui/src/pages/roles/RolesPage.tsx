@@ -31,6 +31,7 @@ interface Role {
   title: string | null
   is_system: boolean
   admin_login_allowed: boolean
+  allow_login: boolean
   perms: PermNode
 }
 
@@ -58,6 +59,7 @@ export function RolesPage() {
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [permFilter, setPermFilter] = useState("")
   const [adminLoginAllowed, setAdminLoginAllowed] = useState(false)
+  const [allowLogin, setAllowLogin] = useState(true)
 
   const { data: roles, isLoading } = useQuery({
     queryKey: ["admin-roles"],
@@ -75,6 +77,7 @@ export function RolesPage() {
       await api.patch(`/v1/admin/roles/${editing.id}`, {
         perms: buildPermsTree(Array.from(checked)),
         admin_login_allowed: adminLoginAllowed,
+        allow_login: allowLogin,
       })
     },
     onSuccess: () => {
@@ -90,6 +93,7 @@ export function RolesPage() {
     setChecked(new Set(flat.filter((p) => hasPerm(role.perms, p))))
     setPermFilter("")
     setAdminLoginAllowed(role.admin_login_allowed)
+    setAllowLogin(role.allow_login)
     setEditing(role)
   }
 
@@ -115,13 +119,14 @@ export function RolesPage() {
               <TableHead>Название</TableHead>
               <TableHead>Тип</TableHead>
               <TableHead>Вход в админку</TableHead>
+              <TableHead>Логин</TableHead>
               <TableHead>Прав</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
                   Загрузка…
                 </TableCell>
               </TableRow>
@@ -164,6 +169,15 @@ export function RolesPage() {
                     </Badge>
                   )}
                 </TableCell>
+                <TableCell>
+                  {r.name === "owner" ? (
+                    <Badge variant="secondary">всегда</Badge>
+                  ) : r.allow_login ? (
+                    <Badge variant="secondary">разрешён</Badge>
+                  ) : (
+                    <Badge variant="destructive">запрещён</Badge>
+                  )}
+                </TableCell>
                 <TableCell className="text-muted-foreground">
                   {catalog ? catalog.flat.filter((p) => hasPerm(r.perms, p)).length : "—"}
                 </TableCell>
@@ -195,6 +209,19 @@ export function RolesPage() {
               Разрешить вход в админ-панель
               <span className="ml-1 block text-xs text-muted-foreground">
                 Без этого флага роль не может войти в админку, даже если у неё есть права.
+              </span>
+            </span>
+          </label>
+          <label className="flex items-center gap-2 rounded border px-2.5 py-2 text-sm">
+            <Checkbox
+              checked={allowLogin}
+              onCheckedChange={(v) => setAllowLogin(!!v)}
+            />
+            <span>
+              Разрешить получение/обновление токенов (логин)
+              <span className="ml-1 block text-xs text-muted-foreground">
+                Без этого флага аккаунты с этой ролью не могут залогиниться и
+                обновить токен вообще — жёсткая блокировка независимо от прав.
               </span>
             </span>
           </label>

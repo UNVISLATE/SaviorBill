@@ -28,7 +28,11 @@ def _file_paths(cfg: "AppConfig") -> dict[str, Path]:
     """
     paths: dict[str, Path] = {
         SecretName.SECRETS_KEY: cfg.secret_key_file,
-        SecretName.JWT: Path(cfg.JWT_SECRET_FILE),
+        SecretName.JWT_PRIVATE: Path(cfg.JWT_PRIVATE_KEY_FILE),
+        SecretName.JWT_PUBLIC: Path(cfg.JWT_PUBLIC_KEY_FILE),
+        SecretName.JWT_KID: Path(cfg.JWT_KID_FILE),
+        SecretName.JWT_PUBLIC_PREV: Path(cfg.JWT_PUBLIC_KEY_PREV_FILE),
+        SecretName.JWT_KID_PREV: Path(cfg.JWT_KID_PREV_FILE),
         SecretName.LUA_TOKEN: Path(cfg.LUA_SERVICE_TOKEN_FILE),
     }
     # Предоставляемые (негенерируемые) секреты — только если задан путь файла.

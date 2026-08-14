@@ -15,7 +15,11 @@ class SecretName:
     """Логические имена управляемых секретов."""
 
     SECRETS_KEY = "secrets_key"  # ключ Fernet для шифрования секретов в БД
-    JWT = "jwt_secret"  # ключ подписи JWT
+    JWT_PRIVATE = "jwt_private_key"  # приватный ключ подписи JWT (RS256, billing-only)
+    JWT_PUBLIC = "jwt_public_key"  # публичный ключ проверки JWT (billing + mediaworker)
+    JWT_KID = "jwt_kid"  # идентификатор текущего ключа (заголовок JWT ``kid``)
+    JWT_PUBLIC_PREV = "jwt_public_key_prev"  # предыдущий ключ (grace-период после ротации)
+    JWT_KID_PREV = "jwt_kid_prev"
     LUA_TOKEN = "lua_service_token"  # сервисный токен LuaWorker
     DB_PASS = "db_pass"  # пароль БД (только чтение)
     SMTP_PASS = "smtp_pass"  # пароль SMTP (только чтение)

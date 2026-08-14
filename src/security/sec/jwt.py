@@ -11,16 +11,18 @@ ACCESS = "access"
 REFRESH = "refresh"
 
 # Жёсткий allowlist алгоритмов — не читается из ``alg`` слепо. Защита от
-# alg-confusion и от случайной подмены конфигурации на "none"/асимметричный
-# алгоритм, для которого ``secret`` использовался бы как публичный ключ.
-# HS-семейство — единственное, что реально используется:
-# secret общий между billing и mediaworker (симметричная проверка).
-ALLOWED_ALGS = frozenset({"HS256", "HS384", "HS512"})
+# alg-confusion (в частности — от подмены на симметричный HS, для которого
+# публичный ключ можно было бы подсунуть как ``secret``) и от случайной
+# подмены конфигурации на "none". Только RS-семейство (асимметрия): billing
+# подписывает приватным ключом, mediaworker проверяет access-токены только
+# публичным — компрометация mediaworker не даёт подделывать токены billing
+# (см. AUDIT.md §1.1).
+ALLOWED_ALGS = frozenset({"RS256", "RS384", "RS512"})
 
 # Аудитория токенов этого стека — билинг + доверенные внутренние сервисы
-# (mediaworker), которые проверяют access-JWT тем же общим secret'ом.
-# Явный ``aud`` не даёт токену, случайно/умышленно созданному с тем же
-# secret+iss для не-JWT-сессионных целей, быть принятым здесь.
+# (mediaworker), которые проверяют access-JWT публичным ключом billing.
+# Явный ``aud`` не даёт токену, случайно/умышленно созданному тем же
+# ключом+iss для не-JWT-сессионных целей, быть принятым здесь.
 AUDIENCE = "saviorbill-services"
 
 
@@ -49,10 +51,11 @@ def _check_alg(alg: str) -> None:
 def _encode(
     sub: str,
     typ: str,
-    secret: str,
+    private_key: str,
     alg: str,
     ttl: int,
     iss: str,
+    kid: str,
     extra: dict | None = None,
 ) -> str:
     _check_alg(alg)
@@ -68,40 +71,60 @@ def _encode(
     }
     if extra:
         payload.update(extra)
-    return jwt.encode(payload, secret, algorithm=alg)
+    return jwt.encode(payload, private_key, algorithm=alg, headers={"kid": kid})
 
 
 def make_access(
-    sub: str, secret: str, alg: str, ttl: int, iss: str, extra: dict | None = None
+    sub: str,
+    private_key: str,
+    alg: str,
+    ttl: int,
+    iss: str,
+    kid: str,
+    extra: dict | None = None,
 ) -> str:
-    """Короткоживущий access-токен."""
-    return _encode(sub, ACCESS, secret, alg, ttl, iss, extra)
+    """Короткоживущий access-токен, подписанный приватным ключом billing."""
+    return _encode(sub, ACCESS, private_key, alg, ttl, iss, kid, extra)
 
 
-def make_refresh(sub: str, secret: str, alg: str, ttl: int, iss: str) -> str:
+def make_refresh(sub: str, private_key: str, alg: str, ttl: int, iss: str, kid: str) -> str:
     """Долгоживущий refresh-токен (только sub, без полезной нагрузки)."""
-    return _encode(sub, REFRESH, secret, alg, ttl, iss)
+    return _encode(sub, REFRESH, private_key, alg, ttl, iss, kid)
 
 
-def decode_jwt(token: str, secret: str, alg: str, iss: str) -> JWTToken:
-    """Декодировать и провалидировать токен. Бросает ``InvalidJWT`` при ошибке."""
+def decode_jwt(token: str, public_keys: dict[str, str], alg: str, iss: str) -> JWTToken:
+    """Декодировать и провалидировать токен по key ring ``{kid: публичный_ключ}``.
+
+    Ключ выбирается по заголовку ``kid`` токена — так поддерживается ротация
+    ключей без мгновенного logout (см. ``AppConfig.jwt_public_keys``,
+    AUDIT.md §1.5). Бросает ``InvalidJWT`` при ошибке или неизвестном ``kid``.
+    """
     _check_alg(alg)
+    try:
+        kid = jwt.get_unverified_header(token).get("kid")
+    except jwt.PyJWTError as exc:
+        raise InvalidJWT(str(exc)) from exc
+    if not kid or kid not in public_keys:
+        raise InvalidJWT(f"неизвестный kid {kid!r}")
     try:
         data = jwt.decode(
             token,
-            secret,
+            public_keys[kid],
             algorithms=[alg],
             issuer=iss,
             audience=AUDIENCE,
-            options={"require": ["exp", "iat", "sub", "jti", "aud"]},
+            options={"require": ["exp", "iat", "sub", "jti", "aud", "typ"]},
         )
     except jwt.PyJWTError as exc:
         raise InvalidJWT(str(exc)) from exc
 
+    if data["typ"] not in (ACCESS, REFRESH):
+        raise InvalidJWT(f"неизвестный typ {data['typ']!r}")
+
     reserved = {"sub", "typ", "jti", "exp", "iat", "iss", "aud"}
     return JWTToken(
         sub=data["sub"],
-        typ=data.get("typ", ACCESS),
+        typ=data["typ"],
         jti=data["jti"],
         exp=data["exp"],
         iat=data["iat"],
@@ -121,3 +144,4 @@ __all__ = [
     "make_refresh",
     "decode_jwt",
 ]
+
