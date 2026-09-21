@@ -1,10 +1,39 @@
-# Ротация ключа шифрования секретов (SecBox)
+# Секреты и ротация ключа шифрования (SecBox)
 
 `SecBox` (`src/security/sec/box.py`) шифрует секреты, хранимые в БД: цифровые
 ключи товаров (`service_keys.value`), секретные системные настройки
 (`settings.value` при `is_secret=true`), секреты платёжных провайдеров
 (`payment_providers.secrets_enc`) и OAuth-провайдеров
 (`oauth_providers.secrets_enc`).
+
+## Внешние хранилища секретов
+
+`SECRETS_BACKEND=file` используется по умолчанию для локального и single-host
+развёртывания. Облачные адаптеры используют официальные SDK:
+
+- `aws` — `boto3` и AWS Secrets Manager; используйте IAM role/OIDC и право
+  `secretsmanager:GetSecretValue` вместо access keys в окружении;
+- `gcp` — `google-cloud-secret-manager`; используйте ADC, service account
+  workload identity или Workload Identity Federation;
+- `azure` — `azure-keyvault-secrets` + `azure-identity`; используется
+  `DefaultAzureCredential`, предпочтительно Managed Identity/Workload Identity.
+
+`vault` работает с KV v2 через HTTP API. Для Compose/VM поддерживается AppRole:
+`SECRETS_VAULT_ROLE_ID` и `SECRETS_VAULT_SECRET_ID` используются только для
+получения client token через auth mount, после чего KV-запросы используют
+полученный token. `SECRETS_VAULT_TOKEN` оставлен для bootstrap/совместимости.
+Root token не должен использоваться приложением.
+
+Для Vault в production используйте HTTPS и проверку сертификата:
+`SECRETS_VAULT_TLS_VERIFY=true`, при приватном CA укажите
+`SECRETS_VAULT_CA_FILE`. Отключение TLS-проверки допустимо только в изолированном
+dev-окружении.
+
+Секреты провайдеров не логируются и не должны храниться в репозитории. ENV
+переменные `SECRETS_*` задают координаты и bootstrap-аутентификацию, а не
+заменяют политики IAM/RBAC. Для cloud-neutral self-hosted deployment
+рекомендуется Vault; AWS/GCP/Azure выбираются только при размещении в
+соответствующем облаке.
 
 ## Формат `SECRETS_KEY`
 

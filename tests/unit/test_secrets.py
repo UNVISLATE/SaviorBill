@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -163,3 +164,148 @@ def test_resolve_secrets_requires_db_pass(tmp_path: Path, monkeypatch):
     cfg = AppConfig(DATA_DIR=str(tmp_path))  # без DB_PASS
     with pytest.raises(RuntimeError):
         resolve_secrets(cfg)
+
+
+def test_aws_store_roundtrip(monkeypatch):
+    import boto3
+    from security.sec.secrets.aws_store import AWSSecretStore
+
+    values: dict[str, str] = {}
+
+    class Client:
+        def get_secret_value(self, *, SecretId):
+            if SecretId not in values:
+                from botocore.exceptions import ClientError
+
+                raise ClientError(
+                    {"Error": {"Code": "ResourceNotFoundException"}},
+                    "GetSecretValue",
+                )
+            return {"SecretString": values[SecretId]}
+
+        def create_secret(self, *, Name, SecretString):
+            from botocore.exceptions import ClientError
+
+            if Name in values:
+                raise ClientError(
+                    {"Error": {"Code": "ResourceExistsException"}},
+                    "CreateSecret",
+                )
+            values[Name] = SecretString
+
+        def put_secret_value(self, *, SecretId, SecretString):
+            values[SecretId] = SecretString
+
+    monkeypatch.setattr(boto3, "client", lambda *_args, **_kwargs: Client())
+    store = AWSSecretStore("eu-test-1", "saviorbill/")
+    assert store.get(SecretName.DB_PASS) is None
+    store.put(SecretName.DB_PASS, "first")
+    store.put(SecretName.DB_PASS, "second")
+    assert store.get(SecretName.DB_PASS) == "second"
+
+
+def test_gcp_store_roundtrip(monkeypatch):
+    from google.api_core.exceptions import NotFound
+    from google.cloud import secretmanager
+    from security.sec.secrets.gcp_store import GCPSecretStore
+
+    values: dict[str, str] = {}
+
+    class Client:
+        def access_secret_version(self, *, name):
+            if name not in values:
+                raise NotFound("missing")
+            return SimpleNamespace(payload=SimpleNamespace(data=values[name].encode()))
+
+        def create_secret(self, *, parent, secret_id, secret):
+            values.setdefault(f"{parent}/secrets/{secret_id}/versions/latest", "")
+
+        def add_secret_version(self, *, parent, payload):
+            values[f"{parent}/versions/latest"] = payload["data"].decode()
+
+    monkeypatch.setattr(secretmanager, "SecretManagerServiceClient", Client)
+    store = GCPSecretStore("project", "saviorbill/")
+    store.put(SecretName.DB_PASS, "dbpass")
+    assert store.get(SecretName.DB_PASS) == "dbpass"
+
+
+def test_azure_store_roundtrip(monkeypatch):
+    from azure.identity import DefaultAzureCredential
+    from azure.keyvault import secrets
+    from security.sec.secrets.azure_store import AzureSecretStore
+
+    values: dict[str, str] = {}
+
+    class Client:
+        def __init__(self, *, vault_url, credential):
+            assert vault_url == "https://vault.vault.azure.net/"
+            assert isinstance(credential, DefaultAzureCredential)
+
+        def get_secret(self, name):
+            if name not in values:
+                from azure.core.exceptions import ResourceNotFoundError
+
+                raise ResourceNotFoundError("missing")
+            return SimpleNamespace(value=values[name])
+
+        def set_secret(self, name, value):
+            values[name] = value
+
+    monkeypatch.setattr(secrets, "SecretClient", Client)
+    store = AzureSecretStore("https://vault.vault.azure.net/", "saviorbill/")
+    store.put(SecretName.DB_PASS, "dbpass")
+    assert store.get(SecretName.DB_PASS) == "dbpass"
+
+
+def test_vault_store_token_roundtrip():
+    import httpx
+    from security.sec.secrets.vault_store import VaultSecretStore
+
+    responses = {
+        ("GET", "https://vault/v1/secret/data/saviorbill/db_pass"): httpx.Response(
+            404
+        ),
+        ("POST", "https://vault/v1/secret/data/saviorbill/db_pass"): httpx.Response(
+            204
+        ),
+    }
+
+    def handler(request):
+        response = responses[(request.method, str(request.url))]
+        if request.method == "GET" and response.status_code == 404:
+            responses[("GET", str(request.url))] = httpx.Response(
+                200,
+                json={"data": {"data": {"value": "dbpass"}}},
+            )
+        return response
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    store = VaultSecretStore("https://vault/", "token", "secret", "saviorbill", client=client)
+    assert store.get(SecretName.DB_PASS) is None
+    store.put(SecretName.DB_PASS, "dbpass")
+    assert store.get(SecretName.DB_PASS) == "dbpass"
+    client.close()
+
+
+def test_vault_store_approle_auth():
+    import httpx
+    from security.sec.secrets.vault_store import VaultSecretStore
+
+    def handler(request):
+        if request.url.path == "/v1/auth/approle/login":
+            return httpx.Response(200, json={"auth": {"client_token": "short-token"}})
+        return httpx.Response(200, json={"data": {"data": {"value": "secret"}}})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    store = VaultSecretStore(
+        "https://vault",
+        None,
+        "secret",
+        "saviorbill",
+        auth="approle",
+        role_id="role",
+        secret_id="secret-id",
+        client=client,
+    )
+    assert store.get(SecretName.DB_PASS) == "secret"
+    client.close()

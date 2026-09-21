@@ -58,9 +58,19 @@ def build_secret_store(cfg: "AppConfig") -> SecretStore:
         return FileSecretStore(_file_paths(cfg))
 
     if backend == "vault":
-        if not (cfg.SECRETS_VAULT_ADDR and cfg.SECRETS_VAULT_TOKEN):
+        if not cfg.SECRETS_VAULT_ADDR:
+            raise ValueError("vault: SECRETS_VAULT_ADDR is needed")
+        auth = (cfg.SECRETS_VAULT_AUTH or "token").lower()
+        if auth not in {"token", "approle"}:
+            raise ValueError("vault: SECRETS_VAULT_AUTH must be token or approle")
+        if auth == "token" and not cfg.SECRETS_VAULT_TOKEN:
+            raise ValueError("vault: SECRETS_VAULT_TOKEN is needed for token auth")
+        if auth == "approle" and not (
+            cfg.SECRETS_VAULT_ROLE_ID and cfg.SECRETS_VAULT_SECRET_ID
+        ):
             raise ValueError(
-                "vault: SECRETS_VAULT_ADDR and SECRETS_VAULT_TOKEN are needed"
+                "vault: SECRETS_VAULT_ROLE_ID and SECRETS_VAULT_SECRET_ID "
+                "are needed for approle auth"
             )
         from .vault_store import VaultSecretStore
 
@@ -69,6 +79,12 @@ def build_secret_store(cfg: "AppConfig") -> SecretStore:
             cfg.SECRETS_VAULT_TOKEN,
             cfg.SECRETS_VAULT_MOUNT,
             cfg.SECRETS_PREFIX,
+            auth=auth,
+            role_id=cfg.SECRETS_VAULT_ROLE_ID,
+            secret_id=cfg.SECRETS_VAULT_SECRET_ID,
+            auth_mount=cfg.SECRETS_VAULT_AUTH_MOUNT,
+            tls_verify=cfg.SECRETS_VAULT_TLS_VERIFY,
+            ca_file=cfg.SECRETS_VAULT_CA_FILE,
         )
 
     if backend == "aws":

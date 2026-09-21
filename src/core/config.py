@@ -118,7 +118,13 @@ class AppConfig(BaseSettings):
     SECRETS_AZURE_VAULT_URL: str | None = Field(default=None)
     SECRETS_VAULT_ADDR: str | None = Field(default=None)
     SECRETS_VAULT_TOKEN: str | None = Field(default=None)
+    SECRETS_VAULT_AUTH: str = Field(default="token")
+    SECRETS_VAULT_ROLE_ID: str | None = Field(default=None)
+    SECRETS_VAULT_SECRET_ID: str | None = Field(default=None)
+    SECRETS_VAULT_AUTH_MOUNT: str = Field(default="approle")
     SECRETS_VAULT_MOUNT: str = Field(default="secret")
+    SECRETS_VAULT_TLS_VERIFY: bool = Field(default=True)
+    SECRETS_VAULT_CA_FILE: str | None = Field(default=None)
 
     # Монтируемая папка данных (lua-скрипты, ключи, загрузки)
     DATA_DIR: str = Field(default="data")
