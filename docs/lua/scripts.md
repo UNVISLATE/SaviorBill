@@ -73,17 +73,16 @@ ctx = {
 - `state` — новое состояние услуги (`active` / `frozen` / `stopped`);
 - `expires_at` — unix-время истечения (для планирования истечения услуги).
 
-Базовый шаблон: [`examples/lua/services/service_lua.lua`](../examples/lua/services/service_lua.lua).
-Минимальный пример выдачи: [`examples/lua/services/demo_service.lua`](../examples/lua/services/demo_service.lua).
-Боевой пример (VPN через Marzban): [`examples/lua/services/marzban_vpn.lua`](../examples/lua/services/marzban_vpn.lua).
+Базовый шаблон: [`examples/lua/services/service_lua.lua`](../../examples/lua/services/service_lua.lua).
+Минимальный пример выдачи: [`examples/lua/services/demo_service.lua`](../../examples/lua/services/demo_service.lua).
+Боевой пример (VPN через Marzban): [`examples/lua/services/marzban_vpn.lua`](../../examples/lua/services/marzban_vpn.lua).
 
 ## Скрипты платёжного провайдера (`kind = payment`)
 
 Провайдеру соответствует **один** action-driven скрипт: единое тело
 обрабатывает все действия платежа по `ctx.action` (create/callback/check/refund).
 Поддерживаемые действия объявляются в `lua_scripts.actions` (create и callback
-обязательны). Подробности потока и подключения — в
-[`payments_methods/README.md`](payments.md).
+обязательны). Подробности потока и подключения — в [`docs/payments.md`](../payments.md).
 
 Общий контекст:
 
@@ -132,7 +131,7 @@ ctx = {
 
 Возвращает `private = { ok, refunded, external_id }`.
 
-Пример: [`examples/lua/payments/demo_payment.lua`](../examples/lua/payments/demo_payment.lua).
+Пример: [`examples/lua/payments/demo_payment.lua`](../../examples/lua/payments/demo_payment.lua).
 Рабочие шаблоны: `yookassa_payment.lua`, `platega_payment.lua`.
 
 ## Триггерный скрипт (`kind = trigger`)
@@ -141,4 +140,4 @@ ctx = {
 `payment.succeeded` …) с действием-скриптом. Получает
 `ctx = { event, config, data, lua }` (`lua.settings.*` — настройки шаблона) и
 может, например, отправить уведомление. 
-Пример: [`examples/lua/triggers/notify.lua`](../examples/lua/triggers/notify.lua).
+Пример: [`examples/lua/triggers/notify.lua`](../../examples/lua/triggers/notify.lua).

@@ -8,6 +8,10 @@
 системы, вебхуки, внешние API. Логика обновляется без пересборки Python-ядра —
 достаточно поменять Lua-задачу/обработчик.
 
+Контракт интеграционных скриптов и правила для их написания находятся в
+[`docs/lua/`](../docs/lua/README.md). Этот README описывает именно runtime и
+шину LuaWorker.
+
 ## Как работает шина
 ```
 Python (LuaBus.call)                    LuaWorker
@@ -31,7 +35,7 @@ Python (LuaBus.call)                    LuaWorker
 | `billing` | `{ cmd, args }`                           | команда ядру биллинга (внутр. API)   |
 | `run_script` | `{ script, kind?, ctx }`               | загрузить и выполнить `handle(ctx)`  |
 
-Новый вид задачи — это новая функция в `src/handlers.lua`.
+Новый вид задачи — это новая функция в `luaworker/src/handlers.lua`.
 
 ### Песочница `run_script`
 Скриптам (service/payment/trigger) доступны, помимо `json`/`http`/`billing`:
@@ -51,9 +55,9 @@ Python (LuaBus.call)                    LuaWorker
 
 ## Пример использования LuaBus в Python-коде биллинга
 ```python
-from dependencies.lua import get_lua_bus
+from lua.deps import get_lua_bus_configured
 
-bus = get_lua_bus(request)
+bus = get_lua_bus_configured(request)
 res = await bus.call("http", {"url": "https://api.example.com/ping"})
 res = await bus.call("eval", {"code": "return data.x + data.y", "data": {"x": 2, "y": 3}})
 ```

@@ -1,0 +1,106 @@
+SaviorBill Lua contract for AI-assisted script authoring
+
+Purpose
+- Write integration scripts executed by luaworker, not LuaWorker runtime code.
+- Read docs/lua/scripts.md for the full contract and docs/lua/fx.md for FX
+  provider scripts.
+- Inspect examples/lua/ and tests/data/lua/ before creating a new script.
+- Do not invent context fields, actions, billing commands, or response fields.
+
+File format
+- A script is a Lua module loaded from data/lua/<kind>/.
+- It must return a table containing function handle(ctx).
+- Use Lua 5.4 syntax supported by luaworker.
+- Keep integration-specific code in the script; do not modify luaworker runtime
+  for a provider-specific behavior.
+
+Common result
+- Return a table with public and private tables:
+  { public = { ... }, private = { ... } }
+- public is safe for API consumers. Never put secrets, access tokens, raw
+  provider responses, or internal diagnostics in public.
+- private is internal billing data. It is not a client-facing data store, so keep
+  it minimal and do not treat it as a secret vault.
+- Service scripts may additionally return state and expires_at.
+- The runtime also returns execution logs. Do not log secrets or full payment
+  payloads.
+
+Available sandbox APIs
+- json.encode(value), json.decode(text)
+- http({ url, method?, headers?, body? }) -> { ok, status, headers, body }
+- crypto.sha1, crypto.sha256, crypto.sha512, crypto.md5
+- crypto.hmac_sha256(key, value), crypto.hmac_sha512(key, value)
+- crypto.base64_encode(value), crypto.base64_decode(value), crypto.hex(value)
+- cache.get(key), cache.set(key, value, ttl?), cache.del(key), cache.incr(key)
+- log(...), log.info(...), log.warn(...), log.error(...)
+- Safe standard libraries: string, table, math, tostring, tonumber, pairs,
+  ipairs, type, error, assert, pcall, os.time, os.date.
+- io, arbitrary os functions, package loading, and unrestricted globals are not
+  available in run_script.
+- http and billing are stubbed by test-run. Do not expect test-run to call a
+  real external service.
+
+Service scripts
+- kind=service; common actions are create, renew, stop, delete, freeze.
+- ctx.action is the current lifecycle action.
+- Read the catalog service from ctx.service and the user service from
+  ctx.user.service. Shared script settings are in ctx.lua.settings.
+- Per-service settings are in ctx.service.settings; catalog params are in
+  ctx.service.params.
+- On create/renew, return state="active". On freeze return "frozen". On stop or
+  delete return "stopped", unless the documented integration contract requires
+  another state.
+- For a timed service return expires_at as a Unix timestamp.
+- Put customer-visible values in public and provider/internal values in private.
+
+Payment scripts
+- kind=payment; actions are create and callback, with optional check and refund.
+- ctx.action selects the operation.
+- Payment data is in ctx.payment. Provider secrets are in
+  ctx.payment.provider_data.secrets; non-secret configuration is in extra.
+- callback receives ctx.request. Validate the provider webhook or re-check the
+  provider API before reporting payment success.
+- create returns public.pay_url and private.external_id.
+- callback/check return private.ok and a payment result such as paid, failed,
+  payment_id, or external_id.
+- refund returns private.ok and private.refunded.
+- Do not trust client return_url, callback body, or provider-facing identifiers
+  without validation.
+- Payment callbacks must be idempotent: repeated notifications must not produce
+  a second business effect.
+
+Trigger scripts
+- kind=trigger receives ctx.event, ctx.config, ctx.data, and ctx.lua.
+- Use ctx.config for administrator-provided action configuration.
+- Return { public = {}, private = { ok = true, ... } } on successful handling.
+- A missing webhook configuration may be a valid no-op if the trigger contract
+  says so; an external failure must be represented explicitly.
+
+FX scripts
+- The action is rates.
+- Return public.rates, mapping ISO currency codes to strings.
+- A value is the amount of base currency for one unit of the quoted currency.
+  With RUB as base, USD="95.5" means 1 USD = 95.5 RUB.
+- Send numeric values as strings to avoid Lua floating-point precision loss.
+- Return an error if no usable rates are available.
+
+Security and reliability
+- Never hardcode secrets, tokens, private keys, or credentials.
+- Do not log secrets, authorization headers, payment signatures, or full request
+  bodies.
+- Validate HTTP status, response shape, required fields, and numeric ranges.
+- Use timeouts and bounded responses as provided by the runtime; do not create
+  unbounded loops or large strings.
+- Use pcall only when the failure is intentionally converted into a checked
+  result; do not swallow errors.
+- Treat external calls as retryable only when the operation is safe to repeat.
+
+Validation workflow
+1. Run the script through the admin lint endpoint or LuaWorker lint.
+2. Use test-run with a representative fake ctx; remember http and billing are
+   disabled there.
+3. Add or update a fixture in tests/data/lua/ when the contract is exercised by
+   integration tests.
+4. Update examples/lua/ if the script is a reusable pattern.
+5. For a contract change, update docs/lua/scripts.md, this file, examples,
+   tests, and the relevant Python/Lua schemas in the same change.

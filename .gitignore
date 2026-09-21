@@ -45,15 +45,14 @@ htmlcov/
 # Docker
 docker-compose.override.yml
 
-# Локальные заметки/доки разработчика (не коммитим)
+# Локальные заметки и документы (не коммитим)
 *.local.md
 /docs/local/
 
-# Рабочие доки аудита/плана (personal working docs, не для истории репо)
+# Локальные документы аудита и планирования
 /AUDIT.md
 /CLOUD.md
 /IMPLEMENTATION_PLAN.md
-/CLAUDE.md
 /WS_ROUTES.md
 /FEATURE_ROADMAP.md
 /ppp/

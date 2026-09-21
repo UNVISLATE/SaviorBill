@@ -221,7 +221,7 @@ export function CurrencySettings() {
             key: "billing.fx.lua_slug",
             label: "Slug Lua-скрипта",
             showIf: { key: "billing.fx.source", equals: ["api"] },
-            hint: "Только для источника «Lua-скрипт». Формат ответа — см. docs/fx-lua.md.",
+            hint: "Только для источника «Lua-скрипт». Формат ответа — см. docs/lua/fx.md.",
           },
           {
             key: "billing.fx.cache_ttl_sec",
@@ -240,7 +240,7 @@ export function CurrencySettings() {
           <ProvidersReference providers={providers} />
           <p className="text-xs text-muted-foreground">
             Нужного сервиса нет в списке — выберите «Lua-скрипт» и напишите свой
-            (формат в <code className="font-mono">docs/fx-lua.md</code>).
+            (формат в <code className="font-mono">docs/lua/fx.md</code>).
           </p>
         </div>
       )}

@@ -60,7 +60,8 @@ multi-key боксом, что `seal()` всегда использует пер
 
 `security/sec/bus_sign.py` — общий HMAC-SHA256 контракт для `lua/bus.py`
 (`LuaBus`) и `messaging/mediabus.py` (`MediaBus`): подпись покрывает *все*
-поля сообщения (не белый список, см. `docs/lua_scripts.md`/`main.lua`), с
+поля сообщения (не белый список, см. `docs/lua/scripts.md` и
+`luaworker/src/main.lua`), с
 окном `ts` против replay (`DEFAULT_MAX_SKEW_SEC` = 300с, константа модуля).
 Секрет —
 `BUS_SIGNING_KEY`, отдельный от `LUA_SERVICE_TOKEN` (у токена другая роль —
@@ -74,6 +75,9 @@ auth конкретного HTTP-вызова, не подпись очеред�
 сервисах, либо реальную попытку подмены сообщений.
 
 ## SSRF из Lua-скриптов (`httpc.lua`) — осознанно не ограничивается
+
+Lua-контракт и правила написания скриптов находятся в
+[`docs/lua/scripts.md`](lua/scripts.md).
 
 `http{ url, ... }` в песочнице Lua-скриптов может обратиться куда угодно,
 включая локальные адреса того же сервера — deny-лист/allowlist адресов не

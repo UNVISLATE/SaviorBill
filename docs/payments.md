@@ -5,6 +5,10 @@
 Lua-скриптом, который изолирует её особенности. Это позволяет добавлять
 провайдеров без изменения ядра.
 
+Полный общий контракт Lua-скриптов находится в
+[`docs/lua/scripts.md`](lua/scripts.md), а краткая инструкция для ИИ — в
+[`docs/lua/llms.txt`](lua/llms.txt).
+
 ## Архитектура
 
 У провайдера один скрипт, обрабатывающий все действия платежа по `ctx.action`:
@@ -106,11 +110,6 @@ body } -> { ok, status, headers, body }`, `string`, `table`, `math`,
 3. **Указать в ЛК провайдера** URL вебхука:
    `https://<PUBLIC_URL>/api/v1/callback/payment/<slug>`.
 
-Конкретные значения `secrets`/`extra` — в файлах:
-
-- [`yookassa.md`](payments_methods/yookassa.md)
-- [`platega.md`](payments_methods/platega.md)
-
 Готовые тела скриптов лежат в `examples/lua/payments/`:
 `yookassa_payment.lua`, `platega_payment.lua` (и `demo_payment.lua` для тестов).
 
@@ -144,4 +143,3 @@ body } -> { ok, status, headers, body }`, `string`, `table`, `math`,
 лимиты "на пользователя" (`per_user`, повторное использование того же
 кода) — только общая валидность кода (активен/не просрочен/лимит
 активаций/`kind=discount`). С Bearer-токеном проверяются оба уровня.
-
