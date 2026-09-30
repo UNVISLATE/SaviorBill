@@ -318,6 +318,11 @@ export function BannedDomainsSettings() {
               </span>
             )}
             </div>
+            {preview && preview.invalid_count > 0 && (
+              <p className="text-xs text-amber-500">
+                Некорректные строки будут пропущены и не добавятся. Остальные домены можно импортировать.
+              </p>
+            )}
             {preview && (
             <div className="min-h-0 w-full space-y-2 rounded-md border p-3 text-sm">
               <div className="flex flex-wrap gap-3">
@@ -349,10 +354,10 @@ export function BannedDomainsSettings() {
             <Button variant="outline" className="min-w-24" onClick={closeBulk}>Отмена</Button>
             <Button
               className="min-w-32"
-              disabled={!preview || preview.new_count === 0 || preview.invalid_count > 0 || bulkImport.isPending}
+              disabled={!preview || preview.new_count === 0 || bulkImport.isPending}
               onClick={() => bulkImport.mutate()}
             >
-              Импортировать
+              {preview?.invalid_count ? "Импортировать валидные" : "Импортировать"}
             </Button>
           </DialogFooter>
         </DialogContent>
