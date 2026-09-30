@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Ban, Plus, Trash2 } from "lucide-react"
+import { Ban, FileUp, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -48,65 +48,16 @@ interface ImportPreview {
   invalid_count: number
 }
 
-function AddDomainDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const [domain, setDomain] = useState("")
-  const [reason, setReason] = useState("")
-  const qc = useQueryClient()
-
-  const reset = () => {
-    setDomain("")
-    setReason("")
-  }
-
-  const add = useMutation({
-    mutationFn: async () => api.post("/v1/admin/settings/email-domains", { domain, reason: reason || null }),
-    onSuccess: () => {
-      toastSuccess(`Домен «${domain}» заблокирован`)
-      onOpenChange(false)
-      reset()
-      void qc.invalidateQueries({ queryKey: ["admin-banned-domains"] })
-    },
-    onError: (e: unknown) => toastError("Не удалось добавить домен", getErrorDetail(e)),
-  })
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset() }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Заблокировать домен</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label>Домен</Label>
-            <Input value={domain} onChange={(e) => setDomain(e.target.value)} placeholder="tempmail.com" autoFocus />
-          </div>
-          <div className="space-y-1">
-            <Label>Причина (опционально)</Label>
-            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="временная почта" />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Отмена
-          </Button>
-          <Button disabled={domain.trim().length < 1 || add.isPending} onClick={() => add.mutate()}>
-            Заблокировать
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 /** Заблокированные для регистрации email-домены — попытка зарегистрироваться
  * с почтой на таком домене отклоняется на бэкенде (защита от временной
  * почты/спама). Список маленький — без пагинации, простая таблица. */
 export function BannedDomainsSettings() {
   const { can } = useAuth()
-  const [adding, setAdding] = useState(false)
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkText, setBulkText] = useState("")
+  const [bulkReason, setBulkReason] = useState("")
   const [preview, setPreview] = useState<ImportPreview | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const canEdit = can("settings.email_domains.edit")
   const qc = useQueryClient()
 
@@ -128,6 +79,7 @@ export function BannedDomainsSettings() {
     mutationFn: async () => (
       await api.post<ImportPreview>("/v1/admin/settings/email-domains/bulk/preview", {
         raw_text: bulkText,
+        reason: bulkReason || null,
       })
     ).data,
     onSuccess: setPreview,
@@ -138,12 +90,13 @@ export function BannedDomainsSettings() {
     mutationFn: async () => (
       await api.post<ImportPreview>("/v1/admin/settings/email-domains/bulk", {
         raw_text: bulkText,
+        reason: bulkReason || null,
       })
     ).data,
     onSuccess: (result) => {
-      setPreview(result)
       toastSuccess(`Добавлено доменов: ${result.new_count}`)
       void qc.invalidateQueries({ queryKey: ["admin-banned-domains"] })
+      closeBulk()
     },
     onError: (e: unknown) => toastError("Не удалось импортировать список", getErrorDetail(e)),
   })
@@ -151,9 +104,33 @@ export function BannedDomainsSettings() {
   const closeBulk = () => {
     setBulkOpen(false)
     setBulkText("")
+    setBulkReason("")
     setPreview(null)
     bulkPreview.reset()
     bulkImport.reset()
+  }
+
+  useEffect(() => {
+    if (!bulkOpen) return
+    if (!bulkText.trim()) {
+      bulkPreview.reset()
+      return
+    }
+    const timer = window.setTimeout(() => bulkPreview.mutate(), 350)
+    return () => window.clearTimeout(timer)
+  }, [bulkOpen, bulkText, bulkPreview])
+
+  async function loadFile(file: File) {
+    if (!file.name.toLowerCase().endsWith(".txt") && !file.name.toLowerCase().endsWith(".csv")) {
+      toastError("Неподдерживаемый файл", "Выберите файл .txt или .csv")
+      return
+    }
+    try {
+      setPreview(null)
+      setBulkText(await file.text())
+    } catch (error) {
+      toastError("Не удалось прочитать файл", getErrorDetail(error))
+    }
   }
 
   return (
@@ -164,14 +141,9 @@ export function BannedDomainsSettings() {
           <CardDescription>Регистрация с почтой на этих доменах отклоняется.</CardDescription>
         </div>
         {canEdit && (
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => setBulkOpen(true)}>
-              Массовый импорт
-            </Button>
-            <Button size="sm" onClick={() => setAdding(true)}>
-              <Plus className="size-4" /> Добавить
-            </Button>
-          </div>
+          <Button size="sm" onClick={() => setBulkOpen(true)}>
+            <Plus className="size-4" /> Добавить домены
+          </Button>
         )}
       </CardHeader>
       <CardContent>
@@ -218,25 +190,65 @@ export function BannedDomainsSettings() {
           </Table>
         )}
       </CardContent>
-      <AddDomainDialog open={adding} onOpenChange={setAdding} />
       <Dialog open={bulkOpen} onOpenChange={(open) => open ? setBulkOpen(true) : closeBulk()}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="w-full max-w-[600px] p-6">
           <DialogHeader>
-            <DialogTitle>Массовый импорт доменов</DialogTitle>
+            <DialogTitle>Добавить заблокированные домены</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            Введите по одному домену на строку или CSV: <code>домен,причина</code>.
-            Запись выполняется только после проверки списка.
+            Добавьте один домен или список: по одному домену на строку либо CSV в формате{" "}
+            <code>домен,причина</code>.
           </p>
+          <div className="space-y-1.5">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".txt,.csv,text/plain,text/csv"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0]
+                if (file) void loadFile(file)
+                event.target.value = ""
+              }}
+            />
+            <button
+              type="button"
+              className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground transition-colors hover:border-primary hover:bg-muted/40 hover:text-foreground"
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(event) => event.preventDefault()}
+              onDrop={(event) => {
+                event.preventDefault()
+                const file = event.dataTransfer.files[0]
+                if (file) void loadFile(file)
+              }}
+            >
+              <FileUp className="size-4" />
+              Загрузить .csv / .txt или перетащить файл
+            </button>
+          </div>
           <textarea
             value={bulkText}
             onChange={(event) => {
-              setBulkText(event.target.value)
               setPreview(null)
+              setBulkText(event.target.value)
             }}
             placeholder={"tempmail.com\nexample.org,временная почта"}
             className="min-h-40 w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />
+          <div className="space-y-1">
+            <Label>Общая причина (опционально)</Label>
+            <Input value={bulkReason} onChange={(event) => setBulkReason(event.target.value)} placeholder="временная почта" />
+          </div>
+          <div className="min-h-5 text-sm">
+            {bulkPreview.isPending && <span className="text-muted-foreground">Проверяем список…</span>}
+            {!bulkPreview.isPending && preview && (
+              <span className="text-muted-foreground">
+                Готово к импорту: <strong className="text-emerald-500">{preview.new_count}</strong>
+                {" · "}Дубликаты: {preview.duplicate_count + preview.existing_count}
+                {" · "}Ошибки: <strong className={preview.invalid_count ? "text-destructive" : "text-emerald-500"}>{preview.invalid_count}</strong>
+              </span>
+            )}
+          </div>
           {preview && (
             <div className="space-y-2 rounded-md border p-3 text-sm">
               <div className="flex flex-wrap gap-3">
@@ -258,20 +270,13 @@ export function BannedDomainsSettings() {
               </div>
             </div>
           )}
-          <DialogFooter>
+          <DialogFooter className="-mx-6 -mb-6">
             <Button variant="outline" onClick={closeBulk}>Отмена</Button>
-            <Button
-              variant="outline"
-              disabled={!bulkText.trim() || bulkPreview.isPending}
-              onClick={() => bulkPreview.mutate()}
-            >
-              Проверить
-            </Button>
             <Button
               disabled={!preview || preview.new_count === 0 || preview.invalid_count > 0 || bulkImport.isPending}
               onClick={() => bulkImport.mutate()}
             >
-              Импортировать новые
+              Импортировать
             </Button>
           </DialogFooter>
         </DialogContent>
