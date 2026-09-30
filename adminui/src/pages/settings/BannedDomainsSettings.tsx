@@ -203,7 +203,7 @@ export function BannedDomainsSettings() {
         )}
       </CardContent>
       <Dialog open={bulkOpen} onOpenChange={(open) => open ? setBulkOpen(true) : closeBulk()}>
-        <DialogContent className="flex max-h-[90vh] w-full max-w-[650px] flex-col overflow-hidden p-6">
+        <DialogContent className="flex max-h-[85vh] w-full max-w-[760px] flex-col overflow-hidden p-6">
           <DialogHeader>
             <DialogTitle>Добавить заблокированные домены</DialogTitle>
           </DialogHeader>
@@ -317,14 +317,14 @@ export function BannedDomainsSettings() {
             )}
           </div>
           {preview && (
-            <div className="min-h-0 space-y-2 rounded-md border p-3 text-sm">
+            <div className="min-h-0 w-full space-y-2 rounded-md border p-3 text-sm">
               <div className="flex flex-wrap gap-3">
                 <span className="text-emerald-500">Новые: {preview.new_count}</span>
                 <span className="text-muted-foreground">Уже есть: {preview.existing_count}</span>
                 <span className="text-amber-500">Дубли: {preview.duplicate_count}</span>
                 <span className="text-destructive">Ошибки: {preview.invalid_count}</span>
               </div>
-              <div className="max-h-[300px] space-y-1 overflow-y-auto border-t pt-2">
+              <div className="max-h-[250px] w-full space-y-1 overflow-y-auto border-t pt-2">
                 {preview.items.slice(0, PREVIEW_ITEM_LIMIT).map((item) => (
                   <div key={`${item.line}-${item.value}`} className="flex gap-2 font-mono text-xs">
                     <span className="w-8 text-muted-foreground">{item.line}</span>
@@ -342,7 +342,7 @@ export function BannedDomainsSettings() {
               </div>
             </div>
           )}
-          <DialogFooter className="-mx-6 -mb-6 flex-wrap">
+          <DialogFooter className="-mx-6 -mb-6 flex-shrink-0 flex-wrap pt-4">
             <Button variant="outline" className="min-w-24" onClick={closeBulk}>Отмена</Button>
             <Button
               className="min-w-32"
