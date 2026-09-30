@@ -56,6 +56,7 @@ export function BannedDomainsSettings() {
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkText, setBulkText] = useState("")
   const [bulkUrl, setBulkUrl] = useState("")
+  const [sourceMode, setSourceMode] = useState<"text" | "url">("text")
   const [bulkReason, setBulkReason] = useState("")
   const [preview, setPreview] = useState<ImportPreview | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -79,20 +80,22 @@ export function BannedDomainsSettings() {
   const bulkPreview = useMutation({
     mutationFn: async () => (
       await api.post<ImportPreview>("/v1/admin/settings/email-domains/bulk/preview", {
-        raw_text: bulkUrl ? "" : bulkText,
-        source_url: bulkUrl || null,
+        raw_text: sourceMode === "text" ? bulkText : "",
+        source_url: sourceMode === "url" ? bulkUrl : null,
         reason: bulkReason || null,
       })
     ).data,
     onSuccess: setPreview,
     onError: (e: unknown) => toastError("Не удалось проверить список", getErrorDetail(e)),
   })
+  const previewMutateRef = useRef(bulkPreview.mutate)
+  const previewResetRef = useRef(bulkPreview.reset)
 
   const bulkImport = useMutation({
     mutationFn: async () => (
       await api.post<ImportPreview>("/v1/admin/settings/email-domains/bulk", {
-        raw_text: bulkUrl ? "" : bulkText,
-        source_url: bulkUrl || null,
+        raw_text: sourceMode === "text" ? bulkText : "",
+        source_url: sourceMode === "url" ? bulkUrl : null,
         reason: bulkReason || null,
       })
     ).data,
@@ -108,6 +111,7 @@ export function BannedDomainsSettings() {
     setBulkOpen(false)
     setBulkText("")
     setBulkUrl("")
+    setSourceMode("text")
     setBulkReason("")
     setPreview(null)
     bulkPreview.reset()
@@ -116,13 +120,13 @@ export function BannedDomainsSettings() {
 
   useEffect(() => {
     if (!bulkOpen) return
-    if (!bulkText.trim() && !bulkUrl.trim()) {
-      bulkPreview.reset()
+    if (sourceMode !== "text" || !bulkText.trim()) {
+      previewResetRef.current()
       return
     }
-    const timer = window.setTimeout(() => bulkPreview.mutate(), 350)
+    const timer = window.setTimeout(() => previewMutateRef.current(), 350)
     return () => window.clearTimeout(timer)
-  }, [bulkOpen, bulkText, bulkUrl, bulkPreview])
+  }, [bulkOpen, bulkText, sourceMode])
 
   async function loadFile(file: File) {
     if (!file.name.toLowerCase().endsWith(".txt") && !file.name.toLowerCase().endsWith(".csv")) {
@@ -132,6 +136,7 @@ export function BannedDomainsSettings() {
     try {
       setPreview(null)
       setBulkUrl("")
+      setSourceMode("text")
       setBulkText(await file.text())
     } catch (error) {
       toastError("Не удалось прочитать файл", getErrorDetail(error))
@@ -204,56 +209,97 @@ export function BannedDomainsSettings() {
             Добавьте один домен или список: по одному домену на строку либо CSV в формате{" "}
             <code>домен,причина</code>.
           </p>
-          <div className="space-y-1">
-            <Label>Или ссылка на .txt / .csv</Label>
-            <Input
-              value={bulkUrl}
-              onChange={(event) => {
-                setPreview(null)
-                setBulkUrl(event.target.value)
-                if (event.target.value) setBulkText("")
-              }}
-              placeholder="https://raw.githubusercontent.com/.../domains.txt"
-              type="url"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".txt,.csv,text/plain,text/csv"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0]
-                if (file) void loadFile(file)
-                event.target.value = ""
-              }}
-            />
-            <button
+          <div className="flex gap-1 rounded-md bg-muted p-1">
+            <Button
               type="button"
-              className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground transition-colors hover:border-primary hover:bg-muted/40 hover:text-foreground"
-              onClick={() => fileInputRef.current?.click()}
-              onDragOver={(event) => event.preventDefault()}
-              onDrop={(event) => {
-                event.preventDefault()
-                const file = event.dataTransfer.files[0]
-                if (file) void loadFile(file)
+              size="sm"
+              variant={sourceMode === "text" ? "secondary" : "ghost"}
+              className="flex-1"
+              onClick={() => {
+                setSourceMode("text")
+                setPreview(null)
               }}
             >
-              <FileUp className="size-4" />
-              Загрузить .csv / .txt или перетащить файл
-            </button>
+              Текст / файл
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant={sourceMode === "url" ? "secondary" : "ghost"}
+              className="flex-1"
+              onClick={() => {
+                setSourceMode("url")
+                setPreview(null)
+              }}
+            >
+              Ссылка
+            </Button>
           </div>
-          <textarea
-            value={bulkText}
-            onChange={(event) => {
-              setPreview(null)
-              setBulkUrl("")
-              setBulkText(event.target.value)
-            }}
-            placeholder={"tempmail.com\nexample.org,временная почта"}
-            className="min-h-40 w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          />
+          {sourceMode === "text" ? (
+            <>
+              <div className="space-y-1.5">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".txt,.csv,text/plain,text/csv"
+                  className="hidden"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0]
+                    if (file) void loadFile(file)
+                    event.target.value = ""
+                  }}
+                />
+                <button
+                  type="button"
+                  className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground transition-colors hover:border-primary hover:bg-muted/40 hover:text-foreground"
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault()
+                    const file = event.dataTransfer.files[0]
+                    if (file) void loadFile(file)
+                  }}
+                >
+                  <FileUp className="size-4" />
+                  Загрузить .csv / .txt или перетащить файл
+                </button>
+              </div>
+              <textarea
+                value={bulkText}
+                onChange={(event) => {
+                  setPreview(null)
+                  setBulkText(event.target.value)
+                }}
+                placeholder={"tempmail.com\nexample.org,временная почта"}
+                className="min-h-40 w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </>
+          ) : (
+            <div className="space-y-2">
+              <Label>Ссылка на документ GitHub</Label>
+              <Input
+                value={bulkUrl}
+                onChange={(event) => {
+                  setPreview(null)
+                  setBulkUrl(event.target.value)
+                }}
+                placeholder="https://raw.githubusercontent.com/.../domains.txt"
+                type="url"
+              />
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                disabled={!bulkUrl.trim() || bulkPreview.isPending}
+                onClick={() => bulkPreview.mutate()}
+              >
+                Загрузить и проверить ссылку
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                Разрешён только raw.githubusercontent.com. Запрос выполняется только по этой кнопке.
+              </p>
+            </div>
+          )}
           <div className="space-y-1">
             <Label>Общая причина (опционально)</Label>
             <Input value={bulkReason} onChange={(event) => setBulkReason(event.target.value)} placeholder="временная почта" />

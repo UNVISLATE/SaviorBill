@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
-import ipaddress
 import re
-import socket
 from urllib.parse import urlparse
 
 import httpx
@@ -32,6 +30,8 @@ from services.audit import audit
 router = APIRouter()
 _DOMAIN_RE = re.compile(r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\Z")
 _MAX_REMOTE_BYTES = 1_000_000
+_MAX_REMOTE_LINES = 100_000
+_REMOTE_HOST = "raw.githubusercontent.com"
 
 
 def _normalize_domain(value: str) -> str | None:
@@ -103,18 +103,11 @@ async def _load_bulk_text(body: BannedEmailDomainsBulkRequest) -> str:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "raw_text or source_url is required")
 
     parsed = urlparse(body.source_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "source_url must be an http(s) URL")
-    try:
-        addresses = {
-            ipaddress.ip_address(info[4][0])
-            for info in socket.getaddrinfo(parsed.hostname, parsed.port, type=socket.SOCK_STREAM)
-        }
-    except (OSError, ValueError):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "source_url hostname cannot be resolved")
-    if any(not address.is_global for address in addresses):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "source_url points to a private address")
-
+    if parsed.scheme != "https" or not parsed.hostname or parsed.hostname.lower() != _REMOTE_HOST:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"source_url must use https://{_REMOTE_HOST}",
+        )
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(15.0, connect=5.0),
@@ -123,6 +116,9 @@ async def _load_bulk_text(body: BannedEmailDomainsBulkRequest) -> str:
         ) as client:
             async with client.stream("GET", body.source_url) as response:
                 response.raise_for_status()
+                content_type = response.headers.get("content-type", "").split(";", 1)[0].strip().lower()
+                if content_type not in {"text/plain", "text/csv", "application/octet-stream"}:
+                    raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "source file must be plain text or CSV")
                 content_length = response.headers.get("content-length")
                 if content_length and int(content_length) > _MAX_REMOTE_BYTES:
                     raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "source file is too large")
@@ -137,7 +133,13 @@ async def _load_bulk_text(body: BannedEmailDomainsBulkRequest) -> str:
         raise
     except (httpx.HTTPError, ValueError) as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"source file could not be fetched: {exc}") from exc
-    return b"".join(chunks).decode("utf-8-sig", errors="replace")
+    try:
+        text = b"".join(chunks).decode("utf-8-sig")
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "source file must be UTF-8 text") from exc
+    if "\x00" in text or len(text.splitlines()) > _MAX_REMOTE_LINES:
+        raise HTTPException(status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, "source file contains invalid content")
+    return text
 
 
 @router.get(
