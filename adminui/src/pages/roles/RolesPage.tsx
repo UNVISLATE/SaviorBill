@@ -181,13 +181,8 @@ export function RolesPage() {
   function togglePermissionGroup(path: string) {
     setCollapsedPermGroups((previous) => {
       const next = new Set(previous)
-      const isTopLevel = !path.includes(".")
-      const isExpanded = isTopLevel ? !next.has(path) : next.has(path)
-      if (isExpanded) {
-        next.add(path)
-      } else {
-        next.delete(path)
-      }
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
       return next
     })
   }
