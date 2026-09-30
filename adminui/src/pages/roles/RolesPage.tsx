@@ -28,12 +28,16 @@ import {
 interface Role {
   id: number
   name: string
+  key: string | null
   title: string | null
   is_system: boolean
+  is_protected: boolean
   admin_login_allowed: boolean
   allow_login: boolean
   perms: PermNode
 }
+
+type PermTree = Record<string, PermTree | true>
 
 /** Собрать вложенный perms-объект из списка плоских путей (только true-листья) —
  * зеркалит `security/rbac.py::perms_tree`, но строит дерево только по выбранным
@@ -53,6 +57,15 @@ function buildPermsTree(paths: string[]): Record<string, unknown> {
   return tree
 }
 
+function treePaths(tree: PermTree, prefix = ""): string[] {
+  return Object.entries(tree).flatMap(([key, value]) => {
+    const path = prefix ? `${prefix}.${key}` : key
+    return value === true || Object.keys(value).length === 0
+      ? [path]
+      : treePaths(value, path)
+  })
+}
+
 export function RolesPage() {
   const qc = useQueryClient()
   const [editing, setEditing] = useState<Role | null>(null)
@@ -60,6 +73,9 @@ export function RolesPage() {
   const [permFilter, setPermFilter] = useState("")
   const [adminLoginAllowed, setAdminLoginAllowed] = useState(false)
   const [allowLogin, setAllowLogin] = useState(true)
+  const [creating, setCreating] = useState(false)
+  const [newName, setNewName] = useState("")
+  const [newTitle, setNewTitle] = useState("")
 
   const { data: roles, isLoading } = useQuery({
     queryKey: ["admin-roles"],
@@ -88,6 +104,37 @@ export function RolesPage() {
     onError: () => toastError("Не удалось сохранить права роли"),
   })
 
+  const create = useMutation({
+    mutationFn: async () => {
+      await api.post("/v1/admin/roles", {
+        name: newName.trim(),
+        title: newTitle.trim() || null,
+        perms: buildPermsTree(Array.from(checked)),
+        admin_login_allowed: adminLoginAllowed,
+        allow_login: allowLogin,
+      })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-roles"] })
+      toastSuccess("Роль создана")
+      setCreating(false)
+      setNewName("")
+      setNewTitle("")
+    },
+    onError: () => toastError("Не удалось создать роль"),
+  })
+
+  const remove = useMutation({
+    mutationFn: async (role: Role) => {
+      await api.delete(`/v1/admin/roles/${role.id}`)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["admin-roles"] })
+      toastSuccess("Роль удалена")
+    },
+    onError: () => toastError("Роль нельзя удалить: сначала снимите назначения"),
+  })
+
   function openEdit(role: Role) {
     const flat = catalog?.flat ?? []
     setChecked(new Set(flat.filter((p) => hasPerm(role.perms, p))))
@@ -97,6 +144,7 @@ export function RolesPage() {
     setEditing(role)
   }
 
+  const permissionTree = (catalog?.tree ?? {}) as PermTree
   const filteredPerms = useMemo(() => {
     const flat = catalog?.flat ?? []
     if (!permFilter.trim()) return flat
@@ -104,11 +152,56 @@ export function RolesPage() {
     return flat.filter((p) => p.toLowerCase().includes(q))
   }, [catalog, permFilter])
 
+  function togglePermission(path: string, enabled: boolean) {
+    const descendants = (catalog?.flat ?? []).filter(
+      (permission) => permission === path || permission.startsWith(`${path}.`),
+    )
+    setChecked((prev) => {
+      const next = new Set(prev)
+      descendants.forEach((permission) =>
+        enabled ? next.add(permission) : next.delete(permission),
+      )
+      return next
+    })
+  }
+
+  function permissionRows(tree: PermTree, prefix = "", depth = 0): JSX.Element[] {
+    return Object.entries(tree).flatMap(([key, value]) => {
+      const path = prefix ? `${prefix}.${key}` : key
+      const descendants = treePaths({ [key]: value }, prefix)
+      const selected = descendants.filter((item) => checked.has(item))
+      const isLeaf = value === true || Object.keys(value).length === 0
+      const row = (
+        <label key={path} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/50" style={{ paddingLeft: `${depth * 16 + 6}px` }}>
+          <Checkbox
+            checked={selected.length === descendants.length && descendants.length > 0}
+            onCheckedChange={(v) => togglePermission(path, !!v)}
+          />
+          <span className={isLeaf ? "font-mono text-xs" : "font-medium"}>{key}</span>
+          {!isLeaf && selected.length > 0 && selected.length < descendants.length && (
+            <span className="text-xs text-muted-foreground">частично</span>
+          )}
+        </label>
+      )
+      return isLeaf ? [row] : [row, ...permissionRows(value, path, depth + 1)]
+    })
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
         <h1 className="text-xl font-semibold">Роли</h1>
-        {roles && <span className="text-sm text-muted-foreground">Всего: {roles.length}</span>}
+        <div className="flex items-center gap-2">
+          {roles && <span className="text-sm text-muted-foreground">Всего: {roles.length}</span>}
+          <Button onClick={() => {
+            setChecked(new Set())
+            setAdminLoginAllowed(false)
+            setAllowLogin(true)
+            setCreating(true)
+          }}>
+            Создать роль
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-lg border">
@@ -121,12 +214,13 @@ export function RolesPage() {
               <TableHead>Вход в админку</TableHead>
               <TableHead>Логин</TableHead>
               <TableHead>Прав</TableHead>
+              <TableHead className="w-24" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
                   Загрузка…
                 </TableCell>
               </TableRow>
@@ -181,6 +275,20 @@ export function RolesPage() {
                 <TableCell className="text-muted-foreground">
                   {catalog ? catalog.flat.filter((p) => hasPerm(r.perms, p)).length : "—"}
                 </TableCell>
+                <TableCell>
+                  {!r.is_system && !r.is_protected && (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={(event) => {
+                        event.stopPropagation()
+                        if (window.confirm(`Удалить роль «${r.title ?? r.name}»?`)) remove.mutate(r)
+                      }}
+                    >
+                      Удалить
+                    </Button>
+                  )}
+                </TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -226,22 +334,14 @@ export function RolesPage() {
             </span>
           </label>
           <div className="max-h-[45vh] space-y-1 overflow-y-auto pr-1">
-            {filteredPerms.map((p) => (
-              <label key={p} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/50">
-                <Checkbox
-                  checked={checked.has(p)}
-                  onCheckedChange={(v) => {
-                    setChecked((prev) => {
-                      const next = new Set(prev)
-                      if (v) next.add(p)
-                      else next.delete(p)
-                      return next
-                    })
-                  }}
-                />
-                <span className="font-mono text-xs">{p}</span>
-              </label>
-            ))}
+            {permFilter.trim()
+              ? filteredPerms.map((p) => (
+                <label key={p} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/50">
+                  <Checkbox checked={checked.has(p)} onCheckedChange={(v) => togglePermission(p, !!v)} />
+                  <span className="font-mono text-xs">{p}</span>
+                </label>
+              ))
+              : permissionRows(permissionTree)}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setEditing(null)}>
@@ -250,6 +350,30 @@ export function RolesPage() {
             <Button onClick={() => save.mutate()} disabled={save.isPending}>
               Сохранить
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={creating} onOpenChange={setCreating}>
+        <DialogContent className="max-h-[80vh] max-w-lg overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Новая роль</DialogTitle>
+            <DialogDescription>Создайте пользовательскую роль и задайте её права.</DialogDescription>
+          </DialogHeader>
+          <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Системное имя" />
+          <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Отображаемое название (необязательно)" />
+          <div className="max-h-[40vh] space-y-1 overflow-y-auto pr-1">{permissionRows(permissionTree)}</div>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={adminLoginAllowed} onCheckedChange={(v) => setAdminLoginAllowed(!!v)} />
+            Разрешить вход в админ-панель
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <Checkbox checked={allowLogin} onCheckedChange={(v) => setAllowLogin(!!v)} />
+            Разрешить логин и обновление токенов
+          </label>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCreating(false)}>Отмена</Button>
+            <Button onClick={() => create.mutate()} disabled={!newName.trim() || create.isPending}>Создать</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

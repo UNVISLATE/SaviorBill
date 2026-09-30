@@ -63,4 +63,14 @@ class PermsCatalog(BaseModel):
     tree: dict
 
 
-__all__ = ["Role", "RoleCreate", "RolePatch", "PermsCatalog"]
+class RoleImpact(BaseModel):
+    """Impact summary used before changing or removing a role."""
+
+    role_id: int
+    assigned_accounts: int
+    is_system: bool
+    is_protected: bool
+    can_delete: bool
+
+
+__all__ = ["Role", "RoleCreate", "RolePatch", "PermsCatalog", "RoleImpact"]

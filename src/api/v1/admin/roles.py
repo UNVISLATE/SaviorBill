@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
 from dependencies.rbac import require_perm
 from models.roles import Role as RoleModel
 from models.user import UserModel
-from schemas.role import PermsCatalog, RoleCreate, Role, RolePatch
+from schemas.role import PermsCatalog, RoleCreate, Role, RoleImpact, RolePatch
 from services.audit import audit
 from security.owner_guard import assert_role_editable
 from security.rbac import all_perms, perms_tree
@@ -116,6 +116,75 @@ async def update_role(
     )
     await session.commit()
     return Role.from_model(role)
+
+
+@router.get(
+    "/roles/{role_id}/impact",
+    response_model=RoleImpact,
+    dependencies=[Depends(require_perm("roles.read"))],
+    summary="Role assignment impact",
+)
+async def role_impact(
+    role_id: int, session: AsyncSession = Depends(get_db_session)
+) -> RoleImpact:
+    role = await session.get(RoleModel, role_id)
+    if role is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "role not found")
+    assigned = int(
+        await session.scalar(
+            select(func.count()).select_from(UserModel).where(UserModel.role_id == role_id)
+        )
+        or 0
+    )
+    return RoleImpact(
+        role_id=role.id,
+        assigned_accounts=assigned,
+        is_system=role.is_system,
+        is_protected=role.is_protected,
+        can_delete=not role.is_system and not role.is_protected and assigned == 0,
+    )
+
+
+@router.delete(
+    "/roles/{role_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete custom role",
+    description="Delete an unassigned custom role. System and protected roles cannot be deleted.",
+)
+async def delete_role(
+    request: Request,
+    role_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    acc: UserModel = Depends(require_perm("roles.delete")),
+) -> None:
+    role = await session.get(RoleModel, role_id)
+    if role is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "role not found")
+    if role.is_system or role.is_protected:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "system roles cannot be deleted")
+    assigned = int(
+        await session.scalar(
+            select(func.count()).select_from(UserModel).where(UserModel.role_id == role_id)
+        )
+        or 0
+    )
+    if assigned:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"role is assigned to {assigned} account(s); reassign them first",
+        )
+    await audit(
+        session,
+        action="role.delete",
+        actor_id=acc.id,
+        actor_role=acc.role.name if acc.role else None,
+        target_type="role",
+        target_id=str(role_id),
+        ip=request.client.host if request.client else None,
+        meta={"name": role.name},
+    )
+    await session.delete(role)
+    await session.commit()
 
 
 __all__ = ["router"]
