@@ -27,7 +27,7 @@ class BannedEmailDomainCreate(BaseModel):
 class BannedEmailDomainsBulkRequest(BaseModel):
     """Raw newline/CSV payload for a bulk domain operation."""
 
-    raw_text: str = Field(default="", max_length=1_000_000)
+    raw_text: str = Field(default="", max_length=3_000_000)
     source_url: str | None = Field(default=None, max_length=2048)
     reason: str | None = Field(default=None, max_length=255)
 

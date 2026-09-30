@@ -29,8 +29,8 @@ from services.audit import audit
 
 router = APIRouter()
 _DOMAIN_RE = re.compile(r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\Z")
-_MAX_REMOTE_BYTES = 1_000_000
-_MAX_REMOTE_LINES = 100_000
+_MAX_REMOTE_BYTES = 3_000_000
+_MAX_REMOTE_LINES = 200_000
 _REMOTE_HOST = "raw.githubusercontent.com"
 
 
