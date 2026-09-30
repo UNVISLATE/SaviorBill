@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, Plus, Trash2 } from "lucide-react"
+import { ArrowLeft, MoreVertical, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -16,6 +16,12 @@ import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
 import { Skeleton } from "@/components/shadsnui/skeleton"
 import { Input } from "@/components/shadsnui/input"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/shadsnui/dropdown-menu"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -178,18 +184,30 @@ export function LuaScriptsPage() {
               </div>
             </button>
             {canDelete && (
-              <Button
-                size="icon"
-                variant="ghost"
-                className="hidden size-7 shrink-0 text-muted-foreground hover:text-destructive group-hover:flex"
-                onClick={(e) => {
-                  e.stopPropagation()
-                  setDeleteTarget(s)
-                }}
-                title="Удалить скрипт"
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 shrink-0 text-muted-foreground"
+                      aria-label={`Дополнительные действия для ${s.name ?? s.slug}`}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  }
+                >
+                  <MoreVertical className="size-3.5" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-max min-w-[200px]">
+                  <DropdownMenuItem
+                    className="whitespace-nowrap"
+                    variant="destructive"
+                    onClick={() => setDeleteTarget(s)}
+                  >
+                    <Trash2 className="size-4" /> Удалить скрипт
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             )}
           </div>
         ))}
@@ -228,6 +246,7 @@ export function LuaScriptsPage() {
           key={detail.id}
           scriptId={detail.id}
           initialCode={detail.code}
+          initialSettings={detail.settings}
           currentVersion={detail.current_version}
           lockVersion={detail.lock_version}
           canEdit={canEdit}

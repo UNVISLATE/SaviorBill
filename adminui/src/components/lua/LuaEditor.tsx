@@ -1,14 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import * as monaco from "monaco-editor"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { History } from "lucide-react"
+import { Check, Copy, History, MoreVertical, Settings2, X } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail, getErrorStatus } from "@/lib/api-error.ts"
 import { ensureMonacoWorkers } from "@/lib/monaco-setup"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { Button } from "@/components/shadsnui/button"
-import { Input } from "@/components/shadsnui/input"
 import { Textarea } from "@/components/shadsnui/textarea"
 import { Badge } from "@/components/shadsnui/badge"
 import { Separator } from "@/components/shadsnui/separator"
@@ -29,6 +28,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/shadsnui/alert-dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/shadsnui/dropdown-menu"
+import { LuaSettingsDialog } from "@/components/lua/LuaSettingsDialog"
 
 export interface LuaScriptVersion {
   version: number
@@ -45,6 +51,7 @@ export interface LuaScriptVersionDetail extends LuaScriptVersion {
 export interface LuaEditorProps {
   scriptId: number
   initialCode: string
+  initialSettings: Record<string, unknown>
   /** Текущая версия скрипта (для подсветки в списке версий). */
   currentVersion: number
   /** Счётчик оптимистичной блокировки — присылается назад при PATCH/activate;
@@ -78,6 +85,7 @@ function formatDateTime(iso: string): string {
 export function LuaEditor({
   scriptId,
   initialCode,
+  initialSettings,
   currentVersion,
   lockVersion,
   canEdit,
@@ -91,11 +99,16 @@ export function LuaEditor({
 
   const [diffAgainst, setDiffAgainst] = useState<number | null>(null)
   const [commitMessage, setCommitMessage] = useState("")
+  const [settingsText, setSettingsText] = useState(() =>
+    JSON.stringify(initialSettings, null, 2),
+  )
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [ready, setReady] = useState(false)
   const [conflict, setConflict] = useState(false)
   const [activateTarget, setActivateTarget] = useState<number | null>(null)
   const [lintResult, setLintResult] = useState<{ ok: boolean; error?: string | null } | null>(null)
+  const [lintCopied, setLintCopied] = useState(false)
   const [testRunOpen, setTestRunOpen] = useState(false)
   const [testCtx, setTestCtx] = useState("{}")
   const [testResult, setTestResult] = useState<{
@@ -187,9 +200,19 @@ export function LuaEditor({
       const editor = editorRef.current
       if (!editor) throw new Error("editor not ready")
       const code = editor.getValue()
+      let settings: unknown
+      try {
+        settings = JSON.parse(settingsText || "{}")
+      } catch {
+        throw new Error("Настройки скрипта должны быть валидным JSON")
+      }
+      if (settings === null || typeof settings !== "object" || Array.isArray(settings)) {
+        throw new Error("Настройки скрипта должны быть JSON-объектом")
+      }
       return (
         await api.patch(`/v1/admin/lua/${scriptId}`, {
           code,
+          settings,
           commit_message: commitMessage.trim() || undefined,
           lock_version: lockVersion,
         })
@@ -213,7 +236,10 @@ export function LuaEditor({
         )
         return
       }
-      toastError("Не удалось сохранить скрипт", getErrorDetail(err))
+      toastError(
+        "Не удалось сохранить скрипт",
+        err instanceof Error ? err.message : getErrorDetail(err),
+      )
     },
   })
 
@@ -272,6 +298,20 @@ export function LuaEditor({
     },
     onError: (err: unknown) => toastError("Не удалось проверить скрипт", getErrorDetail(err)),
   })
+
+  async function copyLintResult() {
+    if (!lintResult) return
+    const text = lintResult.ok
+      ? "Компилируется без ошибок."
+      : lintResult.error || "Ошибка компиляции без дополнительного описания."
+    try {
+      await navigator.clipboard.writeText(text)
+      setLintCopied(true)
+      window.setTimeout(() => setLintCopied(false), 1500)
+    } catch {
+      toastError("Не удалось скопировать результат", "Скопируйте текст вручную.")
+    }
+  }
 
   const testRun = useMutation({
     mutationFn: async () => {
@@ -391,16 +431,37 @@ export function LuaEditor({
             )}
           </div>
           <div className="flex items-center gap-2">
-            {canTest && (
-              <Button size="sm" variant="outline" onClick={() => setTestRunOpen((v) => !v)}>
-                Test-run
-              </Button>
-            )}
-            {canEdit && (
-              <Button size="sm" variant="outline" disabled={lint.isPending} onClick={() => lint.mutate()}>
-                {lint.isPending ? "Проверка…" : "Lint"}
-              </Button>
-            )}
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon"
+                    variant="outline"
+                    aria-label="Дополнительные действия скрипта"
+                  />
+                }
+              >
+                <MoreVertical className="size-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[200px] w-max">
+                {canTest && (
+                  <DropdownMenuItem className="whitespace-nowrap" onClick={() => setTestRunOpen((v) => !v)}>
+                    <History className="size-4" /> Запустить тест
+                  </DropdownMenuItem>
+                )}
+                {canEdit && (
+                  <DropdownMenuItem className="whitespace-nowrap" disabled={lint.isPending} onClick={() => lint.mutate()}>
+                    <Settings2 className="size-4" /> Проверить код
+                  </DropdownMenuItem>
+                )}
+                {canEdit && (
+                  <DropdownMenuItem className="whitespace-nowrap" onClick={() => setSettingsOpen(true)}>
+                    <Settings2 className="size-4" /> Настройки скрипта
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
             {diffAgainst !== null && (
               <Button size="sm" variant="outline" onClick={() => setDiffAgainst(null)}>
                 Закрыть diff
@@ -426,7 +487,40 @@ export function LuaEditor({
                 : "border-destructive/30 bg-destructive/10 text-destructive")
             }
           >
-            {lintResult.ok ? "Компилируется без ошибок." : lintResult.error}
+            <div className="flex items-start justify-between gap-3">
+              <span className="min-w-0 break-words">
+                {lintResult.ok
+                  ? "Компилируется без ошибок."
+                  : lintResult.error || "Ошибка компиляции без дополнительного описания."}
+              </span>
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="size-7"
+                  aria-label="Скопировать результат проверки"
+                  title="Скопировать результат"
+                  onClick={() => void copyLintResult()}
+                >
+                  {lintCopied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  className="size-7"
+                  aria-label="Закрыть результат проверки"
+                  title="Закрыть"
+                  onClick={() => {
+                    setLintResult(null)
+                    setLintCopied(false)
+                  }}
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+            </div>
           </div>
         )}
 
@@ -473,24 +567,16 @@ export function LuaEditor({
           />
         </div>
 
-        {canEdit && (
-          <div className="flex items-end gap-2">
-            <div className="flex-1 space-y-1">
-              <label className="text-xs font-medium text-muted-foreground">
-                Описание изменений (commit message)
-              </label>
-              <Input
-                value={commitMessage}
-                onChange={(e) => setCommitMessage(e.target.value)}
-                placeholder="например, исправлена обработка ошибки таймаута"
-                disabled={save.isPending}
-              />
-            </div>
-            <Button onClick={() => save.mutate()} disabled={save.isPending || !dirty}>
-              {save.isPending ? "Сохранение…" : "Сохранить версию (Ctrl+S)"}
-            </Button>
-          </div>
-        )}
+        <LuaSettingsDialog
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          value={settingsText}
+          onChange={(next) => {
+            setSettingsText(next)
+            setDirty(true)
+          }}
+        />
+
       </div>
 
       <Separator orientation="vertical" className="hidden h-full md:block" />
@@ -498,6 +584,25 @@ export function LuaEditor({
       {/* Десктоп — постоянная колонка справа. */}
       <div className="hidden w-72 shrink-0 flex-col gap-2 md:flex">
         {versionsList}
+        {canEdit && (
+          <div className="space-y-2 border-t pt-3">
+            <label className="text-xs font-medium text-muted-foreground">
+              Описание изменений (commit message)
+            </label>
+            <Textarea
+              value={commitMessage}
+              onChange={(e) => setCommitMessage(e.target.value)}
+              placeholder="например, исправлена обработка ошибки таймаута"
+              rows={3}
+              disabled={save.isPending}
+            />
+            {dirty && (
+              <Button className="w-full" onClick={() => save.mutate()} disabled={save.isPending}>
+                {save.isPending ? "Сохранение…" : "Сохранить версию (Ctrl+S)"}
+              </Button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Мобильный — та же панель, но во всплывающей шторке по кнопке
@@ -511,6 +616,25 @@ export function LuaEditor({
           </SheetHeader>
           <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden px-4 pb-4">
             {versionsList}
+            {canEdit && (
+              <div className="space-y-2 border-t pt-3">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Описание изменений (commit message)
+                </label>
+                <Textarea
+                  value={commitMessage}
+                  onChange={(e) => setCommitMessage(e.target.value)}
+                  placeholder="например, исправлена обработка ошибки таймаута"
+                  rows={3}
+                  disabled={save.isPending}
+                />
+                {dirty && (
+                  <Button className="w-full" onClick={() => save.mutate()} disabled={save.isPending}>
+                    {save.isPending ? "Сохранение…" : "Сохранить версию (Ctrl+S)"}
+                  </Button>
+                )}
+              </div>
+            )}
           </div>
         </SheetContent>
       </Sheet>

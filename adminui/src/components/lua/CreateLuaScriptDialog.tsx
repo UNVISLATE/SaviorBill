@@ -18,6 +18,7 @@ import {
 } from "@/components/shadsnui/dialog"
 import { Field, FieldLabel } from "@/components/shadsnui/field"
 import { Input } from "@/components/shadsnui/input"
+import { Textarea } from "@/components/shadsnui/textarea"
 import {
   Select,
   SelectContent,
@@ -96,6 +97,7 @@ export function CreateLuaScriptDialog({
   const [kind, setKind] = useState<Kind>("service")
   const [actions, setActions] = useState<string[]>(() => defaultActionsFor("service"))
   const [code, setCode] = useState<string | null>(null)
+  const [settingsText, setSettingsText] = useState("{}")
   const [fileName, setFileName] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
 
@@ -105,6 +107,7 @@ export function CreateLuaScriptDialog({
     setKind("service")
     setActions(defaultActionsFor("service"))
     setCode(null)
+    setSettingsText("{}")
     setFileName(null)
     onOpenChange(false)
   }
@@ -141,16 +144,27 @@ export function CreateLuaScriptDialog({
   }
 
   const create = useMutation({
-    mutationFn: async () =>
-      (
+    mutationFn: async () => {
+      let settings: unknown
+      try {
+        settings = JSON.parse(settingsText || "{}")
+      } catch {
+        throw new Error("Настройки скрипта должны быть валидным JSON")
+      }
+      if (settings === null || typeof settings !== "object" || Array.isArray(settings)) {
+        throw new Error("Настройки скрипта должны быть JSON-объектом")
+      }
+      return (
         await api.post<{ id: number }>("/v1/admin/lua", {
           slug,
           name: name.trim() || undefined,
           kind,
           actions,
           code: code ?? BLANK_TEMPLATE,
+          settings,
         })
-      ).data,
+      ).data
+    },
     onSuccess: (created) => {
       toastSuccess("Скрипт создан")
       void qc.invalidateQueries({ queryKey: ["admin-lua-scripts"] })
@@ -280,6 +294,22 @@ export function CreateLuaScriptDialog({
                 }}
               />
             </div>
+          </Field>
+
+          <Field>
+            <FieldLabel htmlFor="new-settings">Настройки скрипта (`ctx.lua.settings`)</FieldLabel>
+            <Textarea
+              id="new-settings"
+              value={settingsText}
+              onChange={(e) => setSettingsText(e.target.value)}
+              rows={4}
+              className="font-mono text-xs"
+              placeholder="{}"
+            />
+            <p className="text-xs text-muted-foreground">
+              Общая конфигурация скрипта. Секреты храните в защищенных настройках
+              провайдера, а не в этом JSON.
+            </p>
           </Field>
         </div>
 
