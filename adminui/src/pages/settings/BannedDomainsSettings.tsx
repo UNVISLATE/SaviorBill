@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Ban, FileUp, Plus, Trash2 } from "lucide-react"
+import { FileUp, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
+import { useDataTableQuery } from "@/hooks/use-data-table"
+import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
 import { Button } from "@/components/shadsnui/button"
 import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
@@ -16,20 +18,20 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/shadsnui/dialog"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/shadsnui/table"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 interface BannedDomain {
   domain: string
   reason: string | null
   created_at: string
+}
+
+interface Page<T> {
+  items: T[]
+  total: number
+  limit: number
+  offset: number
+  has_more: boolean
 }
 
 interface ImportItem {
@@ -64,10 +66,21 @@ export function BannedDomainsSettings() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const canEdit = can("settings.email_domains.edit")
   const qc = useQueryClient()
+  const table = useDataTableQuery()
 
   const { data, isLoading } = useQuery({
-    queryKey: ["admin-banned-domains"],
-    queryFn: async () => (await api.get<BannedDomain[]>("/v1/admin/settings/email-domains")).data,
+    queryKey: ["admin-banned-domains", table.limit, table.offset, table.search, table.sort],
+    queryFn: async () => (
+      await api.get<Page<BannedDomain>>("/v1/admin/settings/email-domains", {
+        params: {
+          limit: table.limit,
+          offset: table.offset,
+          q: table.search || undefined,
+          sort: table.sort || undefined,
+        },
+      })
+    ).data,
+    placeholderData: (previous) => previous,
   })
 
   const remove = useMutation({
@@ -160,47 +173,50 @@ export function BannedDomainsSettings() {
       </CardHeader>
       <CardContent>
         {isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
-        {!isLoading && (data?.length ?? 0) === 0 && (
-          <div className="flex flex-col items-center gap-2 py-8 text-center text-sm text-muted-foreground">
-            <Ban className="size-6" />
-            Заблокированных доменов нет.
-          </div>
-        )}
-        {!isLoading && (data?.length ?? 0) > 0 && (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Домен</TableHead>
-                <TableHead>Причина</TableHead>
-                <TableHead>Добавлен</TableHead>
-                {canEdit && <TableHead className="text-right">Действия</TableHead>}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data?.map((d) => (
-                <TableRow key={d.domain}>
-                  <TableCell className="font-mono text-xs">{d.domain}</TableCell>
-                  <TableCell className="text-muted-foreground">{d.reason ?? "—"}</TableCell>
-                  <TableCell className="text-xs text-muted-foreground">
-                    {new Date(d.created_at).toLocaleDateString()}
-                  </TableCell>
-                  {canEdit && (
-                    <TableCell className="text-right">
+        <DataTable
+          columns={[
+            { key: "domain", header: "Домен", render: (d) => <span className="font-mono text-xs">{d.domain}</span> },
+            { key: "reason", header: "Причина", render: (d) => <span className="text-muted-foreground">{d.reason ?? "—"}</span> },
+            {
+              key: "created_at",
+              header: "Добавлен",
+              render: (d) => <span className="text-xs text-muted-foreground">{new Date(d.created_at).toLocaleDateString()}</span>,
+            },
+            ...(canEdit
+              ? [{
+                  header: <span className="block text-right">Действия</span>,
+                  render: (d: BannedDomain) => (
+                    <div className="text-right">
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="size-8 text-destructive"
+                        className="size-7 text-destructive"
                         onClick={() => remove.mutate(d.domain)}
                       >
-                        <Trash2 className="size-4" />
+                        <Trash2 className="size-3.5" />
                       </Button>
-                    </TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
+                    </div>
+                  ),
+                } satisfies DataTableColumn<BannedDomain>]
+              : []),
+          ] satisfies DataTableColumn<BannedDomain>[]}
+          data={data?.items ?? []}
+          total={data?.total ?? 0}
+          isLoading={isLoading}
+          getRowId={(d) => d.domain}
+          sort={table.sort}
+          onToggleSort={table.toggleSort}
+          searchValue={table.searchInput}
+          onSearchChange={table.setSearchInput}
+          searchPlaceholder="Поиск по домену или причине…"
+          limit={table.limit}
+          offset={table.offset}
+          hasMore={data?.has_more ?? false}
+          onLimitChange={table.changeLimit}
+          onOffsetChange={table.setOffset}
+          emptyMessage="Заблокированные домены не найдены"
+          emptyHint={table.search ? "Попробуйте изменить поисковый запрос." : "Здесь появятся добавленные домены."}
+        />
       </CardContent>
       <Dialog open={bulkOpen} onOpenChange={(open) => open ? setBulkOpen(true) : closeBulk()}>
         <DialogContent className="flex max-h-[85vh] w-full max-w-[calc(100%-2rem)] flex-col overflow-hidden p-6 sm:max-w-[760px]">

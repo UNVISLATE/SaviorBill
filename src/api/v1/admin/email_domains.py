@@ -25,9 +25,12 @@ from schemas.banned_email_domains import (
     BannedEmailDomainImportPreview,
     BannedEmailDomainsBulkRequest,
 )
+from schemas.page import Page
 from services.audit import audit
+from utils.pagination import PageParams, apply_sort, page_params, paginate_search, q_param, sort_param
 
 router = APIRouter()
+_SORT_FIELDS = {"domain", "created_at"}
 _DOMAIN_RE = re.compile(r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\Z")
 _MAX_REMOTE_BYTES = 3_000_000
 _MAX_REMOTE_LINES = 200_000
@@ -144,15 +147,41 @@ async def _load_bulk_text(body: BannedEmailDomainsBulkRequest) -> str:
 
 @router.get(
     "",
-    response_model=list[BannedEmailDomain],
+    response_model=Page[BannedEmailDomain],
     dependencies=[Depends(require_perm("settings.email_domains.read"))],
     summary="List banned email domains",
 )
 async def list_banned_domains(
-    mngr: BannedEmailDomainsMngr = Depends(get_banned_domains_mngr),
-) -> list[BannedEmailDomain]:
-    rows = await mngr.list_all()
-    return [BannedEmailDomain.from_model(r) for r in rows]
+    pp: PageParams = Depends(page_params),
+    q: str | None = Depends(q_param),
+    sort: str | None = Depends(sort_param),
+    session: AsyncSession = Depends(get_db_session),
+) -> Page[BannedEmailDomain]:
+    stmt = apply_sort(
+        select(BannedEmailDomainModel),
+        BannedEmailDomainModel,
+        sort,
+        _SORT_FIELDS,
+    )
+    if sort is None:
+        stmt = stmt.order_by(BannedEmailDomainModel.domain)
+    items, total, has_more = await paginate_search(
+        session,
+        stmt,
+        BannedEmailDomainModel,
+        BannedEmailDomain.from_model,
+        limit=pp.limit,
+        offset=pp.offset,
+        q=q,
+        search_fields=("domain", "reason"),
+    )
+    return Page(
+        items=items,
+        total=total,
+        limit=pp.limit,
+        offset=pp.offset,
+        has_more=has_more,
+    )
 
 
 @router.post(
