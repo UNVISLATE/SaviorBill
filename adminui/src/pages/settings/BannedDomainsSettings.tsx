@@ -6,6 +6,7 @@ import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { useDataTableQuery } from "@/hooks/use-data-table"
+import { AnimatedLoader } from "@/components/animbits/AnimatedLoader"
 import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
 import { Button } from "@/components/shadsnui/button"
 import { Input } from "@/components/shadsnui/input"
@@ -121,6 +122,7 @@ export function BannedDomainsSettings() {
     },
     onError: (e: unknown) => toastError("Не удалось импортировать список", getErrorDetail(e)),
   })
+  const bulkBusy = bulkPreview.isPending || bulkImport.isPending
 
   const closeBulk = () => {
     setBulkOpen(false)
@@ -218,8 +220,21 @@ export function BannedDomainsSettings() {
           emptyHint={table.search ? "Попробуйте изменить поисковый запрос." : "Здесь появятся добавленные домены."}
         />
       </CardContent>
-      <Dialog open={bulkOpen} onOpenChange={(open) => open ? setBulkOpen(true) : closeBulk()}>
-        <DialogContent className="flex max-h-[85vh] w-full max-w-[calc(100%-2rem)] flex-col overflow-hidden p-6 sm:max-w-[760px]">
+      <Dialog open={bulkOpen} onOpenChange={(open) => {
+        if (bulkBusy) return
+        if (open) setBulkOpen(true)
+        else closeBulk()
+      }}>
+        <DialogContent
+          className="relative flex max-h-[85vh] w-full max-w-[calc(100%-2rem)] flex-col overflow-hidden p-6 sm:max-w-[760px]"
+          showCloseButton={!bulkBusy}
+          aria-busy={bulkBusy}
+        >
+          {bulkBusy && (
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-background/75 backdrop-blur-[2px]">
+              <AnimatedLoader />
+            </div>
+          )}
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
             <DialogHeader>
               <DialogTitle>Добавить заблокированные домены</DialogTitle>
@@ -234,6 +249,7 @@ export function BannedDomainsSettings() {
               size="sm"
               variant={sourceMode === "text" ? "secondary" : "ghost"}
               className="flex-1"
+              disabled={bulkBusy}
               onClick={() => {
                 setSourceMode("text")
                 setPreview(null)
@@ -246,6 +262,7 @@ export function BannedDomainsSettings() {
               size="sm"
               variant={sourceMode === "url" ? "secondary" : "ghost"}
               className="flex-1"
+              disabled={bulkBusy}
               onClick={() => {
                 setSourceMode("url")
                 setPreview(null)
@@ -262,6 +279,7 @@ export function BannedDomainsSettings() {
                   type="file"
                   accept=".txt,.csv,text/plain,text/csv"
                   className="hidden"
+                  disabled={bulkBusy}
                   onChange={(event) => {
                     const file = event.target.files?.[0]
                     if (file) void loadFile(file)
@@ -270,6 +288,7 @@ export function BannedDomainsSettings() {
                 />
                 <button
                   type="button"
+                  disabled={bulkBusy}
                   className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground transition-colors hover:border-primary hover:bg-muted/40 hover:text-foreground"
                   onClick={() => fileInputRef.current?.click()}
                   onDragOver={(event) => event.preventDefault()}
@@ -285,6 +304,7 @@ export function BannedDomainsSettings() {
               </div>
               <textarea
                 value={bulkText}
+                disabled={bulkBusy}
                 onChange={(event) => {
                   setPreview(null)
                   setBulkText(event.target.value)
@@ -299,6 +319,7 @@ export function BannedDomainsSettings() {
                 <Input
                   className="min-w-0"
                 value={bulkUrl}
+                disabled={bulkBusy}
                 onChange={(event) => {
                   setPreview(null)
                   setBulkUrl(event.target.value)
@@ -310,7 +331,7 @@ export function BannedDomainsSettings() {
                 type="button"
                 variant="outline"
                 className="w-full"
-                disabled={!bulkUrl.trim() || bulkPreview.isPending}
+                disabled={!bulkUrl.trim() || bulkBusy}
                 onClick={() => bulkPreview.mutate()}
               >
                 Загрузить и проверить ссылку
@@ -322,7 +343,7 @@ export function BannedDomainsSettings() {
             )}
             <div className="space-y-1">
             <Label>Общая причина (опционально)</Label>
-            <Input value={bulkReason} onChange={(event) => setBulkReason(event.target.value)} placeholder="временная почта" />
+            <Input disabled={bulkBusy} value={bulkReason} onChange={(event) => setBulkReason(event.target.value)} placeholder="временная почта" />
             </div>
             <div className="min-h-5 text-sm">
             {bulkPreview.isPending && <span className="text-muted-foreground">Проверяем список…</span>}
@@ -367,10 +388,10 @@ export function BannedDomainsSettings() {
             )}
           </div>
           <DialogFooter className="-mx-6 -mb-6 flex-shrink-0 flex-wrap pt-4">
-            <Button variant="outline" className="min-w-24" onClick={closeBulk}>Отмена</Button>
+            <Button disabled={bulkBusy} variant="outline" className="min-w-24" onClick={closeBulk}>Отмена</Button>
             <Button
               className="min-w-32"
-              disabled={!preview || preview.new_count === 0 || bulkImport.isPending}
+              disabled={!preview || preview.new_count === 0 || bulkBusy}
               onClick={() => bulkImport.mutate()}
             >
               {preview?.invalid_count ? "Импортировать валидные" : "Импортировать"}
