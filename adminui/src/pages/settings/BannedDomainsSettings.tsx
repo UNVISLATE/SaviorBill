@@ -226,7 +226,7 @@ export function BannedDomainsSettings() {
         else closeBulk()
       }}>
         <DialogContent
-          className="relative !flex h-[85vh] max-h-[85vh] min-h-0 w-full max-w-[calc(100%-2rem)] flex-col overflow-hidden p-6 sm:max-w-[760px]"
+          className="!fixed !flex h-[85vh] max-h-[85vh] min-h-0 w-full max-w-[calc(100%-2rem)] flex-col overflow-hidden p-6 sm:max-w-[760px]"
           showCloseButton={!bulkBusy}
           aria-busy={bulkBusy}
         >
