@@ -1,7 +1,7 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom"
 
 import { useAuth } from "@/hooks/use-auth"
-import { Spinner } from "@/components/shadsnui/spinner"
+import { AnimatedLoader } from "@/components/animbits/AnimatedLoader"
 
 export function ProtectedRoute() {
   const { isAuthenticated, isLoading } = useAuth()
@@ -10,7 +10,7 @@ export function ProtectedRoute() {
   if (isLoading) {
     return (
       <div className="flex min-h-svh items-center justify-center">
-        <Spinner />
+        <AnimatedLoader className="min-h-40" />
       </div>
     )
   }

@@ -13,7 +13,7 @@ import {
 import { Input } from "@/components/shadsnui/input"
 import { Checkbox } from "@/components/shadsnui/checkbox"
 import { Button } from "@/components/shadsnui/button"
-import { Spinner } from "@/components/shadsnui/spinner"
+import { AnimatedLoader } from "@/components/animbits/AnimatedLoader"
 import {
   Select,
   SelectContent,
@@ -180,7 +180,7 @@ export function DataTable<T>({
             {isLoading && (
               <TableRow>
                 <TableCell colSpan={columns.length + (selectable ? 1 : 0)} className="py-8 text-center">
-                  <Spinner className="mx-auto" />
+                  <AnimatedLoader className="mx-auto" sizeClassName="size-12" />
                 </TableCell>
               </TableRow>
             )}

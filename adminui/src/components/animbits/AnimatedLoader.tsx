@@ -2,9 +2,10 @@ import loaderArtwork from "@/assets/OutlineLoaderDefault.svg"
 
 interface AnimatedLoaderProps {
   className?: string
+  sizeClassName?: string
 }
 
-export function AnimatedLoader({ className }: AnimatedLoaderProps) {
+export function AnimatedLoader({ className, sizeClassName = "size-24" }: AnimatedLoaderProps) {
   return (
     <div
       className={`flex items-center justify-center ${className ?? ""}`}
@@ -15,7 +16,7 @@ export function AnimatedLoader({ className }: AnimatedLoaderProps) {
         src={loaderArtwork}
         alt=""
         aria-hidden="true"
-        className="size-24"
+        className={sizeClassName}
       />
     </div>
   )
