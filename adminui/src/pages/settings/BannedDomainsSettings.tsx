@@ -48,6 +48,8 @@ interface ImportPreview {
   invalid_count: number
 }
 
+const PREVIEW_ITEM_LIMIT = 100
+
 /** Заблокированные для регистрации email-домены — попытка зарегистрироваться
  * с почтой на таком домене отклоняется на бэкенде (защита от временной
  * почты/спама). Список маленький — без пагинации, простая таблица. */
@@ -201,7 +203,7 @@ export function BannedDomainsSettings() {
         )}
       </CardContent>
       <Dialog open={bulkOpen} onOpenChange={(open) => open ? setBulkOpen(true) : closeBulk()}>
-        <DialogContent className="w-full max-w-[600px] p-6">
+        <DialogContent className="flex max-h-[90vh] w-full max-w-[650px] flex-col overflow-hidden p-6">
           <DialogHeader>
             <DialogTitle>Добавить заблокированные домены</DialogTitle>
           </DialogHeader>
@@ -271,7 +273,7 @@ export function BannedDomainsSettings() {
                   setBulkText(event.target.value)
                 }}
                 placeholder={"tempmail.com\nexample.org,временная почта"}
-                className="min-h-40 w-full resize-y rounded-md border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="min-h-40 max-h-[300px] w-full resize-y overflow-y-auto rounded-md border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </>
           ) : (
@@ -315,15 +317,15 @@ export function BannedDomainsSettings() {
             )}
           </div>
           {preview && (
-            <div className="space-y-2 rounded-md border p-3 text-sm">
+            <div className="min-h-0 space-y-2 rounded-md border p-3 text-sm">
               <div className="flex flex-wrap gap-3">
                 <span className="text-emerald-500">Новые: {preview.new_count}</span>
                 <span className="text-muted-foreground">Уже есть: {preview.existing_count}</span>
                 <span className="text-amber-500">Дубли: {preview.duplicate_count}</span>
                 <span className="text-destructive">Ошибки: {preview.invalid_count}</span>
               </div>
-              <div className="max-h-40 space-y-1 overflow-y-auto border-t pt-2">
-                {preview.items.map((item) => (
+              <div className="max-h-[300px] space-y-1 overflow-y-auto border-t pt-2">
+                {preview.items.slice(0, PREVIEW_ITEM_LIMIT).map((item) => (
                   <div key={`${item.line}-${item.value}`} className="flex gap-2 font-mono text-xs">
                     <span className="w-8 text-muted-foreground">{item.line}</span>
                     <span className="min-w-0 flex-1 truncate">{item.value}</span>
@@ -332,12 +334,18 @@ export function BannedDomainsSettings() {
                     </span>
                   </div>
                 ))}
+                {preview.items.length > PREVIEW_ITEM_LIMIT && (
+                  <div className="border-t pt-2 text-xs text-muted-foreground">
+                    И ещё {preview.items.length - PREVIEW_ITEM_LIMIT} элементов…
+                  </div>
+                )}
               </div>
             </div>
           )}
-          <DialogFooter className="-mx-6 -mb-6">
-            <Button variant="outline" onClick={closeBulk}>Отмена</Button>
+          <DialogFooter className="-mx-6 -mb-6 flex-wrap">
+            <Button variant="outline" className="min-w-24" onClick={closeBulk}>Отмена</Button>
             <Button
+              className="min-w-32"
               disabled={!preview || preview.new_count === 0 || preview.invalid_count > 0 || bulkImport.isPending}
               onClick={() => bulkImport.mutate()}
             >
