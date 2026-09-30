@@ -48,6 +48,13 @@ interface Role {
   perms: PermNode
 }
 
+interface RoleImpact {
+  assigned_accounts: number
+  is_system: boolean
+  is_protected: boolean
+  can_delete: boolean
+}
+
 type PermTree = Record<string, PermTree | true>
 
 /** Собрать вложенный perms-объект из списка плоских путей (только true-листья) —
@@ -98,6 +105,14 @@ export function RolesPage() {
   const { data: catalog } = useQuery({
     queryKey: ["admin-perms-catalog"],
     queryFn: async () => (await api.get<{ flat: string[]; tree: unknown }>("/v1/admin/perms")).data,
+  })
+
+  const { data: deleteImpact, isLoading: isImpactLoading, isError: isImpactError } = useQuery({
+    queryKey: ["admin-role-impact", deleteTarget?.id],
+    queryFn: async () => (
+      await api.get<RoleImpact>(`/v1/admin/roles/${deleteTarget!.id}/impact`)
+    ).data,
+    enabled: deleteTarget !== null,
   })
 
   const save = useMutation({
@@ -431,14 +446,20 @@ export function RolesPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Удалить роль «{deleteTarget?.title ?? deleteTarget?.name}»?</AlertDialogTitle>
             <AlertDialogDescription>
-              Удаление необратимо. Системные роли удалить нельзя, а для занятой роли backend отклонит операцию.
+              {isImpactLoading
+                ? "Проверяем назначения роли…"
+                : isImpactError
+                  ? "Не удалось получить информацию о назначениях роли. Удаление заблокировано."
+                  : deleteImpact?.assigned_accounts
+                    ? `Роль назначена ${deleteImpact.assigned_accounts} аккаунтам. Сначала назначьте им другую роль.`
+                    : "Роль не назначена аккаунтам. Удаление необратимо."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
-              disabled={remove.isPending}
+              disabled={remove.isPending || isImpactLoading || isImpactError || !deleteImpact?.can_delete}
               onClick={() => {
                 if (deleteTarget) remove.mutate(deleteTarget)
                 setDeleteTarget(null)
