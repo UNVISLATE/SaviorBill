@@ -197,7 +197,7 @@ export function RolesPage() {
       const isCollapsed = !isExpanded
       const isPartiallySelected = selected.length > 0 && selected.length < descendants.length
       const row = (
-        <div key={path} className={`flex min-h-8 items-center gap-1 rounded-md text-sm hover:bg-muted/50 ${!isLeaf ? "bg-muted/20" : ""}`} style={{ paddingLeft: `${depth * 16 + 4}px` }}>
+        <div key={path} className={`flex min-h-8 items-center gap-1 rounded-md text-sm hover:bg-muted/50 ${!isLeaf ? "bg-muted/20" : ""}`}>
           {!isLeaf ? (
             <button
               type="button"
@@ -221,7 +221,16 @@ export function RolesPage() {
           )}
         </div>
       )
-      return isLeaf || isCollapsed ? [row] : [row, ...permissionRows(value, path, depth + 1)]
+      if (isLeaf || isCollapsed) return [row]
+      return [
+        row,
+        <div
+          key={`${path}-children`}
+          className="ml-3 border-l border-border/70 pl-2"
+        >
+          {permissionRows(value, path, depth + 1)}
+        </div>,
+      ]
     })
   }
 
