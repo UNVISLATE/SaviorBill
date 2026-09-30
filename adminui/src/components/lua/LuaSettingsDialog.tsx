@@ -24,18 +24,6 @@ function parseObject(text: string): { value?: JsonObject; error?: string } {
   }
 }
 
-function deleteAtPath(value: JsonObject, path: string[]): JsonObject {
-  if (path.length === 0) return {}
-  const [head, ...tail] = path
-  if (tail.length === 0) {
-    const next = { ...value }
-    delete next[head]
-    return next
-  }
-  if (!isObject(value[head])) return value
-  return { ...value, [head]: deleteAtPath(value[head], tail) }
-}
-
 function displayValue(value: unknown): string {
   if (typeof value === "string") return value
   if (typeof value === "number" || typeof value === "boolean") return String(value)
@@ -94,7 +82,11 @@ function FieldRows({
               variant="ghost"
               className="size-8 shrink-0 text-muted-foreground hover:text-destructive"
               aria-label={`Удалить ${key}`}
-              onClick={() => onChange(deleteAtPath(value, path))}
+              onClick={() => {
+                const next = { ...value }
+                delete next[key]
+                onChange(next)
+              }}
             >
               <Trash2 className="size-3.5" />
             </Button>
