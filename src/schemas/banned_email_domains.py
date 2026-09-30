@@ -24,4 +24,38 @@ class BannedEmailDomainCreate(BaseModel):
     reason: str | None = Field(default=None, max_length=255)
 
 
-__all__ = ["BannedEmailDomain", "BannedEmailDomainCreate"]
+class BannedEmailDomainsBulkRequest(BaseModel):
+    """Raw newline/CSV payload for a bulk domain operation."""
+
+    raw_text: str = Field(min_length=1, max_length=1_000_000)
+    reason: str | None = Field(default=None, max_length=255)
+
+
+class BannedEmailDomainImportItem(BaseModel):
+    line: int
+    value: str
+    domain: str | None = None
+    status: str
+    reason: str | None = None
+
+
+class BannedEmailDomainImportPreview(BaseModel):
+    items: list[BannedEmailDomainImportItem]
+    new_count: int
+    existing_count: int
+    duplicate_count: int
+    invalid_count: int
+
+
+class BannedEmailDomainBulkDeleteRequest(BaseModel):
+    domains: list[str] = Field(min_length=1, max_length=10_000)
+
+
+__all__ = [
+    "BannedEmailDomain",
+    "BannedEmailDomainCreate",
+    "BannedEmailDomainsBulkRequest",
+    "BannedEmailDomainImportItem",
+    "BannedEmailDomainImportPreview",
+    "BannedEmailDomainBulkDeleteRequest",
+]
