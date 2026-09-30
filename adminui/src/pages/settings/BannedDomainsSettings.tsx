@@ -203,15 +203,16 @@ export function BannedDomainsSettings() {
         )}
       </CardContent>
       <Dialog open={bulkOpen} onOpenChange={(open) => open ? setBulkOpen(true) : closeBulk()}>
-        <DialogContent className="flex max-h-[85vh] w-full max-w-[760px] flex-col overflow-hidden p-6">
-          <DialogHeader>
-            <DialogTitle>Добавить заблокированные домены</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
+        <DialogContent className="flex max-h-[85vh] w-full max-w-[calc(100%-2rem)] flex-col overflow-hidden p-6 sm:max-w-[760px]">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+            <DialogHeader>
+              <DialogTitle>Добавить заблокированные домены</DialogTitle>
+            </DialogHeader>
+            <p className="text-sm text-muted-foreground">
             Добавьте один домен или список: по одному домену на строку либо CSV в формате{" "}
             <code>домен,причина</code>.
-          </p>
-          <div className="flex gap-1 rounded-md bg-muted p-1">
+            </p>
+            <div className="flex gap-1 rounded-md bg-muted p-1">
             <Button
               type="button"
               size="sm"
@@ -236,8 +237,8 @@ export function BannedDomainsSettings() {
             >
               Ссылка
             </Button>
-          </div>
-          {sourceMode === "text" ? (
+            </div>
+            {sourceMode === "text" ? (
             <>
               <div className="space-y-1.5">
                 <input
@@ -276,10 +277,11 @@ export function BannedDomainsSettings() {
                 className="min-h-40 max-h-[300px] w-full resize-y overflow-y-auto rounded-md border bg-background px-3 py-2 font-mono text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
               />
             </>
-          ) : (
-            <div className="space-y-2">
+            ) : (
+              <div className="space-y-2">
               <Label>Ссылка на документ GitHub</Label>
-              <Input
+                <Input
+                  className="min-w-0"
                 value={bulkUrl}
                 onChange={(event) => {
                   setPreview(null)
@@ -300,13 +302,13 @@ export function BannedDomainsSettings() {
               <p className="text-xs text-muted-foreground">
                 Разрешён только raw.githubusercontent.com. Запрос выполняется только по этой кнопке.
               </p>
-            </div>
-          )}
-          <div className="space-y-1">
+              </div>
+            )}
+            <div className="space-y-1">
             <Label>Общая причина (опционально)</Label>
             <Input value={bulkReason} onChange={(event) => setBulkReason(event.target.value)} placeholder="временная почта" />
-          </div>
-          <div className="min-h-5 text-sm">
+            </div>
+            <div className="min-h-5 text-sm">
             {bulkPreview.isPending && <span className="text-muted-foreground">Проверяем список…</span>}
             {!bulkPreview.isPending && preview && (
               <span className="text-muted-foreground">
@@ -315,8 +317,8 @@ export function BannedDomainsSettings() {
                 {" · "}Ошибки: <strong className={preview.invalid_count ? "text-destructive" : "text-emerald-500"}>{preview.invalid_count}</strong>
               </span>
             )}
-          </div>
-          {preview && (
+            </div>
+            {preview && (
             <div className="min-h-0 w-full space-y-2 rounded-md border p-3 text-sm">
               <div className="flex flex-wrap gap-3">
                 <span className="text-emerald-500">Новые: {preview.new_count}</span>
@@ -341,7 +343,8 @@ export function BannedDomainsSettings() {
                 )}
               </div>
             </div>
-          )}
+            )}
+          </div>
           <DialogFooter className="-mx-6 -mb-6 flex-shrink-0 flex-wrap pt-4">
             <Button variant="outline" className="min-w-24" onClick={closeBulk}>Отмена</Button>
             <Button
