@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { ChevronRight, Minus, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { hasPerm, type PermNode } from "@/api/rbac.ts"
@@ -16,6 +17,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/shadsnui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/shadsnui/alert-dialog"
 import {
   Table,
   TableBody,
@@ -76,6 +87,8 @@ export function RolesPage() {
   const [creating, setCreating] = useState(false)
   const [newName, setNewName] = useState("")
   const [newTitle, setNewTitle] = useState("")
+  const [collapsedPermGroups, setCollapsedPermGroups] = useState<Set<string>>(new Set())
+  const [deleteTarget, setDeleteTarget] = useState<Role | null>(null)
 
   const { data: roles, isLoading } = useQuery({
     queryKey: ["admin-roles"],
@@ -165,25 +178,55 @@ export function RolesPage() {
     })
   }
 
+  function togglePermissionGroup(path: string) {
+    setCollapsedPermGroups((previous) => {
+      const next = new Set(previous)
+      const isTopLevel = !path.includes(".")
+      const isExpanded = isTopLevel ? !next.has(path) : next.has(path)
+      if (isExpanded) {
+        next.add(path)
+      } else {
+        next.delete(path)
+      }
+      return next
+    })
+  }
+
   function permissionRows(tree: PermTree, prefix = "", depth = 0): JSX.Element[] {
     return Object.entries(tree).flatMap(([key, value]) => {
       const path = prefix ? `${prefix}.${key}` : key
       const descendants = treePaths({ [key]: value }, prefix)
       const selected = descendants.filter((item) => checked.has(item))
       const isLeaf = value === true || Object.keys(value).length === 0
+      const isExpanded = depth === 0 ? !collapsedPermGroups.has(path) : collapsedPermGroups.has(path)
+      const isCollapsed = !isExpanded
+      const isPartiallySelected = selected.length > 0 && selected.length < descendants.length
       const row = (
-        <label key={path} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/50" style={{ paddingLeft: `${depth * 16 + 6}px` }}>
+        <div key={path} className={`flex min-h-8 items-center gap-1 rounded-md text-sm hover:bg-muted/50 ${!isLeaf ? "bg-muted/20" : ""}`} style={{ paddingLeft: `${depth * 16 + 4}px` }}>
+          {!isLeaf ? (
+            <button
+              type="button"
+              className="flex size-6 shrink-0 items-center justify-center rounded hover:bg-muted"
+              aria-label={isCollapsed ? `Развернуть ${key}` : `Свернуть ${key}`}
+              onClick={() => togglePermissionGroup(path)}
+            >
+              <ChevronRight className={`size-4 transition-transform ${isCollapsed ? "" : "rotate-90"}`} />
+            </button>
+          ) : (
+            <span className="size-6 shrink-0" />
+          )}
           <Checkbox
             checked={selected.length === descendants.length && descendants.length > 0}
             onCheckedChange={(v) => togglePermission(path, !!v)}
+            aria-label={`Выбрать ${path}`}
           />
-          <span className={isLeaf ? "font-mono text-xs" : "font-medium"}>{key}</span>
-          {!isLeaf && selected.length > 0 && selected.length < descendants.length && (
-            <span className="text-xs text-muted-foreground">частично</span>
+          <span className={isLeaf ? "font-mono text-xs" : "font-semibold"}>{key}</span>
+          {!isLeaf && isPartiallySelected && (
+            <Minus className="ml-1 size-3.5 text-primary" aria-label="Выбрано частично" />
           )}
-        </label>
+        </div>
       )
-      return isLeaf ? [row] : [row, ...permissionRows(value, path, depth + 1)]
+      return isLeaf || isCollapsed ? [row] : [row, ...permissionRows(value, path, depth + 1)]
     })
   }
 
@@ -282,10 +325,11 @@ export function RolesPage() {
                       variant="ghost"
                       onClick={(event) => {
                         event.stopPropagation()
-                        if (window.confirm(`Удалить роль «${r.title ?? r.name}»?`)) remove.mutate(r)
+                        setDeleteTarget(r)
                       }}
                     >
-                      Удалить
+                      <Trash2 className="size-4" />
+                      <span className="sr-only">Удалить роль</span>
                     </Button>
                   )}
                 </TableCell>
@@ -377,6 +421,30 @@ export function RolesPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить роль «{deleteTarget?.title ?? deleteTarget?.name}»?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Удаление необратимо. Системные роли удалить нельзя, а для занятой роли backend отклонит операцию.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={remove.isPending}
+              onClick={() => {
+                if (deleteTarget) remove.mutate(deleteTarget)
+                setDeleteTarget(null)
+              }}
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }
