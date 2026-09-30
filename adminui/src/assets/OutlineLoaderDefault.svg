@@ -1,0 +1,37 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+<style>
+  .stroke-base {
+    fill: none;
+    stroke: #505050;
+    stroke-width: 10;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+  
+  .anim-small {
+    stroke-dasharray: 600;
+    stroke-dashoffset: 600;
+    animation: converge 8s infinite ease-in-out;
+  }
+
+  .anim-large {
+    stroke-dasharray: 2000;
+    stroke-dashoffset: 2000;
+    animation: converge-complex 17s infinite ease-in-out;
+  }
+
+  @keyframes converge {
+    0% { stroke-dashoffset: 600; }
+    50% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: -600; }
+  }
+
+  @keyframes converge-complex {
+    0% { stroke-dashoffset: 2000; }
+    50% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: -2000; }
+  }
+</style>
+<path class="stroke-base anim-small" d="M310.001 342C310.001 312 279 300 244 288C209 276 203 259.5 203 228V102L111 44V411H310.001V342Z"/>
+<path class="stroke-base anim-large" d="M310 433H111L111 652C111 659 111 689 157.001 719L504 948L504 846C504 840 497 827 492 824L221 652C221 652 200 640 200 610V510C200 510 200 500 210.5 500C221 500 221 510 221 510V600C221 630 242 642 242 642L513 814L784 642C784 642 805 630 805 600V220C805 220 805 210 815.5 210C826 210 826 220 826 220V610C826 640 805 652 805 652L534 824C529 827 522 840 522.001 846L522 948L869.001 719C915 689 915 659 915 652V44L746 145C716 163 716 163 716 219.75V549L513.001 696L310 549V433Z"/>
+</svg>
