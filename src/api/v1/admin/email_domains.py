@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import csv
 import io
+import ipaddress
 import re
+import socket
+from urllib.parse import urlparse
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +31,7 @@ from services.audit import audit
 
 router = APIRouter()
 _DOMAIN_RE = re.compile(r"(?=.{1,253}\Z)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}\Z")
+_MAX_REMOTE_BYTES = 1_000_000
 
 
 def _normalize_domain(value: str) -> str | None:
@@ -86,6 +91,55 @@ async def _preview(
     )
 
 
+async def _load_bulk_text(body: BannedEmailDomainsBulkRequest) -> str:
+    if body.raw_text.strip() and body.source_url:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "provide either raw_text or source_url, not both",
+        )
+    if body.raw_text.strip():
+        return body.raw_text
+    if not body.source_url:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "raw_text or source_url is required")
+
+    parsed = urlparse(body.source_url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "source_url must be an http(s) URL")
+    try:
+        addresses = {
+            ipaddress.ip_address(info[4][0])
+            for info in socket.getaddrinfo(parsed.hostname, parsed.port, type=socket.SOCK_STREAM)
+        }
+    except (OSError, ValueError):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "source_url hostname cannot be resolved")
+    if any(not address.is_global for address in addresses):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "source_url points to a private address")
+
+    try:
+        async with httpx.AsyncClient(
+            timeout=httpx.Timeout(15.0, connect=5.0),
+            follow_redirects=False,
+            headers={"User-Agent": "SaviorBill admin domain importer"},
+        ) as client:
+            async with client.stream("GET", body.source_url) as response:
+                response.raise_for_status()
+                content_length = response.headers.get("content-length")
+                if content_length and int(content_length) > _MAX_REMOTE_BYTES:
+                    raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "source file is too large")
+                chunks: list[bytes] = []
+                total = 0
+                async for chunk in response.aiter_bytes():
+                    total += len(chunk)
+                    if total > _MAX_REMOTE_BYTES:
+                        raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "source file is too large")
+                    chunks.append(chunk)
+    except HTTPException:
+        raise
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"source file could not be fetched: {exc}") from exc
+    return b"".join(chunks).decode("utf-8-sig", errors="replace")
+
+
 @router.get(
     "",
     response_model=list[BannedEmailDomain],
@@ -126,7 +180,7 @@ async def preview_banned_domains(
     body: BannedEmailDomainsBulkRequest,
     session: AsyncSession = Depends(get_db_session),
 ) -> BannedEmailDomainImportPreview:
-    return await _preview(body.raw_text, session)
+    return await _preview(await _load_bulk_text(body), session)
 
 
 @router.post(
@@ -142,7 +196,7 @@ async def import_banned_domains(
     mngr: BannedEmailDomainsMngr = Depends(get_banned_domains_mngr),
     acc: UserModel = Depends(require_perm("settings.email_domains.edit")),
 ) -> BannedEmailDomainImportPreview:
-    preview = await _preview(body.raw_text, session)
+    preview = await _preview(await _load_bulk_text(body), session)
     for item in preview.items:
         if item.status != "new" or item.domain is None:
             continue

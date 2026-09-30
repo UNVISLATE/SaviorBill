@@ -55,6 +55,7 @@ export function BannedDomainsSettings() {
   const { can } = useAuth()
   const [bulkOpen, setBulkOpen] = useState(false)
   const [bulkText, setBulkText] = useState("")
+  const [bulkUrl, setBulkUrl] = useState("")
   const [bulkReason, setBulkReason] = useState("")
   const [preview, setPreview] = useState<ImportPreview | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -78,7 +79,8 @@ export function BannedDomainsSettings() {
   const bulkPreview = useMutation({
     mutationFn: async () => (
       await api.post<ImportPreview>("/v1/admin/settings/email-domains/bulk/preview", {
-        raw_text: bulkText,
+        raw_text: bulkUrl ? "" : bulkText,
+        source_url: bulkUrl || null,
         reason: bulkReason || null,
       })
     ).data,
@@ -89,7 +91,8 @@ export function BannedDomainsSettings() {
   const bulkImport = useMutation({
     mutationFn: async () => (
       await api.post<ImportPreview>("/v1/admin/settings/email-domains/bulk", {
-        raw_text: bulkText,
+        raw_text: bulkUrl ? "" : bulkText,
+        source_url: bulkUrl || null,
         reason: bulkReason || null,
       })
     ).data,
@@ -104,6 +107,7 @@ export function BannedDomainsSettings() {
   const closeBulk = () => {
     setBulkOpen(false)
     setBulkText("")
+    setBulkUrl("")
     setBulkReason("")
     setPreview(null)
     bulkPreview.reset()
@@ -112,13 +116,13 @@ export function BannedDomainsSettings() {
 
   useEffect(() => {
     if (!bulkOpen) return
-    if (!bulkText.trim()) {
+    if (!bulkText.trim() && !bulkUrl.trim()) {
       bulkPreview.reset()
       return
     }
     const timer = window.setTimeout(() => bulkPreview.mutate(), 350)
     return () => window.clearTimeout(timer)
-  }, [bulkOpen, bulkText, bulkPreview])
+  }, [bulkOpen, bulkText, bulkUrl, bulkPreview])
 
   async function loadFile(file: File) {
     if (!file.name.toLowerCase().endsWith(".txt") && !file.name.toLowerCase().endsWith(".csv")) {
@@ -127,6 +131,7 @@ export function BannedDomainsSettings() {
     }
     try {
       setPreview(null)
+      setBulkUrl("")
       setBulkText(await file.text())
     } catch (error) {
       toastError("Не удалось прочитать файл", getErrorDetail(error))
@@ -199,6 +204,19 @@ export function BannedDomainsSettings() {
             Добавьте один домен или список: по одному домену на строку либо CSV в формате{" "}
             <code>домен,причина</code>.
           </p>
+          <div className="space-y-1">
+            <Label>Или ссылка на .txt / .csv</Label>
+            <Input
+              value={bulkUrl}
+              onChange={(event) => {
+                setPreview(null)
+                setBulkUrl(event.target.value)
+                if (event.target.value) setBulkText("")
+              }}
+              placeholder="https://raw.githubusercontent.com/.../domains.txt"
+              type="url"
+            />
+          </div>
           <div className="space-y-1.5">
             <input
               ref={fileInputRef}
@@ -230,6 +248,7 @@ export function BannedDomainsSettings() {
             value={bulkText}
             onChange={(event) => {
               setPreview(null)
+              setBulkUrl("")
               setBulkText(event.target.value)
             }}
             placeholder={"tempmail.com\nexample.org,временная почта"}
