@@ -197,7 +197,10 @@ async def test_mediaworker_status_includes_jobs(http, new_user, seed):
 
     async def _mw_status():
         async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=30) as mw:
-            resp = await mw.get(f"/api/media/status/{token}")
+            resp = await mw.get(
+                f"/api/media/status/{token}",
+                headers={"Authorization": f"Bearer {token_access}"},
+            )
             return resp.json()
 
     data = await wait_until(
@@ -261,4 +264,3 @@ async def test_mediaworker_logs_admin_can_read_job_and_progress(http, new_user, 
             "/api/media/logs/jobs/does-not-exist-job-id", headers=hdr
         )
         assert missing_resp.status_code == 404, missing_resp.text
-

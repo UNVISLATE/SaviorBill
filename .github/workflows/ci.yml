@@ -39,6 +39,7 @@ jobs:
         working-directory: deploy
         env:
           DB_PASS: dummy-for-config-validation-only
+          TRUSTED_PROXIES: 172.16.0.0/12
         run: docker compose -f docker-compose.yml config -q
 
   integration:
@@ -54,4 +55,3 @@ jobs:
         if: always()
         run: |
           docker compose -f deploy/dev/docker-compose.yml -f deploy/test/docker-compose.yml down -v
-
