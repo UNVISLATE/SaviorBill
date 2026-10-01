@@ -51,6 +51,8 @@ interface ImportPreview {
   invalid_count: number
 }
 
+type PreviewFilter = "all" | ImportItem["status"]
+
 const PREVIEW_ITEM_LIMIT = 100
 
 /** Заблокированные для регистрации email-домены — попытка зарегистрироваться
@@ -64,6 +66,7 @@ export function BannedDomainsSettings() {
   const [sourceMode, setSourceMode] = useState<"text" | "url">("text")
   const [bulkReason, setBulkReason] = useState("")
   const [preview, setPreview] = useState<ImportPreview | null>(null)
+  const [previewFilter, setPreviewFilter] = useState<PreviewFilter>("all")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const canEdit = can("settings.email_domains.edit")
   const qc = useQueryClient()
@@ -101,7 +104,10 @@ export function BannedDomainsSettings() {
         reason: bulkReason || null,
       })
     ).data,
-    onSuccess: setPreview,
+    onSuccess: (result) => {
+      setPreview(result)
+      setPreviewFilter("all")
+    },
     onError: (e: unknown) => toastError("Не удалось проверить список", getErrorDetail(e)),
   })
   const previewMutateRef = useRef(bulkPreview.mutate)
@@ -131,6 +137,7 @@ export function BannedDomainsSettings() {
     setSourceMode("text")
     setBulkReason("")
     setPreview(null)
+    setPreviewFilter("all")
     bulkPreview.reset()
     bulkImport.reset()
   }
@@ -159,6 +166,10 @@ export function BannedDomainsSettings() {
       toastError("Не удалось прочитать файл", getErrorDetail(error))
     }
   }
+
+  const filteredPreviewItems = preview?.items.filter(
+    (item) => previewFilter === "all" || item.status === previewFilter,
+  ) ?? []
 
   return (
     <Card>
@@ -253,6 +264,7 @@ export function BannedDomainsSettings() {
               onClick={() => {
                 setSourceMode("text")
                 setPreview(null)
+                setPreviewFilter("all")
               }}
             >
               Текст / файл
@@ -266,6 +278,7 @@ export function BannedDomainsSettings() {
               onClick={() => {
                 setSourceMode("url")
                 setPreview(null)
+                setPreviewFilter("all")
               }}
             >
               Ссылка
@@ -363,13 +376,27 @@ export function BannedDomainsSettings() {
             {preview && (
             <div className="min-h-0 w-full space-y-2 rounded-md border p-3 text-sm">
               <div className="flex flex-wrap gap-3">
-                <span className="text-emerald-500">Новые: {preview.new_count}</span>
-                <span className="text-muted-foreground">Уже есть: {preview.existing_count}</span>
-                <span className="text-amber-500">Дубли: {preview.duplicate_count}</span>
-                <span className="text-destructive">Ошибки: {preview.invalid_count}</span>
+                {([
+                  ["new", "Новые", preview.new_count, "text-emerald-500"],
+                  ["existing", "Уже есть", preview.existing_count, "text-muted-foreground"],
+                  ["duplicate", "Дубли", preview.duplicate_count, "text-amber-500"],
+                  ["invalid", "Ошибки", preview.invalid_count, "text-destructive"],
+                ] as const).map(([filter, label, count, color]) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    className={`rounded px-1 transition-colors hover:bg-muted ${color} ${previewFilter === filter ? "bg-muted ring-1 ring-ring" : ""}`}
+                    aria-pressed={previewFilter === filter}
+                    onClick={() => setPreviewFilter(previewFilter === filter ? "all" : filter)}
+                  >
+                    {label}: {count}
+                  </button>
+                ))}
               </div>
               <div className="max-h-[250px] w-full space-y-1 overflow-y-auto border-t pt-2">
-                {preview.items.slice(0, PREVIEW_ITEM_LIMIT).map((item) => (
+                {filteredPreviewItems
+                  .slice(0, PREVIEW_ITEM_LIMIT)
+                  .map((item) => (
                   <div key={`${item.line}-${item.value}`} className="flex gap-2 font-mono text-xs">
                     <span className="w-8 text-muted-foreground">{item.line}</span>
                     <span className="min-w-0 flex-1 truncate">{item.value}</span>
@@ -378,10 +405,13 @@ export function BannedDomainsSettings() {
                     </span>
                   </div>
                 ))}
-                {preview.items.length > PREVIEW_ITEM_LIMIT && (
+                {filteredPreviewItems.length > PREVIEW_ITEM_LIMIT && (
                   <div className="border-t pt-2 text-xs text-muted-foreground">
-                    И ещё {preview.items.length - PREVIEW_ITEM_LIMIT} элементов…
+                    И ещё {filteredPreviewItems.length - PREVIEW_ITEM_LIMIT} элементов…
                   </div>
+                )}
+                {filteredPreviewItems.length === 0 && (
+                  <div className="py-4 text-center text-xs text-muted-foreground">В этой категории нет элементов.</div>
                 )}
               </div>
             </div>
