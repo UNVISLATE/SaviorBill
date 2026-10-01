@@ -359,19 +359,20 @@ export function RolesPage() {
       </div>
 
       <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
-        <DialogContent className="max-h-[80vh] max-w-lg overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>Права роли «{editing?.title ?? editing?.name}»</DialogTitle>
-            <DialogDescription>
-              Отметьте разрешения, доступные этой роли. Права наследуются по иерархии.
-            </DialogDescription>
-          </DialogHeader>
-          <Input
-            value={permFilter}
-            onChange={(e) => setPermFilter(e.target.value)}
-            placeholder="Фильтр прав…"
-          />
-          <label className="flex items-center gap-2 rounded border px-2.5 py-2 text-sm">
+        <DialogContent className="!fixed !flex h-[80vh] max-h-[80vh] min-h-0 max-w-lg flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+            <DialogHeader>
+              <DialogTitle>Права роли «{editing?.title ?? editing?.name}»</DialogTitle>
+              <DialogDescription>
+                Отметьте разрешения, доступные этой роли. Права наследуются по иерархии.
+              </DialogDescription>
+            </DialogHeader>
+            <Input
+              value={permFilter}
+              onChange={(e) => setPermFilter(e.target.value)}
+              placeholder="Фильтр прав…"
+            />
+            <label className="flex items-center gap-2 rounded border px-2.5 py-2 text-sm">
             <Checkbox
               checked={adminLoginAllowed}
               onCheckedChange={(v) => setAdminLoginAllowed(!!v)}
@@ -382,8 +383,8 @@ export function RolesPage() {
                 Без этого флага роль не может войти в админку, даже если у неё есть права.
               </span>
             </span>
-          </label>
-          <label className="flex items-center gap-2 rounded border px-2.5 py-2 text-sm">
+            </label>
+            <label className="flex items-center gap-2 rounded border px-2.5 py-2 text-sm">
             <Checkbox
               checked={allowLogin}
               onCheckedChange={(v) => setAllowLogin(!!v)}
@@ -395,18 +396,19 @@ export function RolesPage() {
                 обновить токен вообще — жёсткая блокировка независимо от прав.
               </span>
             </span>
-          </label>
-          <div className="max-h-[45vh] space-y-1 overflow-y-auto pr-1">
-            {permFilter.trim()
-              ? filteredPerms.map((p) => (
-                <label key={p} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/50">
-                  <Checkbox checked={checked.has(p)} onCheckedChange={(v) => togglePermission(p, !!v)} />
-                  <span className="font-mono text-xs">{p}</span>
-                </label>
-              ))
-              : permissionRows(permissionTree)}
+            </label>
+            <div className="min-h-0 space-y-1">
+              {permFilter.trim()
+                ? filteredPerms.map((p) => (
+                  <label key={p} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/50">
+                    <Checkbox checked={checked.has(p)} onCheckedChange={(v) => togglePermission(p, !!v)} />
+                    <span className="font-mono text-xs">{p}</span>
+                  </label>
+                ))
+                : permissionRows(permissionTree)}
+            </div>
           </div>
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0">
             <Button variant="outline" onClick={() => setEditing(null)}>
               Отмена
             </Button>
@@ -418,23 +420,25 @@ export function RolesPage() {
       </Dialog>
 
       <Dialog open={creating} onOpenChange={setCreating}>
-        <DialogContent className="max-h-[80vh] max-w-lg overflow-hidden">
-          <DialogHeader>
-            <DialogTitle>Новая роль</DialogTitle>
-            <DialogDescription>Создайте пользовательскую роль и задайте её права.</DialogDescription>
-          </DialogHeader>
-          <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Системное имя" />
-          <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Отображаемое название (необязательно)" />
-          <div className="max-h-[40vh] space-y-1 overflow-y-auto pr-1">{permissionRows(permissionTree)}</div>
-          <label className="flex items-center gap-2 text-sm">
+        <DialogContent className="!fixed !flex h-[80vh] max-h-[80vh] min-h-0 max-w-lg flex-col overflow-hidden">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+            <DialogHeader>
+              <DialogTitle>Новая роль</DialogTitle>
+              <DialogDescription>Создайте пользовательскую роль и задайте её права.</DialogDescription>
+            </DialogHeader>
+            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Системное имя" />
+            <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Отображаемое название (необязательно)" />
+            <div className="min-h-0 space-y-1">{permissionRows(permissionTree)}</div>
+            <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={adminLoginAllowed} onCheckedChange={(v) => setAdminLoginAllowed(!!v)} />
             Разрешить вход в админ-панель
-          </label>
-          <label className="flex items-center gap-2 text-sm">
+            </label>
+            <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={allowLogin} onCheckedChange={(v) => setAllowLogin(!!v)} />
             Разрешить логин и обновление токенов
-          </label>
-          <DialogFooter>
+            </label>
+          </div>
+          <DialogFooter className="flex-shrink-0">
             <Button variant="outline" onClick={() => setCreating(false)}>Отмена</Button>
             <Button onClick={() => create.mutate()} disabled={!newName.trim() || create.isPending}>Создать</Button>
           </DialogFooter>
