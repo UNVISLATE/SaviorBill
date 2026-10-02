@@ -47,6 +47,11 @@ Service scripts
   ctx.user.service. Shared script settings are in ctx.lua.settings.
 - Per-service settings are in ctx.service.settings; catalog params are in
   ctx.service.params.
+- For the same key, ctx.service.settings has priority over ctx.lua.settings.
+  Use template settings only as inheritance for explicitly optional keys.
+  Required missing keys must raise an error; do not hide them with `or default`.
+- A missing or corrupted Lua file is an execution error. Never switch to latest,
+  another script, or an empty result.
 - On create/renew, return state="active". On freeze return "frozen". On stop or
   delete return "stopped", unless the documented integration contract requires
   another state.
@@ -94,6 +99,9 @@ Security and reliability
 - Use pcall only when the failure is intentionally converted into a checked
   result; do not swallow errors.
 - Treat external calls as retryable only when the operation is safe to repeat.
+- Keep the distinction between an optional default and a missing required
+  object/version/secret. A deleted pinned version or missing artifact must be
+  reported as an error, not silently replaced.
 
 Validation workflow
 1. Run the script through the admin lint endpoint or LuaWorker lint.
