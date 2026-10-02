@@ -568,6 +568,36 @@ async def revoke_user_session(
     await session.commit()
 
 
+@router.post(
+    "/{user_id}/sessions/revoke-all",
+    response_model=dict[str, int],
+    dependencies=[Depends(require_perm("admin.user.sessions.manage"))],
+    summary="Revoke all user sessions",
+)
+async def revoke_all_user_sessions(
+    request: Request,
+    user_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    tokens: TokenSvc = Depends(get_token_svc),
+    caller: UserModel = Depends(require_perm("admin.user.sessions.manage")),
+) -> dict[str, int]:
+    acc = await _get_user(session, user_id)
+    assert_can_modify_account(caller, acc)
+    revoked = await tokens.revoke_all_sessions(user_id)
+    await audit(
+        session,
+        action="admin.user.sessions.revoke_all",
+        actor_id=caller.id,
+        actor_role=caller.role.name if caller.role else None,
+        target_type="user",
+        target_id=str(acc.id),
+        ip=request.client.host if request.client else None,
+        meta={"count": revoked},
+    )
+    await session.commit()
+    return {"revoked": revoked}
+
+
 @router.put(
     "/{user_id}/avatar",
     response_model=Account,

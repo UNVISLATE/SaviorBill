@@ -51,10 +51,12 @@ async def _account(session: AsyncSession, login: str) -> UserModel:
     return acc
 
 
-async def _revoke_sessions(cfg: AppConfig, account_id: int) -> None:
+async def _revoke_sessions(
+    session: AsyncSession, cfg: AppConfig, account_id: int
+) -> None:
     vk = create_valkey_client(cfg.valkey_url)
     try:
-        await TokenSvc(cfg, vk).revoke_all_sessions(account_id)
+        await TokenSvc(cfg, vk, session=session).revoke_all_sessions(account_id)
     finally:
         await vk.aclose()
 
@@ -90,7 +92,7 @@ async def cmd_reset_password(
         meta={"login": acc.login, "via": "ownerctl"},
     )
     await session.commit()
-    await _revoke_sessions(cfg, acc.id)
+    await _revoke_sessions(session, cfg, acc.id)
     print(f"password for {acc.login!r} has been reset")
     if not args.password:
         print(f"new password: {password}")
@@ -114,7 +116,7 @@ async def cmd_promote(session: AsyncSession, cfg: AppConfig, args) -> None:
         },
     )
     await session.commit()
-    await _revoke_sessions(cfg, acc.id)
+    await _revoke_sessions(session, cfg, acc.id)
     print(f"{acc.login!r} is now the owner")
 
 
