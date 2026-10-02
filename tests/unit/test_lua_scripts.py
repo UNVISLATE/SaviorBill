@@ -72,6 +72,29 @@ class TestSystemScriptsMngrReadCode:
             await mngr.read_code(row)
         assert exc.value.status_code == 409
 
+    @pytest.mark.asyncio
+    async def test_artifact_status_distinguishes_missing_and_corrupt(self, tmp_path) -> None:
+        (tmp_path / "auth").mkdir()
+        target = tmp_path / "auth" / "s1.lua"
+        target.write_text("valid", encoding="utf-8")
+        mngr = SystemScriptsMngr(session=None, scripts_dir=str(tmp_path))
+
+        assert await mngr.artifact_status("auth/missing.lua") == "missing"
+        assert (
+            await mngr.artifact_status(
+                "auth/s1.lua",
+                expected_sha256=hashlib.sha256(b"original").hexdigest(),
+            )
+            == "corrupt"
+        )
+        assert (
+            await mngr.artifact_status(
+                "auth/s1.lua",
+                expected_sha256=hashlib.sha256(b"valid").hexdigest(),
+            )
+            == "ready"
+        )
+
 
 class TestLuaScriptDetailSchema:
     def test_from_model_with_code_includes_body(self) -> None:

@@ -51,7 +51,14 @@ async def list_scripts(
     mngr: SystemScriptsMngr = Depends(get_script_mngr),
 ) -> list[LuaScript]:
     rows = await mngr.list_all()
-    return [LuaScript.from_model(r) for r in rows]
+    result = []
+    for row in rows:
+        item = LuaScript.from_model(row)
+        item.artifact_status = await mngr.artifact_status(
+            row.filename, expected_sha256=row.sha256
+        )
+        result.append(item)
+    return result
 
 
 @router.get(
@@ -70,7 +77,9 @@ async def get_script(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "script not found")
     if version is None or version == row.current_version:
         code = await mngr.read_code(row)
-        return LuaScriptDetail.from_model_with_code(row, code, row.current_version)
+        detail = LuaScriptDetail.from_model_with_code(row, code, row.current_version)
+        detail.artifact_status = "ready"
+        return detail
     v = await mngr.get_version(script_id, version)
     if v is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "script version not found")
@@ -92,7 +101,14 @@ async def list_script_versions(
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "script not found")
     rows = await mngr.list_versions(script_id)
-    return [LuaScriptVersion.from_model(v) for v in rows]
+    result = []
+    for version in rows:
+        item = LuaScriptVersion.from_model(version)
+        item.artifact_status = await mngr.artifact_status(
+            version.filename, expected_sha256=version.sha256
+        )
+        result.append(item)
+    return result
 
 
 @router.get(

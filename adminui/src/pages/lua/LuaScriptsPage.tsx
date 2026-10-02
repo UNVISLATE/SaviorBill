@@ -39,6 +39,8 @@ interface LuaScript {
   name: string | null
   kind: string
   filename: string
+  sha256: string | null
+  artifact_status: "ready" | "missing" | "corrupt" | "unknown"
   actions: string[]
   settings: Record<string, unknown>
   is_active: boolean
@@ -83,7 +85,11 @@ export function LuaScriptsPage() {
     enabled: canRead,
   })
 
-  const { data: detail, isLoading: detailLoading } = useQuery({
+  const {
+    data: detail,
+    isLoading: detailLoading,
+    error: detailError,
+  } = useQuery({
     queryKey: ["admin-lua-script", selectedId],
     queryFn: async () =>
       (await api.get<LuaScriptDetail>(`/v1/admin/lua/${selectedId}`)).data,
@@ -176,6 +182,13 @@ export function LuaScriptsPage() {
                     выключен
                   </Badge>
                 )}
+                {s.artifact_status !== "ready" && (
+                  <Badge variant="destructive" className="shrink-0 text-[10px]">
+                    {s.artifact_status === "missing"
+                      ? "файл отсутствует"
+                      : "файл повреждён"}
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <span className="truncate">{s.slug}</span>
@@ -236,6 +249,11 @@ export function LuaScriptsPage() {
         <div className="h-full space-y-2">
           <Skeleton className="h-8 w-1/3" />
           <Skeleton className="h-full w-full" />
+        </div>
+      )}
+      {selectedId !== null && detailError && (
+        <div className="flex h-full items-center justify-center text-sm text-destructive">
+          Не удалось прочитать файл скрипта: {getErrorDetail(detailError)}
         </div>
       )}
       {selectedId !== null && detail && (

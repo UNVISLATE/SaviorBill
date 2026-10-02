@@ -42,6 +42,7 @@ export interface LuaScriptVersion {
   commit_message: string | null
   created_at: string
   created_by: number | null
+  artifact_status: "ready" | "missing" | "corrupt" | "unknown"
 }
 
 export interface LuaScriptVersionDetail extends LuaScriptVersion {
@@ -378,6 +379,11 @@ export function LuaEditor({
                 №{v.version}
                 {v.version === currentVersion && (
                   <Badge variant="secondary" className="ml-1.5 text-[10px]">активна</Badge>
+                )}
+                {v.artifact_status !== "ready" && (
+                  <Badge variant="destructive" className="ml-1.5 text-[10px]">
+                    {v.artifact_status === "missing" ? "файл отсутствует" : "файл повреждён"}
+                  </Badge>
                 )}
               </span>
               <span className="text-xs text-muted-foreground">{formatDateTime(v.created_at)}</span>

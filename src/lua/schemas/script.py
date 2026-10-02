@@ -19,6 +19,11 @@ class LuaScript(BaseModel):
     name: str | None = None
     kind: str
     filename: str
+    sha256: str | None = None
+    artifact_status: str = Field(
+        default="unknown",
+        description="Physical artifact status: ready | missing | corrupt | unknown",
+    )
     actions: list = Field(
         default_factory=list,
         description="Supported script actions",
@@ -57,6 +62,8 @@ class LuaScriptDetail(LuaScript):
             name=m.name,
             kind=m.kind,
             filename=m.filename,
+            sha256=getattr(m, "sha256", None),
+            artifact_status=getattr(m, "artifact_status", "unknown"),
             actions=m.actions,
             settings=m.settings,
             is_active=m.is_active,
@@ -77,6 +84,10 @@ class LuaScriptVersion(BaseModel):
     commit_message: str | None = None
     created_at: str
     created_by: int | None = None
+    artifact_status: str = Field(
+        default="unknown",
+        description="Physical artifact status: ready | missing | corrupt | unknown",
+    )
 
     @classmethod
     def from_model(cls, m) -> "LuaScriptVersion":  # noqa: ANN001
@@ -86,6 +97,7 @@ class LuaScriptVersion(BaseModel):
             commit_message=m.commit_message,
             created_at=m.created_at.isoformat(),
             created_by=m.created_by,
+            artifact_status=getattr(m, "artifact_status", "unknown"),
         )
 
 

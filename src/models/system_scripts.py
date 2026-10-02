@@ -270,6 +270,25 @@ class SystemScriptsMngr:
         )
         return code
 
+    async def artifact_status(
+        self, filename: str, *, expected_sha256: str | None = None
+    ) -> str:
+        """Return a non-content status for an artifact referenced by metadata."""
+        try:
+            target = self._safe_target(filename)
+        except HTTPException:
+            return "corrupt"
+        if not target.is_file():
+            return "missing"
+        try:
+            raw = target.read_bytes()
+            raw.decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            return "corrupt"
+        if expected_sha256 and hashlib.sha256(raw).hexdigest() != expected_sha256:
+            return "corrupt"
+        return "ready"
+
     async def _read_code_file(
         self, filename: str, *, expected_sha256: str | None = None
     ) -> str:
