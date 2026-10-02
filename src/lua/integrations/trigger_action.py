@@ -44,7 +44,13 @@ class LuaAction(BaseAction):
             self.s, script, config.get("script_version")
         )
         await LuaRunner(self.bus).run_trigger(
-            script, event, config, ctx, filename=filename, version=resolved_version
+            script,
+            event,
+            config,
+            ctx,
+            filename=filename,
+            version=resolved_version,
+            requested_version=config.get("script_version"),
         )
         return True
 

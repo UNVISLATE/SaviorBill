@@ -153,6 +153,7 @@ class PayMngr:
                 return_url=return_url,
                 filename=filename,
                 version=script_version,
+                requested_version=prov.script_version,
             )
             payment.public_data = res.get("public") or {}
             payment.private_data = res.get("private") or {}
@@ -189,6 +190,7 @@ class PayMngr:
             request=request,
             filename=filename,
             version=script_version,
+            requested_version=prov.script_version,
         )
         priv = res.get("private") or {}
 
@@ -247,6 +249,7 @@ class PayMngr:
             self._secrets(prov),
             filename=filename,
             version=script_version,
+            requested_version=prov.script_version,
         )
         priv = res.get("private") or {}
 
@@ -293,6 +296,7 @@ class PayMngr:
             self._secrets(prov),
             filename=filename,
             version=script_version,
+            requested_version=prov.script_version,
         )
         priv = res.get("private") or {}
 

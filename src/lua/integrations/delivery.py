@@ -63,6 +63,7 @@ class LuaService(BaseIssuer):
             payment,
             filename=filename,
             version=resolved_version,
+            requested_version=service.lua_script_version,
         )
         usvc.public_data = res.get("public") or {}
         usvc.private_data = res.get("private") or {}

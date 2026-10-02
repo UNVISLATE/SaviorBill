@@ -183,6 +183,7 @@ class OAuthSvc:
             request=build_lua_request(request) if request is not None else None,
             filename=filename,
             version=script_version,
+            requested_version=prov.script_version,
         )
         pub = res.get("public") or {}
         authorize_url = pub.get("authorize_url")
@@ -236,6 +237,7 @@ class OAuthSvc:
             request=request,
             filename=filename,
             version=script_version,
+            requested_version=prov.script_version,
         )
         priv = res.get("private") or {}
         if not priv.get("ok") or not priv.get("sub"):

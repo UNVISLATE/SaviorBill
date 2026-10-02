@@ -230,7 +230,7 @@ class LuaRunner:
 
     async def run_service(
         self, script, action, acc, usvc, service, payment=None, filename=None,
-        version=None,
+        version=None, requested_version=None,
     ) -> dict:  # noqa: ANN001
         """Собрать контекст услуги и исполнить скрипт.
 
@@ -248,6 +248,7 @@ class LuaRunner:
             version=version,
             script_id=getattr(script, "id", None),
             script_sha256=getattr(script, "sha256", None),
+            requested_version=requested_version,
         )
 
     async def run_payment(
@@ -262,6 +263,7 @@ class LuaRunner:
         return_url=None,
         filename=None,
         version=None,
+        requested_version=None,
     ) -> dict:
         """Собрать контекст платежа и исполнить скрипт."""
         ctx = self._build_ctx_safely(
@@ -284,10 +286,12 @@ class LuaRunner:
             version=version,
             script_id=getattr(script, "id", None),
             script_sha256=getattr(script, "sha256", None),
+            requested_version=requested_version,
         )
 
     async def run_trigger(
-        self, script, event: str, config: dict, data: dict, filename=None, version=None
+        self, script, event: str, config: dict, data: dict, filename=None, version=None,
+        requested_version=None
     ) -> dict:  # noqa: ANN001
         """Собрать контекст триггера и исполнить скрипт."""
         ctx = build_trigger_ctx(event, config, data, script)
@@ -299,6 +303,7 @@ class LuaRunner:
             version=version,
             script_id=getattr(script, "id", None),
             script_sha256=getattr(script, "sha256", None),
+            requested_version=requested_version,
         )
 
     async def run_auth(
@@ -316,6 +321,7 @@ class LuaRunner:
         request=None,
         filename=None,
         version=None,
+        requested_version=None,
     ) -> dict:
         """Собрать контекст OAuth и исполнить скрипт провайдера."""
         ctx = self._build_ctx_safely(
@@ -340,6 +346,7 @@ class LuaRunner:
             version=version,
             script_id=getattr(script, "id", None),
             script_sha256=getattr(script, "sha256", None),
+            requested_version=requested_version,
         )
 
 
