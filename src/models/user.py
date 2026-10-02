@@ -85,6 +85,9 @@ class UserModel(Base):
     last_login: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    auth_session_version: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
 
     # Аватар пользователя — ссылка на медиа (см. SystemMediaModel). NULL — нет.
     avatar_media_id: Mapped[int | None] = mapped_column(

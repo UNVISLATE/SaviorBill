@@ -27,6 +27,7 @@ from .log import LogModel
 from .audit_log import AuditLogModel
 from .worker_jobs import WorkerJobModel, WorkerJobEventModel, WorkerJobsMngr
 from .banned_email_domains import BannedEmailDomainModel, BannedEmailDomainsMngr
+from .auth_sessions import AuthSessionModel
 
 __all__ = [
     "Base",
@@ -73,4 +74,5 @@ __all__ = [
     "WorkerJobsMngr",
     "BannedEmailDomainModel",
     "BannedEmailDomainsMngr",
+    "AuthSessionModel",
 ]
