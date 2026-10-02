@@ -111,7 +111,7 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
             <Collapsible key={group.title} defaultOpen>
               <SidebarMenuItem>
                 <CollapsibleTrigger
-                  nativeButton={false}
+                  nativeButton={true}
                   render={
                     <SidebarMenuButton
                       isActive={isActiveGroup}
