@@ -111,6 +111,10 @@ class MediaStatus(BaseModel):
 
     token: str = Field(description="Media/task token")
     state: str = Field(description="processing | ready | failed")
+    artifact_status: str | None = Field(
+        default=None,
+        description="ready | missing | corrupt | storage_unavailable | unknown",
+    )
     url: str | None = Field(default=None, description="Ready file URL (optional)")
     mime: str | None = Field(default=None, description="Ready file MIME (optional)")
     tag: str | None = Field(

@@ -35,6 +35,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 
 from utils.authctx import authenticate, authorize
 from utils.keys import status_key
+from utils.keys import file_key
 from utils.openapi_auth import bearer_scheme
 from utils.proclog import ProcLog
 from utils.rbac import has_perm
@@ -82,9 +83,19 @@ async def media_status(
         raise HTTPException(status.HTTP_403_FORBIDDEN, "не владелец медиа")
 
     proc_log: ProcLog = request.app.state.proc_log
+    artifact_status = None
+    if data.get("state") == "ready":
+        files = await vk.hgetall(file_key(token))
+        main_key = files.get("main") if files else None
+        if main_key:
+            inspected = await request.app.state.storage.inspect(main_key)
+            artifact_status = inspected["status"]
+        else:
+            artifact_status = "unknown"
     return {
         "token": token,
         "state": data.get("state", "processing"),
+        "artifact_status": artifact_status,
         "url": data.get("url") or None,
         "mime": data.get("mime") or None,
         "tag": data.get("tag") or None,

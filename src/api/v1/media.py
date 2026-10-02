@@ -83,6 +83,7 @@ async def media_status(
         return MediaStatus(
             token=token,
             state=data.get("state", "processing"),
+            artifact_status=data.get("artifact_status") or None,
             url=data.get("url") or None,
             mime=data.get("mime") or None,
             tag=data.get("tag") or None,
@@ -103,6 +104,7 @@ async def media_status(
         return MediaStatus(
             token=token,
             state=job.state,
+            artifact_status=None,
             url=None,
             mime=media.mime,
             tag=media.tag,
@@ -111,6 +113,7 @@ async def media_status(
     return MediaStatus(
         token=token,
         state=media.status,
+        artifact_status="unknown" if media.status == "ready" else None,
         url=f"/api/media/{media.token}" if media.status == "ready" else None,
         mime=media.mime,
         tag=media.tag,
