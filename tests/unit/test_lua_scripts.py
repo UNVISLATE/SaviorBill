@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from types import SimpleNamespace
 
 import pytest
@@ -57,6 +58,19 @@ class TestSystemScriptsMngrReadCode:
         with pytest.raises(HTTPException) as exc:
             await mngr.read_code(row)
         assert exc.value.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_rejects_changed_file_when_hash_is_recorded(self, tmp_path) -> None:
+        (tmp_path / "auth").mkdir()
+        (tmp_path / "auth" / "s1.lua").write_text("changed", encoding="utf-8")
+        mngr = SystemScriptsMngr(session=None, scripts_dir=str(tmp_path))
+        row = _row(
+            "auth/s1.lua",
+            sha256=hashlib.sha256(b"original").hexdigest(),
+        )
+        with pytest.raises(HTTPException) as exc:
+            await mngr.read_code(row)
+        assert exc.value.status_code == 409
 
 
 class TestLuaScriptDetailSchema:

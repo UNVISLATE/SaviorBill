@@ -265,12 +265,30 @@ class SystemScriptsMngr:
 
     async def read_code(self, row: SystemScriptsModel) -> str:
         """Прочитать тело скрипта из файла."""
-        target = self._safe_target(row.filename)
-        if not target.exists():
+        code = await self.read_code_at(
+            row.filename, expected_sha256=getattr(row, "sha256", None)
+        )
+        return code
+
+    async def _read_code_file(
+        self, filename: str, *, expected_sha256: str | None = None
+    ) -> str:
+        target = self._safe_target(filename)
+        if not target.is_file():
             raise HTTPException(
                 status.HTTP_404_NOT_FOUND, "script body file is missing"
             )
-        return target.read_text(encoding="utf-8")
+        try:
+            code = target.read_text(encoding="utf-8")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "script body is not valid UTF-8"
+            ) from exc
+        if expected_sha256 and hashlib.sha256(code.encode("utf-8")).hexdigest() != expected_sha256:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "script body integrity check failed"
+            )
+        return code
 
     def _safe_target(self, filename: str) -> Path:
         """Разрешить ``filename`` внутри ``self.dir``, отклонить выход за его пределы.
@@ -431,8 +449,10 @@ class SystemScriptsMngr:
         v_to = await self.get_version(script_id, to_version)
         if v_from is None or v_to is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "script version not found")
-        code_from = await self.read_code_at(v_from.filename)
-        code_to = await self.read_code_at(v_to.filename)
+        code_from = await self.read_code_at(
+            v_from.filename, expected_sha256=v_from.sha256
+        )
+        code_to = await self.read_code_at(v_to.filename, expected_sha256=v_to.sha256)
         return list(
             difflib.unified_diff(
                 code_from.splitlines(keepends=True),
@@ -461,14 +481,20 @@ class SystemScriptsMngr:
             )
         )
 
-    async def read_code_at(self, filename: str) -> str:
+    async def read_code_at(
+        self, filename: str, *, expected_sha256: str | None = None
+    ) -> str:
         """Прочитать тело скрипта из произвольного файла версии."""
-        target = self._safe_target(filename)
-        if not target.exists():
-            raise HTTPException(
-                status.HTTP_404_NOT_FOUND, "script version body file is missing"
+        try:
+            return await self._read_code_file(
+                filename, expected_sha256=expected_sha256
             )
-        return target.read_text(encoding="utf-8")
+        except HTTPException as exc:
+            if exc.status_code == status.HTTP_404_NOT_FOUND:
+                raise HTTPException(
+                    status.HTTP_404_NOT_FOUND, "script version body file is missing"
+                ) from exc
+            raise
 
     async def _references(self, script_id: int) -> list[str]:
         """Найти сущности, ссылающиеся на скрипт (для дружелюбного 409).

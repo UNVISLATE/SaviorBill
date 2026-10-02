@@ -74,7 +74,7 @@ async def get_script(
     v = await mngr.get_version(script_id, version)
     if v is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "script version not found")
-    code = await mngr.read_code_at(v.filename)
+    code = await mngr.read_code_at(v.filename, expected_sha256=v.sha256)
     return LuaScriptDetail.from_model_with_code(row, code, v.version)
 
 
@@ -109,7 +109,7 @@ async def get_script_version(
     v = await mngr.get_version(script_id, version)
     if v is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "version not found")
-    code = await mngr.read_code_at(v.filename)
+    code = await mngr.read_code_at(v.filename, expected_sha256=v.sha256)
     return LuaScriptVersionDetail(
         version=v.version,
         sha256=v.sha256,
