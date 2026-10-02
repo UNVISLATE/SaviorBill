@@ -14,7 +14,12 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
-from models.system_scripts import LuaScriptVersionModel, SystemScriptsMngr
+from errors import LuaScriptVersionMissingError
+from models.system_scripts import (
+    LuaScriptVersionModel,
+    SystemScriptsMngr,
+    resolve_version,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -34,6 +39,9 @@ class FakeSession:
         self.added.append(obj)
 
     async def flush(self) -> None:
+        return None
+
+    async def scalar(self, _stmt):  # noqa: ANN001
         return None
 
 
@@ -146,6 +154,27 @@ async def test_activate_stale_lock_version_conflicts(tmp_path):
     with pytest.raises(HTTPException) as exc:
         await mngr.activate_version(1, 1, expected_lock_version=0)
     assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_resolve_missing_pinned_version_raises():
+    row = _script_row(current_version=3, filename="services/demo/v3.lua")
+
+    with pytest.raises(LuaScriptVersionMissingError) as exc:
+        await resolve_version(FakeSession(), row, 2)
+
+    assert exc.value.script_id == 1
+    assert exc.value.requested_version == 2
+
+
+@pytest.mark.asyncio
+async def test_resolve_none_uses_current_version():
+    row = _script_row(current_version=3, filename="services/demo/v3.lua")
+
+    filename, version = await resolve_version(FakeSession(), row, None)
+
+    assert filename == "services/demo/v3.lua"
+    assert version == 3
 
 
 @pytest.mark.asyncio
