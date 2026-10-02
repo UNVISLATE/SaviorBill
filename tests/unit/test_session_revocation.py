@@ -10,6 +10,7 @@ import pytest
 from fastapi import HTTPException
 
 from errors import AuthSessionLimitError
+from security.sec import jwt as jwtu
 from services.auth import TokenSvc
 
 pytestmark = pytest.mark.unit
@@ -173,3 +174,25 @@ async def test_durable_rotation_revokes_old_lineage_in_one_commit(rsa_keypair):
         await svc.rotate(old_token, mngr)
     assert exc_info.value.status_code == 401
     assert mngr.by_id.await_count == 1
+
+
+def test_durable_access_token_carries_only_opaque_session_handle(rsa_keypair):
+    account = SimpleNamespace(
+        id=7,
+        auth_session_version=0,
+        role=SimpleNamespace(name="user"),
+        login="user",
+        is_active=True,
+    )
+    cfg = _cfg(rsa_keypair)
+    cfg.AUTH_SESSION_HASH_KEY = "test-session-hash-key"
+    svc = TokenSvc(cfg, _FakeValkey())
+
+    pair = svc.issue(account)
+    claims = jwtu.decode_jwt(
+        pair.access_token, cfg.jwt_public_keys(), cfg.JWT_ALG, cfg.JWT_ISS
+    )
+    assert claims.extra["sid"] == svc._session_digest(
+        svc._decode_refresh(pair.refresh_token).jti
+    )
+    assert len(claims.extra["sid"]) == 64

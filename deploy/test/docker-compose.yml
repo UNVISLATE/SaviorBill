@@ -12,6 +12,9 @@ services:
       LUA_SCRIPTS_DIR: /app/tests-data/lua
       # В интеграционных тестах много регистраций с одного IP — лимитер отключаем.
       RATE_LIMIT_ENABLED: "false"
+      # Integration uses the compose DB_PASS bootstrap value; permit this
+      # explicitly in the isolated test environment only.
+      DEBUG: "true"
       # Запас по таймауту lua-вызова при медленном CI.
       LUA_CALL_TIMEOUT: "60"
     volumes:

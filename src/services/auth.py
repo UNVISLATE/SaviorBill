@@ -49,6 +49,7 @@ class SessionInfo:
     created_at: int
     last_seen_at: int
     exp: int
+    is_current: bool = False
 
 
 class TokenSvc:
@@ -66,7 +67,10 @@ class TokenSvc:
         self.settings = settings
         self.session = session
 
-    def _access(self, acc: UserModel) -> str:
+    def _access(self, acc: UserModel, session_id: str | None = None) -> str:
+        extra = {"login": acc.login, "role": acc.role.name if acc.role else None}
+        if session_id is not None:
+            extra["sid"] = session_id
         return jwtu.make_access(
             str(acc.id),
             self.cfg.JWT_PRIVATE_KEY,
@@ -74,7 +78,7 @@ class TokenSvc:
             self.cfg.ACCESS_TOKEN_TTL,
             self.cfg.JWT_ISS,
             self.cfg.JWT_KID,
-            extra={"login": acc.login, "role": acc.role.name if acc.role else None},
+            extra=extra,
         )
 
     def _refresh(self, acc: UserModel) -> str:
@@ -93,9 +97,13 @@ class TokenSvc:
         acc: UserModel,
     ) -> TokenPair:
         """Выпустить новую пару токенов."""
+        refresh_token = self._refresh(acc)
+        session_id = None
+        if getattr(self.cfg, "AUTH_SESSION_HASH_KEY", None):
+            session_id = self._session_digest(self._decode_refresh(refresh_token).jti)
         return TokenPair(
-            access_token=self._access(acc),
-            refresh_token=self._refresh(acc),
+            access_token=self._access(acc, session_id),
+            refresh_token=refresh_token,
             expires_in=self.cfg.ACCESS_TOKEN_TTL,
             is_active=acc.is_active,
         )
@@ -219,7 +227,9 @@ class TokenSvc:
     async def _drop_session(self, account_id: int, jti: str) -> None:
         await self.vk.delete(f"{_SESSION}{account_id}:{jti}")
 
-    async def list_sessions(self, account_id: int) -> list[SessionInfo]:
+    async def list_sessions(
+        self, account_id: int, current_session_id: str | None = None
+    ) -> list[SessionInfo]:
         """Активные сессии аккаунта (данные истекают вместе с TTL сессии)."""
         if self.session is not None:
             now = datetime.now(timezone.utc)
@@ -241,6 +251,7 @@ class TokenSvc:
                     created_at=int(row.created_at.timestamp()),
                     last_seen_at=int(row.last_seen_at.timestamp()),
                     exp=int(row.expires_at.timestamp()),
+                    is_current=row.refresh_jti_hash == current_session_id,
                 )
                 for row in rows
             ]

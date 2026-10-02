@@ -21,10 +21,13 @@ router = APIRouter()
     summary="Current user's active sessions",
 )
 async def my_sessions(
+    request: Request,
     acc: UserModel = Depends(get_current_acc),
     tokens: TokenSvc = Depends(get_token_svc),
 ) -> list[SessionOut]:
-    infos = await tokens.list_sessions(acc.id)
+    infos = await tokens.list_sessions(
+        acc.id, current_session_id=getattr(request.state, "auth_session_id", None)
+    )
     return [SessionOut.from_info(info) for info in infos]
 
 

@@ -103,6 +103,7 @@ class SessionOut(BaseModel):
     created_at: datetime
     last_seen_at: datetime
     expires_at: datetime
+    is_current: bool
 
     @classmethod
     def from_info(cls, info) -> "SessionOut":
@@ -113,6 +114,7 @@ class SessionOut(BaseModel):
             created_at=datetime.fromtimestamp(info.created_at, tz=timezone.utc),
             last_seen_at=datetime.fromtimestamp(info.last_seen_at, tz=timezone.utc),
             expires_at=datetime.fromtimestamp(info.exp, tz=timezone.utc),
+            is_current=info.is_current,
         )
 
 

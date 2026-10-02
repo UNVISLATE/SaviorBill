@@ -65,6 +65,9 @@ async def get_current_acc(
 
     if claims.typ != jwtu.ACCESS:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "access_token expected")
+    request_state = getattr(request, "state", None)
+    if request_state is not None:
+        request_state.auth_session_id = claims.extra.get("sid")
 
     acc = await mngr.by_id(int(claims.sub))
     if acc is None:
