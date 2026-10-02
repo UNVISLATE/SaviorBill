@@ -171,6 +171,43 @@ def test_resolve_secrets_requires_db_pass(tmp_path: Path, monkeypatch):
         resolve_secrets(cfg)
 
 
+def test_file_backend_accepts_env_in_production_mode(tmp_path: Path):
+    cfg = AppConfig(
+        DEBUG=False,
+        DB_PASS="dbpass",
+        DATA_DIR=str(tmp_path / "data"),
+        PRIVATE_DATA_DIR=str(tmp_path / "private"),
+    )
+
+    assert resolve_secrets(cfg) == "file"
+    assert cfg.DB_PASS == "dbpass"
+
+
+def test_external_backend_does_not_fallback_to_env(monkeypatch, tmp_path: Path):
+    from security.sec.secrets import resolve as resolve_module
+
+    class EmptyExternalStore:
+        name = "vault"
+
+        def get(self, key: str) -> str | None:
+            return None if key == SecretName.DB_PASS else "stored-secret"
+
+        def put(self, key: str, value: str) -> None:
+            raise AssertionError("external store must not generate secrets in this test")
+
+    monkeypatch.setattr(resolve_module, "build_secret_store", lambda cfg: EmptyExternalStore())
+    cfg = AppConfig(
+        DEBUG=False,
+        SECRETS_BACKEND="vault",
+        DB_PASS="env-db-pass",
+        DATA_DIR=str(tmp_path / "data"),
+        PRIVATE_DATA_DIR=str(tmp_path / "private"),
+    )
+
+    with pytest.raises(RuntimeError, match="DB_PASS"):
+        resolve_secrets(cfg)
+
+
 def test_aws_store_roundtrip(monkeypatch):
     import boto3
     from security.sec.secrets.aws_store import AWSSecretStore

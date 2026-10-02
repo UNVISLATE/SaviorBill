@@ -122,15 +122,14 @@ def resolve_secrets(cfg: AppConfig) -> str:
     """
     store = build_secret_store(cfg)
     res = SecretResolver(store)
-    allow_env_fallback = cfg.DEBUG or cfg.SECRETS_ALLOW_ENV_FALLBACK
-    if allow_env_fallback and not cfg.DEBUG:
-        log.warning(
-            "secret ENV fallback is explicitly enabled; use only during bootstrap"
-        )
+    # The local file backend deliberately supports the conventional deployment
+    # sources: *_FILE first, then direct ENV values. External backends are an
+    # explicit source-of-truth choice and must never silently fall back to ENV.
+    allow_env_fallback = store.name == "file"
 
     def env_fallback(value: str | None) -> str | None:
         if value and allow_env_fallback:
-            log.warning("using an ENV fallback for a missing secret")
+            log.info("using a direct ENV secret with the local file backend")
             return value
         return None
 
