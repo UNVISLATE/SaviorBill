@@ -13,9 +13,17 @@ import inspect
 from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException, Response
+from valkey.exceptions import ConnectionError as ValkeyConnectionError
 
 from dependencies.auth import get_current_acc
-from dependencies.ratelimit import _authenticated_ident, _client_ip, rate_limit
+from dependencies.ratelimit import (
+    LimitKind,
+    _authenticated_ident,
+    _client_ip,
+    _enforce,
+    rate_limit,
+)
 
 pytestmark = pytest.mark.unit
 
@@ -63,8 +71,36 @@ def test_authenticated_dependency_requires_validated_account():
 
 
 def test_scope_and_kind_metadata_preserved_for_openapi():
-    from dependencies.ratelimit import LimitKind
-
     dep = rate_limit("scope.x", LimitKind.SENSITIVE, require_auth=True)
     assert dep._rate_limit_scope == "scope.x"
     assert dep._rate_limit_kind == LimitKind.SENSITIVE
+
+
+def test_critical_kind_is_available_for_side_effecting_endpoints():
+    assert LimitKind.CRITICAL.value == "critical"
+
+
+@pytest.mark.asyncio
+async def test_critical_rate_limit_fails_closed_on_valkey(monkeypatch):
+    async def unavailable(*_args, **_kwargs):
+        raise ValkeyConnectionError("down")
+
+    monkeypatch.setattr("dependencies.ratelimit._resolve_rule", unavailable)
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(
+                settings=SimpleNamespace(RATE_LIMIT_ENABLED=True),
+                valkey=object(),
+            )
+        )
+    )
+    with pytest.raises(HTTPException) as exc:
+        await _enforce(
+            request,
+            Response(),
+            object(),
+            "ip:test",
+            "payment.callback",
+            LimitKind.CRITICAL,
+        )
+    assert exc.value.status_code == 503

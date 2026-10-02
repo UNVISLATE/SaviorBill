@@ -90,7 +90,7 @@ async def _notify(svc: PayMngr, triggers: TriggerDispatcher, payment) -> None:
     # Лимит по IP (не по бизнес-ключу/аккаунту — вебхук шлёт сам провайдер,
     # а не пользователь), чтобы не блокировать легитимные ретраи провайдера
     # при спокойном фоне и всё же остановить перебор/спам с одного адреса.
-    dependencies=[Depends(rate_limit("payment.callback", LimitKind.DEFAULT))],
+    dependencies=[Depends(rate_limit("payment.callback", LimitKind.CRITICAL))],
 )
 async def payment_callback(
     provider: str,

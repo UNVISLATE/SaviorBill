@@ -27,6 +27,7 @@ class LimitKind(str, Enum):
     AUTH = "auth"
     MAIL = "mail"
     SENSITIVE = "sensitive"
+    CRITICAL = "critical"
 
 
 def _rule_for(cfg: AppConfig, kind: LimitKind) -> LimitRule:
@@ -35,7 +36,7 @@ def _rule_for(cfg: AppConfig, kind: LimitKind) -> LimitRule:
         return LimitRule(cfg.RATE_LIMIT_AUTH_MAX, cfg.RATE_LIMIT_AUTH_WINDOW)
     if kind is LimitKind.MAIL:
         return LimitRule(cfg.RATE_LIMIT_MAIL_MAX, cfg.RATE_LIMIT_MAIL_WINDOW)
-    if kind is LimitKind.SENSITIVE:
+    if kind in (LimitKind.SENSITIVE, LimitKind.CRITICAL):
         return LimitRule(cfg.RATE_LIMIT_SENSITIVE_MAX, cfg.RATE_LIMIT_SENSITIVE_WINDOW)
     return LimitRule(cfg.RATE_LIMIT_DEFAULT_MAX, cfg.RATE_LIMIT_DEFAULT_WINDOW)
 
@@ -162,6 +163,12 @@ async def _enforce(
         res = await limiter.hit(scope, ident, rule)
     except VALKEY_ERRORS as exc:
         note_degraded("ratelimit", exc)
+        if kind in (LimitKind.AUTH, LimitKind.SENSITIVE, LimitKind.CRITICAL):
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="protection service temporarily unavailable",
+                headers={"Retry-After": "5"},
+            ) from None
         return
     if not res.allowed:
         raise HTTPException(
