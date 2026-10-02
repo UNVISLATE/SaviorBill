@@ -73,9 +73,7 @@ async def get_script(
         return LuaScriptDetail.from_model_with_code(row, code, row.current_version)
     v = await mngr.get_version(script_id, version)
     if v is None:
-        # версия не найдена/удалена — тихий фоллбэк на latest
-        code = await mngr.read_code(row)
-        return LuaScriptDetail.from_model_with_code(row, code, row.current_version)
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "script version not found")
     code = await mngr.read_code_at(v.filename)
     return LuaScriptDetail.from_model_with_code(row, code, v.version)
 
