@@ -439,6 +439,13 @@ SETTINGS: tuple[SettingDef, ...] = (
         group="session",
         desc="TTL записи об активной сессии в секундах (по умолчанию 86400)",
     ),
+    SettingDef(
+        "session.max_active",
+        None,
+        type="int",
+        group="session",
+        desc="Максимальное количество активных refresh-сессий на аккаунт",
+    ),
 )
 
 _BY_KEY: dict[str, SettingDef] = {d.key: d for d in SETTINGS}

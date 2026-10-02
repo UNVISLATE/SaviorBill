@@ -31,6 +31,14 @@ def test_cast_int():
     assert isinstance(spec.cast("587"), int)
 
 
+def test_session_max_active_is_runtime_integer_setting():
+    spec = by_key("session.max_active")
+    assert spec is not None
+    assert spec.type == "int"
+    assert spec.source is None
+    assert spec.cast("5") == 5
+
+
 def test_cast_bool():
     spec = by_key("smtp.tls")
     assert spec is not None
