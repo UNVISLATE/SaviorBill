@@ -99,7 +99,8 @@ class DB:
         """
         assert self.pool is not None
         row = await self.pool.fetchrow(
-            "SELECT status, mime, variants FROM system_media WHERE token = $1",
+            "SELECT status, mime, size, content_hash, variants "
+            "FROM system_media WHERE token = $1",
             token,
         )
         if row is None:
@@ -107,7 +108,13 @@ class DB:
         variants = row["variants"]
         if isinstance(variants, str):
             variants = json.loads(variants) if variants else {}
-        return {"status": row["status"], "mime": row["mime"], "variants": variants or {}}
+        return {
+            "status": row["status"],
+            "mime": row["mime"],
+            "size": row["size"],
+            "content_hash": row["content_hash"],
+            "variants": variants or {},
+        }
 
     async def media_count_for_owner(self, owner_id: int) -> int:
         """Число медиа-файлов, принадлежащих аккаунту (для лимита user.media.limit).

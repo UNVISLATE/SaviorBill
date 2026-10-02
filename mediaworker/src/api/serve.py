@@ -116,18 +116,37 @@ async def serve(request: Request, token: str):
         )
         raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
 
+    expected_size = db_row.get("size") if db_row and variant_name == "main" else None
+    expected_hash = (
+        db_row.get("content_hash")
+        if db_row and variant_name == "main"
+        else None
+    )
+    inspected = await storage.inspect(
+        key,
+        expected_size=expected_size,
+        expected_hash=expected_hash,
+        expected_mime=mime_from_db if variant_name != "main" else None,
+    )
+    if inspected["status"] == "missing":
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "media artifact not found")
+    if inspected["status"] == "storage_unavailable":
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "media storage unavailable")
+    if inspected["status"] == "corrupt":
+        raise HTTPException(status.HTTP_409_CONFLICT, "media artifact integrity check failed")
+
     if cfg.backend == "s3":
         url = await storage.presign(key)
         if not url:
-            raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "media storage unavailable"
+            )
         return RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
 
     try:
         file_path = storage.media_fs_path(key)
     except ValueError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found") from None
-    if not os.path.exists(file_path):
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found")
+        raise HTTPException(status.HTTP_409_CONFLICT, "invalid media artifact key") from None
     # ``mime`` из статуса известен только для ``main`` (записан туда самим
     # воркером при завершении конвертации, см. worker.py::_set_status).
     # thumb/preview туда никогда не попадали — раньше это давало
