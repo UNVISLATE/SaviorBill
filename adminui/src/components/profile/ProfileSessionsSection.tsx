@@ -12,9 +12,9 @@ interface SessionOut {
   session_id: string
   ip: string | null
   user_agent: string | null
-  created_at: number
-  last_seen_at: number
-  expires_at: number
+  created_at: string
+  last_seen_at: string
+  expires_at: string
   is_current: boolean
 }
 
@@ -24,8 +24,11 @@ function deviceLabel(ua: string | null): string {
   return "Компьютер"
 }
 
-function fmt(unixSec: number): string {
-  return new Date(unixSec * 1000).toLocaleString("ru-RU")
+function fmt(value: string): string {
+  const date = new Date(value)
+  return Number.isNaN(date.getTime())
+    ? "Дата неизвестна"
+    : date.toLocaleString("ru-RU")
 }
 
 /** Активные сессии пользователя — IP + устройство из durable auth state. */
