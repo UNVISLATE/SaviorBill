@@ -150,7 +150,7 @@ class TokenSvc:
             account = await self.session.scalar(
                 select(UserModel)
                 .where(UserModel.id == account_id)
-                .with_for_update()
+                .with_for_update(of=UserModel)
             )
             if account is None:
                 raise HTTPException(status.HTTP_401_UNAUTHORIZED, "account unavailable")
@@ -324,7 +324,9 @@ class TokenSvc:
         if self.session is not None:
             now = datetime.now(timezone.utc)
             account = await self.session.scalar(
-                select(UserModel).where(UserModel.id == account_id).with_for_update()
+                select(UserModel)
+                .where(UserModel.id == account_id)
+                .with_for_update(of=UserModel)
             )
             if account is None:
                 return 0
