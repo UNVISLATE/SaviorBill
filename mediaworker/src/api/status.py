@@ -62,6 +62,49 @@ def _may_view_status(owner_id: str | None, acc_id: int, perms: dict | None) -> b
     return has_perm(perms, _PERM_MANAGE_ANY)
 
 
+async def _artifact_statuses(request: Request, token: str) -> dict[str, str]:
+    """Inspect published physical variants without changing billing metadata."""
+    db = getattr(request.app.state, "db", None)
+    storage = getattr(request.app.state, "storage", None)
+    if db is None or storage is None:
+        return {}
+    row = await db.media_variants(token)
+    if row is None:
+        return {}
+    variants = row.get("variants") or {}
+    result: dict[str, str] = {}
+    main = (variants.get("media") or {}).get("key")
+    if main:
+        result["main"] = (
+            await storage.inspect(
+                main,
+                expected_size=row.get("size"),
+                expected_hash=row.get("content_hash"),
+            )
+        )["status"]
+    thumb = variants.get("thumb") or {}
+    if thumb.get("key"):
+        result["thumb"] = (
+            await storage.inspect(
+                thumb["key"],
+                expected_size=thumb.get("size"),
+                expected_mime=thumb.get("mime"),
+            )
+        )["status"]
+    for preview in variants.get("previews") or []:
+        url = preview.get("url") or ""
+        name = url.split(f"/api/media/{token}.", 1)[-1] if f"/api/media/{token}." in url else ""
+        if preview.get("key") and name:
+            result[name] = (
+                await storage.inspect(
+                    preview["key"],
+                    expected_size=preview.get("size"),
+                    expected_mime=preview.get("mime"),
+                )
+            )["status"]
+    return result
+
+
 @router.get("/status/{token}")
 async def media_status(
     request: Request,
@@ -84,18 +127,15 @@ async def media_status(
 
     proc_log: ProcLog = request.app.state.proc_log
     artifact_status = None
+    variants = {}
     if data.get("state") == "ready":
-        files = await vk.hgetall(file_key(token))
-        main_key = files.get("main") if files else None
-        if main_key:
-            inspected = await request.app.state.storage.inspect(main_key)
-            artifact_status = inspected["status"]
-        else:
-            artifact_status = "unknown"
+        variants = await _artifact_statuses(request, token)
+        artifact_status = variants.get("main", "unknown")
     return {
         "token": token,
         "state": data.get("state", "processing"),
         "artifact_status": artifact_status,
+        "variants": variants,
         "url": data.get("url") or None,
         "mime": data.get("mime") or None,
         "tag": data.get("tag") or None,

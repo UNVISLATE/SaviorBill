@@ -32,6 +32,10 @@ class MediaVariant(BaseModel):
     mime: str | None = None
     size: int | None = None
     url: str
+    artifact_status: str = Field(
+        default="unknown",
+        description="ready | missing | corrupt | storage_unavailable | unknown",
+    )
 
 
 class Media(BaseModel):
@@ -114,6 +118,10 @@ class MediaStatus(BaseModel):
     artifact_status: str | None = Field(
         default=None,
         description="ready | missing | corrupt | storage_unavailable | unknown",
+    )
+    variants: dict[str, str] = Field(
+        default_factory=dict,
+        description="Physical artifact status by variant name.",
     )
     url: str | None = Field(default=None, description="Ready file URL (optional)")
     mime: str | None = Field(default=None, description="Ready file MIME (optional)")
