@@ -56,7 +56,7 @@ const ALL_SECTIONS: {
   { id: "services", title: "Товары/услуги", icon: PackageOpen },
   { id: "payments", title: "Платежи", icon: CreditCard },
   { id: "promocodes", title: "Промокоды", icon: Ticket, viewOnly: true },
-  { id: "sessions", title: "Сессии", icon: ShieldAlert, viewOnly: true },
+  { id: "sessions", title: "Сессии", icon: ShieldAlert },
   // Управлять 2FA можно только за себя — админ не должен включать/выключать
   // второй фактор чужого аккаунта (backend тоже это не позволяет, эндпоинты
   // только под /user/me/2fa).
@@ -78,7 +78,7 @@ function SectionContent({
   if (section === "payments") return <ProfilePaymentsSection mode={mode} userId={userId} />
   if (section === "media") return <ProfileMediaSection ref={mediaRef} mode={mode} userId={userId} />
   if (section === "promocodes") return <ProfilePromocodesSection userId={userId} />
-  if (section === "sessions") return <ProfileSessionsSection userId={userId} />
+  if (section === "sessions") return <ProfileSessionsSection userId={userId} mode={mode} />
   if (section === "security") return <ProfileTwoFASection />
   return <ProfileOverviewSection mode={mode} userId={userId} />
 }
@@ -343,4 +343,3 @@ export function ProfileDialogHost() {
     </Dialog>
   )
 }
-

@@ -15,6 +15,7 @@ interface SessionOut {
   created_at: number
   last_seen_at: number
   expires_at: number
+  is_current: boolean
 }
 
 function deviceLabel(ua: string | null): string {
@@ -28,26 +29,43 @@ function fmt(unixSec: number): string {
 }
 
 /** Активные сессии пользователя — IP + устройство из durable auth state. */
-export function ProfileSessionsSection({ userId }: { userId?: number }) {
+export function ProfileSessionsSection({
+  userId,
+  mode = "view",
+}: {
+  userId?: number
+  mode?: "own" | "view"
+}) {
   const { can } = useAuth()
   const qc = useQueryClient()
-  const allowed = can("admin.user.sessions.manage")
+  const allowed = mode === "own" || can("admin.user.sessions.manage")
+  const basePath = mode === "own" ? "/v1/user/me/sessions" : `/v1/admin/users/${userId}/sessions`
 
   const { data, isLoading } = useQuery({
-    queryKey: ["admin-user-sessions", userId],
+    queryKey: [mode === "own" ? "my-sessions" : "admin-user-sessions", userId],
     queryFn: async () =>
-      (await api.get<SessionOut[]>(`/v1/admin/users/${userId}/sessions`)).data,
-    enabled: allowed && !!userId,
+      (await api.get<SessionOut[]>(basePath)).data,
+    enabled: allowed && (mode === "own" || !!userId),
   })
 
   const revoke = useMutation({
     mutationFn: async (sessionId: string) =>
-      api.delete(`/v1/admin/users/${userId}/sessions/${sessionId}`),
+      api.delete(`${basePath}/${sessionId}`),
     onSuccess: () => {
       toastSuccess("Сессия завершена")
-      void qc.invalidateQueries({ queryKey: ["admin-user-sessions", userId] })
+      void qc.invalidateQueries({ queryKey: [mode === "own" ? "my-sessions" : "admin-user-sessions", userId] })
     },
     onError: () => toastError("Не удалось завершить сессию"),
+  })
+
+  const revokeAll = useMutation({
+    mutationFn: async () =>
+      api.post(mode === "own" ? "/v1/user/me/sessions/revoke-all" : `/v1/admin/users/${userId}/sessions/revoke-all`),
+    onSuccess: () => {
+      toastSuccess("Все сессии завершены")
+      void qc.invalidateQueries({ queryKey: [mode === "own" ? "my-sessions" : "admin-user-sessions", userId] })
+    },
+    onError: () => toastError("Не удалось завершить все сессии"),
   })
 
   if (!allowed) {
@@ -85,6 +103,16 @@ export function ProfileSessionsSection({ userId }: { userId?: number }) {
 
   return (
     <div className="space-y-2">
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={revokeAll.isPending}
+          onClick={() => revokeAll.mutate()}
+        >
+          Завершить все
+        </Button>
+      </div>
       {data.map((s) => {
         const isMobile = /mobile|android|iphone/i.test(s.user_agent ?? "")
         return (
@@ -100,6 +128,9 @@ export function ProfileSessionsSection({ userId }: { userId?: number }) {
               )}
               <div className="min-w-0">
                 <p className="font-medium">{deviceLabel(s.user_agent)}</p>
+                {s.is_current && (
+                  <p className="text-xs font-medium text-primary">Текущая сессия</p>
+                )}
                 <p className="truncate text-xs text-muted-foreground">
                   {s.ip ?? "IP неизвестен"} · вход {fmt(s.created_at)}
                 </p>
