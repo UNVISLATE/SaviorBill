@@ -525,7 +525,7 @@ async def user_oauth(
     response_model=list[SessionOut],
     dependencies=[Depends(require_perm("admin.user.sessions.manage"))],
     summary="User active sessions",
-    description="Active login sessions (IP/device) tracked in Valkey.",
+    description="Active login sessions (IP/device) backed by durable auth state.",
 )
 async def user_sessions(
     user_id: int,
@@ -541,7 +541,7 @@ async def user_sessions(
     "/{user_id}/sessions/{jti}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Revoke a user session",
-    description="Force-terminates a single active session (denylists its refresh token).",
+    description="Force-terminates a single active session by its opaque session handle.",
 )
 async def revoke_user_session(
     request: Request,
