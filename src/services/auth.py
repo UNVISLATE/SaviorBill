@@ -205,6 +205,29 @@ class TokenSvc:
 
     async def list_sessions(self, account_id: int) -> list[SessionInfo]:
         """Активные сессии аккаунта (данные истекают вместе с TTL сессии)."""
+        if self.session is not None:
+            now = datetime.now(timezone.utc)
+            rows = await self.session.scalars(
+                select(AuthSessionModel)
+                .where(
+                    AuthSessionModel.account_id == account_id,
+                    AuthSessionModel.revoked_at.is_(None),
+                    AuthSessionModel.expires_at > now,
+                )
+                .order_by(AuthSessionModel.last_seen_at.desc())
+            )
+            return [
+                SessionInfo(
+                    # This is an opaque public handle, never the JWT jti.
+                    jti=row.refresh_jti_hash,
+                    ip=row.ip,
+                    user_agent=row.user_agent,
+                    created_at=int(row.created_at.timestamp()),
+                    last_seen_at=int(row.last_seen_at.timestamp()),
+                    exp=int(row.expires_at.timestamp()),
+                )
+                for row in rows
+            ]
         out: list[SessionInfo] = []
         prefix = f"{_SESSION}{account_id}:"
         async for key in self.vk.scan_iter(match=prefix + "*"):
@@ -228,7 +251,7 @@ class TokenSvc:
     async def revoke_session(self, account_id: int, jti: str) -> bool:
         """Принудительно завершить сессию: денлист jti + удаление записи."""
         if self.session is not None:
-            digest = self._session_digest(jti)
+            digest = jti if len(jti) == 64 else self._session_digest(jti)
             row = await self.session.scalar(
                 select(AuthSessionModel)
                 .where(
