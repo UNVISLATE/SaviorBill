@@ -199,6 +199,9 @@ class LuaRunner:
         ctx: dict,
         slug: str | None = None,
         version: int | None = None,
+        requested_version: int | None = None,
+        script_id: int | None = None,
+        script_sha256: str | None = None,
     ) -> dict:
         """Отправить скрипт с контекстом в LuaWorker.
 
@@ -213,6 +216,12 @@ class LuaRunner:
         payload = {"script": script_filename, "kind": kind, "ctx": ctx}
         if version is not None:
             payload["script_version"] = version
+        if requested_version is not None:
+            payload["requested_version"] = requested_version
+        if script_id is not None:
+            payload["script_id"] = script_id
+        if script_sha256:
+            payload["script_sha256"] = script_sha256
         return await self.bus.call(
             "run_script",
             payload,
@@ -237,6 +246,8 @@ class LuaRunner:
             ctx,
             slug=script.slug,
             version=version,
+            script_id=getattr(script, "id", None),
+            script_sha256=getattr(script, "sha256", None),
         )
 
     async def run_payment(
@@ -271,6 +282,8 @@ class LuaRunner:
             ctx,
             slug=script.slug,
             version=version,
+            script_id=getattr(script, "id", None),
+            script_sha256=getattr(script, "sha256", None),
         )
 
     async def run_trigger(
@@ -284,6 +297,8 @@ class LuaRunner:
             ctx,
             slug=script.slug,
             version=version,
+            script_id=getattr(script, "id", None),
+            script_sha256=getattr(script, "sha256", None),
         )
 
     async def run_auth(
@@ -323,6 +338,8 @@ class LuaRunner:
             ctx,
             slug=script.slug,
             version=version,
+            script_id=getattr(script, "id", None),
+            script_sha256=getattr(script, "sha256", None),
         )
 
 

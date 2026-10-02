@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 import uuid
 
 import valkey.asyncio as valkey
@@ -85,6 +86,7 @@ class LuaBus:
             return await self._call_once_timed(kind, payload, timeout)
 
     async def _call_once_timed(self, kind: str, payload: dict | None, timeout: int) -> dict:
+        started = time.monotonic()
         cid = uuid.uuid4().hex
         deadline = timestamp_now() + timeout
         provenance = self._provenance(payload)
@@ -104,7 +106,7 @@ class LuaBus:
         )
         if self.task_log:
             await self.task_log.record(
-                kind="lua", op=kind, token_or_cid=cid, state="sent"
+                kind="lua", op=kind, token_or_cid=cid, state="sent", meta=provenance
             )
 
         while True:
@@ -117,7 +119,7 @@ class LuaBus:
                         token_or_cid=cid,
                         state="error",
                         detail="timeout",
-                        meta=provenance,
+                        meta={**(provenance or {}), "duration_ms": round((time.monotonic() - started) * 1000)},
                     )
                 raise LuaError(f"таймаут ожидания ответа LuaWorker (cid={cid})")
 
@@ -148,7 +150,7 @@ class LuaBus:
                                 op=kind,
                                 token_or_cid=cid,
                                 state="ok",
-                                meta=provenance,
+                                meta={**(provenance or {}), "duration_ms": round((time.monotonic() - started) * 1000), "outcome": "success"},
                             )
                         return data if isinstance(data, dict) else {"result": data}
                     detail = _safe_detail(str(data))
@@ -159,7 +161,7 @@ class LuaBus:
                             token_or_cid=cid,
                             state="error",
                             detail=detail,
-                            meta=provenance,
+                            meta={**(provenance or {}), "duration_ms": round((time.monotonic() - started) * 1000), "outcome": "error", "error_class": "lua_error"},
                         )
                     raise LuaError(detail)
 
@@ -169,8 +171,17 @@ class LuaBus:
         if not payload or not payload.get("script"):
             return None
         result = {"script": str(payload["script"])}
-        if payload.get("script_version") is not None:
-            result["script_version"] = int(payload["script_version"])
+        for key in ("script_id", "script_version", "requested_version"):
+            if payload.get(key) is not None:
+                result[key] = int(payload[key])
+        if payload.get("script_sha256"):
+            result["script_sha256"] = str(payload["script_sha256"])
+        ctx = payload.get("ctx") or {}
+        if ctx.get("action"):
+            result["action"] = str(ctx["action"])
+        for key in ("payment_id", "service_id", "trigger_id", "correlation_id"):
+            if ctx.get(key) is not None:
+                result[key] = str(ctx[key])
         return result
 
     async def call(

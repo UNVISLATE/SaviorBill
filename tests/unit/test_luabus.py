@@ -146,6 +146,26 @@ def test_provenance_contains_only_script_identity():
     assert LuaBus._provenance({"kind": "service"}) is None
 
 
+def test_provenance_includes_runtime_identity_without_payload_data():
+    result = LuaBus._provenance(
+        {
+            "script": "services/demo/v3.lua",
+            "script_id": 12,
+            "script_version": 3,
+            "script_sha256": "a" * 64,
+            "ctx": {"action": "create", "payment_id": 99, "secret": "hidden"},
+        }
+    )
+    assert result == {
+        "script": "services/demo/v3.lua",
+        "script_id": 12,
+        "script_version": 3,
+        "script_sha256": "a" * 64,
+        "action": "create",
+        "payment_id": "99",
+    }
+
+
 @pytest.mark.asyncio
 async def test_call_wraps_scalar_result():
     """Скалярный ответ (не dict) оборачивается в {'result': value}."""
