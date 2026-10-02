@@ -47,6 +47,7 @@ class TaskLog:
         token_or_cid: str,
         state: str,
         detail: str | None = None,
+        meta: dict | None = None,
     ) -> None:
         """Добавить факт в кольцевой буфер + опубликовать событие для WS."""
         entry = {
@@ -56,6 +57,7 @@ class TaskLog:
             "token_or_cid": token_or_cid,
             "state": state,
             "detail": detail,
+            "meta": meta,
             # None, если OTEL выключен — журнал работает независимо от
             # трейсинга, trace_id только для сшивки при необходимости.
             "trace_id": current_trace_id(),

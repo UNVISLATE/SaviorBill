@@ -139,6 +139,13 @@ async def test_call_returns_dict_on_success():
     assert result == {"result": 99}
 
 
+def test_provenance_contains_only_script_identity():
+    assert LuaBus._provenance(
+        {"script": "services/demo/v3.lua", "script_version": 3, "secret": "hidden"}
+    ) == {"script": "services/demo/v3.lua", "script_version": 3}
+    assert LuaBus._provenance({"kind": "service"}) is None
+
+
 @pytest.mark.asyncio
 async def test_call_wraps_scalar_result():
     """Скалярный ответ (не dict) оборачивается в {'result': value}."""

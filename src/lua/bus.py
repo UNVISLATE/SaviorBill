@@ -87,6 +87,7 @@ class LuaBus:
     async def _call_once_timed(self, kind: str, payload: dict | None, timeout: int) -> dict:
         cid = uuid.uuid4().hex
         deadline = timestamp_now() + timeout
+        provenance = self._provenance(payload)
 
         last = await self._last_id()
         task_fields = sign_fields(
@@ -116,6 +117,7 @@ class LuaBus:
                         token_or_cid=cid,
                         state="error",
                         detail="timeout",
+                        meta=provenance,
                     )
                 raise LuaError(f"таймаут ожидания ответа LuaWorker (cid={cid})")
 
@@ -142,7 +144,11 @@ class LuaBus:
                     if fields.get("ok") == "1":
                         if self.task_log:
                             await self.task_log.record(
-                                kind="lua", op=kind, token_or_cid=cid, state="ok"
+                                kind="lua",
+                                op=kind,
+                                token_or_cid=cid,
+                                state="ok",
+                                meta=provenance,
                             )
                         return data if isinstance(data, dict) else {"result": data}
                     detail = _safe_detail(str(data))
@@ -153,8 +159,19 @@ class LuaBus:
                             token_or_cid=cid,
                             state="error",
                             detail=detail,
+                            meta=provenance,
                         )
                     raise LuaError(detail)
+
+    @staticmethod
+    def _provenance(payload: dict | None) -> dict | None:
+        """Return safe script identity metadata for the operational task log."""
+        if not payload or not payload.get("script"):
+            return None
+        result = {"script": str(payload["script"])}
+        if payload.get("script_version") is not None:
+            result["script_version"] = int(payload["script_version"])
+        return result
 
     async def call(
         self,
