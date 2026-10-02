@@ -29,6 +29,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from models import Base
 from enums import ScriptKind, PayAction, AuthAction, ServiceAction
+from errors import LuaScriptVersionMissingError
 from utils.datetime_utils import utc_now
 
 # Подпапка хранения по виду скрипта (внутри LUA_SCRIPTS_DIR).
@@ -135,8 +136,8 @@ async def resolve_version(
     """Разрешить файл и номер нужной версии скрипта.
 
     ``version=None`` — всегда latest. Если версия указана, но такой записи
-    больше нет (удалена/не найдена) — тихий фоллбэк на latest (см. задачу:
-    ссылки на скрипт не должны падать из-за истёкшей версии).
+    больше нет (удалена/не найдена), выполнение останавливается с доменной
+    ошибкой: pinned-версия не может быть заменена latest.
 
     :arg session: активная сессия БД.
     :arg script: модель скрипта (источник ``filename``/``current_version``).
@@ -153,7 +154,7 @@ async def resolve_version(
         )
     )
     if row is None:
-        return script.filename, script.current_version
+        raise LuaScriptVersionMissingError(script.id, version)
     return row.filename, row.version
 
 

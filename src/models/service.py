@@ -87,8 +87,8 @@ class ServiceModel(Base):
         ForeignKey("lua_scripts.id", ondelete="RESTRICT"), nullable=True, index=True
     )
     # Версия скрипта: NULL — latest (по умолчанию), число — закреплённая версия.
-    # Если версия удалена — резолвер (resolve_version_filename) тихо
-    # фоллбэчится на latest.
+    # Если pinned-версия удалена, выполнение должно завершиться ошибкой, а не
+    # перейти на latest — это проверяется в resolve_version().
     lua_script_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # Кастом-параметры услуги (снимок прокидывается в скрипт как ctx.params).
     params: Mapped[dict] = mapped_column(
