@@ -31,6 +31,12 @@ class _FakeValkey:
     async def exists(self, key: str) -> int:
         return 1 if key in self.strings else 0
 
+    async def eval(self, _script: str, _numkeys: int, key: str, ttl: str) -> int:
+        if key in self.strings:
+            return 0
+        self.strings[key] = "1"
+        return 1
+
     async def scan_iter(self, match: str):
         prefix = match.rstrip("*")
         for key in list(self.hashes):

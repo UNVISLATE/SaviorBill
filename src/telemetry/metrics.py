@@ -59,6 +59,11 @@ trigger_failures_total = Counter(
     ["event", "action"],
 )
 
+refresh_token_reuse_total = Counter(
+    "refresh_token_reuse_total",
+    "Refresh tokens rejected because their jti was already consumed or revoked",
+)
+
 __all__ = [
     "worker_jobs_pending",
     "worker_jobs_reclaimed_total",
@@ -68,4 +73,5 @@ __all__ = [
     "valkey_degraded_total",
     "dlq_pending",
     "trigger_failures_total",
+    "refresh_token_reuse_total",
 ]

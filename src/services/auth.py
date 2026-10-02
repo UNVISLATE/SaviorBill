@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 
 import valkey.asyncio as valkey
 from fastapi import HTTPException, status
@@ -13,12 +14,22 @@ from core.config import AppConfig
 from utils.datetime_utils import timestamp_now
 from utils.degrade import VALKEY_ERRORS, note_degraded
 from security.sec import jwt as jwtu
+from telemetry.metrics import refresh_token_reuse_total
 
 _bearer = HTTPBearer(auto_error=False)
 
 _DENY = "auth:deny:"  # Префикс ключей денлиста отозванных refresh-jti в Valkey.
 _SESSION = "session:"  # Префикс ключей активных сессий: session:{account_id}:{jti}
 _SESSION_TTL_DEFAULT = 86400  # 1 день — см. настройку session.ttl.
+_CONSUME_REFRESH_SCRIPT = """
+if redis.call("EXISTS", KEYS[1]) == 1 then
+  return 0
+end
+redis.call("SET", KEYS[1], "1", "EX", ARGV[1])
+return 1
+"""
+
+log = logging.getLogger("saviorbill.auth")
 
 
 @dataclass(slots=True)
@@ -201,6 +212,18 @@ class TokenSvc:
     async def is_revoked(self, jti: str) -> bool:
         return bool(await self.vk.exists(_DENY + jti))
 
+    async def _consume_refresh(self, claims: jwtu.JWTToken) -> bool:
+        """Atomically reject a previously consumed refresh jti."""
+        ttl = max(claims.exp - timestamp_now(), 1)
+        return bool(
+            await self.vk.eval(
+                _CONSUME_REFRESH_SCRIPT,
+                1,
+                _DENY + claims.jti,
+                str(ttl),
+            )
+        )
+
     async def rotate(
         self,
         refresh_token: str,
@@ -213,7 +236,9 @@ class TokenSvc:
             claims = self._decode_refresh(refresh_token)
         except jwtu.InvalidJWT as exc:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
-        if await self.is_revoked(claims.jti):
+        if not await self._consume_refresh(claims):
+            refresh_token_reuse_total.inc()
+            log.warning("refresh token reuse rejected for account=%s", claims.sub)
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token revoked")
 
         acc = await mngr.by_id(int(claims.sub))
@@ -231,7 +256,7 @@ class TokenSvc:
             else timestamp_now()
         )
 
-        await self.revoke(claims, account_id=acc.id)  # старый refresh инвалидирован
+        await self._drop_session(acc.id, claims.jti)
         pair = self.issue(acc)
         new_claims = self._decode_refresh(pair.refresh_token)
         await self._save_session(
