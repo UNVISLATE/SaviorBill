@@ -193,7 +193,12 @@ class LuaRunner:
             raise RuntimeError(f"lua context build failed: {kind}") from None
 
     async def run(
-        self, script_filename: str, kind: str, ctx: dict, slug: str | None = None
+        self,
+        script_filename: str,
+        kind: str,
+        ctx: dict,
+        slug: str | None = None,
+        version: int | None = None,
     ) -> dict:
         """Отправить скрипт с контекстом в LuaWorker.
 
@@ -205,14 +210,18 @@ class LuaRunner:
             ``run_script``, без разбивки по конкретным скриптам).
         :return: результат исполнения ({public, private, state, expires_at, …}).
         """
+        payload = {"script": script_filename, "kind": kind, "ctx": ctx}
+        if version is not None:
+            payload["script_version"] = version
         return await self.bus.call(
             "run_script",
-            {"script": script_filename, "kind": kind, "ctx": ctx},
+            payload,
             metric_label=f"run_script:{slug}" if slug else None,
         )
 
     async def run_service(
-        self, script, action, acc, usvc, service, payment=None, filename=None
+        self, script, action, acc, usvc, service, payment=None, filename=None,
+        version=None,
     ) -> dict:  # noqa: ANN001
         """Собрать контекст услуги и исполнить скрипт.
 
@@ -223,7 +232,11 @@ class LuaRunner:
         """
         ctx = build_service_ctx(action, acc, usvc, service, payment, script)
         return await self.run(
-            filename or script.filename, ScriptKind.SERVICE, ctx, slug=script.slug
+            filename or script.filename,
+            ScriptKind.SERVICE,
+            ctx,
+            slug=script.slug,
+            version=version,
         )
 
     async def run_payment(
@@ -237,6 +250,7 @@ class LuaRunner:
         request=None,
         return_url=None,
         filename=None,
+        version=None,
     ) -> dict:
         """Собрать контекст платежа и исполнить скрипт."""
         ctx = self._build_ctx_safely(
@@ -252,16 +266,24 @@ class LuaRunner:
             script,
         )
         return await self.run(
-            filename or script.filename, ScriptKind.PAYMENT, ctx, slug=script.slug
+            filename or script.filename,
+            ScriptKind.PAYMENT,
+            ctx,
+            slug=script.slug,
+            version=version,
         )
 
     async def run_trigger(
-        self, script, event: str, config: dict, data: dict, filename=None
+        self, script, event: str, config: dict, data: dict, filename=None, version=None
     ) -> dict:  # noqa: ANN001
         """Собрать контекст триггера и исполнить скрипт."""
         ctx = build_trigger_ctx(event, config, data, script)
         return await self.run(
-            filename or script.filename, ScriptKind.TRIGGER, ctx, slug=script.slug
+            filename or script.filename,
+            ScriptKind.TRIGGER,
+            ctx,
+            slug=script.slug,
+            version=version,
         )
 
     async def run_auth(
@@ -278,6 +300,7 @@ class LuaRunner:
         expected_nonce: str | None = None,
         request=None,
         filename=None,
+        version=None,
     ) -> dict:
         """Собрать контекст OAuth и исполнить скрипт провайдера."""
         ctx = self._build_ctx_safely(
@@ -295,7 +318,11 @@ class LuaRunner:
             script=script,
         )
         return await self.run(
-            filename or script.filename, ScriptKind.AUTH, ctx, slug=script.slug
+            filename or script.filename,
+            ScriptKind.AUTH,
+            ctx,
+            slug=script.slug,
+            version=version,
         )
 
 

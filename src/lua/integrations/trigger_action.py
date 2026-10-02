@@ -29,7 +29,7 @@ class LuaAction(BaseAction):
         :arg config: ``{script_id}`` (+ произвольная конфигурация действия).
         :return: ``True`` если скрипт исполнен.
         """
-        from models.system_scripts import SystemScriptsModel, resolve_version_filename
+        from models.system_scripts import SystemScriptsModel, resolve_version
         from lua.context import LuaRunner
 
         script_id = config.get("script_id")
@@ -40,11 +40,11 @@ class LuaAction(BaseAction):
         if script is None or not script.is_active:
             return False
 
-        filename = await resolve_version_filename(
+        filename, resolved_version = await resolve_version(
             self.s, script, config.get("script_version")
         )
         await LuaRunner(self.bus).run_trigger(
-            script, event, config, ctx, filename=filename
+            script, event, config, ctx, filename=filename, version=resolved_version
         )
         return True
 

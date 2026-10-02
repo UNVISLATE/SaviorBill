@@ -31,3 +31,37 @@ def test_build_ctx_safely_returns_builder_result_on_success():
 
     result = LuaRunner._build_ctx_safely("auth", _builder, 42)
     assert result == {"ok": 42}
+
+
+@pytest.mark.asyncio
+async def test_run_includes_resolved_script_version_in_worker_payload():
+    class FakeBus:
+        def __init__(self) -> None:
+            self.calls = []
+
+        async def call(self, kind, payload, metric_label=None):
+            self.calls.append((kind, payload, metric_label))
+            return {"ok": True}
+
+    bus = FakeBus()
+    result = await LuaRunner(bus).run(
+        "services/demo/v3.lua",
+        "service",
+        {"action": "create"},
+        slug="demo",
+        version=3,
+    )
+
+    assert result == {"ok": True}
+    assert bus.calls == [
+        (
+            "run_script",
+            {
+                "script": "services/demo/v3.lua",
+                "kind": "service",
+                "ctx": {"action": "create"},
+                "script_version": 3,
+            },
+            "run_script:demo",
+        )
+    ]
