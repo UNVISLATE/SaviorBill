@@ -36,8 +36,9 @@ def get_token_svc(
     request: Request,
     vk: valkey.Valkey = Depends(get_valkey_client),
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
+    session: AsyncSession = Depends(get_db_session),
 ) -> TokenSvc:
-    return TokenSvc(_cfg(request), vk, settings)
+    return TokenSvc(_cfg(request), vk, settings, session)
 
 
 async def get_current_acc(

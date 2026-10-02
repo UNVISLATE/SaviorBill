@@ -142,6 +142,11 @@ def resolve_secrets(cfg: AppConfig) -> str:
         SecBox.new_versioned_key,
         fallback=env_fallback(cfg.SECRETS_KEY),
     )
+    cfg.AUTH_SESSION_HASH_KEY = res.ensure(
+        SecretName.AUTH_SESSION_HASH_KEY,
+        lambda: _secrets.token_urlsafe(32),
+        fallback=env_fallback(cfg.AUTH_SESSION_HASH_KEY),
+    )
     cfg.JWT_PRIVATE_KEY, cfg.JWT_PUBLIC_KEY, cfg.JWT_KID = _ensure_jwt_keypair(
         res, cfg, allow_env_fallback=allow_env_fallback
     )

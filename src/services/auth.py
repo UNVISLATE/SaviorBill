@@ -2,11 +2,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+import hashlib
+import hmac
+from datetime import datetime, timezone
 
 import valkey.asyncio as valkey
 from fastapi import HTTPException, status
 from fastapi.security import HTTPBearer
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from errors import AuthSessionLimitError
+from models.auth_sessions import AuthSessionModel
 from models.user import UserModel, UserMngr
 from models.system_settings import SystemSettingsMngr
 from schemas.auth import TokenPair
@@ -52,10 +59,12 @@ class TokenSvc:
         cfg: AppConfig,
         vk: valkey.Valkey,
         settings: SystemSettingsMngr | None = None,
+        session: AsyncSession | None = None,
     ) -> None:
         self.cfg = cfg
         self.vk = vk
         self.settings = settings
+        self.session = session
 
     def _access(self, acc: UserModel) -> str:
         return jwtu.make_access(
@@ -127,6 +136,40 @@ class TokenSvc:
         user_agent: str | None,
         created_at: int,
     ) -> None:
+        if self.session is not None:
+            now = datetime.now(timezone.utc)
+            max_active = await self._session_max_active()
+            account = await self.session.scalar(
+                select(UserModel)
+                .where(UserModel.id == account_id)
+                .with_for_update()
+            )
+            if account is None:
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "account unavailable")
+            active_count = await self.session.scalar(
+                select(func.count(AuthSessionModel.id)).where(
+                    AuthSessionModel.account_id == account_id,
+                    AuthSessionModel.revoked_at.is_(None),
+                    AuthSessionModel.expires_at > now,
+                )
+            )
+            if max_active is not None and int(active_count or 0) >= max_active:
+                raise AuthSessionLimitError
+            digest = self._session_digest(claims.jti)
+            self.session.add(
+                AuthSessionModel(
+                    account_id=account_id,
+                    refresh_jti_hash=digest,
+                    created_at=now,
+                    last_seen_at=now,
+                    expires_at=datetime.fromtimestamp(claims.exp, tz=timezone.utc),
+                    ip=ip,
+                    user_agent=user_agent,
+                    session_version=int(getattr(account, "auth_session_version", 0)),
+                )
+            )
+            await self.session.commit()
+            return
         key = f"{_SESSION}{account_id}:{claims.jti}"
         ttl = min(await self._session_ttl(), max(claims.exp - timestamp_now(), 1))
         await self.vk.hset(
@@ -140,6 +183,22 @@ class TokenSvc:
             },
         )
         await self.vk.expire(key, ttl)
+
+    async def _session_max_active(self) -> int | None:
+        if self.settings is None:
+            return None
+        value = await self.settings.get_int("session.max_active", None)
+        if value is not None and value < 1:
+            raise ValueError("session.max_active must be positive")
+        return value
+
+    def _session_digest(self, jti: str) -> str:
+        key = getattr(self.cfg, "AUTH_SESSION_HASH_KEY", None)
+        if not key:
+            raise RuntimeError("AUTH_SESSION_HASH_KEY is required for durable sessions")
+        return hmac.new(
+            key.encode("utf-8"), jti.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
 
     async def _drop_session(self, account_id: int, jti: str) -> None:
         await self.vk.delete(f"{_SESSION}{account_id}:{jti}")

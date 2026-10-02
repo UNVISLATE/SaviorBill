@@ -16,6 +16,7 @@ from dependencies.login_guard import LoginGuard, client_ip, get_login_guard
 from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.sec import make_secbox
 from dependencies.triggers import get_dispatcher
+from errors import AuthSessionLimitError
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.banned_email_domains import BannedEmailDomainsMngr
 from schemas.auth import Login, Refresh, Reg, TokenPair
@@ -92,9 +93,12 @@ async def register(
         TriggerEvent.USER_REGISTERED,
         {"user": {"id": acc.id, "login": acc.login, "email": acc.email}},
     )
-    pair = await tokens.issue_tracked(
-        acc, ip=client_ip(request), user_agent=request.headers.get("user-agent")
-    )
+    try:
+        pair = await tokens.issue_tracked(
+            acc, ip=client_ip(request), user_agent=request.headers.get("user-agent")
+        )
+    except AuthSessionLimitError:
+        raise HTTPException(status.HTTP_409_CONFLICT, "active session limit reached") from None
     set_auth_cookies(
         response, tokens.cfg, access_token=pair.access_token, refresh_token=pair.refresh_token
     )
@@ -156,9 +160,12 @@ async def login(
     await mngr.touch_login(acc)
     await mngr.s.commit()
     await guard.clear(body.login, ip)
-    pair = await tokens.issue_tracked(
-        acc, ip=ip, user_agent=request.headers.get("user-agent")
-    )
+    try:
+        pair = await tokens.issue_tracked(
+            acc, ip=ip, user_agent=request.headers.get("user-agent")
+        )
+    except AuthSessionLimitError:
+        raise HTTPException(status.HTTP_409_CONFLICT, "active session limit reached") from None
     set_auth_cookies(
         response, tokens.cfg, access_token=pair.access_token, refresh_token=pair.refresh_token
     )

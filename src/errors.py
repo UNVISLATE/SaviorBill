@@ -14,4 +14,8 @@ class LuaScriptVersionMissingError(RuntimeError):
         )
 
 
-__all__ = ["LuaScriptVersionMissingError"]
+class AuthSessionLimitError(RuntimeError):
+    """The account has reached its configured active-session limit."""
+
+
+__all__ = ["AuthSessionLimitError", "LuaScriptVersionMissingError"]

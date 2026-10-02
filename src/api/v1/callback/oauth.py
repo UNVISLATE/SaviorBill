@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from dependencies.auth import TokenSvc, get_token_svc
 from dependencies.oauth import OAuthSvc, build_lua_request, get_oauth_svc
 from dependencies.ratelimit import LimitKind, rate_limit
+from errors import AuthSessionLimitError
 from models.user import UserModel
 from schemas.auth import TokenPair
 from schemas.oauth import OAuthPendingConfirm, OAuthPendingLink
@@ -45,13 +46,19 @@ async def oauth_callback(
             raise HTTPException(status.HTTP_404_NOT_FOUND, "account not found")
         await svc.link_to_existing(acc, provider, user)
         await svc.s.commit()
-        return await tokens.issue_tracked(acc, ip=ip, user_agent=ua)
+        try:
+            return await tokens.issue_tracked(acc, ip=ip, user_agent=ua)
+        except AuthSessionLimitError:
+            raise HTTPException(status.HTTP_409_CONFLICT, "active session limit reached") from None
 
     acc, pending = await svc.link_account(provider, user)
     await svc.s.commit()
     if pending is not None:
         return pending
-    return await tokens.issue_tracked(acc, ip=ip, user_agent=ua)
+    try:
+        return await tokens.issue_tracked(acc, ip=ip, user_agent=ua)
+    except AuthSessionLimitError:
+        raise HTTPException(status.HTTP_409_CONFLICT, "active session limit reached") from None
 
 
 @router.post(
@@ -74,11 +81,14 @@ async def confirm_pending_link(
 ) -> TokenPair:
     acc = await svc.confirm_pending_link(pending_token, body.code)
     await svc.s.commit()
-    return await tokens.issue_tracked(
-        acc,
-        ip=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-    )
+    try:
+        return await tokens.issue_tracked(
+            acc,
+            ip=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
+    except AuthSessionLimitError:
+        raise HTTPException(status.HTTP_409_CONFLICT, "active session limit reached") from None
 
 
 __all__ = ["router"]

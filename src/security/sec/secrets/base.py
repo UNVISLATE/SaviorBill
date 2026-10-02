@@ -15,6 +15,7 @@ class SecretName:
     """Логические имена управляемых секретов."""
 
     SECRETS_KEY = "secrets_key"  # ключ Fernet для шифрования секретов в БД
+    AUTH_SESSION_HASH_KEY = "auth_session_hash_key"
     JWT_PRIVATE = "jwt_private_key"  # приватный ключ подписи JWT (RS256, billing-only)
     JWT_PUBLIC = "jwt_public_key"  # публичный ключ проверки JWT (billing + mediaworker)
     JWT_KID = "jwt_kid"  # идентификатор текущего ключа (заголовок JWT ``kid``)

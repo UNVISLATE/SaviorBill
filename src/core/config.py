@@ -108,6 +108,7 @@ class AppConfig(BaseSettings):
     # Шифрование секретов (SecBox / Fernet)
     SECRETS_KEY: str | None = Field(default=None)
     SECRETS_KEY_PATH: str | None = Field(default=None)
+    AUTH_SESSION_HASH_KEY: str | None = Field(default=None)
 
     # Бэкенд секретов (file|aws|gcp|azure|vault)
     SECRETS_BACKEND: str = Field(default="file")
