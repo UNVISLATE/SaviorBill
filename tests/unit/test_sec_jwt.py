@@ -53,12 +53,12 @@ def test_access_roundtrip_with_extra_claims(keypair):
     assert claims.jti  # есть уникальный идентификатор
 
 
-def test_refresh_has_no_extra(keypair):
+def test_refresh_has_session_version(keypair):
     private_key, public_key = keypair
     tok = make_refresh("7", private_key, ALG, ttl=60, iss=ISS, kid=KID)
     claims = decode_jwt(tok, {KID: public_key}, ALG, ISS)
     assert claims.typ == REFRESH
-    assert claims.extra == {}
+    assert claims.extra["session_version"] == 0
 
 
 def test_unknown_kid_rejected(keypair):

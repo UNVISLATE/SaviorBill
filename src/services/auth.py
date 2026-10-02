@@ -76,6 +76,7 @@ class TokenSvc:
             self.cfg.REFRESH_TOKEN_TTL,
             self.cfg.JWT_ISS,
             self.cfg.JWT_KID,
+            session_version=getattr(acc, "auth_session_version", 0),
         )
 
     def issue(
@@ -244,6 +245,10 @@ class TokenSvc:
         acc = await mngr.by_id(int(claims.sub))
         if acc is None:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "account unavailable")
+        if int(claims.extra.get("session_version", 0)) != getattr(
+            acc, "auth_session_version", 0
+        ):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token revoked")
         if acc.role is not None and not acc.role.allow_login:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "login not allowed for this role")
 

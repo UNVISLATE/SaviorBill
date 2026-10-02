@@ -87,9 +87,26 @@ def make_access(
     return _encode(sub, ACCESS, private_key, alg, ttl, iss, kid, extra)
 
 
-def make_refresh(sub: str, private_key: str, alg: str, ttl: int, iss: str, kid: str) -> str:
-    """Долгоживущий refresh-токен (только sub, без полезной нагрузки)."""
-    return _encode(sub, REFRESH, private_key, alg, ttl, iss, kid)
+def make_refresh(
+    sub: str,
+    private_key: str,
+    alg: str,
+    ttl: int,
+    iss: str,
+    kid: str,
+    session_version: int = 0,
+) -> str:
+    """Долгоживущий refresh-токен с версией security-сессий аккаунта."""
+    return _encode(
+        sub,
+        REFRESH,
+        private_key,
+        alg,
+        ttl,
+        iss,
+        kid,
+        extra={"session_version": session_version},
+    )
 
 
 def decode_jwt(token: str, public_keys: dict[str, str], alg: str, iss: str) -> JWTToken:
@@ -144,4 +161,3 @@ __all__ = [
     "make_refresh",
     "decode_jwt",
 ]
-
