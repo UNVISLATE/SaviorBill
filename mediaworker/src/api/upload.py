@@ -19,8 +19,11 @@ from __future__ import annotations
 import re
 import time
 import uuid
+import asyncio
+import logging
 
 import valkey.asyncio as valkey
+from valkey.exceptions import ValkeyError
 from fastapi import APIRouter, HTTPException, Request, Security, status
 from fastapi.security import HTTPAuthorizationCredentials
 
@@ -36,6 +39,17 @@ from utils.settings import SettingsResolver
 from utils.storage import Storage
 from utils.task_log import TaskLog
 from utils.telemetry import inject_carrier
+
+log = logging.getLogger("saviormedia.upload")
+VALKEY_ERRORS: tuple[type[BaseException], ...] = (
+    ValkeyError,
+    OSError,
+    asyncio.TimeoutError,
+)
+
+
+def note_degraded(component: str, exc: BaseException) -> None:
+    log.warning("valkey unavailable, %s degraded: %s", component, exc)
 
 router = APIRouter()
 
@@ -63,6 +77,15 @@ _TAG_RE = re.compile(r"^[A-Za-z0-9]{1,16}$")
 _VIDEO_PRESETS: dict[str, int] = {"fast": 8, "balanced": 5, "quality": 2}
 _DEFAULT_PRESET = "balanced"
 _CRF_MIN, _CRF_MAX = 15, 40
+
+
+def _valkey_unavailable(exc: BaseException) -> HTTPException:
+    note_degraded("media_upload", exc)
+    return HTTPException(
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+        "media service temporarily unavailable",
+        headers={"Retry-After": "5"},
+    )
 
 # Атомарный claim одноразового upload-token: HGETALL + DEL одним вызовом.
 _CLAIM_TOKEN_SCRIPT = """
@@ -183,7 +206,11 @@ async def request_upload_token(
     settings: SettingsResolver = request.app.state.settings
 
     ip = client_ip(request)
-    if await ipban.is_banned(vk, ip):
+    try:
+        banned = await ipban.is_banned(vk, ip)
+    except VALKEY_ERRORS as exc:
+        raise _valkey_unavailable(exc) from None
+    if banned:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "temporarily banned")
 
     if tag is not None and not _TAG_RE.match(tag):
@@ -225,15 +252,19 @@ async def request_upload_token(
         cpu_used = _VIDEO_PRESETS["fast"]
         crf = None
 
-    await _enforce_hourly_limit(request, acc_id, perms)
+    try:
+        await _enforce_hourly_limit(request, acc_id, perms)
+    except VALKEY_ERRORS as exc:
+        raise _valkey_unavailable(exc) from None
     await _enforce_media_count_limit(request, acc_id, perms)
     await _enforce_storage_quota(request, acc_id, perms)
 
     token = uuid.uuid4().hex
     uptoken_hkey = uptoken_key(token)
-    await vk.hset(
-        uptoken_hkey,
-        mapping={
+    try:
+        await vk.hset(
+            uptoken_hkey,
+            mapping={
             "owner": str(acc_id),
             "tag": tag or "",
             "max_bytes": str(max_bytes),
@@ -253,9 +284,11 @@ async def request_upload_token(
             "unlimited": "1" if is_unlimited else "0",
             "cpu_used": str(cpu_used),
             "crf": str(crf) if crf is not None else "",
-        },
-    )
-    await vk.expire(uptoken_hkey, cfg.upload_token_ttl)
+            },
+        )
+        await vk.expire(uptoken_hkey, cfg.upload_token_ttl)
+    except VALKEY_ERRORS as exc:
+        raise _valkey_unavailable(exc) from None
     return {
         "upload_token": token,
         "expires_in": cfg.upload_token_ttl,
@@ -288,21 +321,31 @@ async def upload_file(request: Request, upload_token: str) -> dict:
     task_log: TaskLog = request.app.state.task_log
 
     ip = client_ip(request)
-    if await ipban.is_banned(vk, ip):
+    try:
+        banned = await ipban.is_banned(vk, ip)
+    except VALKEY_ERRORS as exc:
+        raise _valkey_unavailable(exc) from None
+    if banned:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "temporarily banned")
 
     bucket = int(time.time()) // 60
     rkey = step2_rate_key(ip, bucket)
-    used = await vk.incr(rkey)
-    if used == 1:
-        await vk.expire(rkey, 60)
+    try:
+        used = await vk.incr(rkey)
+        if used == 1:
+            await vk.expire(rkey, 60)
+    except VALKEY_ERRORS as exc:
+        raise _valkey_unavailable(exc) from None
     if used > _STEP2_RATE_PER_MIN:
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS, "upload rate limit exceeded"
         )
 
     # Атомарно забрать одноразовый токен (Lua HGETALL + DEL).
-    raw = await vk.eval(_CLAIM_TOKEN_SCRIPT, 1, uptoken_key(upload_token))
+    try:
+        raw = await vk.eval(_CLAIM_TOKEN_SCRIPT, 1, uptoken_key(upload_token))
+    except VALKEY_ERRORS as exc:
+        raise _valkey_unavailable(exc) from None
     if not raw:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, "upload token not found or expired"
@@ -361,35 +404,37 @@ async def upload_file(request: Request, upload_token: str) -> dict:
         await ipban.ban(vk, ip, cfg.ban_seconds)
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
 
-    await vk.hset(status_key(media_token), mapping={"state": "queued", "owner_id": str(owner_id or "")})
-    await vk.expire(status_key(media_token), cfg.status_ttl)
-    await vk.xadd(
-        cfg.task_stream,
-        sign_fields(
-            cfg.BUS_SIGNING_KEY,
-            inject_carrier(
-                {
-                    "op": "convert",
-                    "token": media_token,
-                    "tag": tag,
-                    "owner_id": str(owner_id) if owner_id else "",
-                    "backend": cfg.backend,
-                    "size": str(size),
-                    # Решение о доступе к video принято на шаге 1 (см.
-                    # request_upload_token) — kind определяется по сигнатуре
-                    # файла только в воркере, права аккаунта там уже не
-                    # проверить без лишнего похода в БД, поэтому переносим
-                    # флаг через очередь (см. worker.py::_convert).
-                    "video_allowed": "1" if video_allowed else "0",
-                    "unlimited": "1" if is_unlimited else "0",
-                    "cpu_used": cpu_used,
-                    "crf": crf,
-                }
+    try:
+        await vk.hset(
+            status_key(media_token),
+            mapping={"state": "queued", "owner_id": str(owner_id or "")},
+        )
+        await vk.expire(status_key(media_token), cfg.status_ttl)
+        await vk.xadd(
+            cfg.task_stream,
+            sign_fields(
+                cfg.BUS_SIGNING_KEY,
+                inject_carrier(
+                    {
+                        "op": "convert",
+                        "token": media_token,
+                        "tag": tag,
+                        "owner_id": str(owner_id) if owner_id else "",
+                        "backend": cfg.backend,
+                        "size": str(size),
+                        "video_allowed": "1" if video_allowed else "0",
+                        "unlimited": "1" if is_unlimited else "0",
+                        "cpu_used": cpu_used,
+                        "crf": crf,
+                    }
+                ),
             ),
-        ),
-        maxlen=cfg.task_stream_maxlen,
-        approximate=True,
-    )
+            maxlen=cfg.task_stream_maxlen,
+            approximate=True,
+        )
+    except VALKEY_ERRORS as exc:
+        storage._safe_unlink(storage.orig_path(media_token))
+        raise _valkey_unavailable(exc) from None
     await task_log.record(
         kind="media", op="convert", token_or_cid=media_token, state="queued"
     )
