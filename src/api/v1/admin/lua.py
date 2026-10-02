@@ -40,6 +40,17 @@ def _actor(request: Request, acc: UserModel) -> dict:
     }
 
 
+@router.post(
+    "/reconcile",
+    dependencies=[Depends(require_perm("lua.read"))],
+    summary="Reconcile Lua artifacts",
+    description="Check registered files and orphan Lua files without modifying storage or metadata.",
+)
+async def reconcile_scripts(
+    mngr: SystemScriptsMngr = Depends(get_script_mngr),
+) -> dict:
+    return await mngr.reconcile_artifacts()
+
 
 @router.get(
     "",

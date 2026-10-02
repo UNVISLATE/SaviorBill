@@ -95,6 +95,33 @@ class TestSystemScriptsMngrReadCode:
             == "ready"
         )
 
+    @pytest.mark.asyncio
+    async def test_reconcile_reports_missing_corrupt_and_orphan_files(self, tmp_path) -> None:
+        (tmp_path / "auth").mkdir()
+        (tmp_path / "auth" / "orphan.lua").write_text("orphan", encoding="utf-8")
+        mngr = SystemScriptsMngr(session=None, scripts_dir=str(tmp_path))
+        script = _row("auth/missing.lua", id=7, current_version=2)
+        mngr.list_all = lambda: _async_value([script])
+        mngr.list_versions = lambda _script_id: _async_value([])
+
+        result = await mngr.reconcile_artifacts()
+
+        assert result["checked_scripts"] == 1
+        assert result["checked_artifacts"] == 1
+        assert result["issues"] == [
+            {
+                "script_id": 7,
+                "version": 2,
+                "filename": "auth/missing.lua",
+                "status": "missing",
+            }
+        ]
+        assert result["orphan_files"] == ["auth/orphan.lua"]
+
+
+async def _async_value(value):
+    return value
+
 
 class TestLuaScriptDetailSchema:
     def test_from_model_with_code_includes_body(self) -> None:

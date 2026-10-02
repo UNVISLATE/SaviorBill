@@ -179,6 +179,55 @@ class SystemScriptsMngr:
         )
         return list(rows)
 
+    async def reconcile_artifacts(self) -> dict:
+        """Check registered Lua artifacts and unregistered files without repair."""
+        issues: list[dict] = []
+        referenced: set[str] = set()
+        scripts = await self.list_all()
+        for script in scripts:
+            entries = [
+                (
+                    script.current_version,
+                    script.filename,
+                    getattr(script, "sha256", None),
+                ),
+                *[
+                    (version.version, version.filename, version.sha256)
+                    for version in await self.list_versions(script.id)
+                ],
+            ]
+            for version, filename, expected_sha256 in entries:
+                normalized = Path(filename).as_posix()
+                referenced.add(normalized)
+                artifact_status = await self.artifact_status(
+                    filename, expected_sha256=expected_sha256
+                )
+                if artifact_status != "ready":
+                    issues.append(
+                        {
+                            "script_id": script.id,
+                            "version": version,
+                            "filename": normalized,
+                            "status": artifact_status,
+                        }
+                    )
+
+        if self.dir.exists():
+            physical = {
+                path.relative_to(self.dir.resolve()).as_posix()
+                for path in self.dir.resolve().rglob("*.lua")
+                if path.is_file()
+            }
+        else:
+            physical = set()
+        orphan_files = sorted(physical - referenced)
+        return {
+            "checked_scripts": len(scripts),
+            "checked_artifacts": len(referenced),
+            "issues": issues,
+            "orphan_files": orphan_files,
+        }
+
     async def by_slug(self, slug: str) -> SystemScriptsModel | None:
         return await self.s.scalar(
             select(SystemScriptsModel).where(SystemScriptsModel.slug == slug)
