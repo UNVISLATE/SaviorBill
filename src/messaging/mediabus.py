@@ -17,6 +17,7 @@ from telemetry.otel import inject_carrier
 from security.sec.bus_sign import sign_fields
 
 _STATUS_PREFIX = "media:status:"
+_INTEGRITY_PREFIX = "media:integrity:"
 
 
 class MediaBus:
@@ -61,6 +62,19 @@ class MediaBus:
             approximate=True,
         )
 
+    async def enqueue_integrity_check(self, token: str) -> None:
+        """Попросить mediaworker проверить физические варианты медиа."""
+        fields = sign_fields(
+            self.signing_key,
+            inject_carrier({"op": "integrity", "token": token}),
+        )
+        await self.vk.xadd(
+            self.task_stream,
+            fields,
+            maxlen=self.task_stream_maxlen,
+            approximate=True,
+        )
+
     async def status(self, token: str) -> dict | None:
         """Получить статус конвертации по токену.
 
@@ -68,6 +82,11 @@ class MediaBus:
         :return: словарь статуса или ``None``, если запись не найдена.
         """
         data = await self.vk.hgetall(f"{_STATUS_PREFIX}{token}")
+        return data or None
+
+    async def integrity_status(self, token: str) -> dict | None:
+        """Read the latest non-destructive physical integrity snapshot."""
+        data = await self.vk.hgetall(f"{_INTEGRITY_PREFIX}{token}")
         return data or None
 
 

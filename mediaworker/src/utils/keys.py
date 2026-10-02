@@ -9,6 +9,7 @@ UPTOKEN_PREFIX = "media:uptoken:"
 RATE_PREFIX = "media:uprate:"
 STEP2_RATE_PREFIX = "media:up2rate:"
 JOBLOCK_PREFIX = "media:joblock:"
+INTEGRITY_PREFIX = "media:integrity:"
 
 
 def status_key(token: str) -> str:
@@ -48,6 +49,11 @@ def job_lock_key(op: str, token: str) -> str:
     return f"{JOBLOCK_PREFIX}{op}:{token}"
 
 
+def integrity_key(token: str) -> str:
+    """Последний диагностический снимок физических вариантов медиа."""
+    return f"{INTEGRITY_PREFIX}{token}"
+
+
 __all__ = [
     "STATUS_PREFIX",
     "FILE_PREFIX",
@@ -56,6 +62,7 @@ __all__ = [
     "RATE_PREFIX",
     "STEP2_RATE_PREFIX",
     "JOBLOCK_PREFIX",
+    "INTEGRITY_PREFIX",
     "status_key",
     "file_key",
     "opstatus_key",
@@ -63,4 +70,5 @@ __all__ = [
     "rate_key",
     "step2_rate_key",
     "job_lock_key",
+    "integrity_key",
 ]

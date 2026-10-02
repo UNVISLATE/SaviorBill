@@ -112,6 +112,43 @@ async def delete_media(
     await mngr.s.commit()
 
 
+@router.post(
+    "/{media_id}/reconcile",
+    dependencies=[Depends(require_perm("media.read"))],
+    summary="Reconcile media artifacts",
+    description="Queue a non-destructive physical artifact integrity check.",
+)
+async def reconcile_media(
+    request: Request,
+    media_id: int,
+    mngr: SystemMediaMngr = Depends(get_media_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+) -> dict:
+    media = await mngr.by_id(media_id)
+    if media is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
+    await _bus(request, vk).enqueue_integrity_check(media.token)
+    return {"token": media.token, "state": "queued"}
+
+
+@router.get(
+    "/{media_id}/reconcile",
+    dependencies=[Depends(require_perm("media.read"))],
+    summary="Get media reconciliation",
+)
+async def media_reconciliation(
+    request: Request,
+    media_id: int,
+    mngr: SystemMediaMngr = Depends(get_media_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+) -> dict:
+    media = await mngr.by_id(media_id)
+    if media is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
+    result = await _bus(request, vk).integrity_status(media.token)
+    return result or {"token": media.token, "state": "not_checked"}
+
+
 @router.put(
     "/{media_id}/tag",
     response_model=Media,

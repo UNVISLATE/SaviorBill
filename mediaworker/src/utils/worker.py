@@ -33,7 +33,7 @@ from .convert import (
 )
 from .bus_sign import sign_fields, verify_fields
 from .db import DB
-from .keys import file_key, job_lock_key, opstatus_key, status_key
+from .keys import file_key, integrity_key, job_lock_key, opstatus_key, status_key
 from .proclog import ProcLog
 from .settings import SettingsResolver
 from .storage import Storage
@@ -396,6 +396,51 @@ class Worker:
             await self._thumb_replace(data)
         elif op == "delete":
             await self._delete(data)
+        elif op == "integrity":
+            await self._integrity(data)
+
+    async def _integrity(self, data: dict) -> None:
+        token = data["token"]
+        row = await self.db.media_integrity_rows(token)
+        if row is None:
+            await self.vk.hset(
+                integrity_key(token),
+                mapping={"state": "metadata_missing", "token": token},
+            )
+            return
+        variants = row.get("variants") or {}
+        result: dict[str, str] = {"token": token, "state": row.get("status", "unknown")}
+        main = variants.get("media") or {}
+        main_key = main.get("key") or row.get("path")
+        if main_key:
+            result["main"] = (
+                await self.storage.inspect(
+                    main_key,
+                    expected_size=row.get("size"),
+                    expected_hash=row.get("content_hash"),
+                )
+            )["status"]
+        thumb = variants.get("thumb") or {}
+        if thumb.get("key"):
+            result["thumb"] = (
+                await self.storage.inspect(
+                    thumb["key"],
+                    expected_size=thumb.get("size"),
+                    expected_mime=thumb.get("mime"),
+                )
+            )["status"]
+        for preview in variants.get("previews") or []:
+            name = preview.get("url", "").rsplit(".", 1)[-1]
+            if preview.get("key") and name:
+                result[name] = (
+                    await self.storage.inspect(
+                        preview["key"],
+                        expected_size=preview.get("size"),
+                        expected_mime=preview.get("mime"),
+                    )
+                )["status"]
+        await self.vk.hset(integrity_key(token), mapping=result)
+        await self.vk.expire(integrity_key(token), self.cfg.status_ttl)
 
     async def _publish(
         self, variant: Variant, dedup_of: str | None = None

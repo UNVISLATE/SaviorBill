@@ -128,6 +128,18 @@ sha256 main-варианта после конвертации (`utils/worker.py
 Статусы конвертации: `queued` (принято, ждёт воркера) → `processing` (воркер начал)
 → `ready` (готово) либо `failed`.
 
+`GET /api/media/status/{token}` дополнительно возвращает `artifact_status` для
+main-файла и карту `variants` с результатами физической проверки:
+`ready`, `missing`, `corrupt`, `storage_unavailable` или `unknown`. Проверка
+выполняется mediaworker по фактическому FS/S3, поэтому `state=ready` не
+означает автоматически, что объект ещё доступен.
+
+Админ может запустить неразрушающую проверку конкретной записи через
+`POST /api/v1/admin/media/{media_id}/reconcile` (право `media.read`). Операция
+ставится в `media:tasks` с `op=integrity`, а результат сохраняется в
+`media:integrity:{token}` с TTL. Metadata и физические объекты при этой
+проверке не изменяются и не удаляются.
+
 ## Конвертация (consumer `media:tasks`)
 
 Из одного оригинала ffmpeg генерирует несколько вариантов:
