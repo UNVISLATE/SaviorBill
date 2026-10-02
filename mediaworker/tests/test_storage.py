@@ -1,6 +1,7 @@
 """Юнит-тесты потокового сохранения оригинала и контроля лимита объёма."""
 
 import os
+import hashlib
 from types import SimpleNamespace
 
 import pytest
@@ -137,3 +138,21 @@ async def test_link_or_copy_s3_backend_always_false():
         )
     )
     assert await st.link_or_copy("k", "/tmp/x", "existing") is False
+
+
+async def test_inspect_distinguishes_missing_ready_and_corrupt(tmp_path):
+    st = _storage(tmp_path)
+    path = st.media_fs_path("main.webp")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "wb") as stream:
+        stream.write(b"payload")
+
+    assert (await st.inspect("missing.webp"))["status"] == "missing"
+    assert (await st.inspect("main.webp", expected_size=1))["status"] == "corrupt"
+    result = await st.inspect(
+        "main.webp",
+        expected_size=7,
+        expected_hash=hashlib.sha256(b"other").hexdigest(),
+    )
+    assert result["status"] == "corrupt"
+    assert (await st.inspect("main.webp", expected_size=7))["status"] == "ready"

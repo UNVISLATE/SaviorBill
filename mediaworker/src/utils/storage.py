@@ -7,9 +7,14 @@
 from __future__ import annotations
 
 import logging
+import hashlib
+import mimetypes
 import os
+import asyncio
 from pathlib import Path
 from typing import AsyncIterator
+
+from botocore.exceptions import ClientError
 
 from utils.config import Config
 
@@ -76,6 +81,73 @@ class Storage:
     def media_fs_path(self, key: str) -> str:
         """Путь к итоговому файлу в локальном media-каталоге."""
         return self._safe_fs_path(self.cfg.media_dir, key)
+
+    async def inspect(self, key: str, *, expected_size: int | None = None,
+                      expected_hash: str | None = None,
+                      expected_mime: str | None = None) -> dict:
+        """Inspect one final object without silently treating storage errors as missing."""
+        if self.cfg.backend == "s3":
+            try:
+                session = self._s3_session()
+                async with session.client(
+                    "s3",
+                    endpoint_url=self.cfg.s3_endpoint,
+                    region_name=self.cfg.s3_region,
+                    aws_access_key_id=self.cfg.s3_key,
+                    aws_secret_access_key=self.cfg.s3_secret,
+                ) as client:
+                    head = await client.head_object(
+                        Bucket=self.cfg.s3_bucket, Key=key
+                    )
+            except ClientError as exc:
+                response = getattr(exc, "response", {}) or {}
+                code = str(response.get("Error", {}).get("Code", ""))
+                if code in {"404", "NoSuchKey", "NotFound"}:
+                    return {"status": "missing", "key": key}
+                return {"status": "storage_unavailable", "key": key}
+            except OSError:
+                return {"status": "storage_unavailable", "key": key}
+            size = head.get("ContentLength")
+            mime = head.get("ContentType")
+            if expected_size is not None and size != expected_size:
+                return {"status": "corrupt", "key": key, "size": size, "mime": mime}
+            if expected_mime and mime and mime != expected_mime:
+                return {"status": "corrupt", "key": key, "size": size, "mime": mime}
+            return {"status": "ready", "key": key, "size": size, "mime": mime}
+
+        try:
+            path = self.media_fs_path(key)
+            stat = await asyncio.to_thread(os.stat, path)
+        except FileNotFoundError:
+            return {"status": "missing", "key": key}
+        except (OSError, ValueError):
+            return {"status": "storage_unavailable", "key": key}
+        mime, _ = mimetypes.guess_type(path)
+        if expected_size is not None and stat.st_size != expected_size:
+            return {"status": "corrupt", "key": key, "size": stat.st_size, "mime": mime}
+        if expected_mime and mime and mime != expected_mime:
+            return {"status": "corrupt", "key": key, "size": stat.st_size, "mime": mime}
+        if expected_hash:
+            try:
+                digest = await asyncio.to_thread(self._sha256_path, path)
+            except OSError:
+                return {"status": "storage_unavailable", "key": key}
+            if digest != expected_hash:
+                return {
+                    "status": "corrupt",
+                    "key": key,
+                    "size": stat.st_size,
+                    "mime": mime,
+                }
+        return {"status": "ready", "key": key, "size": stat.st_size, "mime": mime}
+
+    @staticmethod
+    def _sha256_path(path: str) -> str:
+        digest = hashlib.sha256()
+        with open(path, "rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     async def put_final(self, key: str, src_path: str, mime: str) -> None:
         """Разместить итоговый файл в хранилище (fs — переместить, s3 — залить)."""
