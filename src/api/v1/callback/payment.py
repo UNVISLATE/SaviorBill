@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import valkey.asyncio as valkey
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from dependencies.payment import PayMngr, get_pay_mngr
 from dependencies.ratelimit import LimitKind, rate_limit
@@ -17,6 +17,7 @@ from lua.schemas import LuaRequest
 from schemas.payments import Payment
 from services.audit import audit
 from utils.idempotency import once
+from utils.degrade import VALKEY_ERRORS, note_degraded
 
 router = APIRouter(prefix="/api/v1/callback/payment", tags=["callback"])
 
@@ -105,7 +106,17 @@ async def payment_callback(
     # Валкей-дедупликация: повторный вебхук с тем же external_id — no-op-действия
     # уже применены транзакцией; фиксируем «обработано впервые» для аудита.
     dedup_key = f"pay:callback:{provider}:{payment.external_id or payment.id}"
-    first_time = await once(vk, dedup_key)
+    try:
+        first_time = await once(vk, dedup_key)
+    except VALKEY_ERRORS as exc:
+        # callback() has only flushed the transaction; returning 503 lets the
+        # request lifecycle roll it back before the provider retries.
+        note_degraded("payment_callback", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="payment service temporarily unavailable",
+            headers={"Retry-After": "5"},
+        ) from None
 
     if first_time:
         ip = request.client.host if request.client else None
