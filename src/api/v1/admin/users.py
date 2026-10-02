@@ -538,7 +538,7 @@ async def user_sessions(
 
 
 @router.delete(
-    "/{user_id}/sessions/{jti}",
+    "/{user_id}/sessions/{session_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Revoke a user session",
     description="Force-terminates a single active session by its opaque session handle.",
@@ -546,14 +546,14 @@ async def user_sessions(
 async def revoke_user_session(
     request: Request,
     user_id: int,
-    jti: str,
+    session_id: str,
     session: AsyncSession = Depends(get_db_session),
     tokens: TokenSvc = Depends(get_token_svc),
     caller: UserModel = Depends(require_perm("admin.user.sessions.manage")),
 ) -> None:
     acc = await _get_user(session, user_id)
     assert_can_modify_account(caller, acc)
-    if not await tokens.revoke_session(user_id, jti, commit=False):
+    if not await tokens.revoke_session(user_id, session_id, commit=False):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
     await audit(
         session,
@@ -563,7 +563,7 @@ async def revoke_user_session(
         target_type="user",
         target_id=str(acc.id),
         ip=request.client.host if request.client else None,
-        meta={"jti": jti},
+        meta={"session_id": session_id},
     )
     await session.commit()
 

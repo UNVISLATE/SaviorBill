@@ -95,9 +95,9 @@ class RegistrationsByDay(BaseModel):
 
 
 class SessionOut(BaseModel):
-    """Active login session (one refresh-token lineage) for a user."""
+    """Active login session with an opaque public handle."""
 
-    jti: str
+    session_id: str
     ip: str | None
     user_agent: str | None
     created_at: datetime
@@ -107,7 +107,7 @@ class SessionOut(BaseModel):
     @classmethod
     def from_info(cls, info) -> "SessionOut":
         return cls(
-            jti=info.jti,
+            session_id=info.session_id,
             ip=info.ip,
             user_agent=info.user_agent,
             created_at=datetime.fromtimestamp(info.created_at, tz=timezone.utc),

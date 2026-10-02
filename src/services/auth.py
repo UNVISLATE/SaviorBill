@@ -43,7 +43,7 @@ log = logging.getLogger("saviorbill.auth")
 class SessionInfo:
     """Активная сессия (одна пара refresh-токена) для одного аккаунта."""
 
-    jti: str
+    session_id: str
     ip: str | None
     user_agent: str | None
     created_at: int
@@ -235,7 +235,7 @@ class TokenSvc:
             return [
                 SessionInfo(
                     # This is an opaque public handle, never the JWT jti.
-                    jti=row.refresh_jti_hash,
+                    session_id=row.refresh_jti_hash,
                     ip=row.ip,
                     user_agent=row.user_agent,
                     created_at=int(row.created_at.timestamp()),
@@ -253,7 +253,7 @@ class TokenSvc:
             jti = key.split(":", 2)[2] if isinstance(key, str) else key
             out.append(
                 SessionInfo(
-                    jti=jti,
+                    session_id=jti,
                     ip=data.get("ip") or None,
                     user_agent=data.get("user_agent") or None,
                     created_at=int(data.get("created_at", 0)),

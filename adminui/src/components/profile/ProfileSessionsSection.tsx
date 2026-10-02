@@ -9,7 +9,7 @@ import { Skeleton } from "@/components/shadsnui/skeleton"
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "@/components/shadsnui/empty"
 
 interface SessionOut {
-  jti: string
+  session_id: string
   ip: string | null
   user_agent: string | null
   created_at: number
@@ -27,8 +27,7 @@ function fmt(unixSec: number): string {
   return new Date(unixSec * 1000).toLocaleString("ru-RU")
 }
 
-/** Активные сессии (JWT) пользователя — IP + устройство, из Valkey. Только
- * в чужом (админском) просмотре профиля, требует admin.user.sessions.manage. */
+/** Активные сессии пользователя — IP + устройство из durable auth state. */
 export function ProfileSessionsSection({ userId }: { userId?: number }) {
   const { can } = useAuth()
   const qc = useQueryClient()
@@ -42,8 +41,8 @@ export function ProfileSessionsSection({ userId }: { userId?: number }) {
   })
 
   const revoke = useMutation({
-    mutationFn: async (jti: string) =>
-      api.delete(`/v1/admin/users/${userId}/sessions/${jti}`),
+    mutationFn: async (sessionId: string) =>
+      api.delete(`/v1/admin/users/${userId}/sessions/${sessionId}`),
     onSuccess: () => {
       toastSuccess("Сессия завершена")
       void qc.invalidateQueries({ queryKey: ["admin-user-sessions", userId] })
@@ -90,7 +89,7 @@ export function ProfileSessionsSection({ userId }: { userId?: number }) {
         const isMobile = /mobile|android|iphone/i.test(s.user_agent ?? "")
         return (
           <div
-            key={s.jti}
+            key={s.session_id}
             className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm"
           >
             <div className="flex min-w-0 items-start gap-2.5">
@@ -113,7 +112,7 @@ export function ProfileSessionsSection({ userId }: { userId?: number }) {
               size="sm"
               variant="outline"
               disabled={revoke.isPending}
-              onClick={() => revoke.mutate(s.jti)}
+              onClick={() => revoke.mutate(s.session_id)}
             >
               Завершить
             </Button>
