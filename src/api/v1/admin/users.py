@@ -553,7 +553,7 @@ async def revoke_user_session(
 ) -> None:
     acc = await _get_user(session, user_id)
     assert_can_modify_account(caller, acc)
-    if not await tokens.revoke_session(user_id, jti):
+    if not await tokens.revoke_session(user_id, jti, commit=False):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
     await audit(
         session,
@@ -583,7 +583,7 @@ async def revoke_all_user_sessions(
 ) -> dict[str, int]:
     acc = await _get_user(session, user_id)
     assert_can_modify_account(caller, acc)
-    revoked = await tokens.revoke_all_sessions(user_id)
+    revoked = await tokens.revoke_all_sessions(user_id, commit=False)
     await audit(
         session,
         action="admin.user.sessions.revoke_all",

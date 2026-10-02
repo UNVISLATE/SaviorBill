@@ -248,7 +248,9 @@ class TokenSvc:
         out.sort(key=lambda s: s.last_seen_at, reverse=True)
         return out
 
-    async def revoke_session(self, account_id: int, jti: str) -> bool:
+    async def revoke_session(
+        self, account_id: int, jti: str, *, commit: bool = True
+    ) -> bool:
         """Принудительно завершить сессию: денлист jti + удаление записи."""
         if self.session is not None:
             digest = jti if len(jti) == 64 else self._session_digest(jti)
@@ -265,7 +267,8 @@ class TokenSvc:
                 return False
             row.revoked_at = datetime.now(timezone.utc)
             row.revoke_reason = "manual"
-            await self.session.commit()
+            if commit:
+                await self.session.commit()
             return True
         key = f"{_SESSION}{account_id}:{jti}"
         data = await self.vk.hgetall(key)
@@ -277,7 +280,9 @@ class TokenSvc:
         await self.vk.delete(key)
         return True
 
-    async def revoke_all_sessions(self, account_id: int) -> int:
+    async def revoke_all_sessions(
+        self, account_id: int, *, commit: bool = True
+    ) -> int:
         """Завершить все сессии аккаунта (смена пароля, роли, бан).
 
         Отзываются refresh-токены: выданный ранее access живёт до своего
@@ -310,7 +315,8 @@ class TokenSvc:
             for row in rows:
                 row.revoked_at = now
                 row.revoke_reason = "all"
-            await self.session.commit()
+            if commit:
+                await self.session.commit()
             return len(rows)
 
         revoked = 0

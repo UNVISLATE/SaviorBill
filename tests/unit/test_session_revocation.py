@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -80,3 +81,19 @@ async def test_revoke_all_sessions_denylists_every_jti(rsa_keypair):
 async def test_revoke_all_sessions_on_account_without_sessions(rsa_keypair):
     svc = TokenSvc(_cfg(rsa_keypair), _FakeValkey())
     assert await svc.revoke_all_sessions(42) == 0
+
+
+@pytest.mark.asyncio
+async def test_durable_single_revoke_can_join_audit_transaction(rsa_keypair):
+    row = SimpleNamespace(revoked_at=None, revoke_reason=None)
+    session = SimpleNamespace(scalar=AsyncMock(return_value=row), commit=AsyncMock())
+    cfg = _cfg(rsa_keypair)
+    cfg.AUTH_SESSION_HASH_KEY = "test-session-hash-key"
+    svc = TokenSvc(cfg, _FakeValkey(), session=session)
+
+    assert await svc.revoke_session(7, svc._session_digest("refresh-jti"), commit=False)
+    assert row.revoke_reason == "manual"
+    session.commit.assert_not_awaited()
+
+    assert await svc.revoke_session(7, svc._session_digest("refresh-jti"))
+    session.commit.assert_awaited_once()

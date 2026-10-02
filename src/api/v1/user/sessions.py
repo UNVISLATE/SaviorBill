@@ -40,7 +40,7 @@ async def revoke_my_session(
     acc: UserModel = Depends(get_current_acc),
     tokens: TokenSvc = Depends(get_token_svc),
 ) -> None:
-    if not await tokens.revoke_session(acc.id, session_id):
+    if not await tokens.revoke_session(acc.id, session_id, commit=False):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "session not found")
     await audit(
         tokens.session,
@@ -65,7 +65,7 @@ async def revoke_my_sessions(
     acc: UserModel = Depends(get_current_acc),
     tokens: TokenSvc = Depends(get_token_svc),
 ) -> dict[str, int]:
-    revoked = await tokens.revoke_all_sessions(acc.id)
+    revoked = await tokens.revoke_all_sessions(acc.id, commit=False)
     await audit(
         tokens.session,
         action="user.sessions.revoke_all",
