@@ -430,7 +430,9 @@ class Worker:
                 )
             )["status"]
         for preview in variants.get("previews") or []:
-            name = preview.get("url", "").rsplit(".", 1)[-1]
+            url = preview.get("url", "")
+            marker = f"/api/media/{token}."
+            name = url.split(marker, 1)[-1] if marker in url else ""
             if preview.get("key") and name:
                 result[name] = (
                     await self.storage.inspect(
