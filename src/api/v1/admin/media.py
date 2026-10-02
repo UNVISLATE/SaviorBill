@@ -149,6 +149,41 @@ async def media_reconciliation(
     return result or {"token": media.token, "state": "not_checked"}
 
 
+@router.get(
+    "/reconcile/batch",
+    dependencies=[Depends(require_perm("media.read"))],
+    summary="Queue a bounded media reconciliation batch",
+)
+async def reconcile_media_batch(
+    request: Request,
+    limit: int = Query(100, ge=1, le=500),
+    after_id: int = Query(0, ge=0),
+    mngr: SystemMediaMngr = Depends(get_media_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+) -> dict:
+    """Queue integrity checks without scanning Valkey or storage in billing."""
+    rows = list(
+        await mngr.s.scalars(
+            select(SystemMediaModel)
+            .where(SystemMediaModel.id > after_id)
+            .order_by(SystemMediaModel.id)
+            .limit(limit + 1)
+        )
+    )
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    bus = _bus(request, vk)
+    for media in rows:
+        await bus.enqueue_integrity_check(media.token)
+    next_after_id = rows[-1].id if rows else after_id
+    return {
+        "queued": len(rows),
+        "after_id": after_id,
+        "next_after_id": next_after_id,
+        "has_more": has_more,
+    }
+
+
 @router.put(
     "/{media_id}/tag",
     response_model=Media,
