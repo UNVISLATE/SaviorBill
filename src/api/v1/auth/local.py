@@ -23,6 +23,7 @@ from security.sec import jwt as jwtu
 from security.sec.cookies import REFRESH_COOKIE, clear_auth_cookies, set_auth_cookies
 from security.sec.pwd import dummy_hash, hash_pass, needs_rehash, verify_pass
 from services.twofa import TotpSvc
+from utils.degrade import VALKEY_ERRORS, note_degraded
 
 
 def _cfg(request: Request):
@@ -180,12 +181,20 @@ async def refresh(
 ) -> TokenPair:
     """Ротация пары токенов по refresh-токену."""
     refresh_token = _resolve_refresh_token(request, body.refresh_token if body else None)
-    _, pair = await tokens.rotate(
-        refresh_token,
-        mngr,
-        ip=client_ip(request),
-        user_agent=request.headers.get("user-agent"),
-    )
+    try:
+        _, pair = await tokens.rotate(
+            refresh_token,
+            mngr,
+            ip=client_ip(request),
+            user_agent=request.headers.get("user-agent"),
+        )
+    except VALKEY_ERRORS as exc:
+        note_degraded("auth_refresh", exc)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "session service temporarily unavailable",
+            headers={"Retry-After": "5"},
+        ) from None
     set_auth_cookies(
         response, tokens.cfg, access_token=pair.access_token, refresh_token=pair.refresh_token
     )
