@@ -227,6 +227,23 @@ class TokenSvc:
 
     async def revoke_session(self, account_id: int, jti: str) -> bool:
         """Принудительно завершить сессию: денлист jti + удаление записи."""
+        if self.session is not None:
+            digest = self._session_digest(jti)
+            row = await self.session.scalar(
+                select(AuthSessionModel)
+                .where(
+                    AuthSessionModel.account_id == account_id,
+                    AuthSessionModel.refresh_jti_hash == digest,
+                    AuthSessionModel.revoked_at.is_(None),
+                )
+                .with_for_update()
+            )
+            if row is None:
+                return False
+            row.revoked_at = datetime.now(timezone.utc)
+            row.revoke_reason = "manual"
+            await self.session.commit()
+            return True
         key = f"{_SESSION}{account_id}:{jti}"
         data = await self.vk.hgetall(key)
         if not data:
@@ -246,6 +263,33 @@ class TokenSvc:
 
         :return: сколько сессий было отозвано.
         """
+        if self.session is not None:
+            now = datetime.now(timezone.utc)
+            account = await self.session.scalar(
+                select(UserModel).where(UserModel.id == account_id).with_for_update()
+            )
+            if account is None:
+                return 0
+            account.auth_session_version = (
+                getattr(account, "auth_session_version", 0) + 1
+            )
+            rows = list(
+                (
+                    await self.session.scalars(
+                        select(AuthSessionModel).where(
+                            AuthSessionModel.account_id == account_id,
+                            AuthSessionModel.revoked_at.is_(None),
+                            AuthSessionModel.expires_at > now,
+                        )
+                    )
+                ).all()
+            )
+            for row in rows:
+                row.revoked_at = now
+                row.revoke_reason = "all"
+            await self.session.commit()
+            return len(rows)
+
         revoked = 0
         prefix = f"{_SESSION}{account_id}:"
         async for key in self.vk.scan_iter(match=prefix + "*"):
@@ -264,6 +308,22 @@ class TokenSvc:
 
     async def revoke(self, claims: jwtu.JWTToken, account_id: int | None = None) -> None:
         """Занести refresh-jti в денлист до его естественного истечения."""
+        if self.session is not None and account_id is not None:
+            row = await self.session.scalar(
+                select(AuthSessionModel)
+                .where(
+                    AuthSessionModel.account_id == account_id,
+                    AuthSessionModel.refresh_jti_hash
+                    == self._session_digest(claims.jti),
+                    AuthSessionModel.revoked_at.is_(None),
+                )
+                .with_for_update()
+            )
+            if row is not None:
+                row.revoked_at = datetime.now(timezone.utc)
+                row.revoke_reason = "logout"
+                await self.session.commit()
+            return
         ttl = max(claims.exp - timestamp_now(), 1)
         await self.vk.set(_DENY + claims.jti, "1", ex=ttl)
         if account_id is not None:
@@ -296,6 +356,10 @@ class TokenSvc:
             claims = self._decode_refresh(refresh_token)
         except jwtu.InvalidJWT as exc:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
+        if self.session is not None:
+            return await self._rotate_durable(
+                claims, mngr, ip=ip, user_agent=user_agent
+            )
         if not await self._consume_refresh(claims):
             refresh_token_reuse_total.inc()
             log.warning("refresh token reuse rejected for account=%s", claims.sub)
@@ -326,6 +390,59 @@ class TokenSvc:
         await self._save_session(
             acc.id, new_claims, ip=ip, user_agent=user_agent, created_at=created_at
         )
+        return acc, pair
+
+    async def _rotate_durable(
+        self,
+        claims: jwtu.JWTToken,
+        mngr: UserMngr,
+        ip: str | None,
+        user_agent: str | None,
+    ) -> tuple[UserModel, TokenPair]:
+        acc = await mngr.by_id(int(claims.sub))
+        if acc is None:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "account unavailable")
+        if int(claims.extra.get("session_version", 0)) != getattr(
+            acc, "auth_session_version", 0
+        ):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token revoked")
+        old = await self.session.scalar(
+            select(AuthSessionModel)
+            .where(
+                AuthSessionModel.account_id == acc.id,
+                AuthSessionModel.refresh_jti_hash == self._session_digest(claims.jti),
+                AuthSessionModel.revoked_at.is_(None),
+                AuthSessionModel.expires_at > datetime.now(timezone.utc),
+            )
+            .with_for_update()
+        )
+        if old is None:
+            refresh_token_reuse_total.inc()
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token revoked")
+        if acc.role is not None and not acc.role.allow_login:
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED, "login not allowed for this role"
+            )
+        pair = self.issue(acc)
+        new_claims = self._decode_refresh(pair.refresh_token)
+        now = datetime.now(timezone.utc)
+        old.revoked_at = now
+        old.revoke_reason = "rotated"
+        old.last_seen_at = now
+        new = AuthSessionModel(
+            account_id=acc.id,
+            refresh_jti_hash=self._session_digest(new_claims.jti),
+            created_at=old.created_at,
+            last_seen_at=now,
+            expires_at=datetime.fromtimestamp(new_claims.exp, tz=timezone.utc),
+            ip=ip,
+            user_agent=user_agent,
+            session_version=getattr(acc, "auth_session_version", 0),
+        )
+        self.session.add(new)
+        await self.session.flush()
+        old.replaced_by_id = new.id
+        await self.session.commit()
         return acc, pair
 
 
