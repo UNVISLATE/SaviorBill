@@ -111,6 +111,9 @@ class AppConfig(BaseSettings):
 
     # Бэкенд секретов (file|aws|gcp|azure|vault)
     SECRETS_BACKEND: str = Field(default="file")
+    # Прямые значения секретов из ENV разрешены только в DEBUG или при
+    # явном bootstrap-флаге; production не должен незаметно менять источник.
+    SECRETS_ALLOW_ENV_FALLBACK: bool = Field(default=False)
     SECRETS_PREFIX: str = Field(default="saviorbill/")
     # Облачные координаты (нужны только для соответствующего бэкенда).
     SECRETS_AWS_REGION: str | None = Field(default=None)

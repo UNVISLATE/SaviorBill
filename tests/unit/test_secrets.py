@@ -90,6 +90,7 @@ def test_resolve_secrets_generates_and_persists(tmp_path: Path, monkeypatch):
     ):
         monkeypatch.delenv(var, raising=False)
     cfg = AppConfig(
+        DEBUG=True,
         DB_PASS="dbpass",
         DATA_DIR=str(tmp_path / "data"),
         PRIVATE_DATA_DIR=str(tmp_path / "private"),
@@ -114,6 +115,7 @@ def test_resolve_secrets_generates_and_persists(tmp_path: Path, monkeypatch):
     public_before = cfg.JWT_PUBLIC_KEY
     kid_before = cfg.JWT_KID
     cfg2 = AppConfig(
+        DEBUG=True,
         DB_PASS="dbpass",
         DATA_DIR=str(tmp_path / "data"),
         PRIVATE_DATA_DIR=str(tmp_path / "private"),
@@ -130,6 +132,7 @@ def test_rotate_jwt_keypair_preserves_previous_for_grace_period(tmp_path: Path, 
     for var in ("JWT_PRIVATE_KEY", "JWT_PUBLIC_KEY", "JWT_KID"):
         monkeypatch.delenv(var, raising=False)
     cfg = AppConfig(
+        DEBUG=True,
         DB_PASS="dbpass",
         DATA_DIR=str(tmp_path / "data"),
         PRIVATE_DATA_DIR=str(tmp_path / "private"),
