@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from fastapi import HTTPException
 
 from errors import AuthSessionLimitError
 from services.auth import TokenSvc
@@ -87,7 +88,13 @@ async def test_revoke_all_sessions_on_account_without_sessions(rsa_keypair):
 
 @pytest.mark.asyncio
 async def test_durable_single_revoke_can_join_audit_transaction(rsa_keypair):
-    row = SimpleNamespace(revoked_at=None, revoke_reason=None)
+    row = SimpleNamespace(
+        revoked_at=None,
+        revoke_reason=None,
+        refresh_jti_hash="a" * 64,
+        session_version=0,
+        expires_at=datetime.now(timezone.utc),
+    )
     session = SimpleNamespace(scalar=AsyncMock(return_value=row), commit=AsyncMock())
     cfg = _cfg(rsa_keypair)
     cfg.AUTH_SESSION_HASH_KEY = "test-session-hash-key"
@@ -162,3 +169,7 @@ async def test_durable_rotation_revokes_old_lineage_in_one_commit(rsa_keypair):
     assert old.revoke_reason == "rotated"
     assert old.replaced_by_id == 99
     session.commit.assert_awaited_once()
+    with pytest.raises(HTTPException) as exc_info:
+        await svc.rotate(old_token, mngr)
+    assert exc_info.value.status_code == 401
+    assert mngr.by_id.await_count == 1

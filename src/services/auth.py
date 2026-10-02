@@ -200,6 +200,22 @@ class TokenSvc:
             key.encode("utf-8"), jti.encode("utf-8"), hashlib.sha256
         ).hexdigest()
 
+    def _refresh_claim_cache_key(self, digest: str, session_version: int) -> str:
+        return f"{_DENY}v{session_version}:{digest}"
+
+    async def _mark_refresh_claim_used(
+        self, digest: str, session_version: int, exp: int
+    ) -> None:
+        ttl = max(exp - timestamp_now(), 1)
+        try:
+            await self.vk.set(
+                self._refresh_claim_cache_key(digest, session_version),
+                "1",
+                ex=ttl,
+            )
+        except VALKEY_ERRORS as exc:
+            note_degraded("auth_refresh_negative_cache", exc)
+
     async def _drop_session(self, account_id: int, jti: str) -> None:
         await self.vk.delete(f"{_SESSION}{account_id}:{jti}")
 
@@ -269,6 +285,9 @@ class TokenSvc:
             row.revoke_reason = "manual"
             if commit:
                 await self.session.commit()
+                await self._mark_refresh_claim_used(
+                    row.refresh_jti_hash, row.session_version, int(row.expires_at.timestamp())
+                )
             return True
         key = f"{_SESSION}{account_id}:{jti}"
         data = await self.vk.hgetall(key)
@@ -338,12 +357,13 @@ class TokenSvc:
     async def revoke(self, claims: jwtu.JWTToken, account_id: int | None = None) -> None:
         """Занести refresh-jti в денлист до его естественного истечения."""
         if self.session is not None and account_id is not None:
+            digest = self._session_digest(claims.jti)
             row = await self.session.scalar(
                 select(AuthSessionModel)
                 .where(
                     AuthSessionModel.account_id == account_id,
                     AuthSessionModel.refresh_jti_hash
-                    == self._session_digest(claims.jti),
+                    == digest,
                     AuthSessionModel.revoked_at.is_(None),
                 )
                 .with_for_update()
@@ -352,6 +372,9 @@ class TokenSvc:
                 row.revoked_at = datetime.now(timezone.utc)
                 row.revoke_reason = "logout"
                 await self.session.commit()
+                await self._mark_refresh_claim_used(
+                    digest, row.session_version, claims.exp
+                )
             return
         ttl = max(claims.exp - timestamp_now(), 1)
         await self.vk.set(_DENY + claims.jti, "1", ex=ttl)
@@ -428,6 +451,16 @@ class TokenSvc:
         ip: str | None,
         user_agent: str | None,
     ) -> tuple[UserModel, TokenPair]:
+        digest = self._session_digest(claims.jti)
+        session_version = int(claims.extra.get("session_version", 0))
+        try:
+            if await self.vk.exists(
+                self._refresh_claim_cache_key(digest, session_version)
+            ):
+                refresh_token_reuse_total.inc()
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "token revoked")
+        except VALKEY_ERRORS as exc:
+            note_degraded("auth_refresh_negative_cache", exc)
         acc = await mngr.by_id(int(claims.sub))
         if acc is None:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, "account unavailable")
@@ -439,7 +472,7 @@ class TokenSvc:
             select(AuthSessionModel)
             .where(
                 AuthSessionModel.account_id == acc.id,
-                AuthSessionModel.refresh_jti_hash == self._session_digest(claims.jti),
+                AuthSessionModel.refresh_jti_hash == digest,
                 AuthSessionModel.revoked_at.is_(None),
                 AuthSessionModel.expires_at > datetime.now(timezone.utc),
             )
@@ -472,6 +505,7 @@ class TokenSvc:
         await self.session.flush()
         old.replaced_by_id = new.id
         await self.session.commit()
+        await self._mark_refresh_claim_used(digest, session_version, claims.exp)
         return acc, pair
 
 
