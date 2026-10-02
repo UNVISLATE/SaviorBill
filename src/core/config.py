@@ -109,6 +109,7 @@ class AppConfig(BaseSettings):
     SECRETS_KEY: str | None = Field(default=None)
     SECRETS_KEY_PATH: str | None = Field(default=None)
     AUTH_SESSION_HASH_KEY: str | None = Field(default=None)
+    AUTH_SESSION_HASH_KEY_FILE: str | None = Field(default=None)
 
     # Бэкенд секретов (file|aws|gcp|azure|vault)
     SECRETS_BACKEND: str = Field(default="file")
@@ -377,6 +378,10 @@ class AppConfig(BaseSettings):
             self.EMAIL_TEMPLATES_DIR = str(Path(self.DATA_DIR) / "email")
         if not self.SECRETS_KEY_PATH:
             self.SECRETS_KEY_PATH = str(Path(self.DATA_DIR) / "keys" / "secret.key")
+        if not self.AUTH_SESSION_HASH_KEY_FILE:
+            self.AUTH_SESSION_HASH_KEY_FILE = str(
+                Path(self.PRIVATE_DATA_DIR) / "auth_session_hash.key"
+            )
         if not self.JWT_PRIVATE_KEY_FILE:
             self.JWT_PRIVATE_KEY_FILE = str(
                 Path(self.PRIVATE_DATA_DIR) / "jwt_private.pem"

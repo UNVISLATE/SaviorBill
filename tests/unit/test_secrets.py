@@ -87,6 +87,7 @@ def test_resolve_secrets_generates_and_persists(tmp_path: Path, monkeypatch):
         "JWT_KID",
         "LUA_SERVICE_TOKEN",
         "SECRETS_KEY",
+        "AUTH_SESSION_HASH_KEY",
     ):
         monkeypatch.delenv(var, raising=False)
     cfg = AppConfig(
@@ -102,6 +103,7 @@ def test_resolve_secrets_generates_and_persists(tmp_path: Path, monkeypatch):
     assert cfg.JWT_PUBLIC_KEY
     assert cfg.JWT_KID
     assert cfg.SECRETS_KEY
+    assert cfg.AUTH_SESSION_HASH_KEY
     assert cfg.LUA_SERVICE_TOKEN
     assert Path(cfg.JWT_PRIVATE_KEY_FILE).exists()
     assert Path(cfg.JWT_PUBLIC_KEY_FILE).exists()

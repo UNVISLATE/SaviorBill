@@ -28,6 +28,7 @@ def _file_paths(cfg: "AppConfig") -> dict[str, Path]:
     """
     paths: dict[str, Path] = {
         SecretName.SECRETS_KEY: cfg.secret_key_file,
+        SecretName.AUTH_SESSION_HASH_KEY: Path(cfg.AUTH_SESSION_HASH_KEY_FILE),
         SecretName.JWT_PRIVATE: Path(cfg.JWT_PRIVATE_KEY_FILE),
         SecretName.JWT_PUBLIC: Path(cfg.JWT_PUBLIC_KEY_FILE),
         SecretName.JWT_KID: Path(cfg.JWT_KID_FILE),
