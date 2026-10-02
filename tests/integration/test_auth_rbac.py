@@ -7,7 +7,7 @@ pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
 
 async def test_health(http):
     r = await http.get("/api/health")
-    assert r.status_code == 200
+    assert r.status_code == 200, r.text
 
 
 async def test_register_login_me_refresh_logout(http, new_user):
@@ -37,6 +37,28 @@ async def test_register_login_me_refresh_logout(http, new_user):
         headers={"Authorization": f"Bearer {access}"},
     )
     assert r.status_code in (200, 204)
+
+
+async def test_user_can_inventory_and_revoke_opaque_current_session(http, new_user):
+    _, _, tokens = await new_user()
+    headers = {"Authorization": f"Bearer {tokens['access_token']}"}
+
+    r = await http.get("/api/v1/user/me/sessions", headers=headers)
+    assert r.status_code == 200, r.text
+    sessions = r.json()
+    assert len(sessions) == 1
+    session = sessions[0]
+    assert session["session_id"]
+    assert "jti" not in session
+    assert session["is_current"] is True
+    assert session["ip"]
+    assert session["user_agent"]
+
+    r = await http.delete(
+        f"/api/v1/user/me/sessions/{session['session_id']}", headers=headers
+    )
+    assert r.status_code == 204
+    assert (await http.get("/api/v1/user/me/sessions", headers=headers)).json() == []
 
 
 async def test_duplicate_register_conflict(http, new_user):
