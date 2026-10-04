@@ -67,6 +67,7 @@ class Payment(BaseModel):
     target: str
     user_svc_id: int | None = None
     public_data: dict
+    payment_url: str | None = None
     created_at: datetime
 
     @classmethod

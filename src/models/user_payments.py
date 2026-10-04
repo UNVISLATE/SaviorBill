@@ -95,6 +95,12 @@ class UserPaymentsModel(Base):
     # измениться). NULL — не lua-провайдер.
     lua_script_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
+    @property
+    def payment_url(self) -> str | None:
+        """Ссылка на оплату от провайдера (из public_data)."""
+        pub = self.public_data or {}
+        return pub.get("pay_url") or pub.get("payment_url") or pub.get("url")
+
 
 class UserPaymentsMngr:
     """Базовый data-access для платежей пользователей."""
