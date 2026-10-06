@@ -101,6 +101,49 @@ local function to_hex(bin)
   end))
 end
 
+local function urlencode(v)
+  if type(v) == "table" then
+    local parts = {}
+    for k, val in pairs(v) do
+      local ek = urlencode(tostring(k))
+      local ev = urlencode(tostring(val))
+      parts[#parts + 1] = ek .. "=" .. ev
+    end
+    table.sort(parts)
+    return table.concat(parts, "&")
+  end
+  local s = tostring(v)
+  return (s:gsub("[^%w%-_%.~]", function(c)
+    return string.format("%%%02X", string.byte(c))
+  end))
+end
+
+local function urldecode(s)
+  s = tostring(s or ""):gsub("+", " ")
+  return (s:gsub("%%(%x%x)", function(hex)
+    return string.char(tonumber(hex, 16))
+  end))
+end
+
+local function parse_form(body)
+  local res = {}
+  if type(body) ~= "string" or body == "" then
+    return res
+  end
+  for pair in body:gmatch("[^&]+") do
+    local eq = pair:find("=")
+    if eq then
+      local k = urldecode(pair:sub(1, eq - 1))
+      local v = urldecode(pair:sub(eq + 1))
+      res[k] = v
+    else
+      local k = urldecode(pair)
+      res[k] = ""
+    end
+  end
+  return res
+end
+
 function M.make_crypto()
   local ok_d, digest = pcall(require, "openssl.digest")
   local ok_h, hmac = pcall(require, "openssl.hmac")
@@ -115,6 +158,8 @@ function M.make_crypto()
   return {
     base64_encode = b64encode,
     base64_decode = b64decode,
+    url_encode = urlencode,
+    url_decode = urldecode,
     hex = to_hex,
     md5 = function(s) return hash("md5", s) end,
     sha1 = function(s) return hash("sha1", s) end,
@@ -179,6 +224,9 @@ function M.make_cache()
 end
 
 M.to_hex = to_hex
+M.urlencode = urlencode
+M.urldecode = urldecode
+M.parse_form = parse_form
 M.encode_json = cjson.encode
 M.decode_json = cjson.decode
 

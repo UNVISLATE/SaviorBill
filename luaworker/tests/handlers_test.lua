@@ -27,11 +27,16 @@ case("lint: скрипт без handle() отклоняется", function()
   assert(res.ok == false, "скрипт без handle должен быть отклонён")
 end)
 
-case("lint: http/billing недоступны при компиляции-проверке (не должны падать сборку)", function()
+case("lint: http helpers доступны при компиляции-проверке", function()
   local res = handlers.lint({
-    code = "return { handle = function(ctx) return { public = {} } end }",
+    code = [[
+      return { handle = function(ctx)
+        local encoded = http.urlencode({ a = "1" })
+        return { public = { s = encoded } }
+      end }
+    ]],
   })
-  assert(res.ok == true, "lint не должен требовать реальных http/billing")
+  assert(res.ok == true, "lint должен поддерживать helpers")
 end)
 
 case("run_script_sandbox: возвращает public/private без внешних вызовов", function()
@@ -55,17 +60,46 @@ case("run_script_sandbox: http-вызов из скрипта подавляет
   assert(res.public.blocked == true, "http должен быть заглушен в песочнице")
 end)
 
-case("run_script_sandbox: billing-вызов из скрипта подавляется", function()
+case("run_script_sandbox: billing доступен в песочнице с методами", function()
   local res = handlers.run_script_sandbox({
     code = [[
       return { handle = function(ctx)
-        local r = billing.charge({})
-        return { public = { blocked = (r.ok == false) } }
+        return {
+          public = {
+            has_billing = (billing ~= nil),
+            has_import_keys = (billing and type(billing.import_keys) == "function"),
+          }
+        }
       end }
     ]],
     ctx = {},
   })
-  assert(res.public.blocked == true, "billing должен быть заглушен в песочнице")
+  assert(res.public.has_billing == true, "billing должен существовать в песочнице")
+  assert(res.public.has_import_keys == true, "billing.import_keys должен быть функцией")
+end)
+
+case("run_script_sandbox: urlencode и parse_form доступны через http и crypto", function()
+  local res = handlers.run_script_sandbox({
+    code = [[
+      return { handle = function(ctx)
+        local data = { id = "100", title = "Тест Оплата", fee = "0.5" }
+        local qs = http.urlencode(data)
+        local parsed = http.parse_form(qs)
+        local c_enc = crypto.url_encode("hello world!")
+        local c_dec = crypto.url_decode(c_enc)
+        return {
+          public = {
+            qs = qs,
+            parsed_title = parsed.title,
+            c_dec = c_dec,
+          }
+        }
+      end }
+    ]],
+    ctx = {},
+  })
+  assert(res.public.parsed_title == "Тест Оплата", "parse_form должен возвращать русские строки")
+  assert(res.public.c_dec == "hello world!", "crypto.url_decode должен декодировать")
 end)
 
 print("ALL LUA HANDLERS TESTS PASSED")

@@ -3,6 +3,7 @@
 local cjson = require("cjson")
 local httpc = require("httpc")
 local sbox = require("sbox")
+local billing = require("billing")
 
 local M = {}
 
@@ -46,11 +47,18 @@ function M.lint(payload)
   assert(payload.code, "lint: требуется поле code")
   local sandbox = {
     json = cjson,
-    http = function() error("lint: http недоступен") end,
-    billing = setmetatable({}, {
-      __index = function() return function() error("lint: billing недоступен") end end,
+    http = setmetatable({
+      request = function() error("lint: http недоступен") end,
+      urlencode = sbox.urlencode,
+      urldecode = sbox.urldecode,
+      parse_form = sbox.parse_form,
+    }, {
+      __call = function() error("lint: http недоступен") end,
     }),
     crypto = sbox.make_crypto(),
+    billing = {
+      import_keys = function() return { ok = true, imported = 0, duplicates = 0, available_total = 0 } end,
+    },
     cache = { get = function() end, set = function() end, del = function() end, incr = function() end },
     log = sbox.make_logger(),
     tostring = tostring,
@@ -81,26 +89,9 @@ function M.lint(payload)
 end
 
 --- http: выполнить внешний HTTP-запрос (интеграции, вебхуки).
--- payload: { url, method?, headers?, body? }
+-- payload: { url, method?, headers?, body?, timeout? }
 function M.http(payload)
   return httpc.request(payload)
-end
-
---- billing: отправить команду ядру биллинга через внутренний HTTP API.
--- payload: { cmd = "charge", args = { ... } }
-function M.billing(payload)
-  assert(payload.cmd, "billing: требуется поле cmd")
-  local base = env("BILLING_URL", "http://billing:8000")
-  local token = env("LUA_SERVICE_TOKEN", "")
-  return httpc.request({
-    url = base .. "/api/v1/internal/" .. payload.cmd,
-    method = "POST",
-    headers = {
-      ["content-type"] = "application/json",
-      ["authorization"] = "Bearer " .. token,
-    },
-    body = cjson.encode(payload.args or {}),
-  })
 end
 
 -- Безопасно собрать путь к файлу скрипта внутри LUA_SCRIPTS_DIR.
@@ -111,17 +102,6 @@ local function script_path(filename)
   end
   local dir = env("LUA_SCRIPTS_DIR", "/lua")
   return dir .. "/" .. filename
-end
-
--- Команды биллинга, доступные внутри скрипта (обёртка над M.billing).
-local function make_billing()
-  return setmetatable({}, {
-    __index = function(_, cmd)
-      return function(args)
-        return M.billing({ cmd = cmd, args = args })
-      end
-    end,
-  })
 end
 
 -- Рекурсивно заменить JSON null (cjson.null, userdata) на nil, чтобы скрипты
@@ -155,13 +135,22 @@ function M.run_script(payload)
   -- Логгер выполнения, криптография и кэш для скрипта.
   local logger, log_entries = sbox.make_logger()
 
-  -- Песочница: даём json, http, crypto, cache, log и команды биллинга (не os/io).
-  local sandbox = {
-    json = cjson,
-    http = function(p)
+  local http_api = setmetatable({
+    request = httpc.request,
+    urlencode = sbox.urlencode,
+    urldecode = sbox.urldecode,
+    parse_form = sbox.parse_form,
+  }, {
+    __call = function(_, p)
       return httpc.request(p)
     end,
-    billing = make_billing(),
+  })
+
+  -- Песочница: даём json, http, crypto, cache, log (не os/io).
+  local sandbox = {
+    json = cjson,
+    http = http_api,
+    billing = billing,
     crypto = sbox.make_crypto(),
     cache = sbox.make_cache(),
     log = logger,
@@ -202,7 +191,7 @@ function M.run_script(payload)
   }
 end
 
---- run_script_sandbox: как run_script, но с заглушенными http/billing —
+--- run_script_sandbox: как run_script, но с заглушенным http —
 -- безопасный test-run для редактора (без реальных внешних вызовов).
 -- payload: { code = "...", ctx = { ... } } — код передаётся напрямую (можно
 -- гонять несохранённый черновик), а не читается из файла.
@@ -210,23 +199,30 @@ function M.run_script_sandbox(payload)
   assert(payload.code, "run_script_sandbox: требуется поле code")
 
   local logger, log_entries = sbox.make_logger()
-  local stub_http = function(p)
-    logger.warn("http вызов подавлен в песочнице test-run: " .. tostring(p and p.url))
-    return { status = 0, body = "", error = "sandboxed: external http disabled" }
-  end
-  local stub_billing = setmetatable({}, {
-    __index = function(_, cmd)
-      return function()
-        logger.warn("billing." .. tostring(cmd) .. " подавлен в песочнице test-run")
-        return { ok = false, error = "sandboxed: billing commands disabled" }
-      end
+  local stub_http = setmetatable({
+    request = function(p)
+      logger.warn("http вызов подавлен в песочнице test-run: " .. tostring(p and p.url))
+      return { ok = false, status = 0, body = "", error = "sandboxed: external http disabled" }
+    end,
+    urlencode = sbox.urlencode,
+    urldecode = sbox.urldecode,
+    parse_form = sbox.parse_form,
+  }, {
+    __call = function(_, p)
+      logger.warn("http вызов подавлен в песочнице test-run: " .. tostring(p and p.url))
+      return { ok = false, status = 0, body = "", error = "sandboxed: external http disabled" }
     end,
   })
 
   local sandbox = {
     json = cjson,
     http = stub_http,
-    billing = stub_billing,
+    billing = {
+      import_keys = function(service, keys)
+        logger.info("billing.import_keys вызван в test-run для услуги: " .. tostring(service) .. ", ключей: " .. tostring(keys and #keys or 0))
+        return { ok = true, imported = (keys and #keys) or 0, duplicates = 0, available_total = (keys and #keys) or 0 }
+      end,
+    },
     crypto = sbox.make_crypto(),
     cache = sbox.make_cache(),
     log = logger,
