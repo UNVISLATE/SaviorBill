@@ -36,6 +36,7 @@ def get_issuer(
     session: AsyncSession,
     bus: LuaBus | None = None,
     box: SecBox | None = None,
+    dispatcher = None,  # noqa: ANN001 — TriggerDispatcher | None
 ) -> BaseIssuer:
     """Вернуть issuer под способ доставки (по умолчанию — Lua)."""
     cls = _NATIVE_ISSUERS.get(delivery)
@@ -43,7 +44,7 @@ def get_issuer(
         from lua.integrations.delivery import LuaService
 
         cls = LuaService
-    return cls(session, bus, box)
+    return cls(session, bus, box, dispatcher=dispatcher)
 
 
 __all__ = [

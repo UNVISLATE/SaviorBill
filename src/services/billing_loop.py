@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 import valkey.asyncio as valkey
 from sqlalchemy import select
@@ -161,8 +162,14 @@ class BillingLoop:
         if not self.cfg.BILLING_LOOP_ENABLED:
             log.info("billing-loop is disabled (BILLING_LOOP_ENABLED=false)")
             return
-        async with self.sm() as session:
-            await self.seed_on_start(session)
+        acquired = True
+        try:
+            acquired = await self.vk.set("lock:billing:seed", "1", nx=True, ex=5)
+        except Exception:
+            acquired = True
+        if acquired:
+            async with self.sm() as session:
+                await self.seed_on_start(session)
         self._task = asyncio.create_task(self._run(), name="billing-loop")
         log.info("billing-loop launched")
 
@@ -280,8 +287,14 @@ class BillingLoop:
         if due:
             await asyncio.gather(*(self._process_one(member) for member in due))
         async with self.sm() as session:
-            await self._refill(session)
-            await self._seed_failed_deliveries(session)
+            seed_lock = True
+            try:
+                seed_lock = await self.vk.set("lock:billing:seed_tick", "1", nx=True, ex=5)
+            except Exception:
+                seed_lock = True
+            if seed_lock:
+                await self._refill(session)
+                await self._seed_failed_deliveries(session)
             await self._maybe_auto_cleanup_media(session)
         await self._dlq.refresh_metrics()
 
@@ -378,7 +391,14 @@ class BillingLoop:
         acc = await lock_account(session, usvc.account_id)
         if acc is None or usvc.price <= 0:
             return
-        acc.balance += usvc.price
+        charged_bonus = Decimal(private.get("charged_bonus", "0"))
+        charged_balance = Decimal(private.get("charged_balance", "0"))
+        if charged_bonus > 0 or charged_balance > 0:
+            if hasattr(acc, "bonus_balance"):
+                acc.bonus_balance += charged_bonus
+            acc.balance += charged_balance
+        else:
+            acc.balance += usvc.price
         usvc.private_data = {
             **private,
             "delivery_credit": {
@@ -547,6 +567,13 @@ class BillingLoop:
         """
         now = utc_now().timestamp()
         if now < self._next_media_cleanup_at:
+            return
+        cleanup_lock = True
+        try:
+            cleanup_lock = await self.vk.set("lock:billing:media_cleanup", "1", nx=True, ex=60)
+        except Exception:
+            cleanup_lock = True
+        if not cleanup_lock:
             return
         settings = SystemSettingsMngr(
             session, self.vk, make_secbox(self.cfg), self.cfg.SETTINGS_CACHE_TTL

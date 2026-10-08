@@ -16,10 +16,12 @@ class BaseIssuer:
         session: AsyncSession,
         bus: LuaBus | None = None,
         box: SecBox | None = None,
+        dispatcher = None,  # noqa: ANN001 — TriggerDispatcher | None
     ) -> None:
         self.s = session
         self.bus = bus
         self.box = box
+        self.dispatcher = dispatcher
 
     async def issue(self, usvc, service, acc) -> None:  # noqa: ANN001 — ORM-объекты
         """Выполнить доставку и заполнить ``usvc.public_data`` / ``private_data``.

@@ -35,5 +35,10 @@ class KeyService(BaseIssuer):
         usvc.public_data = {"key": value}
         usvc.private_data = {"digikey_id": key.id}
 
+        if self.dispatcher is not None:
+            from lifecycle.triggers.stock import check_and_fire_key_stock_triggers
+
+            await check_and_fire_key_stock_triggers(self.s, service, self.dispatcher)
+
 
 __all__ = ["KeyService"]

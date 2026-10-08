@@ -125,6 +125,10 @@ class PayMngr:
         return_url: str | None = None,
     ) -> UserPaymentsModel:
         """Создать платёж и запустить скрипт (action=create) за ссылкой оплаты."""
+        if amount is None or amount <= Decimal("0"):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "payment amount must be greater than zero"
+            )
         prov = await self._provider(provider_slug)
         script, filename, script_version = await self._script(prov, PayAction.CREATE)
         secrets = self._secrets(prov)
@@ -155,9 +159,14 @@ class PayMngr:
                 version=script_version,
                 requested_version=prov.script_version,
             )
-            payment.public_data = res.get("public") or {}
-            payment.private_data = res.get("private") or {}
-            payment.external_id = (res.get("private") or {}).get("external_id")
+            pub = dict(res.get("public") or {})
+            priv = dict(res.get("private") or {})
+            pay_url = pub.get("pay_url") or pub.get("payment_url") or pub.get("url")
+            if pay_url and "pay_url" not in pub:
+                pub["pay_url"] = str(pay_url)
+            payment.public_data = pub
+            payment.private_data = priv
+            payment.external_id = priv.get("external_id")
         except Exception as exc:  # noqa: BLE001
             payment.status = PayStatus.FAILED
             payment.private_data = {"error": str(exc)[:512]}
@@ -215,6 +224,10 @@ class PayMngr:
             await self._apply_refund(payment, priv)
         elif priv.get("failed"):
             payment.status = PayStatus.FAILED
+            await self._fire_payment_trigger(payment, TriggerEvent.PAYMENT_FAILED)
+        elif priv.get("cancelled"):
+            payment.status = PayStatus.CANCELLED
+            await self._fire_payment_trigger(payment, TriggerEvent.PAYMENT_CANCELLED)
 
         if res.get("public"):
             payment.public_data = {**(payment.public_data or {}), **res["public"]}
@@ -264,6 +277,10 @@ class PayMngr:
             await self._settle(payment, priv)
         elif priv.get("ok") and priv.get("failed"):
             payment.status = PayStatus.FAILED
+            await self._fire_payment_trigger(payment, TriggerEvent.PAYMENT_FAILED)
+        elif priv.get("ok") and priv.get("cancelled"):
+            payment.status = PayStatus.CANCELLED
+            await self._fire_payment_trigger(payment, TriggerEvent.PAYMENT_CANCELLED)
 
         if res.get("public"):
             payment.public_data = {**(payment.public_data or {}), **res["public"]}
@@ -315,6 +332,28 @@ class PayMngr:
         await self.s.flush()
         return payment
 
+    async def _fire_payment_trigger(self, payment: UserPaymentsModel, event: str) -> None:
+        if self.dispatcher is None:
+            return
+        from models.user import UserModel
+        acc = await self.s.get(UserModel, payment.account_id)
+        email = acc.email if acc else None
+        base = {
+            "user": {
+                "id": getattr(acc, "id", None),
+                "login": getattr(acc, "login", None),
+                "email": email,
+            },
+            "payment": {
+                "id": payment.id,
+                "amount": str(payment.amount),
+                "currency": payment.currency,
+                "target": payment.target,
+                "status": payment.status,
+            },
+        }
+        await self.dispatcher.fire(event, base)
+
     async def _apply_refund(self, payment: UserPaymentsModel, priv: dict) -> None:
         """Применить рефанд: пометить ``REFUNDED``, откатить услугу/ключ и
         списать баланс в пределах суммы этого платежа.
@@ -337,7 +376,7 @@ class PayMngr:
                 service = await self.s.get(ServiceModel, usvc.service_id)
                 acc = await lock_account(self.s, payment.account_id)
                 if service is not None and acc is not None:
-                    await UserServicesMngr(self.s, self.bus, self.box).revoke(
+                    await UserServicesMngr(self.s, self.bus, self.box, dispatcher=self.dispatcher).revoke(
                         usvc, service, acc
                     )
         else:  # возврат пополнения баланса
@@ -425,7 +464,7 @@ class PayMngr:
             if usvc is not None:
                 service = await self.s.get(ServiceModel, usvc.service_id)
                 usvc.payment_id = payment.id
-                await UserServicesMngr(self.s, self.bus, self.box).deliver(
+                await UserServicesMngr(self.s, self.bus, self.box, dispatcher=self.dispatcher).deliver(
                     usvc, service, acc
                 )
                 # Промокод скидки (если был указан при создании платежа) —
