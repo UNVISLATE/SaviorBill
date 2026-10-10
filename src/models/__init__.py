@@ -23,7 +23,7 @@ from .system_settings import SystemSettingsModel, SystemSettingsMngr
 from .system_media import SystemMediaModel, SystemMediaMngr
 from .email_templates import EmailModel, EmailMngr
 from .triggers import TriggerModel, TriggerMngr
-from .log import LogModel
+from .task_archive import TaskArchiveModel, TaskArchiveMngr
 from .audit_log import AuditLogModel
 from .worker_jobs import WorkerJobModel, WorkerJobEventModel, WorkerJobsMngr
 from .banned_email_domains import BannedEmailDomainModel, BannedEmailDomainsMngr
@@ -67,7 +67,8 @@ __all__ = [
     "EmailMngr",
     "TriggerModel",
     "TriggerMngr",
-    "LogModel",
+    "TaskArchiveModel",
+    "TaskArchiveMngr",
     "AuditLogModel",
     "WorkerJobModel",
     "WorkerJobEventModel",

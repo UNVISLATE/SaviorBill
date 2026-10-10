@@ -41,7 +41,7 @@ def test_all_tables_registered():
         "promocodes",
         "promo_uses",
         "settings",
-        "api_logs",
+        "task_archive",
         "system_media",
         "promo_catalogs",
         "email_templates",
@@ -58,8 +58,8 @@ def test_basic_columns_in_models():
     assert "updated_at" in cols
 
 
-def test_apilog_has_trim_classmethod():
-    # LogModel должна иметь trim() classmethod для очистки старых записей.
-    assert hasattr(models.LogModel, "trim")
-    assert callable(getattr(models.LogModel, "trim", None))
-    assert models.LogModel.__row_limit__ == 1_000_000
+def test_task_archive_model_and_mngr():
+    assert hasattr(models, "TaskArchiveModel")
+    assert hasattr(models, "TaskArchiveMngr")
+    assert hasattr(models.TaskArchiveMngr, "trim_older_than")
+    assert "task_archive" in models.Base.metadata.tables
