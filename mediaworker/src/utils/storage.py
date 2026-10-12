@@ -149,6 +149,78 @@ class Storage:
                 digest.update(chunk)
         return digest.hexdigest()
 
+    async def list_objects(
+        self, prefix: str = "", cursor: str | None = None, limit: int = 100
+    ) -> tuple[list[dict], str | None]:
+        """Ограниченное сканирование физических файлов хранилища с курсором."""
+        limit = max(1, min(limit, 500))
+        if self.cfg.backend == "s3":
+            try:
+                session = self._s3_session()
+                async with session.client(
+                    "s3",
+                    endpoint_url=self.cfg.s3_endpoint,
+                    region_name=self.cfg.s3_region,
+                    aws_access_key_id=self.cfg.s3_key,
+                    aws_secret_access_key=self.cfg.s3_secret,
+                ) as client:
+                    params: dict = {
+                        "Bucket": self.cfg.s3_bucket,
+                        "Prefix": prefix,
+                        "MaxKeys": limit,
+                    }
+                    if cursor:
+                        params["ContinuationToken"] = cursor
+                    resp = await client.list_objects_v2(**params)
+                    items = []
+                    for obj in resp.get("Contents", []):
+                        items.append(
+                            {
+                                "key": obj["Key"],
+                                "size": obj["Size"],
+                                "mtime": obj["LastModified"].timestamp(),
+                            }
+                        )
+                    next_cursor = resp.get("NextContinuationToken")
+                    return items, next_cursor
+            except Exception:
+                return [], None
+
+        media_dir = os.path.abspath(self.cfg.media_dir)
+        if not os.path.exists(media_dir):
+            return [], None
+
+        def _scan_fs() -> tuple[list[dict], str | None]:
+            all_keys: list[str] = []
+            for root, _, files in os.walk(media_dir):
+                for f in files:
+                    full_p = os.path.join(root, f)
+                    rel = os.path.relpath(full_p, media_dir).replace("\\", "/")
+                    if not prefix or rel.startswith(prefix):
+                        all_keys.append(rel)
+            all_keys.sort()
+            start_idx = 0
+            if cursor:
+                for i, k in enumerate(all_keys):
+                    if k > cursor:
+                        start_idx = i
+                        break
+                else:
+                    return [], None
+            slice_keys = all_keys[start_idx : start_idx + limit]
+            items = []
+            for k in slice_keys:
+                try:
+                    p = os.path.join(media_dir, k)
+                    st = os.stat(p)
+                    items.append({"key": k, "size": st.st_size, "mtime": st.st_mtime})
+                except OSError:
+                    continue
+            next_cursor = slice_keys[-1] if (start_idx + limit < len(all_keys)) else None
+            return items, next_cursor
+
+        return await asyncio.to_thread(_scan_fs)
+
     async def put_final(self, key: str, src_path: str, mime: str) -> None:
         """Разместить итоговый файл в хранилище (fs — переместить, s3 — залить)."""
         if self.cfg.backend == "s3":

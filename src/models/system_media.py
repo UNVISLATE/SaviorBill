@@ -296,6 +296,33 @@ class SystemMediaMngr:
         await self.s.flush()
         return True
 
+    async def preview_orphans(
+        self, grace_sec: int = 3600, limit: int = 50, offset: int = 0
+    ) -> tuple[list[SystemMediaModel], int]:
+        """Недеструктивный предпросмотр медиа-сирот для отчёта администратора."""
+        from models.service_attachment import ServiceAttachmentModel
+        from models.user import UserModel
+
+        used_att = select(ServiceAttachmentModel.media_id)
+        used_avatar = select(UserModel.avatar_media_id).where(
+            UserModel.avatar_media_id.is_not(None)
+        )
+        cutoff = utc_now() - timedelta(seconds=grace_sec)
+        base_stmt = (
+            select(SystemMediaModel)
+            .where(SystemMediaModel.id.not_in(used_att))
+            .where(SystemMediaModel.id.not_in(used_avatar))
+            .where(SystemMediaModel.created_at < cutoff)
+        )
+        total = (
+            await self.s.scalar(select(func.count()).select_from(base_stmt.subquery()))
+            or 0
+        )
+        rows = await self.s.scalars(
+            base_stmt.order_by(SystemMediaModel.id.desc()).offset(offset).limit(limit)
+        )
+        return list(rows), total
+
     async def orphans(self, grace_sec: int = 3600) -> list[SystemMediaModel]:
         """Медиа, не привязанные ни к товарам (attachments), ни к аватаркам.
 

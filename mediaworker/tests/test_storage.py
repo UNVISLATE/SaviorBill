@@ -156,3 +156,27 @@ async def test_inspect_distinguishes_missing_ready_and_corrupt(tmp_path):
     )
     assert result["status"] == "corrupt"
     assert (await st.inspect("main.webp", expected_size=7))["status"] == "ready"
+
+
+async def test_list_objects_fs_bounded_scan(tmp_path):
+    st = _storage(tmp_path)
+    for name in ("a.jpg", "b.png", "sub/c.webp", "sub/d.jpg"):
+        p = st.media_fs_path(name)
+        os.makedirs(os.path.dirname(p), exist_ok=True)
+        with open(p, "wb") as f:
+            f.write(b"data")
+
+    # Без префикса, лимит 2
+    items, cursor = await st.list_objects(limit=2)
+    assert len(items) == 2
+    assert cursor == items[-1]["key"]
+
+    # Следующая страница по курсору
+    items2, cursor2 = await st.list_objects(cursor=cursor, limit=2)
+    assert len(items2) == 2
+    assert items[0]["key"] != items2[0]["key"]
+
+    # С префиксом
+    items_sub, _ = st_sub = await st.list_objects(prefix="sub/")
+    assert len(items_sub) == 2
+    assert all(it["key"].startswith("sub/") for it in items_sub)

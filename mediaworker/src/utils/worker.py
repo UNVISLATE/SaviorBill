@@ -441,6 +441,19 @@ class Worker:
                         expected_mime=preview.get("mime"),
                     )
                 )["status"]
+        # Определение итогового статуса целостности
+        statuses = [v for k, v in result.items() if k not in ("token", "state")]
+        if any(s == "storage_unavailable" for s in statuses):
+            result["state"] = "storage_unavailable"
+        elif result.get("main") == "missing":
+            result["state"] = "artifact_missing"
+        elif any(s == "corrupt" for s in statuses):
+            result["state"] = "artifact_corrupt"
+        elif any(s == "missing" for s in statuses):
+            result["state"] = "variant_missing"
+        elif statuses and all(s == "ready" for s in statuses):
+            result["state"] = "healthy"
+
         await self.vk.hset(integrity_key(token), mapping=result)
         await self.vk.expire(integrity_key(token), self.cfg.status_ttl)
 

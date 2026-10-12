@@ -220,6 +220,75 @@ async def update_media_tag(
     return Media.from_model(media)
 
 
+@router.get(
+    "/reconcile/batch/status",
+    dependencies=[Depends(require_perm("media.read"))],
+    summary="Get bounded media reconciliation batch status",
+    description="Reads the physical integrity check statuses for a bounded batch of media.",
+)
+async def get_reconcile_batch_status(
+    request: Request,
+    limit: int = Query(100, ge=1, le=500),
+    after_id: int = Query(0, ge=0),
+    mngr: SystemMediaMngr = Depends(get_media_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+) -> dict:
+    rows = list(
+        await mngr.s.scalars(
+            select(SystemMediaModel)
+            .where(SystemMediaModel.id > after_id)
+            .order_by(SystemMediaModel.id)
+            .limit(limit)
+        )
+    )
+    bus = _bus(request, vk)
+    items = []
+    summary = {
+        "healthy": 0,
+        "artifact_missing": 0,
+        "artifact_corrupt": 0,
+        "variant_missing": 0,
+        "storage_unavailable": 0,
+        "not_checked": 0,
+    }
+    for media in rows:
+        st = await bus.integrity_status(media.token)
+        state = (st or {}).get("state", "not_checked")
+        if state in summary:
+            summary[state] += 1
+        else:
+            summary["not_checked"] += 1
+        items.append({"id": media.id, "token": media.token, "state": state, "details": st})
+    return {
+        "summary": summary,
+        "total_in_batch": len(rows),
+        "after_id": after_id,
+        "items": items,
+    }
+
+
+@router.get(
+    "/orphans",
+    dependencies=[Depends(require_perm("media.read"))],
+    summary="Preview orphaned media",
+    description="Non-destructive preview report of unused media older than grace_sec.",
+)
+async def preview_orphaned_media(
+    grace_sec: int = Query(3600, ge=0),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    mngr: SystemMediaMngr = Depends(get_media_mngr),
+) -> dict:
+    offset = (page - 1) * page_size
+    orphans, total = await mngr.preview_orphans(grace_sec=grace_sec, limit=page_size, offset=offset)
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "grace_sec": grace_sec,
+        "items": [Media.from_model(m) for m in orphans],
+    }
+
 @router.post(
     "/cleanup",
     dependencies=[Depends(require_perm("media.cleanup"))],

@@ -137,6 +137,13 @@ class MediaJobEvents:
         if now - self._last_sweep < _SWEEP_INTERVAL_SEC:
             return
         self._last_sweep = now
+        sweep_lock = True
+        try:
+            sweep_lock = await self.vk.set("lock:billing:sweep_stale", "1", nx=True, ex=int(_SWEEP_INTERVAL_SEC))
+        except Exception:
+            sweep_lock = True
+        if not sweep_lock:
+            return
         try:
             async with self.sm() as session:
                 mngr = WorkerJobsMngr(session)
