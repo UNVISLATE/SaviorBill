@@ -12,10 +12,15 @@ export default defineConfig([
   // fill-picker — вендорный color picker, поставленный через shadcn CLI
   // (amplo.ale.design). Это чужой код: правки в нём затрутся при следующем
   // обновлении компонента, поэтому под наши правила его не подгоняем.
+  //
+  // animate-ui — компоненты анимаций и примитивы radix из animate-ui (vendor).
   globalIgnores([
     'dist',
     'примерыизсшм',
     'src/components/shadsnui/fill-picker',
+    'src/components/animate-ui',
+    'src/hooks/use-controlled-state.tsx',
+    'src/lib/get-strict-context.tsx',
   ]),
   {
     files: ['**/*.{ts,tsx}'],
@@ -27,6 +32,14 @@ export default defineConfig([
     ],
     languageOptions: {
       globals: globals.browser,
+    },
+    rules: {
+      'react-refresh/only-export-components': 'off',
+      'react-hooks/set-state-in-effect': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'warn',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
     },
   },
 ])
