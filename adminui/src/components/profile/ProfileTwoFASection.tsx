@@ -143,57 +143,66 @@ export function ProfileTwoFASection() {
   if (status?.enabled) {
     return (
       <div className="space-y-4">
-        <Alert>
-          <ShieldCheck className="size-4" />
-          <AlertTitle>Двухфакторная аутентификация включена</AlertTitle>
-          <AlertDescription>
-            Осталось кодов восстановления: {status.recovery_codes_left}.
-            {status.required && " Для вашей роли 2FA обязательна настройкой инстанса — отключить не получится, пока это требование не снимет владелец/админ."}
-          </AlertDescription>
-        </Alert>
-        {!status.required && (
-          <>
-            {!disableOpen ? (
-              <Button variant="outline" onClick={() => setDisableOpen(true)}>
-                <ShieldOff className="size-4" /> Отключить 2FA
+        <div className="flex flex-col gap-4 rounded-lg border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <ShieldCheck className="mt-0.5 size-5 shrink-0 text-emerald-500" />
+            <div className="space-y-0.5">
+              <h4 className="text-sm font-semibold tracking-tight">
+                Двухфакторная аутентификация включена
+              </h4>
+              <p className="text-xs text-muted-foreground">
+                Осталось кодов восстановления: {status.recovery_codes_left}.
+                {status.required &&
+                  " Для вашей роли 2FA обязательна настройкой инстанса — отключить невозможно."}
+              </p>
+            </div>
+          </div>
+          {!status.required && !disableOpen && (
+            <Button
+              variant="outline"
+              className="shrink-0 border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => setDisableOpen(true)}
+            >
+              <ShieldOff className="mr-1.5 size-4" /> Отключить 2FA
+            </Button>
+          )}
+        </div>
+
+        {!status.required && disableOpen && (
+          <div className="space-y-3 rounded-md border p-4">
+            <p className="text-sm text-muted-foreground">
+              Подтвердите паролем (или кодом 2FA/восстановления, если у
+              аккаунта нет пароля).
+            </p>
+            <Field>
+              <FieldLabel htmlFor="disable-pass">Текущий пароль</FieldLabel>
+              <Input
+                id="disable-pass"
+                type="password"
+                value={disablePassword}
+                onChange={(e) => setDisablePassword(e.target.value)}
+              />
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="disable-code">…или код 2FA/восстановления</FieldLabel>
+              <Input
+                id="disable-code"
+                value={disableCode}
+                onChange={(e) => setDisableCode(e.target.value)}
+              />
+            </Field>
+            <div className="flex gap-2">
+              <Button
+                variant="destructive"
+                disabled={disable.isPending || (!disablePassword && !disableCode)}
+                onClick={() => disable.mutate()}
+              >
+                {disable.isPending && <Loader2 className="size-4 animate-spin" />}
+                Отключить
               </Button>
-            ) : (
-              <div className="space-y-3 rounded-md border p-3">
-                <p className="text-sm text-muted-foreground">
-                  Подтвердите паролем (или кодом 2FA/восстановления, если у
-                  аккаунта нет пароля).
-                </p>
-                <Field>
-                  <FieldLabel htmlFor="disable-pass">Текущий пароль</FieldLabel>
-                  <Input
-                    id="disable-pass"
-                    type="password"
-                    value={disablePassword}
-                    onChange={(e) => setDisablePassword(e.target.value)}
-                  />
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="disable-code">…или код 2FA/восстановления</FieldLabel>
-                  <Input
-                    id="disable-code"
-                    value={disableCode}
-                    onChange={(e) => setDisableCode(e.target.value)}
-                  />
-                </Field>
-                <div className="flex gap-2">
-                  <Button
-                    variant="destructive"
-                    disabled={disable.isPending || (!disablePassword && !disableCode)}
-                    onClick={() => disable.mutate()}
-                  >
-                    {disable.isPending && <Loader2 className="size-4 animate-spin" />}
-                    Отключить
-                  </Button>
-                  <Button variant="ghost" onClick={() => setDisableOpen(false)}>Отмена</Button>
-                </div>
-              </div>
-            )}
-          </>
+              <Button variant="ghost" onClick={() => setDisableOpen(false)}>Отмена</Button>
+            </div>
+          </div>
         )}
       </div>
     )
@@ -261,19 +270,29 @@ export function ProfileTwoFASection() {
 
   return (
     <div className="space-y-4">
-      <Alert>
-        <ShieldOff className="size-4" />
-        <AlertTitle>Двухфакторная аутентификация отключена</AlertTitle>
-        <AlertDescription>
-          {status?.required
-            ? "Для вашей роли она обязательна настройкой инстанса — включите, чтобы не потерять доступ к действиям в админке."
-            : "Дополнительная защита входа кодом из приложения-аутентификатора."}
-        </AlertDescription>
-      </Alert>
-      <Button disabled={startSetup.isPending} onClick={() => startSetup.mutate()}>
-        {startSetup.isPending && <Loader2 className="size-4 animate-spin" />}
-        Включить 2FA
-      </Button>
+      <div className="flex flex-col gap-4 rounded-lg border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-start gap-3">
+          <ShieldOff className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
+          <div className="space-y-0.5">
+            <h4 className="text-sm font-semibold tracking-tight">
+              Двухфакторная аутентификация отключена
+            </h4>
+            <p className="text-xs text-muted-foreground">
+              {status?.required
+                ? "Для вашей роли она обязательна настройкой инстанса — включите, чтобы не потерять доступ к действиям в админке."
+                : "Дополнительная защита входа кодом из приложения-аутентификатора."}
+            </p>
+          </div>
+        </div>
+        <Button
+          className="shrink-0 bg-primary text-primary-foreground hover:bg-primary/90"
+          disabled={startSetup.isPending}
+          onClick={() => startSetup.mutate()}
+        >
+          {startSetup.isPending && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+          Включить 2FA
+        </Button>
+      </div>
     </div>
   )
 }

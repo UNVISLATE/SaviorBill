@@ -1,9 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Laptop, ShieldOff, Smartphone } from "lucide-react"
+import { Laptop, ShieldOff, Smartphone, Tv } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { toastError, toastSuccess } from "@/lib/toast"
+import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
 import { Skeleton } from "@/components/shadsnui/skeleton"
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "@/components/shadsnui/empty"
@@ -18,20 +19,77 @@ interface SessionOut {
   is_current: boolean
 }
 
-function deviceLabel(ua: string | null): string {
-  if (!ua) return "Неизвестное устройство"
-  if (/mobile|android|iphone/i.test(ua)) return "Мобильное устройство"
-  return "Компьютер"
+interface DeviceInfo {
+  title: string
+  icon: "pc" | "phone" | "tv"
+}
+
+export function parseDeviceInfo(ua: string | null): DeviceInfo {
+  if (!ua) return { title: "Неизвестное устройство", icon: "pc" }
+  const lower = ua.toLowerCase()
+
+  if (
+    lower.includes("android tv") ||
+    lower.includes("smart-tv") ||
+    lower.includes("smarttv") ||
+    lower.includes("googletv") ||
+    lower.includes("tizen") ||
+    lower.includes("webos")
+  ) {
+    return { title: "Android TV / Smart TV", icon: "tv" }
+  }
+
+  if (lower.includes("iphone")) {
+    const match = ua.match(/OS (\d+[._]\d+)/)
+    const ver = match ? ` iOS ${match[1].replace("_", ".")}` : " iOS"
+    return { title: `iPhone (${ver.trim()})`, icon: "phone" }
+  }
+
+  if (lower.includes("ipad")) {
+    return { title: "iPad (iPadOS)", icon: "phone" }
+  }
+
+  if (lower.includes("android")) {
+    const match = ua.match(/Android (\d+(\.\d+)?)/)
+    const ver = match ? ` ${match[1]}` : ""
+    return { title: `Android${ver}`, icon: "phone" }
+  }
+
+  if (
+    lower.includes("windows nt 10.0") ||
+    lower.includes("windows nt 11.0") ||
+    lower.includes("windows nt 6.3") ||
+    lower.includes("windows")
+  ) {
+    return { title: "PC (Windows)", icon: "pc" }
+  }
+
+  if (lower.includes("macintosh") || lower.includes("mac os x")) {
+    return { title: "Mac (macOS)", icon: "pc" }
+  }
+
+  if (lower.includes("linux")) {
+    return { title: "PC (Linux)", icon: "pc" }
+  }
+
+  return { title: "Компьютер", icon: "pc" }
 }
 
 function fmt(value: string): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime())
     ? "Дата неизвестна"
-    : date.toLocaleString("ru-RU")
+    : date.toLocaleString("ru-RU", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
 }
 
-/** Активные сессии пользователя — IP + устройство из durable auth state. */
+/** Активные сессии пользователя — подробные устройства, запрет отзыва текущей сессии. */
 export function ProfileSessionsSection({
   userId,
   mode = "view",
@@ -46,29 +104,19 @@ export function ProfileSessionsSection({
 
   const { data, isLoading } = useQuery({
     queryKey: [mode === "own" ? "my-sessions" : "admin-user-sessions", userId],
-    queryFn: async () =>
-      (await api.get<SessionOut[]>(basePath)).data,
+    queryFn: async () => (await api.get<SessionOut[]>(basePath)).data,
     enabled: allowed && (mode === "own" || !!userId),
   })
 
   const revoke = useMutation({
-    mutationFn: async (sessionId: string) =>
-      api.delete(`${basePath}/${sessionId}`),
+    mutationFn: async (sessionId: string) => api.delete(`${basePath}/${sessionId}`),
     onSuccess: () => {
       toastSuccess("Сессия завершена")
-      void qc.invalidateQueries({ queryKey: [mode === "own" ? "my-sessions" : "admin-user-sessions", userId] })
+      void qc.invalidateQueries({
+        queryKey: [mode === "own" ? "my-sessions" : "admin-user-sessions", userId],
+      })
     },
     onError: () => toastError("Не удалось завершить сессию"),
-  })
-
-  const revokeAll = useMutation({
-    mutationFn: async () =>
-      api.post(mode === "own" ? "/v1/user/me/sessions/revoke-all" : `/v1/admin/users/${userId}/sessions/revoke-all`),
-    onSuccess: () => {
-      toastSuccess("Все сессии завершены")
-      void qc.invalidateQueries({ queryKey: [mode === "own" ? "my-sessions" : "admin-user-sessions", userId] })
-    },
-    onError: () => toastError("Не удалось завершить все сессии"),
   })
 
   if (!allowed) {
@@ -86,8 +134,8 @@ export function ProfileSessionsSection({
   if (isLoading) {
     return (
       <div className="space-y-2">
-        <Skeleton className="h-14 w-full" />
-        <Skeleton className="h-14 w-full" />
+        <Skeleton className="h-16 w-full rounded-lg" />
+        <Skeleton className="h-16 w-full rounded-lg" />
       </div>
     )
   }
@@ -99,42 +147,42 @@ export function ProfileSessionsSection({
           <Laptop className="size-8 text-muted-foreground" />
         </EmptyMedia>
         <EmptyTitle>Нет активных сессий</EmptyTitle>
-        <EmptyDescription>Пользователь сейчас не авторизован ни на одном устройстве.</EmptyDescription>
+        <EmptyDescription>
+          Пользователь сейчас не авторизован ни на одном устройстве.
+        </EmptyDescription>
       </Empty>
     )
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex justify-end">
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={revokeAll.isPending}
-          onClick={() => revokeAll.mutate()}
-        >
-          Завершить все
-        </Button>
-      </div>
+    <div className="space-y-2.5">
       {data.map((s) => {
-        const isMobile = /mobile|android|iphone/i.test(s.user_agent ?? "")
+        const dev = parseDeviceInfo(s.user_agent)
         return (
           <div
             key={s.session_id}
-            className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm"
+            className="flex items-center justify-between gap-3 rounded-lg border bg-card p-3.5 text-sm transition-colors"
           >
-            <div className="flex min-w-0 items-start gap-2.5">
-              {isMobile ? (
-                <Smartphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              ) : (
-                <Laptop className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              )}
-              <div className="min-w-0">
-                <p className="font-medium">{deviceLabel(s.user_agent)}</p>
-                {s.is_current && (
-                  <p className="text-xs font-medium text-primary">Текущая сессия</p>
+            <div className="flex min-w-0 items-start gap-3">
+              <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                {dev.icon === "tv" ? (
+                  <Tv className="size-4" />
+                ) : dev.icon === "phone" ? (
+                  <Smartphone className="size-4" />
+                ) : (
+                  <Laptop className="size-4" />
                 )}
-                <p className="truncate text-xs text-muted-foreground">
+              </div>
+              <div className="min-w-0 space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-foreground">{dev.title}</span>
+                  {s.is_current && (
+                    <Badge variant="outline" className="border-primary/40 text-primary font-normal text-[11px]">
+                      текущая сессия
+                    </Badge>
+                  )}
+                </div>
+                <p className="truncate text-xs text-muted-foreground font-mono">
                   {s.ip ?? "IP неизвестен"} · вход {fmt(s.created_at)}
                 </p>
                 <p className="truncate text-xs text-muted-foreground">
@@ -142,14 +190,19 @@ export function ProfileSessionsSection({
                 </p>
               </div>
             </div>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={revoke.isPending}
-              onClick={() => revoke.mutate(s.session_id)}
-            >
-              Завершить
-            </Button>
+
+            {/* Активную сессию нельзя завершить из списка */}
+            {!s.is_current && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="shrink-0 text-xs"
+                disabled={revoke.isPending}
+                onClick={() => revoke.mutate(s.session_id)}
+              >
+                Завершить
+              </Button>
+            )}
           </div>
         )
       })}

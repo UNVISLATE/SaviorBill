@@ -1,7 +1,8 @@
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { MoreHorizontal, Plus, Trash2 } from "lucide-react"
 
+import { useNavigate, useParams } from "react-router-dom"
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
@@ -13,21 +14,6 @@ import { StatCard } from "@/components/charts/StatCard"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
 import { Input } from "@/components/shadsnui/input"
-import { Label } from "@/components/shadsnui/label"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/shadsnui/select"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/shadsnui/dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -92,6 +78,8 @@ const PERIODS = [
   { value: "90", label: "90 дней", statKey: "registered_90d" },
 ] as const
 
+const USER_REG_SERIES = [{ key: "count", label: "Регистраций", color: "#009080" }] as const
+
 /** Карточка "регистрации": группа кнопок-периодов над графиком (через
  * общий ChartCard), под группой — сумма за выбранный период. */
 function RegistrationsCard({ stats }: { stats: UserStats | undefined }) {
@@ -115,7 +103,7 @@ function RegistrationsCard({ stats }: { stats: UserStats | undefined }) {
       xKey="day"
       xTickFormatter={(d) => d.slice(5)}
       tooltipLabelFormatter={(d) => `Дата: ${d}`}
-      series={[{ key: "count", label: "Регистраций", color: "#009080" }]}
+      series={USER_REG_SERIES as unknown as { key: string; label: string; color: string }[]}
       periods={PERIODS}
       period={period}
       onPeriodChange={(v) => setPeriod(v as typeof period)}
@@ -123,102 +111,6 @@ function RegistrationsCard({ stats }: { stats: UserStats | undefined }) {
       totalValue={stats?.[current.statKey]}
       height={160}
     />
-  )
-}
-
-function CreateUserDialog({
-  open,
-  onOpenChange,
-  roles,
-}: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  roles: Role[] | undefined
-}) {
-  const [login, setLogin] = useState("")
-  const [password, setPassword] = useState("")
-  const [email, setEmail] = useState("")
-  const [roleId, setRoleId] = useState<string>("")
-  const qc = useQueryClient()
-
-  const assignable = roles?.filter((r) => r.key !== "owner") ?? []
-
-  const reset = () => {
-    setLogin("")
-    setPassword("")
-    setEmail("")
-    setRoleId("")
-  }
-
-  const create = useMutation({
-    mutationFn: async () =>
-      api.post("/v1/admin/users", {
-        login,
-        password,
-        email: email || undefined,
-        role_id: roleId ? Number(roleId) : undefined,
-      }),
-    onSuccess: () => {
-      toastSuccess(`Пользователь «${login}» создан`)
-      onOpenChange(false)
-      reset()
-      void qc.invalidateQueries({ queryKey: ["admin-users"] })
-      void qc.invalidateQueries({ queryKey: ["admin-users-stats"] })
-      void qc.invalidateQueries({ queryKey: ["admin-users-stats-by-day"] })
-    },
-    onError: (e: unknown) => {
-      toastError("Не удалось создать пользователя", getErrorDetail(e))
-    },
-  })
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset() }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Новый пользователь</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label>Логин</Label>
-            <Input value={login} onChange={(e) => setLogin(e.target.value)} autoFocus />
-          </div>
-          <div className="space-y-1">
-            <Label>Пароль</Label>
-            <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label>Email (опционально)</Label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label>Роль</Label>
-            <Select value={roleId} onValueChange={(v) => setRoleId(v ?? "")}>
-              <SelectTrigger>
-                <SelectValue placeholder="user (по умолчанию)" />
-              </SelectTrigger>
-              <SelectContent>
-                {assignable.map((r) => (
-                  <SelectItem key={r.id} value={String(r.id)}>
-                    {r.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Отмена
-          </Button>
-          <Button
-            disabled={login.length < 3 || password.length < 8 || create.isPending}
-            onClick={() => create.mutate()}
-          >
-            Создать
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   )
 }
 
@@ -283,13 +175,43 @@ function DeleteUserDialog({
 }
 
 export function UsersPage() {
-  const { openUserProfile } = useProfileDialog()
+  const { openUserProfile, openCreateUser, isOpen } = useProfileDialog()
+  const { userId: routeUserId } = useParams<{ userId?: string }>()
+  const navigate = useNavigate()
   const { can } = useAuth()
   const table = useDataTableQuery()
   const [deleteTarget, setDeleteTarget] = useState<User | null>(null)
-  const [creating, setCreating] = useState(false)
   const canDelete = can("admin.user.delete")
   const canCreate = can("admin.user.create")
+
+  const wasOpenRef = useRef(false)
+  const lastOpenedIdRef = useRef<number | null>(null)
+
+  // Deep-linking: если роут /users/:userId — автоматически открываем карточку
+  useEffect(() => {
+    if (routeUserId) {
+      const id = Number(routeUserId)
+      if (!Number.isNaN(id) && id > 0 && lastOpenedIdRef.current !== id) {
+        lastOpenedIdRef.current = id
+        openUserProfile(id)
+      }
+    } else {
+      lastOpenedIdRef.current = null
+    }
+  }, [routeUserId, openUserProfile])
+
+  // Синхронизация URL при закрытии модального окна профиля
+  useEffect(() => {
+    if (isOpen) {
+      wasOpenRef.current = true
+    } else if (wasOpenRef.current) {
+      wasOpenRef.current = false
+      lastOpenedIdRef.current = null
+      if (routeUserId) {
+        navigate("/users", { replace: true })
+      }
+    }
+  }, [isOpen, routeUserId, navigate])
 
   const { data: roles } = useQuery({
     queryKey: ["admin-roles-lookup"],
@@ -388,7 +310,7 @@ export function UsersPage() {
       <div className="flex items-baseline justify-between">
         <h1 className="text-xl font-semibold">Пользователи</h1>
         {canCreate && (
-          <Button size="sm" onClick={() => setCreating(true)}>
+          <Button size="sm" onClick={() => openCreateUser()}>
             <Plus className="size-4" /> Создать
           </Button>
         )}
@@ -414,7 +336,7 @@ export function UsersPage() {
         isLoading={isLoading}
         isError={isError}
         getRowId={(u) => u.id}
-        onRowClick={(u) => openUserProfile(u.id)}
+        onRowClick={(u) => { openUserProfile(u.id); navigate(`/users/${u.id}`) }}
         sort={table.sort}
         onToggleSort={table.toggleSort}
         searchValue={table.searchInput}
@@ -437,7 +359,6 @@ export function UsersPage() {
         />
       )}
 
-      <CreateUserDialog open={creating} onOpenChange={setCreating} roles={roles} />
     </div>
   )
 }

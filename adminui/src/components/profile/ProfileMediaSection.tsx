@@ -27,6 +27,7 @@ import { useInvalidateUserProfile } from "@/hooks/use-user-profile"
 import { useAuth } from "@/hooks/use-auth"
 import { useMediaStatusStream } from "@/hooks/use-media-status-ws"
 import { toastError, toastSuccess } from "@/lib/toast"
+import { cn } from "@/lib/utils.ts"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
 import {
@@ -420,15 +421,23 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
   const previewItem = previewIndex != null ? readyItems[previewIndex] : null
 
   const uploadTile = isOwn ? (
-    <button
-      type="button"
-      onClick={() => !quotaReached && fileInputRef.current?.click()}
-      disabled={quotaReached}
-      className="group relative flex aspect-square flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+    <label
+      htmlFor="profile-media-file-input"
+      className={cn(
+        "group relative flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground",
+        quotaReached && "pointer-events-none cursor-not-allowed opacity-50",
+      )}
+      onClick={(e) => {
+        if (quotaReached) {
+          e.preventDefault()
+          return
+        }
+        fileInputRef.current?.click()
+      }}
     >
       <Plus className="size-5" />
       <span className="text-[10px]">Загрузить</span>
-    </button>
+    </label>
   ) : null
 
   const hasAnything = cells.length > 0
@@ -452,11 +461,12 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
     <div className="flex h-full min-h-[320px] flex-col space-y-3">
       {isOwn && (
         <input
+          id="profile-media-file-input"
           ref={fileInputRef}
           type="file"
           accept="image/*,video/*"
           multiple
-          className="hidden"
+          className="sr-only"
           onChange={(e) => {
             if (e.target.files?.length) startUploads(e.target.files)
             e.target.value = ""
@@ -627,6 +637,15 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
           }
           onNext={
             readyItems.length > 1 ? () => setPreviewIndex((i) => ((i ?? 0) + 1) % readyItems.length) : undefined
+          }
+          mediaUrl={previewItem.media?.url ?? previewItem.url}
+          onDelete={
+            canDelete
+              ? () => {
+                  del.mutate(previewItem)
+                  setPreviewIndex(null)
+                }
+              : undefined
           }
           caption={
             <>

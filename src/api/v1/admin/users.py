@@ -8,6 +8,7 @@ from decimal import Decimal
 import valkey.asyncio as valkey
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
+from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
@@ -29,7 +30,7 @@ from models.user import UserModel, UserMngr
 from models.user_oauth import UserOauthModel, UserOauthMngr
 from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel
-from schemas.auth import Account, AvatarSet
+from schemas.auth import Account, AvatarSet, _media_url
 from schemas.orders import OrderAdmin
 from schemas.page import Page
 from schemas.payments import PaymentAdmin
@@ -43,6 +44,7 @@ from schemas.user import (
     UserCreateAdmin,
     UserDetail,
     UserPatch,
+    UserReferralItem,
     UserStats,
 )
 from services.account import account_response, release_old_avatar
@@ -216,6 +218,8 @@ async def create_user(
         role_key = role.key
 
     acc = await mngr.create(body.login, hash_pass(body.password), body.email, role_key=role_key)
+    if body.avatar_media_id is not None:
+        acc.avatar_media_id = body.avatar_media_id
     await audit(
         session,
         action="user.create",
@@ -273,6 +277,36 @@ async def user_profile_admin(
 ) -> Account:
     acc = await _get_user(session, user_id)
     return await account_response(acc, session)
+
+
+@router.get(
+    "/{user_id}/referrals",
+    response_model=list[UserReferralItem],
+    dependencies=[Depends(require_perm("users.read"))],
+    summary="User referrals list",
+)
+async def user_referrals_admin(
+    user_id: int,
+    session: AsyncSession = Depends(get_db_session),
+) -> list[UserReferralItem]:
+    """Список пользователей, зарегистрированных по реферальному коду указанного пользователя."""
+    acc = await _get_user(session, user_id)
+    stmt = (
+        select(UserModel)
+        .options(joinedload(UserModel.avatar_media))
+        .where(UserModel.referred_by == acc.id)
+        .order_by(UserModel.created_at.desc())
+    )
+    users = (await session.scalars(stmt)).unique().all()
+    return [
+        UserReferralItem(
+            id=u.id,
+            login=u.login,
+            created_at=u.created_at,
+            avatar_url=_media_url(u.avatar_media.token if u.avatar_media else None),
+        )
+        for u in users
+    ]
 
 
 @router.patch(
@@ -518,6 +552,30 @@ async def user_oauth(
         .order_by(UserOauthModel.id)
     )
     return [OAuthConnAdmin.from_model(r) for r in rows]
+
+
+@router.delete(
+    "/{user_id}/oauth/{provider}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_perm("admin.user.edit"))],
+    summary="Unlink user OAuth provider (admin)",
+)
+async def admin_unlink_oauth(
+    user_id: int,
+    provider: str,
+    session: AsyncSession = Depends(get_db_session),
+) -> None:
+    await _get_user(session, user_id)
+    conn = await session.scalar(
+        select(UserOauthModel).where(
+            UserOauthModel.account_id == user_id,
+            UserOauthModel.provider == provider,
+        )
+    )
+    if conn is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "connection not found")
+    await session.delete(conn)
+    await session.commit()
 
 
 @router.get(

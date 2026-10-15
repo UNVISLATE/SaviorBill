@@ -34,14 +34,31 @@ class User(BaseModel):
         return cls.model_validate(m)
 
 
+class UserReferralItem(BaseModel):
+    """Информация о приглашённом пользователе."""
+
+    id: int
+    login: str
+    created_at: datetime
+    avatar_url: str | None = None
+
+
 class UserCreateAdmin(BaseModel):
     """Create a user account (admin)."""
 
-    login: str = Field(min_length=3, max_length=64)
+    login: str = Field(
+        min_length=3,
+        max_length=64,
+        pattern=r"^[a-zA-Zа-яА-ЯёЁ0-9_.-]+$",
+        description="Login (3–64 chars: latin, cyrillic, digits, _, ., -)",
+    )
     password: str = Field(min_length=8, max_length=256)
     email: OptNormEmail = Field(default=None, max_length=255)
     role_id: int | None = Field(
         default=None, description="Starting role; defaults to 'user' if omitted"
+    )
+    avatar_media_id: int | None = Field(
+        default=None, description="Optional initial avatar media ID"
     )
 
 

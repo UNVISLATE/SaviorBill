@@ -1,9 +1,10 @@
 import { useQuery } from "@tanstack/react-query"
-import { CreditCard, ShieldOff } from "lucide-react"
+import { CreditCard, ExternalLink, ShieldOff } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { Badge } from "@/components/shadsnui/badge"
+import { buttonVariants } from "@/components/shadsnui/button"
 import { Skeleton } from "@/components/shadsnui/skeleton"
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "@/components/shadsnui/empty"
 
@@ -14,6 +15,7 @@ interface Payment {
   currency: string
   status: string
   target: string
+  payment_url?: string | null
   created_at: string
 }
 
@@ -105,6 +107,16 @@ export function ProfilePaymentsSection({
               {p.amount} {p.currency}
             </span>
             <Badge variant={STATUS_VARIANT[p.status] ?? "outline"}>{p.status}</Badge>
+            {p.status === "pending" && p.payment_url && (
+              <a
+                href={p.payment_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={buttonVariants({ variant: "outline", size: "sm", className: "text-xs" })}
+              >
+                <ExternalLink className="mr-1 size-3" /> Оплатить
+              </a>
+            )}
           </div>
         </div>
       ))}

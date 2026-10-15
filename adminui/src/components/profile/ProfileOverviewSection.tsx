@@ -1,14 +1,25 @@
-import { useRef, useState, type ChangeEvent, type DragEvent } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { Camera, Copy, KeyRound, Loader2, MoreVertical, Users2, Wallet } from "lucide-react"
+import { useState, useRef, type ChangeEvent, type DragEvent } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import {
+  AlertTriangle,
+  Camera,
+  Copy,
+  KeyRound,
+  Trash2,
+  Wallet,
+} from "lucide-react"
 
-import { useProfileDialog } from "@/hooks/use-profile-dialog"
-import { useInvalidateUserProfile, useUserProfile, type UserProfile } from "@/hooks/use-user-profile"
-import { useAuth } from "@/hooks/use-auth"
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
+import { toastError, toastSuccess } from "@/lib/toast.ts"
+import { useAuth } from "@/hooks/use-auth.tsx"
+import { useProfileDialog } from "@/hooks/use-profile-dialog"
+import {
+  useUserProfile,
+  useInvalidateUserProfile,
+  type UserProfile,
+} from "@/hooks/use-user-profile.ts"
 import { uploadOwnMedia } from "@/api/media-upload.ts"
-import { toastError, toastSuccess } from "@/lib/toast"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/shadsnui/avatar"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
@@ -21,12 +32,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/shadsnui/select"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/shadsnui/dropdown-menu"
 import {
   Dialog,
   DialogContent,
@@ -44,16 +49,31 @@ interface Role {
   name: string
 }
 
-function initials(login: string): string {
-  return login.slice(0, 2).toUpperCase()
+interface OAuthProvider {
+  slug: string
+  title: string
+  icon_url: string | null
 }
 
-function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("ru-RU", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  })
+interface UserOAuthConn {
+  id: number
+  provider: string
+  subject: string
+  email?: string | null
+  created_at?: string
+}
+
+const KNOWN_PROVIDERS: Record<string, { title: string; icon: string }> = {
+  google: { title: "Google", icon: "🌐" },
+  telegram: { title: "Telegram", icon: "✈️" },
+  discord: { title: "Discord", icon: "💬" },
+  vk: { title: "ВКонтакте", icon: "🔵" },
+  github: { title: "GitHub", icon: "🐙" },
+  yandex: { title: "Яндекс", icon: "🔴" },
+}
+
+function initials(login: string): string {
+  return login.slice(0, 2).toUpperCase()
 }
 
 /** Диалог пополнения/списания баланса (обычного или бонусного) — использует
@@ -67,53 +87,70 @@ function BalanceAdjustDialog({
   userId: number
   kind: "main" | "bonus"
   open: boolean
-  onOpenChange: (v: boolean) => void
+  onOpenChange: (open: boolean) => void
 }) {
-  const qc = useQueryClient()
   const [amount, setAmount] = useState("")
   const [reason, setReason] = useState("")
+  const qc = useQueryClient()
 
   const adjust = useMutation({
-    mutationFn: async () =>
-      api.post(`/v1/admin/users/${userId}/balance`, { amount, kind, reason }),
+    mutationFn: async () => {
+      const num = Number(amount)
+      if (Number.isNaN(num) || num === 0) throw new Error("Укажите сумму (не ноль)")
+      await api.post(`/v1/admin/users/${userId}/balance`, {
+        delta: num.toString(),
+        is_bonus: kind === "bonus",
+        reason: reason.trim(),
+      })
+    },
     onSuccess: () => {
-      toastSuccess(kind === "main" ? "Баланс обновлён" : "Бонусный баланс обновлён")
+      const num = Number(amount)
+      const actionText = num > 0 ? "Начислено" : "Списано"
+      toastSuccess(
+        `${actionText} ${Math.abs(num)} ₽ на ${kind === "bonus" ? "бонусный" : "основной"} баланс`,
+      )
       onOpenChange(false)
       setAmount("")
       setReason("")
-      void qc.invalidateQueries({ queryKey: ["admin-user-profile", userId] })
+      qc.invalidateQueries({ queryKey: ["admin-user-profile", userId] })
+      qc.invalidateQueries({ queryKey: ["admin-users"] })
     },
     onError: (e: unknown) => {
-      toastError("Не удалось изменить баланс", getErrorDetail(e))
+      toastError("Ошибка изменения баланса", getErrorDetail(e))
     },
   })
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>
-            {kind === "main" ? "Изменить баланс" : "Изменить бонусный баланс"}
+            {kind === "bonus" ? "Бонусный баланс" : "Основной баланс"}
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
           <Field>
-            <FieldLabel>Сумма (можно отрицательную — списание)</FieldLabel>
+            <FieldLabel htmlFor="balance-delta-amount">Сумма (₽)</FieldLabel>
             <Input
+              id="balance-delta-amount"
               type="number"
               step="0.01"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              placeholder="например, 500 или -100"
+              placeholder="+100.00 или -50.00"
               autoFocus
             />
+            <p className="text-[11px] text-muted-foreground">
+              Положительное число — начислить, отрицательное со знаком минус — списать.
+            </p>
           </Field>
           <Field>
-            <FieldLabel>Причина (для аудита)</FieldLabel>
+            <FieldLabel htmlFor="balance-delta-reason">Причина (для аудита)</FieldLabel>
             <Input
+              id="balance-delta-reason"
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="например, компенсация за инцидент"
+              placeholder="ручная корректировка"
             />
           </Field>
         </div>
@@ -122,7 +159,7 @@ function BalanceAdjustDialog({
             Отмена
           </Button>
           <Button
-            disabled={!amount || !reason.trim() || adjust.isPending}
+            disabled={!amount || Number(amount) === 0 || Number.isNaN(Number(amount)) || !reason.trim() || adjust.isPending}
             onClick={() => adjust.mutate()}
           >
             Применить
@@ -136,9 +173,11 @@ function BalanceAdjustDialog({
 export function ProfileOverviewSection({
   mode,
   userId,
+  onDeleteClick,
 }: {
   mode: "own" | "view"
   userId?: number
+  onDeleteClick?: () => void
 }) {
   const isOwn = mode === "own"
   const qc = useQueryClient()
@@ -163,6 +202,7 @@ export function ProfileOverviewSection({
   const canManageAvatar = isOwn || can("admin.media.manage_any")
   const canEditRole = !isOwn && can("admin.user.role.edit")
   const canAdjustBalance = !isOwn && can("admin.user.balance.edit")
+  const canDelete = can("admin.user.delete")
   const isOwnerTarget = !isOwn && profile?.role === "owner"
 
   const { data: roles } = useQuery({
@@ -173,7 +213,6 @@ export function ProfileOverviewSection({
   })
   const assignableRoles = roles?.filter((r) => r.key !== "owner") ?? []
 
-  const { me } = useAuth()
   const { setBusy } = useProfileDialog()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -192,10 +231,6 @@ export function ProfileOverviewSection({
   const [idCopied, setIdCopied] = useState(false)
   const [topUpKind, setTopUpKind] = useState<"main" | "bonus" | null>(null)
 
-  // Синхронизируем локальные поля формы, когда профиль подгрузился впервые
-  // (не на каждый рендер — иначе затирали бы то, что юзер уже вводит).
-  // Ключ синхронизации включает id — при переключении на другой чужой
-  // профиль (view-режим) форма должна пересинхронизироваться.
   const [syncedFor, setSyncedFor] = useState<number | null>(null)
   if (profile && syncedFor !== profile.id) {
     setLogin(profile.login)
@@ -204,15 +239,19 @@ export function ProfileOverviewSection({
   }
 
   async function doUpload(file: File) {
-    if (!isOwn) return
+    if (!isOwn && !canManageAvatar) return
     setUploadPct(0)
     setBusy(true)
     try {
       const { mediaId } = await uploadOwnMedia(file, {
         tag: "avatar",
-        onProgress: (p) => setUploadPct(Math.round((p.loaded / Math.max(p.total, 1)) * 100)),
+        onProgress: (p: { loaded: number; total: number }) => setUploadPct(Math.round((p.loaded / Math.max(p.total, 1)) * 100)),
       })
-      await api.put("/v1/user/me/avatar", { media_id: mediaId })
+      if (isOwn) {
+        await api.put("/v1/user/me/avatar", { media_id: mediaId })
+      } else if (userId) {
+        await api.put(`/v1/admin/users/${userId}/avatar`, { media_id: mediaId })
+      }
       invalidateProfile()
       toastSuccess("Аватар обновлён")
     } catch (err) {
@@ -222,6 +261,61 @@ export function ProfileOverviewSection({
       setBusy(false)
     }
   }
+
+  const { data: oauthProviders } = useQuery({
+    queryKey: ["oauth-providers"],
+    queryFn: async () => (await api.get<OAuthProvider[]>("/v1/oauth/providers")).data,
+    staleTime: 60_000,
+  })
+
+  const { data: userOauthConns, refetch: refetchConns } = useQuery({
+    queryKey: isOwn ? ["user-oauth"] : ["admin-user-oauth", userId],
+    queryFn: async () => {
+      const url = isOwn ? "/v1/user/oauth" : `/v1/admin/users/${userId}/oauth`
+      return (await api.get<UserOAuthConn[]>(url)).data
+    },
+    enabled: isOwn || !!userId,
+  })
+
+  const linkOAuth = async (providerSlug: string) => {
+    try {
+      const res = await api.get<{ authorize_url: string }>(`/v1/user/oauth/${providerSlug}/link`)
+      if (res.data.authorize_url) {
+        window.location.assign(res.data.authorize_url)
+      }
+    } catch (err) {
+      toastError("Не удалось инициировать привязку", getErrorDetail(err))
+    }
+  }
+
+  const unlinkOAuth = useMutation({
+    mutationFn: async (providerSlug: string) => {
+      if (isOwn) {
+        await api.delete(`/v1/user/oauth/${providerSlug}`)
+      } else if (userId) {
+        await api.delete(`/v1/admin/users/${userId}/oauth/${providerSlug}`)
+      }
+    },
+    onSuccess: () => {
+      toastSuccess("Привязка удалена")
+      void refetchConns()
+      invalidateProfile()
+    },
+    onError: (err) => {
+      toastError("Не удалось отвязать аккаунт", getErrorDetail(err))
+    },
+  })
+
+  const displayProviders = [
+    ...(oauthProviders ?? []),
+    ...(userOauthConns ?? [])
+      .filter((c) => !oauthProviders?.some((p) => p.slug === c.provider))
+      .map((c) => ({
+        slug: c.provider,
+        title: KNOWN_PROVIDERS[c.provider]?.title ?? c.provider,
+        icon_url: null,
+      })),
+  ]
 
   async function clearAvatar() {
     if (!userId && !isOwn) return
@@ -307,15 +401,32 @@ export function ProfileOverviewSection({
     }
   }
 
-  const referralLink = profile?.ref_code
-    ? `${window.location.origin}/r/${profile.ref_code}`
-    : null
+  const toggleActive = useMutation({
+    mutationFn: async () => {
+      if (!userId || !profile) return
+      await api.patch(`/v1/admin/users/${userId}`, { is_active: !profile.is_active })
+    },
+    onSuccess: () => {
+      invalidateProfile()
+      toastSuccess(profile?.is_active ? "Аккаунт заблокирован" : "Аккаунт разблокирован")
+    },
+    onError: (e) => toastError("Не удалось изменить статус", getErrorDetail(e)),
+  })
 
-  async function copyReferralLink() {
-    if (!referralLink) return
-    await navigator.clipboard.writeText(referralLink)
-    toastSuccess("Ссылка скопирована")
-  }
+  const revokeSessions = useMutation({
+    mutationFn: async () => {
+      if (isOwn) {
+        await api.delete("/v1/user/me/sessions")
+      } else if (userId) {
+        await api.delete(`/v1/admin/users/${userId}/sessions`)
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: isOwn ? ["user-sessions"] : ["admin-user-sessions", userId] })
+      toastSuccess("Все активные сессии завершены")
+    },
+    onError: (e) => toastError("Не удалось завершить сессии", getErrorDetail(e)),
+  })
 
   async function copyId() {
     if (!profile) return
@@ -339,104 +450,93 @@ export function ProfileOverviewSection({
     )
   }
 
-  const avatarMenu = (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <button type="button" className="absolute -right-1 -bottom-1 z-10">
-            <span className="flex size-6 items-center justify-center rounded-full bg-popover text-muted-foreground shadow ring-1 ring-foreground/10 hover:text-foreground">
-              <MoreVertical className="size-3.5" />
-            </span>
-          </button>
-        }
-      />
-      <DropdownMenuContent align="start">
-        {isOwn && (
-          <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
-            <Camera className="size-4" /> Загрузить фото
-          </DropdownMenuItem>
-        )}
-        {canManageAvatar && profile.avatar_url && (
-          <DropdownMenuItem variant="destructive" onClick={clearAvatar}>
-            Сбросить аватар
-          </DropdownMenuItem>
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
+  const currentRoleObj = roles?.find((r) => r.name === profile.role)
 
   return (
     <div className="space-y-6">
-      <div className="flex items-start gap-4">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
+      {/* Верхняя плашка: Аватар + Никнейм, ID, Роль + Баланс */}
+      <div className="flex items-center gap-4">
         <div
-          className={
-            "group relative shrink-0" + (isOwn ? " cursor-pointer" : "")
-          }
-          onClick={() => isOwn && uploadPct === null && fileInputRef.current?.click()}
+          className={`group relative size-16 shrink-0 rounded-full transition-all ${
+            (isOwn || canManageAvatar) ? "cursor-pointer" : ""
+          } ${dragOver ? "ring-2 ring-primary" : ""}`}
           onDragOver={(e) => {
-            if (!isOwn) return
+            if (!isOwn && !canManageAvatar) return
             e.preventDefault()
             setDragOver(true)
           }}
-          onDragLeave={() => isOwn && setDragOver(false)}
-          onDrop={isOwn ? handleDrop : undefined}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={handleDrop}
+          onClick={() => {
+            if ((isOwn || canManageAvatar) && uploadPct === null) fileInputRef.current?.click()
+          }}
+          title={isOwn || canManageAvatar ? "Нажмите для выбора файла или перетащите изображение" : undefined}
         >
-          <Avatar
-            className={
-              "size-20 ring-2 ring-offset-2 ring-offset-background transition-all " +
-              (dragOver ? "ring-primary" : "ring-transparent group-hover:ring-border")
-            }
-          >
-            {profile.avatar_url && <AvatarImage src={profile.avatar_url} alt="" />}
-            <AvatarFallback className="text-lg">
-              {initials(isOwn ? me?.login ?? profile.login : profile.login)}
+          <Avatar className="size-16 ring-2 ring-border/50 transition group-hover:ring-primary">
+            {profile.avatar_url && <AvatarImage src={profile.avatar_url} alt={profile.login} />}
+            <AvatarFallback className="bg-muted text-lg font-semibold">
+              {initials(profile.login)}
             </AvatarFallback>
           </Avatar>
-          {isOwn && (
-            <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/0 text-transparent transition-colors group-hover:bg-black/40 group-hover:text-white">
-              <Camera className="size-5" />
+
+          {(isOwn || canManageAvatar) && (
+            <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+              <Camera className="size-5 text-white" />
             </div>
           )}
-          {uploadPct !== null && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 rounded-full bg-background/85">
-              <Loader2 className="size-5 animate-spin text-primary" />
-              <span className="text-[10px] font-medium tabular-nums text-muted-foreground">
-                {uploadPct}%
-              </span>
-            </div>
+
+          {canManageAvatar && profile.avatar_url && (
+            <Button
+              type="button"
+              size="icon-xs"
+              variant="destructive"
+              className="absolute -bottom-1 -right-1 size-5 rounded-full shadow-sm"
+              title="Удалить аватар"
+              onClick={(e) => {
+                e.stopPropagation()
+                void clearAvatar()
+              }}
+            >
+              <Trash2 className="size-3" />
+            </Button>
           )}
-          {isOwn && (
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileChange}
-            />
-          )}
-          {(isOwn || canManageAvatar) && avatarMenu}
         </div>
 
-        <div className="min-w-0 flex-1 space-y-1.5 pt-0.5">
-          <div className="flex flex-wrap items-center gap-1.5">
+        <div className="min-w-0 flex-1 space-y-2">
+          {/* Строка 1: Логин + ID + Роль + Статус */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-base font-bold text-foreground tracking-tight sm:text-lg">
+              {profile.login}
+            </span>
+
             <button
               type="button"
               onClick={copyId}
-              className="flex items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground hover:text-foreground"
+              className="flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition hover:text-foreground"
               title="Скопировать ID"
             >
               ID: {profile.id}
               <Copy className="size-3" />
-              {idCopied && <span className="text-[10px]">скопировано</span>}
+              {idCopied && <span className="text-[10px] text-emerald-500">скопировано</span>}
             </button>
 
             {canEditRole ? (
               <Select
-                value={roles?.find((r) => r.name === profile.role)?.id.toString() ?? ""}
+                value={currentRoleObj?.id.toString() ?? ""}
                 onValueChange={(v) => v && handleRoleChange(v)}
               >
-                <SelectTrigger size="sm" className="h-6 w-auto gap-1 px-2 text-xs">
-                  <SelectValue placeholder={profile.role ?? "—"} />
+                <SelectTrigger size="sm" className="h-7 w-auto min-w-[120px] px-2 text-xs">
+                  <SelectValue placeholder={profile.role ?? "—"}>
+                    {currentRoleObj?.name ?? profile.role ?? "—"}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {assignableRoles.map((r) => (
@@ -448,65 +548,67 @@ export function ProfileOverviewSection({
               </Select>
             ) : (
               profile.role && (
-                <Badge variant="secondary">
+                <Badge variant={profile.role === "owner" ? "default" : "secondary"}>
                   {profile.role}
                   {isOwnerTarget && " — неприкасаема"}
                 </Badge>
               )
             )}
 
-            <Badge variant="outline" className="font-normal text-muted-foreground">
-              на платформе с {fmtDate(profile.created_at)}
-            </Badge>
-            <Badge variant="outline" className="font-normal text-muted-foreground">
-              обновлён {fmtDate(profile.updated_at)}
-            </Badge>
+            {!profile.is_active && (
+              <Badge variant="destructive">заблокирован</Badge>
+            )}
           </div>
-          {isOwn && uploadPct !== null && (
+
+          {/* Строка 2: Баланс + Бонусный баланс плашками (клик = открытие) */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div
+              role={canAdjustBalance && !isOwnerTarget ? "button" : undefined}
+              tabIndex={canAdjustBalance && !isOwnerTarget ? 0 : undefined}
+              onClick={() => {
+                if (canAdjustBalance && !isOwnerTarget) setTopUpKind("main")
+              }}
+              title={canAdjustBalance && !isOwnerTarget ? "Нажмите для изменения баланса" : undefined}
+              className={`flex items-center gap-1.5 rounded-md border bg-muted/40 px-2.5 py-1 text-xs select-none transition-colors ${
+                canAdjustBalance && !isOwnerTarget
+                  ? "cursor-pointer hover:bg-muted/80 hover:border-foreground/30 active:scale-95"
+                  : ""
+              }`}
+            >
+              <Wallet className="size-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">Баланс:</span>
+              <span className="font-semibold tabular-nums text-foreground">{profile.balance} ₽</span>
+            </div>
+
+            <div
+              role={canAdjustBalance && !isOwnerTarget ? "button" : undefined}
+              tabIndex={canAdjustBalance && !isOwnerTarget ? 0 : undefined}
+              onClick={() => {
+                if (canAdjustBalance && !isOwnerTarget) setTopUpKind("bonus")
+              }}
+              title={canAdjustBalance && !isOwnerTarget ? "Нажмите для изменения бонусного баланса" : undefined}
+              className={`flex items-center gap-1.5 rounded-md border bg-muted/40 px-2.5 py-1 text-xs select-none transition-colors ${
+                canAdjustBalance && !isOwnerTarget
+                  ? "cursor-pointer hover:bg-muted/80 hover:border-foreground/30 active:scale-95"
+                  : ""
+              }`}
+            >
+              <span className="text-muted-foreground">Бонусный:</span>
+              <span className="font-semibold tabular-nums text-foreground">{profile.bonus_balance} ₽</span>
+            </div>
+          </div>
+
+          {uploadPct !== null && (
             <div className="w-56 space-y-1 pt-1">
               <Progress value={uploadPct} />
             </div>
           )}
-          {isOwn && uploadPct === null && (
-            <p className="text-xs text-muted-foreground">
-              Нажмите на аватар или перетащите картинку, чтобы обновить (только фото)
-            </p>
-          )}
         </div>
       </div>
 
       <Separator />
 
-      <div className="space-y-2">
-        <p className="text-sm font-medium">Баланс</p>
-        <div className="grid grid-cols-2 gap-2">
-          <div className="flex items-center justify-between rounded-md border p-2.5">
-            <div>
-              <p className="text-xs text-muted-foreground">Основной</p>
-              <p className="font-semibold tabular-nums">{profile.balance}</p>
-            </div>
-            {canAdjustBalance && !isOwnerTarget && (
-              <Button size="icon-sm" variant="outline" onClick={() => setTopUpKind("main")}>
-                <Wallet className="size-3.5" />
-              </Button>
-            )}
-          </div>
-          <div className="flex items-center justify-between rounded-md border p-2.5">
-            <div>
-              <p className="text-xs text-muted-foreground">Бонусный</p>
-              <p className="font-semibold tabular-nums">{profile.bonus_balance}</p>
-            </div>
-            {canAdjustBalance && !isOwnerTarget && (
-              <Button size="icon-sm" variant="outline" onClick={() => setTopUpKind("bonus")}>
-                <Wallet className="size-3.5" />
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
-
-      <Separator />
-
+      {/* Учётные данные: 2 колонки (Логин + Email) + Смена пароля */}
       <div className="space-y-4">
         <div className="flex items-center justify-between gap-2">
           <p className="text-sm font-medium">Учётные данные</p>
@@ -516,31 +618,34 @@ export function ProfileOverviewSection({
             </Button>
           )}
         </div>
-        <Field>
-          <FieldLabel htmlFor="profile-login">Логин</FieldLabel>
-          <Input
-            id="profile-login"
-            value={login}
-            onChange={(e) => setLogin(e.target.value)}
-            readOnly={!isOwn}
-            disabled={!isOwn}
-          />
-        </Field>
-        <Field>
-          <FieldLabel htmlFor="profile-email">Email</FieldLabel>
-          <Input
-            id="profile-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            readOnly={!canEditEmail}
-            disabled={!canEditEmail}
-          />
-        </Field>
+
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Field>
+            <FieldLabel htmlFor="profile-login">Логин</FieldLabel>
+            <Input
+              id="profile-login"
+              value={login}
+              onChange={(e) => setLogin(e.target.value)}
+              readOnly={!isOwn}
+              disabled={!isOwn}
+            />
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="profile-email">Email</FieldLabel>
+            <Input
+              id="profile-email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              readOnly={!canEditEmail}
+              disabled={!canEditEmail}
+            />
+          </Field>
+        </div>
 
         {isOwn && (!pwOpen ? (
           <Button type="button" size="sm" variant="outline" onClick={() => setPwOpen(true)}>
-            <KeyRound className="size-3.5" />
+            <KeyRound className="mr-1.5 size-3.5" />
             Изменить пароль
           </Button>
         ) : (
@@ -590,31 +695,171 @@ export function ProfileOverviewSection({
         ))}
       </div>
 
+      {displayProviders.length > 0 && (
+        <>
+          <Separator />
+
+          {/* OAuth / Связанные аккаунты */}
+          <div className="space-y-3">
+            <div>
+              <h4 className="text-sm font-medium">Связанные аккаунты</h4>
+              <p className="text-xs text-muted-foreground">
+                Вход через сторонние сервисы и привязанные провайдеры.
+              </p>
+            </div>
+
+            <div className="divide-y divide-border rounded-lg border bg-card">
+              {displayProviders.map((provider) => {
+                const conn = userOauthConns?.find((c) => c.provider === provider.slug)
+                const isConnected = !!conn
+                return (
+                  <div key={provider.slug} className="flex items-center justify-between p-3">
+                    <div className="flex items-center gap-3">
+                      {provider.icon_url ? (
+                        <img
+                          src={provider.icon_url}
+                          alt={provider.title}
+                          className="size-6 rounded object-contain"
+                        />
+                      ) : (
+                        <div className="flex size-6 items-center justify-center rounded bg-muted text-xs font-semibold">
+                          {KNOWN_PROVIDERS[provider.slug]?.icon ?? provider.title.charAt(0)}
+                        </div>
+                      )}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{provider.title}</span>
+                          {isConnected ? (
+                            <Badge
+                              variant="outline"
+                              className="border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0 text-[10px] text-emerald-600 dark:text-emerald-400"
+                            >
+                              Подключён
+                            </Badge>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">Не подключён</span>
+                          )}
+                        </div>
+                        {conn?.email && (
+                          <p className="text-xs text-muted-foreground">{conn.email}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      {isConnected ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 px-2.5 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+                          disabled={unlinkOAuth.isPending}
+                          onClick={() => unlinkOAuth.mutate(provider.slug)}
+                        >
+                          Отвязать
+                        </Button>
+                      ) : isOwn ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 px-2.5 text-xs"
+                          onClick={() => linkOAuth(provider.slug)}
+                        >
+                          Подключить
+                        </Button>
+                      ) : null}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </>
+      )}
+
       <Separator />
 
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-medium">Реферальная программа</p>
-          <span className="flex items-center gap-1 text-xs text-muted-foreground">
-            <Users2 className="size-3.5" /> приглашено: {profile.referral_count}
-          </span>
+      {/* Danger Zone (GitHub-style) */}
+      <div className="space-y-3 rounded-lg border border-destructive/40 bg-destructive/5 p-4">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className="size-4 text-destructive" />
+          <h4 className="text-sm font-semibold text-destructive">Danger Zone</h4>
         </div>
-        {referralLink ? (
-          <div className="flex items-center gap-2">
-            <Input readOnly value={referralLink} className="font-mono text-xs" />
-            <Button type="button" size="icon-sm" variant="outline" onClick={copyReferralLink}>
-              <Copy className="size-3.5" />
+
+        <div className="divide-y divide-destructive/20 text-xs">
+          {/* Блокировка/разблокировка чужого аккаунта */}
+          {!isOwn && (
+            <div className="flex items-center justify-between py-2.5">
+              <div className="space-y-0.5 pr-4">
+                <p className="font-medium text-foreground">
+                  {profile.is_active ? "Заблокировать аккаунт" : "Разблокировать аккаунт"}
+                </p>
+                <p className="text-muted-foreground">
+                  {profile.is_active
+                    ? "Пользователь потеряет доступ к сервису и API."
+                    : "Восстановить доступ пользователя к сервису."}
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className={
+                  profile.is_active
+                    ? "border-destructive/30 text-destructive hover:bg-destructive/10"
+                    : "border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10"
+                }
+                disabled={isOwnerTarget || toggleActive.isPending}
+                onClick={() => toggleActive.mutate()}
+              >
+                {profile.is_active ? "Заблокировать" : "Разблокировать"}
+              </Button>
+            </div>
+          )}
+
+          {/* Сброс активных сессий */}
+          <div className="flex items-center justify-between py-2.5">
+            <div className="space-y-0.5 pr-4">
+              <p className="font-medium text-foreground">Сбросить активные сессии</p>
+              <p className="text-muted-foreground">
+                {isOwn
+                  ? "Завершить сессии на всех остальных устройствах."
+                  : "Принудительно отозвать все выданные токены и завершить сессии."}
+              </p>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="border-destructive/30 text-destructive hover:bg-destructive/10"
+              disabled={revokeSessions.isPending}
+              onClick={() => revokeSessions.mutate()}
+            >
+              Завершить сессии
             </Button>
           </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">У аккаунта нет реферального кода.</p>
-        )}
-        {profile.referred_by_login && (
-          <p className="text-xs text-muted-foreground">
-            {isOwn ? "Вас пригласил" : "Пригласил"}:{" "}
-            <span className="font-medium">{profile.referred_by_login}</span>
-          </p>
-        )}
+
+          {/* Удаление пользователя */}
+          {!isOwn && canDelete && !isOwnerTarget && (
+            <div className="flex items-center justify-between py-2.5">
+              <div className="space-y-0.5 pr-4">
+                <p className="font-medium text-destructive">Удалить пользователя</p>
+                <p className="text-muted-foreground">
+                  Полное и безвозвратное удаление аккаунта, заказов и платежей.
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="destructive"
+                onClick={onDeleteClick}
+              >
+                Удалить пользователя
+              </Button>
+            </div>
+          )}
+        </div>
       </div>
 
       {topUpKind && userId && (

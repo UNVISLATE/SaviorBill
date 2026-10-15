@@ -1,33 +1,30 @@
 import { createPortal } from "react-dom"
-import { useEffect } from "react"
-import { ChevronLeft, ChevronRight, X } from "lucide-react"
+import { useEffect, useState } from "react"
+import { Check, ChevronLeft, ChevronRight, Copy, Download, Trash2, X } from "lucide-react"
 
-/**
- * Полноэкранный просмотр медиа "как в мессенджерах" — отдельный элемент
- * поверх всего (portal в ``document.body``), не переиспользует диалоговый
- * шаблон (у него слишком нарядная рамка/паддинги для полноэкранного фото).
- *
- * - Клик по затемнённому фону закрывает; клик по самому изображению/подписи
- *   — не закрывает (``stopPropagation``).
- * - Крестик сидит на самом углу картинки (частично перекрывая его), а не
- *   где-то в углу экрана.
- * - На мобильных подпись лежит прямо на фото затемняющим градиентом снизу;
- *   на широких экранах — отдельной карточкой под изображением.
- */
+import { toastSuccess } from "@/lib/toast"
+
 export function MediaLightbox({
   onClose,
   onPrev,
   onNext,
   children,
   caption,
+  mediaUrl,
+  onDelete,
+  actions,
 }: {
   onClose: () => void
-  /** Навигация между соседними файлами галереи (§5.8) — если не задано, стрелки не показываются. */
   onPrev?: () => void
   onNext?: () => void
   children: React.ReactNode
   caption?: React.ReactNode
+  mediaUrl?: string | null
+  onDelete?: () => void
+  actions?: React.ReactNode
 }) {
+  const [copied, setCopied] = useState(false)
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose()
@@ -43,69 +40,132 @@ export function MediaLightbox({
     }
   }, [onClose, onPrev, onNext])
 
+  function handleCopy() {
+    if (!mediaUrl) return
+    const fullUrl = mediaUrl.startsWith("http") ? mediaUrl : `${window.location.origin}${mediaUrl}`
+    void navigator.clipboard.writeText(fullUrl)
+    setCopied(true)
+    toastSuccess("Ссылка скопирована")
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  function handleDownload() {
+    if (!mediaUrl) return
+    const a = document.createElement("a")
+    a.href = mediaUrl
+    a.download = mediaUrl.split("/").pop() || "media"
+    a.target = "_blank"
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
   return createPortal(
     <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm duration-150 animate-in fade-in sm:p-10"
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 p-4 backdrop-blur-md duration-150 animate-in fade-in"
       onClick={onClose}
     >
+      {/* 1. Кнопка закрытия — строго в верхний правый угол экрана */}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Закрыть"
+        className="fixed top-5 right-5 z-[220] flex size-10 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white shadow-2xl backdrop-blur transition hover:scale-105 hover:bg-black/85 active:scale-95"
+      >
+        <X className="size-5" />
+      </button>
+
+      {/* 2. Стрелки навигации — по краям экрана */}
+      {onPrev && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onPrev()
+          }}
+          aria-label="Предыдущий файл"
+          className="fixed top-1/2 left-4 z-[220] flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white shadow-2xl backdrop-blur transition hover:scale-105 hover:bg-black/85 active:scale-95"
+        >
+          <ChevronLeft className="size-6" />
+        </button>
+      )}
+
+      {onNext && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation()
+            onNext()
+          }}
+          aria-label="Следующий файл"
+          className="fixed top-1/2 right-4 z-[220] flex size-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white shadow-2xl backdrop-blur transition hover:scale-105 hover:bg-black/85 active:scale-95"
+        >
+          <ChevronRight className="size-6" />
+        </button>
+      )}
+
+      {/* 3. Центр экрана — само медиа */}
       <div
-        className="relative flex max-h-full max-w-full flex-col items-center gap-3"
+        className="relative flex max-h-[80vh] max-w-full items-center justify-center"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="relative max-h-[75vh] max-w-full">
-          <div className="overflow-hidden rounded-lg shadow-2xl">{children}</div>
+        <div className="overflow-hidden rounded-xl shadow-2xl">{children}</div>
+      </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Закрыть"
-            className="absolute -top-3 -right-3 flex size-8 items-center justify-center rounded-full border bg-popover text-foreground shadow-lg ring-1 ring-foreground/10 transition-transform hover:scale-105 active:scale-95"
-          >
-            <X className="size-4" />
-          </button>
+      {/* 4. Плашка информации — строго внизу по центру */}
+      {caption && (
+        <div
+          className="fixed bottom-5 left-1/2 z-[220] -translate-x-1/2 select-none rounded-full border border-white/15 bg-black/75 px-5 py-2 text-xs font-medium text-white/90 shadow-2xl backdrop-blur max-w-[80vw] truncate"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {caption}
+        </div>
+      )}
 
-          {onPrev && (
+      {/* 5. Иконки действий — строго внизу справа */}
+      {(mediaUrl || onDelete || actions) && (
+        <div
+          className="fixed bottom-5 right-5 z-[220] flex items-center gap-1.5 rounded-full border border-white/15 bg-black/75 p-1.5 shadow-2xl backdrop-blur"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {mediaUrl && (
+            <>
+              <button
+                type="button"
+                onClick={handleCopy}
+                title="Копировать ссылку"
+                aria-label="Копировать ссылку"
+                className="flex size-8 items-center justify-center rounded-full text-white/80 transition hover:bg-white/20 hover:text-white"
+              >
+                {copied ? <Check className="size-4 text-emerald-400" /> : <Copy className="size-4" />}
+              </button>
+              <button
+                type="button"
+                onClick={handleDownload}
+                title="Скачать файл"
+                aria-label="Скачать файл"
+                className="flex size-8 items-center justify-center rounded-full text-white/80 transition hover:bg-white/20 hover:text-white"
+              >
+                <Download className="size-4" />
+              </button>
+            </>
+          )}
+
+          {actions}
+
+          {onDelete && (
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onPrev()
-              }}
-              aria-label="Предыдущий файл"
-              className="absolute top-1/2 left-2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
+              onClick={onDelete}
+              title="Удалить файл"
+              aria-label="Удалить файл"
+              className="flex size-8 items-center justify-center rounded-full text-destructive transition hover:bg-destructive/20"
             >
-              <ChevronLeft className="size-5" />
+              <Trash2 className="size-4" />
             </button>
-          )}
-          {onNext && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation()
-                onNext()
-              }}
-              aria-label="Следующий файл"
-              className="absolute top-1/2 right-2 flex size-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70"
-            >
-              <ChevronRight className="size-5" />
-            </button>
-          )}
-
-          {/* Мобильные: подпись прямо на фото затемнением снизу. */}
-          {caption && (
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 rounded-b-lg bg-gradient-to-t from-black/85 to-transparent p-3 text-xs text-white sm:hidden">
-              {caption}
-            </div>
           )}
         </div>
-
-        {/* Широкие экраны: подпись отдельной карточкой под изображением. */}
-        {caption && (
-          <div className="hidden max-w-full rounded-lg bg-popover px-4 py-2 text-xs text-muted-foreground ring-1 ring-foreground/10 sm:block">
-            {caption}
-          </div>
-        )}
-      </div>
+      )}
     </div>,
     document.body,
   )
