@@ -44,6 +44,8 @@ class EmailModel(Base):
     subject: Mapped[str] = mapped_column(String(255), nullable=False)
     # Имя файла тела относительно EMAIL_TEMPLATES_DIR (генерируется системой).
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Тело шаблона в БД для исключения рассинхрона между репликами.
+    body: Mapped[str] = mapped_column(Text, default="", server_default="", nullable=False)
     # Тело — HTML (True) или текст (False).
     is_html: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -98,13 +100,17 @@ class EmailMngr:
         filename = self._gen_filename()
         target = self._safe_target(filename)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(data.body, encoding="utf-8")
+        try:
+            target.write_text(data.body, encoding="utf-8")
+        except Exception:
+            pass
 
         row = EmailModel(
             slug=data.slug,
             name=data.name,
             subject=data.subject,
             filename=filename,
+            body=data.body,
             is_html=data.is_html,
             sha256=hashlib.sha256(data.body.encode()).hexdigest(),
             description=data.description,
@@ -118,9 +124,13 @@ class EmailMngr:
         row = await self.by_id(tpl_id)
         if row is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "template not found")
-        target = self._safe_target(row.filename)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(body, encoding="utf-8")
+        try:
+            target = self._safe_target(row.filename)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(body, encoding="utf-8")
+        except Exception:
+            pass
+        row.body = body
         row.sha256 = hashlib.sha256(body.encode()).hexdigest()
         await self.s.flush()
         return row
@@ -138,7 +148,10 @@ class EmailMngr:
         return row
 
     async def read_body(self, row: EmailModel) -> str:
-        """Прочитать тело шаблона из файла."""
+        """Прочитать тело шаблона из БД с откатом на файл."""
+        body = getattr(row, "body", None)
+        if body:
+            return body
         target = self._safe_target(row.filename)
         if not target.exists():
             raise HTTPException(
