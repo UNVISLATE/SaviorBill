@@ -21,6 +21,11 @@ import {
   useSidebar,
 } from "@/components/shadsnui/sidebar"
 
+function isItemActive(itemUrl: string, pathname: string) {
+  if (itemUrl === "/") return pathname === "/"
+  return pathname === itemUrl || pathname.startsWith(itemUrl + "/")
+}
+
 /**
  * Основная навигация сайдбара (см. ppp/nav-main.tsx как референс).
  * Категория с одним пунктом — обычная ссылка. Категория с несколькими
@@ -48,7 +53,7 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
               <SidebarMenuItem key={group.title}>
                 <SidebarMenuButton
                   tooltip={item.title}
-                  isActive={location.pathname === item.url}
+                  isActive={isItemActive(item.url, location.pathname)}
                   onClick={() => navigate(item.url)}
                 >
                   <item.icon />
@@ -59,7 +64,7 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
           }
 
           const GroupIcon = group.icon
-          const isActiveGroup = items.some((i) => i.url === location.pathname)
+          const isActiveGroup = items.some((i) => isItemActive(i.url, location.pathname))
 
           if (collapsedRail) {
             return (
@@ -92,7 +97,7 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
                           onClick={() => navigate(item.url)}
                           className={cn(
                             "flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-popover-foreground hover:bg-accent hover:text-accent-foreground",
-                            location.pathname === item.url &&
+                            isItemActive(item.url, location.pathname) &&
                               "bg-accent font-medium text-accent-foreground"
                           )}
                         >
@@ -129,7 +134,7 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
                       <SidebarMenuSubItem key={item.url}>
                         <SidebarMenuSubButton
                           render={<button type="button" />}
-                          isActive={location.pathname === item.url}
+                          isActive={isItemActive(item.url, location.pathname)}
                           onClick={() => navigate(item.url)}
                         >
                           <item.icon />

@@ -1,4 +1,5 @@
 import {
+  CreditCard,
   FileClock,
   FolderTree,
   Gauge,
@@ -6,6 +7,7 @@ import {
   KeyRound,
   Mail,
   Package,
+  Plug,
   Receipt,
   ShoppingCart,
   Settings,
@@ -40,38 +42,46 @@ export const navGroups: NavGroup[] = [
     title: "Обзор",
     icon: Gauge,
     items: [
-        { title: "Дашборд", url: "/", icon: Gauge }
+      { title: "Дашборд", url: "/", icon: Gauge },
     ],
   },
   {
     title: "Пользователи",
     icon: Users,
     items: [
-        { title: "Пользователи", url: "/users", icon: Users, perm: "users.read" },
-        { title: "Заказы", url: "/orders", icon: ShoppingCart, perm: "orders.read" },
-        { title: "Платежи", url: "/purchases", icon: Receipt, perm: "purchases.read" },
-        { title: "Промокоды", url: "/promo", icon: Ticket, perm: "promo.catalogs.read" },
+      { title: "Пользователи", url: "/users", icon: Users, perm: "users.read" },
+      { title: "Заказы", url: "/orders", icon: ShoppingCart, perm: "orders.read" },
+      { title: "Платежи", url: "/purchases", icon: Receipt, perm: "purchases.read" },
+      { title: "Промокоды", url: "/promo", icon: Ticket, perm: "promo.catalogs.read" },
     ],
   },
   {
     title: "Каталог",
     icon: FolderTree,
     items: [
-        { title: "Каталоги", url: "/catalog", icon: FolderTree, perm: "catalogs.read" },
-        { title: "Услуги", url: "/services", icon: Package, perm: "services.read" },
-        { title: "Медиатека", url: "/media", icon: Images, perm: "media.read" },
+      { title: "Каталоги", url: "/catalog", icon: FolderTree, perm: "catalogs.read" },
+      { title: "Услуги", url: "/services", icon: Package, perm: "services.read" },
+      { title: "Ключи", url: "/service-keys", icon: KeyRound, perm: "services.keys.read" },
+      { title: "Медиатека", url: "/media", icon: Images, perm: "media.read" },
     ],
   },
   {
     title: "Автоматизация",
     icon: Zap,
     items: [
-        { title: "Скрипты", url: "/lua", icon: ScrollText, perm: "lua.read" },
-        { title: "Триггеры", url: "/triggers", icon: Zap, perm: "triggers.read" },
-        { title: "Email-шаблоны", url: "/email-templates", icon: Mail, perm: "email.read" },
-        { title: "OAuth-вход", url: "/oauth", icon: KeyRound, perm: "oauth.read" },
-    ]
-  }
+      { title: "Скрипты", url: "/lua", icon: ScrollText, perm: "lua.read" },
+      { title: "Триггеры", url: "/triggers", icon: Zap, perm: "triggers.read" },
+      { title: "Email-шаблоны", url: "/emailtemplate", icon: Mail, perm: "email.read" },
+    ],
+  },
+  {
+    title: "Провайдеры",
+    icon: Plug,
+    items: [
+      { title: "Платежи", url: "/providers/payment", icon: CreditCard, perm: "purchases.providers.read" },
+      { title: "OAuth", url: "/providers/oauth", icon: KeyRound, perm: "oauth.read" },
+    ],
+  },
 ]
 
 /**
@@ -82,5 +92,5 @@ export const navGroups: NavGroup[] = [
 export const footerNavItems: NavItem[] = [
   { title: "Аудит", url: "/audit", icon: FileClock, perm: "audit.read" },
   { title: "Система", url: "/system", icon: MonitorCog, perm: "system.stats.read" },
-  { title: "Настройки", url: "/settings", icon: Settings, perm: "settings.raw.read" }
+  { title: "Настройки", url: "/settings", icon: Settings, perm: "settings.raw.read" },
 ]
