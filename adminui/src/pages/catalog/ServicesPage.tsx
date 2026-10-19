@@ -1,17 +1,14 @@
 import { useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
-import { Plus } from "lucide-react"
+import { Edit2, KeyRound, Package, Plus } from "lucide-react"
 
 import { api } from "@/api/api.ts"
-import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { useDataTableQuery } from "@/hooks/use-data-table"
 import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
-import { Input } from "@/components/shadsnui/input"
-import { Label } from "@/components/shadsnui/label"
 import {
   Select,
   SelectContent,
@@ -19,14 +16,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/shadsnui/select"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/shadsnui/dialog"
-import { toastError, toastSuccess } from "@/lib/toast"
 
 interface Catalog {
   id: number
@@ -53,132 +42,10 @@ interface Page<T> {
   has_more: boolean
 }
 
-function CreateServiceDialog({
-  open,
-  onOpenChange,
-  catalogs,
-}: {
-  open: boolean
-  onOpenChange: (v: boolean) => void
-  catalogs: Catalog[] | undefined
-}) {
-  const [name, setName] = useState("")
-  const [slug, setSlug] = useState("")
-  const [catalogId, setCatalogId] = useState<string>("")
-  const [price, setPrice] = useState("0")
-  const [currency, setCurrency] = useState("RUB")
-  const [delivery, setDelivery] = useState<"key" | "lua">("key")
-  const qc = useQueryClient()
-  const navigate = useNavigate()
-
-  const reset = () => {
-    setName("")
-    setSlug("")
-    setCatalogId("")
-    setPrice("0")
-    setCurrency("RUB")
-    setDelivery("key")
-  }
-
-  const create = useMutation({
-    mutationFn: async () =>
-      api.post("/v1/admin/services", {
-        name,
-        slug,
-        catalog_id: catalogId ? Number(catalogId) : null,
-        price,
-        currency,
-        delivery,
-      }),
-    onSuccess: (res) => {
-      toastSuccess(`Услуга «${name}» создана`)
-      onOpenChange(false)
-      reset()
-      void qc.invalidateQueries({ queryKey: ["admin-services"] })
-      const id = (res.data as { id: number }).id
-      navigate(`/services/${id}`)
-    },
-    onError: (e: unknown) => toastError("Не удалось создать услугу", getErrorDetail(e)),
-  })
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset() }}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Новая услуга</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label>Название</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
-          </div>
-          <div className="space-y-1">
-            <Label>Слаг</Label>
-            <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="vpn-1-month" />
-          </div>
-          <div className="space-y-1">
-            <Label>Каталог</Label>
-            <Select value={catalogId || "root"} onValueChange={(v) => setCatalogId(v === "root" ? "" : v ?? "")}>
-              <SelectTrigger>
-                <SelectValue placeholder="Без каталога" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="root">— Без каталога —</SelectItem>
-                {catalogs?.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Цена</Label>
-              <Input type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label>Валюта</Label>
-              <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={8} />
-            </div>
-          </div>
-          <div className="space-y-1">
-            <Label>Способ выдачи</Label>
-            <Select value={delivery} onValueChange={(v) => setDelivery((v as "key" | "lua") ?? "key")}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="key">Ключи из пула</SelectItem>
-                <SelectItem value="lua">Lua-скрипт</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-muted-foreground">
-              Скрипт для delivery=lua и остальные параметры настраиваются после создания.
-            </p>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Отмена
-          </Button>
-          <Button
-            disabled={name.trim().length < 1 || slug.trim().length < 2 || create.isPending}
-            onClick={() => create.mutate()}
-          >
-            Создать
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}
-
 export function ServicesPage() {
   const { can } = useAuth()
   const navigate = useNavigate()
   const table = useDataTableQuery()
-  const [creating, setCreating] = useState(false)
   const [catalogFilter, setCatalogFilter] = useState("")
   const canCreate = can("services.create")
 
@@ -207,37 +74,141 @@ export function ServicesPage() {
   })
 
   const columns: DataTableColumn<ServiceRow>[] = [
-    { key: "id", header: "ID", render: (s) => <span className="font-mono text-xs">{s.id}</span> },
-    { key: "name", header: "Название", render: (s) => <span className="font-medium">{s.name}</span> },
-    { key: "catalog_id", header: "Каталог", render: (s) => catalogName(s.catalog_id) ?? "—" },
+    {
+      key: "id",
+      header: "ID",
+      render: (s) => <span className="font-mono text-xs text-muted-foreground">#{s.id}</span>,
+    },
+    {
+      key: "name",
+      header: "Товар / Услуга",
+      render: (s) => (
+        <div className="flex flex-col">
+          <span className="font-semibold text-foreground hover:text-primary transition-colors">
+            {s.name}
+          </span>
+          <span className="font-mono text-[11px] text-muted-foreground">
+            {s.slug}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: "catalog_id",
+      header: "Категория",
+      render: (s) => (
+        <span className="text-xs text-muted-foreground">
+          {catalogName(s.catalog_id) ?? "—"}
+        </span>
+      ),
+    },
     {
       key: "price",
       header: "Цена",
-      render: (s) => `${s.price} ${s.currency}`,
+      render: (s) => (
+        <span className="font-mono text-xs font-semibold">
+          {s.price} {s.currency}
+        </span>
+      ),
     },
     {
       header: "Выдача",
-      render: (s) => <Badge variant="outline">{s.delivery === "lua" ? "Lua" : "Ключи"}</Badge>,
+      render: (s) => (
+        <Badge variant="outline" className="text-[10px] gap-1 font-normal">
+          {s.delivery === "lua" ? (
+            <>
+              <span className="size-1.5 rounded-full bg-blue-500" /> Lua
+            </>
+          ) : (
+            <>
+              <span className="size-1.5 rounded-full bg-purple-500" /> Ключи
+            </>
+          )}
+        </Badge>
+      ),
     },
     {
       header: "Статус",
       render: (s) => {
-        if (!s.is_active) return <Badge variant="destructive">неактивна</Badge>
-        if (s.out_of_stock) return <Badge variant="destructive">нет в наличии</Badge>
-        return <Badge variant="outline">активна</Badge>
+        if (!s.is_active) {
+          return (
+            <Badge variant="outline" className="text-[10px] text-muted-foreground border-border/80">
+              неактивна
+            </Badge>
+          )
+        }
+        if (s.out_of_stock) {
+          return (
+            <Badge variant="destructive" className="text-[10px] gap-1">
+              <span className="size-1.5 rounded-full bg-red-400" /> нет ключей
+            </Badge>
+          )
+        }
+        return (
+          <Badge variant="outline" className="text-[10px] gap-1 border-emerald-500/40 text-emerald-500 bg-emerald-500/10">
+            <span className="size-1.5 rounded-full bg-emerald-500" /> активна
+          </Badge>
+        )
       },
+    },
+    {
+      header: "",
+      className: "text-right",
+      render: (s) => (
+        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+          {s.delivery === "key" && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-8"
+              title="Инвентарь ключей"
+              onClick={() => navigate(`/service-keys?service_id=${s.id}&tab=keys`)}
+            >
+              <KeyRound className="size-3.5 text-muted-foreground" />
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-8"
+            title="Редактировать товар"
+            onClick={() => navigate(`/services/${s.id}`)}
+          >
+            <Edit2 className="size-3.5 text-muted-foreground" />
+          </Button>
+        </div>
+      ),
     },
   ]
 
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold">Услуги</h1>
-        {canCreate && (
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> Создать
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2">
+            <Package className="size-6 text-primary" /> Каталог услуг
+          </h1>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Управление цифровыми товарами, тарифами и способами автоматической выдачи.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate("/service-keys")}
+            className="gap-1.5"
+          >
+            <KeyRound className="size-4 text-primary" /> Инвентарь ключей
           </Button>
-        )}
+
+          {canCreate && (
+            <Button size="sm" onClick={() => navigate("/services/new")} className="gap-1.5 shadow-xs">
+              <Plus className="size-4" /> Создать услугу
+            </Button>
+          )}
+        </div>
       </div>
 
       <DataTable
@@ -261,12 +232,15 @@ export function ServicesPage() {
         onLimitChange={table.changeLimit}
         onOffsetChange={table.setOffset}
         toolbarExtra={
-          <Select value={catalogFilter || "all"} onValueChange={(v) => setCatalogFilter(v === "all" ? "" : (v ?? ""))}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Все каталоги" />
+          <Select
+            value={catalogFilter || "all"}
+            onValueChange={(v) => setCatalogFilter(v === "all" ? "" : (v ?? ""))}
+          >
+            <SelectTrigger className="w-48 h-8 text-xs">
+              <SelectValue placeholder="Все категории" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Все каталоги</SelectItem>
+              <SelectItem value="all">Все категории</SelectItem>
               {catalogs?.map((c) => (
                 <SelectItem key={c.id} value={String(c.id)}>
                   {c.name}
@@ -276,8 +250,6 @@ export function ServicesPage() {
           </Select>
         }
       />
-
-      <CreateServiceDialog open={creating} onOpenChange={setCreating} catalogs={catalogs} />
     </div>
   )
 }

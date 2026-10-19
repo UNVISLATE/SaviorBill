@@ -133,15 +133,20 @@ class UserServicesMngr:
     """Оформление выдачи услуги и её доставка (ключ или Lua-скрипт)."""
 
     def __init__(
-        self, session: AsyncSession, bus: LuaBus, box: SecBox | None = None
+        self,
+        session: AsyncSession,
+        bus: LuaBus,
+        box: SecBox | None = None,
+        dispatcher = None,  # noqa: ANN001 — TriggerDispatcher | None
     ) -> None:
         self.s = session
         self.bus = bus
         self.box = box
+        self.dispatcher = dispatcher
 
     # --- деньги -----------------------------------------------------------
     @staticmethod
-    def _charge(acc, amount: Decimal) -> None:
+    def _charge(acc, amount: Decimal) -> tuple[Decimal, Decimal]:
         """Списать сумму: сначала бонусы, затем основной баланс.
 
         Вызывающий обязан предварительно взять row-lock на аккаунт
@@ -154,18 +159,18 @@ class UserServicesMngr:
         if acc.bonus_balance + acc.balance < amount:
             raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "insufficient funds")
         from_bonus = min(acc.bonus_balance, amount)
+        from_balance = amount - from_bonus
         acc.bonus_balance -= from_bonus
         acc.balance -= amount - from_bonus
+        return from_bonus, from_balance
 
     @staticmethod
-    def _refund(acc, amount: Decimal) -> None:
-        if amount > 0:
-            acc.balance += amount.quantize(_CENT, rounding=ROUND_HALF_UP)
-
-    @staticmethod
-    def _refund(acc, amount: Decimal) -> None:
-        if amount > 0:
-            acc.balance += amount
+    def _refund(acc, bonus_amount: Decimal, balance_amount: Decimal) -> None:
+        """Вернуть списанные средства строго в тех же долях (бонусы и баланс)."""
+        if bonus_amount > 0:
+            acc.bonus_balance += bonus_amount.quantize(_CENT, rounding=ROUND_HALF_UP)
+        if balance_amount > 0:
+            acc.balance += balance_amount.quantize(_CENT, rounding=ROUND_HALF_UP)
 
     # --- сценарии ---------------------------------------------------------
     async def create(
@@ -188,11 +193,13 @@ class UserServicesMngr:
         discount = max(Decimal("0"), min(discount, service.price))
         price = service.price - discount
 
+        charged_bonus = Decimal("0")
+        charged_balance = Decimal("0")
         if charge:
             # Блокируем строку аккаунта до чтения баланса — иначе две
             # параллельные покупки уводят баланс в минус (AUDIT.md §3.1).
             await lock_account(self.s, acc.id)
-            self._charge(acc, price)
+            charged_bonus, charged_balance = self._charge(acc, price)
 
         merged = dict(service.params or {})
         if params:
@@ -207,6 +214,10 @@ class UserServicesMngr:
             discount=discount,
             duration=service.duration,
             actions=list(service.actions or []),
+            private_data={
+                "charged_bonus": str(charged_bonus),
+                "charged_balance": str(charged_balance),
+            } if charge else {},
         )
         # Кастом-параметры заказа передаём в доставку транзитно (не храним в БД).
         usvc.order_params = merged
@@ -247,7 +258,7 @@ class UserServicesMngr:
         if usvc.status == UsvcStatus.ACTIVE:
             return usvc
         try:
-            issuer = get_issuer(service.delivery, self.s, self.bus, self.box)
+            issuer = get_issuer(service.delivery, self.s, self.bus, self.box, dispatcher=self.dispatcher)
             await issuer.issue(usvc, service, acc)
             usvc.status = UsvcStatus.ACTIVE
             usvc.delivered_at = utc_now()
@@ -258,7 +269,13 @@ class UserServicesMngr:
             usvc.error = str(exc)[:512]
             usvc.delivery_attempts += 1
             if refund_on_fail:
-                self._refund(acc, refund_on_fail)
+                priv = usvc.private_data or {}
+                b_bonus = Decimal(priv.get("charged_bonus", "0"))
+                b_balance = Decimal(priv.get("charged_balance", "0"))
+                if b_bonus > 0 or b_balance > 0:
+                    self._refund(acc, b_bonus, b_balance)
+                else:
+                    self._refund(acc, Decimal("0"), refund_on_fail)
         await self.s.flush()
         return usvc
 
@@ -294,7 +311,7 @@ class UserServicesMngr:
         :arg acc: аккаунт-владелец.
         :arg action: действие из :class:`enums.ServiceAction`.
         """
-        issuer = get_issuer(service.delivery, self.s, self.bus, self.box)
+        issuer = get_issuer(service.delivery, self.s, self.bus, self.box, dispatcher=self.dispatcher)
         try:
             await issuer.run_action(usvc, service, acc, action)
         except NotImplementedError:

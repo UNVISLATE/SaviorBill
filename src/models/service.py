@@ -7,6 +7,7 @@ from decimal import Decimal
 
 from fastapi import HTTPException, status
 from sqlalchemy import (
+    Index,
     func,
     Boolean,
     DateTime,
@@ -47,6 +48,9 @@ class ServiceModel(Base):
     """
 
     __tablename__ = "services"
+    __table_args__ = (
+        Index("ix_trgm_services_name", "name", postgresql_using="gin", postgresql_ops={"name": "gin_trgm_ops"}),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     created_at: Mapped[datetime] = mapped_column(

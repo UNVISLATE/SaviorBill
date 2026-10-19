@@ -1,7 +1,7 @@
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, Eye, EyeOff, ImagePlus, KeyRound, Plus, Trash2 } from "lucide-react"
+import { ArrowLeft, Eye, EyeOff, FileUp, ImagePlus, KeyRound, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -329,6 +329,20 @@ function KeysTab({ serviceId }: { serviceId: number }) {
   const { can } = useAuth()
   const canReveal = can("ownersec.servicekeys.read")
   const [importText, setImportText] = useState("")
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    try {
+      const content = await file.text()
+      setImportText(content)
+      toastSuccess(`Файл ${file.name} загружен`)
+    } catch (err) {
+      toastError("Ошибка чтения файла", String(err))
+    }
+    e.target.value = ""
+  }
   const [revealed, setRevealed] = useState<Record<number, string>>({})
   const qc = useQueryClient()
 
@@ -398,6 +412,10 @@ function KeysTab({ serviceId }: { serviceId: number }) {
           <CardContent className="py-4">
             {stock?.out_of_stock ? (
               <Badge variant="destructive">Ключи закончились — импортируйте новые</Badge>
+            ) : stock?.available != null && stock.available < 5 ? (
+              <Badge variant="destructive" className="bg-amber-600 hover:bg-amber-700">
+                Внимание: низкий остаток ключей (&lt; 5)
+              </Badge>
             ) : (
               <Badge variant="outline">Ключей достаточно</Badge>
             )}
@@ -417,13 +435,30 @@ function KeysTab({ serviceId }: { serviceId: number }) {
             rows={5}
             className="font-mono text-xs"
           />
-          <Button
-            size="sm"
-            disabled={!importText.trim() || importKeys.isPending}
-            onClick={() => importKeys.mutate()}
-          >
-            <Plus className="size-4" /> Импортировать
-          </Button>
+          <div className="flex items-center gap-2">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".txt,.csv,text/plain,text/csv"
+              className="hidden"
+              onChange={handleFileUpload}
+            />
+            <Button
+              size="sm"
+              disabled={!importText.trim() || importKeys.isPending}
+              onClick={() => importKeys.mutate()}
+            >
+              <Plus className="size-4" /> Импортировать
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <FileUp className="size-4" /> Загрузить файл
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -439,6 +474,7 @@ function KeysTab({ serviceId }: { serviceId: number }) {
                 <TableRow>
                   <TableHead>Значение</TableHead>
                   <TableHead>Статус</TableHead>
+                  <TableHead>Заказ</TableHead>
                   <TableHead>Создан</TableHead>
                   <TableHead className="text-right">Действия</TableHead>
                 </TableRow>
@@ -446,7 +482,7 @@ function KeysTab({ serviceId }: { serviceId: number }) {
               <TableBody>
                 {(keys?.length ?? 0) === 0 && (
                   <TableRow>
-                    <TableCell colSpan={4} className="py-6 text-center text-sm text-muted-foreground">
+                    <TableCell colSpan={5} className="py-6 text-center text-sm text-muted-foreground">
                       Пул ключей пуст
                     </TableCell>
                   </TableRow>
@@ -458,6 +494,13 @@ function KeysTab({ serviceId }: { serviceId: number }) {
                     </TableCell>
                     <TableCell>
                       {k.is_used ? <Badge variant="outline">использован</Badge> : <Badge>свободен</Badge>}
+                    </TableCell>
+                    <TableCell>
+                      {k.order_id ? (
+                        <Badge variant="secondary" className="font-mono text-xs">#{k.order_id}</Badge>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {new Date(k.created_at).toLocaleString()}

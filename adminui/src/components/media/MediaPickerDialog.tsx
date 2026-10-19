@@ -1,6 +1,11 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { ImageOff } from "lucide-react"
+import { ImageOff, Loader2, Upload } from "lucide-react"
+import { useRef } from "react"
+import { uploadOwnMedia } from "@/api/media-upload"
+import { toastError, toastSuccess } from "@/lib/toast"
+import { Button } from "@/components/shadsnui/button"
+import { useQueryClient } from "@tanstack/react-query"
 
 import { api } from "@/api/api.ts"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/shadsnui/dialog"
@@ -36,6 +41,35 @@ export function MediaPickerDialog({
   onSelect: (media: MediaItem) => void
 }) {
   const [q, setQ] = useState("")
+  const [uploading, setUploading] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const qc = useQueryClient()
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    try {
+      const { mediaId, token } = await uploadOwnMedia(file, { tag: "service" })
+      toastSuccess("Файл успешно загружен")
+      void qc.invalidateQueries({ queryKey: ["media-picker"] })
+      onSelect({
+        id: mediaId,
+        token,
+        kind: file.type.startsWith("video/") ? "video" : "image",
+        tag: "service",
+        status: "ready",
+        url: `/api/media/${token}`,
+        mime: file.type,
+      })
+      onOpenChange(false)
+    } catch (err) {
+      toastError("Ошибка при загрузке медиафайла", err instanceof Error ? err.message : String(err))
+    } finally {
+      setUploading(false)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+    }
+  }
 
   const { data, isLoading } = useQuery({
     queryKey: ["media-picker", q],
@@ -51,8 +85,35 @@ export function MediaPickerDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-2xl">
-        <DialogHeader>
-          <DialogTitle>Выбрать медиа</DialogTitle>
+        <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
+          <DialogTitle>Выбрать или загрузить медиа</DialogTitle>
+          <div className="flex items-center gap-2">
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept="image/*,video/*"
+              className="hidden"
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs gap-1.5"
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              {uploading ? (
+                <>
+                  <Loader2 className="size-3.5 animate-spin" /> Загрузка…
+                </>
+              ) : (
+                <>
+                  <Upload className="size-3.5" /> Загрузить файл
+                </>
+              )}
+            </Button>
+          </div>
         </DialogHeader>
         <Input
           value={q}
