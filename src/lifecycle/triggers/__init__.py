@@ -10,6 +10,7 @@ from telemetry.metrics import trigger_failures_total
 
 from .base import BaseAction, dig
 from .email_action import EmailAction
+import contextvars
 from .events import ALL_EVENTS, TriggerEvent
 
 log = logging.getLogger("saviorbill.triggers")
@@ -21,6 +22,9 @@ ACTION_KEYS = [EmailAction.key, "lua"]
 
 _DEFAULT_MAX_RETRIES = 3
 _DEFAULT_MAX_FIRES_PER_MINUTE = 60
+_TRIGGER_MAX_DEPTH = 5
+_trigger_depth: contextvars.ContextVar[int] = contextvars.ContextVar("trigger_depth", default=0)
+
 
 
 class TriggerDispatcher:
@@ -93,9 +97,26 @@ class TriggerDispatcher:
         :arg ctx: контекст события.
         :return: число успешно выполненных действий.
         """
+        depth = _trigger_depth.get()
+        if depth >= _TRIGGER_MAX_DEPTH:
+            log.warning(
+                "триггеры: анти-петля глубины — каскад прерван для %s (глубина %d >= %d)",
+                event,
+                depth,
+                _TRIGGER_MAX_DEPTH,
+            )
+            return 0
+
         if not await self._allow_event(event):
             return 0
 
+        token = _trigger_depth.set(depth + 1)
+        try:
+            return await self._fire_internal(event, ctx)
+        finally:
+            _trigger_depth.reset(token)
+
+    async def _fire_internal(self, event: str, ctx: dict) -> int:
         try:
             rows = await self.triggers.by_event(event)
         except Exception:  # noqa: BLE001

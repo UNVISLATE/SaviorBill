@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -36,6 +37,13 @@ class ServiceKeyOut(BaseModel):
         )
 
 
+class ServiceKeyGlobalOut(ServiceKeyOut):
+    """Service key with linked service info for global table."""
+
+    service_name: str | None = None
+    service_slug: str | None = None
+
+
 class ServiceKeyRevealOut(BaseModel):
     """Revealed service key."""
 
@@ -51,6 +59,12 @@ class ServiceKeysImportIn(BaseModel):
         max_length=5000,
         description="Ready list of key values",
     )
+
+
+class GlobalServiceKeysImportIn(ServiceKeysImportIn):
+    """Bulk import service keys with target service ID."""
+
+    service_id: int = Field(description="Target service ID")
 
 
 class ServiceKeysImportOut(BaseModel):
@@ -75,10 +89,43 @@ class ServiceStockOut(BaseModel):
         )
 
 
+class ServiceStockItem(BaseModel):
+    """Stock overview for a single service."""
+
+    service_id: int
+    service_name: str
+    service_slug: str
+    catalog_id: int | None = None
+    catalog_name: str | None = None
+    price: Decimal
+    currency: str
+    is_active: bool
+    available_keys: int
+    used_keys: int
+    total_keys: int
+    stock_status: str = Field(description="'ok' | 'low' | 'out_of_stock'")
+
+
+class ServiceKeysOverviewOut(BaseModel):
+    """Overall summary of keys pool and per-service status."""
+
+    total_available: int
+    total_used: int
+    total_keys: int
+    out_of_stock_count: int
+    low_stock_count: int
+    threshold: int = Field(default=5, description="Low keys threshold")
+    items: list[ServiceStockItem]
+
+
 __all__ = [
+    "GlobalServiceKeysImportIn",
+    "ServiceKeyGlobalOut",
     "ServiceKeyOut",
     "ServiceKeyRevealOut",
     "ServiceKeysImportIn",
     "ServiceKeysImportOut",
+    "ServiceKeysOverviewOut",
+    "ServiceStockItem",
     "ServiceStockOut",
 ]

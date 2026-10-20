@@ -63,6 +63,14 @@ SETTINGS: tuple[SettingDef, ...] = (
     SettingDef(
         "smtp.tls", "SMTP_TLS", type="bool", group="smtp", desc="Использовать TLS"
     ),
+    # Цифровые ключи и услуги
+    SettingDef(
+        "service.keys_low_threshold",
+        "KEYS_LOW_THRESHOLD",
+        type="int",
+        group="services",
+        desc="Порог малого остатка цифровых ключей",
+    ),
     # Почтовые коды (подтверждение email / сброс пароля)
     SettingDef(
         "mail.code_ttl",
