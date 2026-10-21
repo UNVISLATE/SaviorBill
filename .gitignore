@@ -51,6 +51,7 @@ docker-compose.override.yml
 
 # Локальные документы аудита и планирования
 /AUDIT.md
+/AUDIT_GEMINI.md
 /CLOUD.md
 /IMPLEMENTATION_PLAN.md
 /WS_ROUTES.md
@@ -74,3 +75,5 @@ data/lua/**
 data-private/
 
 llms/
+.agents/
+.playwright-mcp/

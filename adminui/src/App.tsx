@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom"
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom"
 
 import { DashboardLayout } from "@/components/layout/DashboardLayout.tsx"
 import { BrandingHead } from "@/components/layout/BrandingHead"
@@ -11,7 +11,8 @@ import { SettingsPage } from "@/pages/settings/SettingsPage"
 import { LuaScriptsPage } from "@/pages/lua/LuaScriptsPage"
 import { CatalogsPage } from "@/pages/catalog/CatalogsPage"
 import { ServicesPage } from "@/pages/catalog/ServicesPage"
-import { ServiceDetailPage } from "@/pages/catalog/ServiceDetailPage"
+import { ServiceEditorPage } from "@/pages/catalog/ServiceEditorPage"
+import { ServiceKeysPage } from "@/pages/catalog/ServiceKeysPage"
 import { MediaLibraryPage } from "@/pages/media/MediaLibraryPage"
 import { OrdersPage } from "@/pages/orders/OrdersPage"
 import { PurchasesPage } from "@/pages/purchases/PurchasesPage"
@@ -19,7 +20,9 @@ import { PromoPage } from "@/pages/promo/PromoPage"
 import { TriggersPage } from "@/pages/triggers/TriggersPage"
 import { EmailTemplatesPage } from "@/pages/email/EmailTemplatesPage"
 import { OAuthProvidersPage } from "@/pages/oauth/OAuthProvidersPage"
+import { PaymentProvidersPage } from "@/pages/providers/PaymentProvidersPage"
 import { ProtectedRoute } from "@/routes/ProtectedRoute"
+import { NotFoundPage } from "@/pages/errors/NotFoundPage"
 import { ProfileDialogProvider } from "@/hooks/use-profile-dialog"
 import { ProfileDialogHost } from "@/components/profile/ProfileDialogHost"
 import { TooltipProvider } from "@/components/shadsnui/tooltip"
@@ -37,6 +40,7 @@ export function App() {
             <Route element={<DashboardLayout />}>
               <Route path="/" element={<DashboardPage />} />
               <Route path="/users" element={<UsersPage />} />
+              <Route path="/users/:userId" element={<UsersPage />} />
               <Route path="/audit" element={<AuditPage />} />
               <Route path="/system/*" element={<SystemPage />} />
               <Route path="/settings/*" element={<SettingsPage />} />
@@ -44,16 +48,25 @@ export function App() {
               <Route path="/lua/:scriptId" element={<LuaScriptsPage />} />
               <Route path="/catalog" element={<CatalogsPage />} />
               <Route path="/services" element={<ServicesPage />} />
-              <Route path="/services/:id" element={<ServiceDetailPage />} />
+              <Route path="/services/new" element={<ServiceEditorPage />} />
+              <Route path="/services/:id" element={<ServiceEditorPage />} />
+              <Route path="/service-keys" element={<ServiceKeysPage />} />
               <Route path="/media" element={<MediaLibraryPage />} />
               <Route path="/orders" element={<OrdersPage />} />
               <Route path="/purchases" element={<PurchasesPage />} />
               <Route path="/promo" element={<PromoPage />} />
               <Route path="/triggers" element={<TriggersPage />} />
-              <Route path="/email-templates" element={<EmailTemplatesPage />} />
-              <Route path="/oauth" element={<OAuthProvidersPage />} />
+              <Route path="/emailtemplate" element={<EmailTemplatesPage />} />
+              <Route path="/emailtemplate/:templateId" element={<EmailTemplatesPage />} />
+              <Route path="/email-templates" element={<Navigate to="/emailtemplate" replace />} />
+              <Route path="/providers" element={<Navigate to="/providers/payment" replace />} />
+              <Route path="/providers/payment" element={<PaymentProvidersPage />} />
+              <Route path="/providers/oauth" element={<OAuthProvidersPage />} />
+              <Route path="/oauth" element={<Navigate to="/providers/oauth" replace />} />
+              <Route path="/payment-providers" element={<Navigate to="/providers/payment" replace />} />
             </Route>
           </Route>
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </BrowserRouter>
       <ProfileDialogHost />

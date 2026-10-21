@@ -40,13 +40,21 @@ api.interceptors.response.use(
   (res) => res,
   async (error: AxiosError) => {
     const cfg = error.config as (InternalAxiosRequestConfig & { _retried?: boolean }) | undefined
-    if (error.response?.status === 401 && cfg && !cfg._retried) {
+    const url = cfg?.url || ""
+    const isAuthRoute =
+      url.includes("/auth/login") ||
+      url.includes("/auth/refresh") ||
+      url.includes("/auth/logout")
+
+    if (error.response?.status === 401 && cfg && !cfg._retried && !isAuthRoute) {
       cfg._retried = true
       const refreshed = await refreshAccessToken()
       if (refreshed) {
         return api(cfg)
       }
-      window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT))
+      if (!window.location.pathname.startsWith("/login")) {
+        window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT))
+      }
     }
     if (
       error.response?.status === 403 &&

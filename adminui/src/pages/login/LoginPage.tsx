@@ -1,5 +1,7 @@
 import { useState, type FormEvent } from "react"
-import { Navigate, useLocation } from "react-router-dom"
+import { Navigate, useLocation, useNavigate } from "react-router-dom"
+import { useQuery } from "@tanstack/react-query"
+import { api } from "@/api/api"
 import { KeyRound, ShieldCheck } from "lucide-react"
 
 import { useAuth } from "@/hooks/use-auth"
@@ -128,29 +130,56 @@ function TotpStep({
   )
 }
 
+interface OAuthProviderPublic {
+  slug: string
+  title: string
+  icon_url: string | null
+}
+
 export function LoginPage() {
   const { login, isAuthenticated } = useAuth()
   const branding = useBranding()
   const location = useLocation()
+  const navigate = useNavigate()
   const [loginValue, setLoginValue] = useState("")
   const [password, setPassword] = useState("")
-  // Второй фактор запрашивается только ПОСЛЕ первой попытки (backend не
-  // разглашает заранее, включена ли 2FA у аккаунта — иначе форма выдавала бы
-  // это простым перебором логина). Отдельный экран, а не поле в той же форме.
   const [totpRequired, setTotpRequired] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [totpError, setTotpError] = useState<string | null>(null)
   const [pending, setPending] = useState(false)
+  const [pendingOAuth, setPendingOAuth] = useState<string | null>(null)
+
+  const { data: oauthProviders = [] } = useQuery({
+    queryKey: ["oauth-providers-public"],
+    queryFn: async () => (await api.get<OAuthProviderPublic[]>("/v1/oauth/providers")).data,
+    retry: false,
+  })
+
+  const searchParams = new URLSearchParams(location.search)
+  const from = searchParams.get("from") || (location.state as { from?: string } | null)?.from || "/"
 
   if (isAuthenticated) {
-    const from = (location.state as { from?: string } | null)?.from ?? "/"
     return <Navigate to={from} replace />
+  }
+
+  const handleOAuthStart = async (slug: string) => {
+    setPendingOAuth(slug)
+    try {
+      const res = await api.get<{ authorize_url: string }>(`/v1/oauth/${slug}`)
+      if (res.data.authorize_url) {
+        window.location.assign(res.data.authorize_url)
+      }
+    } catch {
+      setError("Не удалось запустить авторизацию через OAuth")
+      setPendingOAuth(null)
+    }
   }
 
   async function attemptLogin(totp?: string) {
     setPending(true)
     try {
       await login(loginValue, password, totp)
+      navigate(from, { replace: true })
       return true
     } catch (err) {
       if (err instanceof Error && err.message === "TOTP_REQUIRED") {
@@ -187,18 +216,12 @@ export function LoginPage() {
 
   return (
     <div className="relative flex min-h-svh flex-col items-center justify-center overflow-hidden bg-background p-4 md:p-10">
-      {/* Декоративное радиальное свечение брендовым цветом — чисто фон, не несёт смысла. */}
-      <div
-        className="pointer-events-none absolute inset-0 -z-10"
-        style={{
-          background:
-            "radial-gradient(60% 50% at 50% 0%, rgba(0,144,128,0.16), transparent 70%)",
-        }}
-      />
       <div className="flex w-full max-w-sm flex-col gap-6">
-        <div className="flex items-center gap-2 self-center font-medium">
-          <Logo className="size-9" src={branding.logoUrl} />
-          <h1 className="text-lg font-semibold">{branding.name}</h1>
+        <div className="flex flex-col items-center gap-3 self-center text-center select-none">
+          <div className="flex items-center gap-2 font-medium">
+            <Logo className="size-6" src={branding.logoUrl} />
+            <h1 className="text-base font-semibold">{branding.name}</h1>
+          </div>
         </div>
 
         {totpRequired ? (
@@ -251,27 +274,30 @@ export function LoginPage() {
               </Button>
             </form>
 
-            {/* OAuth-провайдеры backend'ом пока не отдаются (нет /v1/auth/oauth/providers
-                и коллбэков) — намеренно оставлено как отключённый, но видимый задел,
-                чтобы не переверстывать форму при подключении. */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3">
-                <Separator className="flex-1" />
-                <span className="text-xs text-muted-foreground">или</span>
-                <Separator className="flex-1" />
+            {oauthProviders.length > 0 && (
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center gap-3">
+                  <Separator className="flex-1" />
+                  <span className="text-xs text-muted-foreground">или через OAuth</span>
+                  <Separator className="flex-1" />
+                </div>
+                <div className="grid gap-2">
+                  {oauthProviders.map((p) => (
+                    <Button
+                      key={p.slug}
+                      type="button"
+                      variant="outline"
+                      className="w-full gap-2 justify-center"
+                      disabled={pendingOAuth !== null}
+                      onClick={() => handleOAuthStart(p.slug)}
+                    >
+                      {p.icon_url && <img src={p.icon_url} alt="" className="size-4 object-contain" />}
+                      {pendingOAuth === p.slug ? "Перенаправление…" : `Продолжить с ${p.title}`}
+                    </Button>
+                  ))}
+                </div>
               </div>
-              <div className="grid gap-2">
-                <Button variant="outline" className="w-full" disabled title="Скоро">
-                  Продолжить с Google
-                </Button>
-                <Button variant="outline" className="w-full" disabled title="Скоро">
-                  Продолжить с GitHub
-                </Button>
-              </div>
-              <p className="text-center text-xs text-muted-foreground">
-                OAuth-вход появится позже
-              </p>
-            </div>
+            )}
           </div>
         )}
       </div>
