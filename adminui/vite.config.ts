@@ -5,23 +5,27 @@ import tailwindcss from "@tailwindcss/vite"
 import react from "@vitejs/plugin-react"
 import { defineConfig } from "vite"
 
-let gitCommit = "unknown"
-let gitDate = ""
-try {
-  gitCommit = execSync("git rev-parse --short HEAD").toString().trim()
-  gitDate = execSync("git log -1 --format=%cd --date=format:%d.%m.%Y").toString().trim()
-} catch {
-  // git may not be available in non-git environments
+let gitCommit = process.env.VITE_GIT_COMMIT || process.env.GIT_COMMIT || ""
+let gitDate = process.env.VITE_GIT_COMMIT_DATE || process.env.GIT_COMMIT_DATE || ""
+if (!gitCommit) {
+  try {
+    gitCommit = execSync("git rev-parse --short HEAD").toString().trim()
+    gitDate = execSync("git log -1 --format=%cd --date=format:%d.%m.%Y").toString().trim()
+  } catch {
+    // git may not be available in non-git environments
+  }
 }
 
-let appVersion = "0.0.0-dev"
-try {
-  const versionFile = path.resolve(__dirname, "../VERSION")
-  if (fs.existsSync(versionFile)) {
-    appVersion = fs.readFileSync(versionFile, "utf-8").trim()
+let appVersion = process.env.VITE_APP_VERSION || process.env.APP_VERSION || ""
+if (!appVersion) {
+  try {
+    const versionFile = path.resolve(__dirname, "../VERSION")
+    if (fs.existsSync(versionFile)) {
+      appVersion = fs.readFileSync(versionFile, "utf-8").trim()
+    }
+  } catch {
+    // fallback if file doesn't exist
   }
-} catch {
-  // fallback if file doesn't exist
 }
 
 // https://vite.dev/config/

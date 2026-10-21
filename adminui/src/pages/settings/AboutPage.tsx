@@ -61,9 +61,9 @@ export function AboutPage() {
   // Динамические данные о коммите и дате сборки
   const appName = health?.app_name || "SaviorBill"
   const version =
-    health?.app_version || (typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0-dev")
-  const gitCommit = typeof __GIT_COMMIT__ !== "undefined" ? __GIT_COMMIT__ : "7dcb249"
-  const gitDate = typeof __GIT_COMMIT_DATE__ !== "undefined" ? __GIT_COMMIT_DATE__ : "03.10.2026"
+    health?.app_version || (typeof __APP_VERSION__ !== "undefined" && __APP_VERSION__ ? __APP_VERSION__ : "undefined")
+  const gitCommit = typeof __GIT_COMMIT__ !== "undefined" && __GIT_COMMIT__ ? __GIT_COMMIT__ : "undefined"
+  const gitDate = typeof __GIT_COMMIT_DATE__ !== "undefined" && __GIT_COMMIT_DATE__ ? __GIT_COMMIT_DATE__ : "undefined"
 
   // Проверка релизов через GitHub API (/releases возвращает 200 [] если релизов нет, без 404)
   const { data: releases } = useQuery({
