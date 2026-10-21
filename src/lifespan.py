@@ -44,7 +44,10 @@ async def lifespan(app: FastAPI):
     app.state.db_sessionmaker = create_db_sessionmaker(app.state.db_engine)
     app.state.valkey = create_valkey_client(config.valkey_url)
     app.state.task_log = TaskLog(
-        app.state.valkey, max_len=config.TASKLOG_MAXLEN, ttl=config.TASKLOG_TTL
+        app.state.valkey,
+        max_len=config.TASKLOG_MAXLEN,
+        ttl=config.TASKLOG_TTL,
+        sm=app.state.db_sessionmaker,
     )
 
     # Автоинструментация запросов к БД (no-op, если трейсинг выключен).

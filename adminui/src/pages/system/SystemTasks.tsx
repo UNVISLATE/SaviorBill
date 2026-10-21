@@ -39,6 +39,46 @@ interface TaskLogEntry {
   detail: string | null
   owner_id: number | null
   ts: number
+  meta?: Record<string, unknown> | null
+}
+
+function formatTimeMs(ts: number | string | Date | null | undefined): string {
+  if (!ts) return "—"
+  const d = typeof ts === "number" ? new Date(ts * 1000) : new Date(ts)
+  if (isNaN(d.getTime())) return "—"
+  const h = String(d.getHours()).padStart(2, "0")
+  const m = String(d.getMinutes()).padStart(2, "0")
+  const s = String(d.getSeconds()).padStart(2, "0")
+  const ms = String(d.getMilliseconds()).padStart(3, "0")
+  return `${h}:${m}:${s}.${ms}`
+}
+
+function formatDateTimeMs(ts: number | string | Date | null | undefined): string {
+  if (!ts) return "—"
+  const d = typeof ts === "number" ? new Date(ts * 1000) : new Date(ts)
+  if (isNaN(d.getTime())) return "—"
+  const day = String(d.getDate()).padStart(2, "0")
+  const mon = String(d.getMonth() + 1).padStart(2, "0")
+  const year = d.getFullYear()
+  const h = String(d.getHours()).padStart(2, "0")
+  const m = String(d.getMinutes()).padStart(2, "0")
+  const s = String(d.getSeconds()).padStart(2, "0")
+  const ms = String(d.getMilliseconds()).padStart(3, "0")
+  return `${day}.${mon}.${year}, ${h}:${m}:${s}.${ms}`
+}
+
+function formatDurationMs(ms: number | null | undefined): string {
+  if (ms == null) return "—"
+  const totalSec = Math.floor(ms / 1000)
+  const remMs = ms % 1000
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
+  const s = totalSec % 60
+  const timeStr = `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}.${String(remMs).padStart(3, "0")}`
+  if (ms < 1000) {
+    return `${ms} мс (${timeStr})`
+  }
+  return `${timeStr} (${ms} мс)`
 }
 
 interface ArchivedTaskListItem {
@@ -131,8 +171,8 @@ function TaskDetailDialog({
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Длительность</p>
-                <p className="font-medium">
-                  {task.duration_ms != null ? `${task.duration_ms} мс` : "—"}
+                <p className="font-mono text-xs font-medium">
+                  {task.duration_ms != null ? formatDurationMs(task.duration_ms) : "—"}
                 </p>
               </div>
               <div>
@@ -141,15 +181,15 @@ function TaskDetailDialog({
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Создана</p>
-                <p className="text-xs">{new Date(task.created_at).toLocaleString()}</p>
+                <p className="font-mono text-xs">{formatDateTimeMs(task.created_at)}</p>
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Запуск</p>
-                <p className="text-xs">{task.started_at ? new Date(task.started_at).toLocaleString() : "—"}</p>
+                <p className="font-mono text-xs">{task.started_at ? formatDateTimeMs(task.started_at) : "—"}</p>
               </div>
               <div className="col-span-2">
                 <p className="text-xs text-muted-foreground">Завершена</p>
-                <p className="text-xs">{task.finished_at ? new Date(task.finished_at).toLocaleString() : "—"}</p>
+                <p className="font-mono text-xs">{task.finished_at ? formatDateTimeMs(task.finished_at) : "—"}</p>
               </div>
             </div>
 
@@ -240,10 +280,11 @@ function LiveTasksTab() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Время</TableHead>
+              <TableHead>Время (ЧЧ:ММ:СС.мс)</TableHead>
               <TableHead>Операция</TableHead>
               <TableHead>Токен/CID</TableHead>
               <TableHead>Статус</TableHead>
+              <TableHead>Длительность</TableHead>
               <TableHead>Владелец</TableHead>
               <TableHead>Детали</TableHead>
             </TableRow>
@@ -251,30 +292,36 @@ function LiveTasksTab() {
           <TableBody>
             {isLoading && (
               <TableRow>
-                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
                   Загрузка…
                 </TableCell>
               </TableRow>
             )}
             {!isLoading && (data?.length ?? 0) === 0 && (
               <TableRow>
-                <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={7} className="py-8 text-center text-sm text-muted-foreground">
                   Нет активных задач в буфере.
                 </TableCell>
               </TableRow>
             )}
-            {data?.map((e, i) => (
-              <TableRow key={i}>
-                <TableCell>{new Date(e.ts * 1000).toLocaleTimeString()}</TableCell>
-                <TableCell className="font-medium">{e.op}</TableCell>
-                <TableCell className="max-w-[160px] truncate font-mono text-xs">{e.token_or_cid}</TableCell>
-                <TableCell>
-                  <Badge variant={STATE_VARIANT[e.state] ?? "outline"}>{e.state}</Badge>
-                </TableCell>
-                <TableCell>{e.owner_id ?? "—"}</TableCell>
-                <TableCell className="max-w-xs truncate text-muted-foreground">{e.detail ?? "—"}</TableCell>
-              </TableRow>
-            ))}
+            {data?.map((e, i) => {
+              const durMs = (e.meta as Record<string, unknown> | undefined)?.duration_ms as number | undefined
+              return (
+                <TableRow key={i}>
+                  <TableCell className="font-mono text-xs whitespace-nowrap">{formatTimeMs(e.ts)}</TableCell>
+                  <TableCell className="font-medium">{e.op}</TableCell>
+                  <TableCell className="max-w-[160px] truncate font-mono text-xs">{e.token_or_cid}</TableCell>
+                  <TableCell>
+                    <Badge variant={STATE_VARIANT[e.state] ?? "outline"}>{e.state}</Badge>
+                  </TableCell>
+                  <TableCell className="font-mono text-xs tabular-nums">
+                    {durMs != null ? formatDurationMs(durMs) : "—"}
+                  </TableCell>
+                  <TableCell>{e.owner_id ?? "—"}</TableCell>
+                  <TableCell className="max-w-xs truncate text-muted-foreground">{e.detail ?? "—"}</TableCell>
+                </TableRow>
+              )
+            })}
           </TableBody>
         </Table>
       </div>
@@ -405,8 +452,8 @@ function ArchivedTasksTab() {
                 className="cursor-pointer hover:bg-muted/50"
                 onClick={() => setDetailTaskId(item.task_id)}
               >
-                <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                  {new Date(item.created_at).toLocaleString()}
+                <TableCell className="text-xs text-muted-foreground whitespace-nowrap font-mono">
+                  {formatDateTimeMs(item.created_at)}
                 </TableCell>
                 <TableCell>
                   <Badge variant="outline">{item.kind}</Badge>
@@ -418,8 +465,8 @@ function ArchivedTasksTab() {
                 <TableCell>
                   <Badge variant={STATE_VARIANT[item.status] ?? "outline"}>{item.status}</Badge>
                 </TableCell>
-                <TableCell className="text-xs tabular-nums">
-                  {item.duration_ms != null ? `${item.duration_ms} мс` : "—"}
+                <TableCell className="text-xs tabular-nums font-mono">
+                  {formatDurationMs(item.duration_ms)}
                 </TableCell>
                 <TableCell className="text-right">
                   <Button
