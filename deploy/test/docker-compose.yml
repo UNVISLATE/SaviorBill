@@ -18,6 +18,7 @@ services:
       SECRETS_ALLOW_ENV_FALLBACK: "true"
       # Запас по таймауту lua-вызова при медленном CI.
       LUA_CALL_TIMEOUT: "60"
+      BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-dev-only-bus-signing-key-not-for-prod}
     volumes:
       - ../../tests/data:/app/tests-data:ro
     healthcheck:

@@ -53,6 +53,7 @@ services:
       LUA_SCRIPTS_DIR: /app/data/lua
       EMAIL_TEMPLATES_DIR: /app/data/email
       STORAGE_BACKEND: ${STORAGE_BACKEND:-fs}
+      BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-dev-only-bus-signing-key-not-for-prod}
       OWNER_LOGIN: ${OWNER_LOGIN:-owner}
       OWNER_PASS: ${OWNER_PASS:-ownerpass}
       OWNER_EMAIL: ${OWNER_EMAIL:-owner@example.test}

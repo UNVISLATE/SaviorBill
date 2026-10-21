@@ -41,7 +41,11 @@ curl -fsSL "$RAW/Caddyfile" -o Caddyfile
 if [ ! -f .env ]; then
   echo ">> Скачиваю .env из .env.example..."
   curl -fsSL "$RAW/.env.example" -o .env
-  echo ">> Создан .env."
+  if command -v openssl >/dev/null 2>&1; then
+    bus_key="$(openssl rand -hex 32)"
+    sed -i "s|^BUS_SIGNING_KEY=.*|BUS_SIGNING_KEY=${bus_key}|" .env
+  fi
+  echo ">> Создан .env (BUS_SIGNING_KEY сгенерирован автоматически)."
 else
   echo ">> .env уже существует — оставляю как есть."
 fi
