@@ -124,6 +124,22 @@ async def create_purchase(
                 status.HTTP_400_BAD_REQUEST, "service_id is required for target=service"
             )
         service = await svc_mngr.get_active(body.service_id)
+
+        # Если уже есть неоплаченный счёт на эту услугу с готовой ссылкой оплаты — возвращаем его
+        existing_pending = await pay_mngr.s.scalar(
+            select(UserPaymentsModel)
+            .join(UserServicesModel, UserPaymentsModel.user_svc_id == UserServicesModel.id)
+            .where(
+                UserPaymentsModel.account_id == acc.id,
+                UserPaymentsModel.status == PayStatus.PENDING,
+                UserServicesModel.service_id == service.id,
+            )
+            .order_by(UserPaymentsModel.id.desc())
+            .limit(1)
+        )
+        if existing_pending is not None and existing_pending.payment_url:
+            return Payment.from_model(existing_pending)
+
         discount = Decimal("0")
         promo_id: int | None = None
         if body.promocode:
@@ -137,6 +153,11 @@ async def create_purchase(
             discount = promo_mngr.discount_for(catalog, service)
             promo_id = promo.id
         amount = service.price - discount
+        if amount <= Decimal("0"):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "service is fully discounted by promo code, order it via /api/v1/user/services/create",
+            )
         # Создаём отложенную выдачу (без списания/доставки — доставит колбэк).
         usvc = await usvc_mngr.create(
             acc, service, discount=discount, charge=False, deliver=False

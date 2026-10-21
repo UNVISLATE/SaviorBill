@@ -14,7 +14,7 @@ from dependencies.auth import get_current_acc, get_current_acc_optional
 from security.sec import jwt as jwtu
 from security.sec.cookies import ACCESS_COOKIE
 
-pytestmark = pytest.mark.unit
+pytestmark = [pytest.mark.unit, pytest.mark.anyio]
 
 ALG = "RS256"
 ISS = "saviorbill-test"

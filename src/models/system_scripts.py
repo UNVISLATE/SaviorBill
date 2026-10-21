@@ -416,7 +416,7 @@ class SystemScriptsMngr:
         if code is not None:
             sha256 = hashlib.sha256(code.encode()).hexdigest()
             if sha256 != row.sha256:
-                base = str(Path(row.filename).parent)
+                base = Path(row.filename).parent.as_posix()
                 new_version = row.current_version + 1
                 filename = f"{base}/v{new_version}.lua"
                 target = self._safe_target(filename)

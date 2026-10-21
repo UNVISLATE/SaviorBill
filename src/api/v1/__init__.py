@@ -3,6 +3,7 @@
 from fastapi import APIRouter
 
 from .admin import router as admin_router
+from .internal import router as internal_router
 from .auth import router as auth_router
 from .branding import router as branding_router
 from .callback import router as callback_router
@@ -25,6 +26,7 @@ for _r in (
     media_router,
     system_router,
     admin_router,
+    internal_router,
 ):
     router.include_router(_r)
 

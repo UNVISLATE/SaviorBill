@@ -8,6 +8,8 @@ from secrets import token_urlsafe
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
+    Index,
+    text,
     func,
     Boolean,
     DateTime,
@@ -37,6 +39,11 @@ class UserModel(Base):
     """Учётная запись"""
 
     __tablename__ = "accounts"
+    __table_args__ = (
+        Index("ix_trgm_accounts_login", "login", postgresql_using="gin", postgresql_ops={"login": "gin_trgm_ops"}),
+        Index("ix_trgm_accounts_email", "email", postgresql_using="gin", postgresql_ops={"email": "gin_trgm_ops"}),
+        Index("uq_accounts_email_lower", text("lower(email)"), unique=True, postgresql_where=text("email IS NOT NULL")),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     created_at: Mapped[datetime] = mapped_column(

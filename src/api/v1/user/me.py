@@ -17,7 +17,10 @@ from enums import BaseRole
 from models.system_media import SystemMediaMngr
 from models.user import UserModel
 from models.user_oauth import UserOauthMngr
-from schemas.auth import Account, AvatarSet, MePatch, PasswordChange
+from schemas.auth import Account, AvatarSet, MePatch, PasswordChange, _media_url
+from schemas.user import UserReferralItem
+from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from security.sec.pwd import hash_pass, verify_pass
 from services.account import account_response, release_old_avatar
 from services.auth import TokenSvc
@@ -54,6 +57,35 @@ async def me(
 ) -> Account:
     """Вернуть данные текущего аккаунта по access-токену."""
     return await account_response(acc, session)
+
+
+@router.get(
+    "/me/referrals",
+    response_model=list[UserReferralItem],
+    summary="List users referred by current account",
+    dependencies=[Depends(require_perm("user.profile.read"))],
+)
+async def my_referrals(
+    acc: UserModel = Depends(get_current_acc),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[UserReferralItem]:
+    """Список пользователей, зарегистрированных по реферальному коду текущего пользователя."""
+    stmt = (
+        select(UserModel)
+        .options(joinedload(UserModel.avatar_media))
+        .where(UserModel.referred_by == acc.id)
+        .order_by(UserModel.created_at.desc())
+    )
+    users = (await session.scalars(stmt)).unique().all()
+    return [
+        UserReferralItem(
+            id=u.id,
+            login=u.login,
+            created_at=u.created_at,
+            avatar_url=_media_url(u.avatar_media.token if u.avatar_media else None),
+        )
+        for u in users
+    ]
 
 
 @router.patch(
@@ -110,6 +142,7 @@ async def patch_me(
 )
 async def change_password(
     body: PasswordChange,
+    request: Request = None,  # type: ignore[assignment]
     acc: UserModel = Depends(get_current_acc),
     mngr: UserMngr = Depends(get_acc_mngr),
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
@@ -126,9 +159,12 @@ async def change_password(
             )
     acc.pass_hash = hash_pass(body.new_password)
     await mngr.s.commit()
-    # Смена пароля обязана обрывать чужие сессии: иначе украденный refresh
-    # продолжает ротироваться и после смены (AUDIT.md §1.3 SEC-H1).
-    await tokens.revoke_all_sessions(acc.id)
+    # Смена пароля обрывает чужие сессии, но сохраняет текущую активной
+    current_sid = getattr(getattr(request, "state", None), "auth_session_id", None)
+    if current_sid:
+        await tokens.revoke_all_sessions(acc.id, except_session_id=current_sid)
+    else:
+        await tokens.revoke_all_sessions(acc.id)
 
 
 @router.put(

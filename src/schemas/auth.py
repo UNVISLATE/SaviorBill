@@ -18,7 +18,12 @@ def _media_url(token: str | None) -> str | None:
 class Reg(BaseModel):
     """Local account registration."""
 
-    login: str = Field(min_length=3, max_length=64, description="Login (3–64 chars)")
+    login: str = Field(
+        min_length=3,
+        max_length=64,
+        pattern=r"^[a-zA-Zа-яА-ЯёЁ0-9_.-]+$",
+        description="Login (3–64 chars: latin, cyrillic, digits, _, ., -)",
+    )
     password: str = Field(
         min_length=8, max_length=128, description="Password (8–128 chars)"
     )

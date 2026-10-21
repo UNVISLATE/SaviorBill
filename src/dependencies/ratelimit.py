@@ -135,6 +135,9 @@ def rate_limit(
         await _enforce(
             request, response, settings, _authenticated_ident(acc), scope, kind
         )
+        await _enforce_ip_guard(
+            request, response, settings, _client_ip(request), scope, kind
+        )
 
     _dep = _dep_authenticated if require_auth else _dep_public
 
@@ -143,6 +146,33 @@ def rate_limit(
     _dep._rate_limit_kind = kind
     return _dep
 
+
+async def _enforce_ip_guard(
+    request: Request,
+    response: Response,
+    settings: SystemSettingsMngr,
+    ident: str,
+    scope: str,
+    kind: LimitKind,
+) -> None:
+    app_state = getattr(getattr(request, "app", None), "state", None)
+    cfg: AppConfig = getattr(app_state, "settings", None) if app_state else None
+    if not cfg or not cfg.RATE_LIMIT_ENABLED:
+        return
+    try:
+        base_rule = await _resolve_rule(settings, cfg, scope, kind)
+        ip_rule = LimitRule(base_rule.max_hits * 5, base_rule.window)
+        limiter = RateLimiter(app_state.valkey)
+        res = await limiter.hit(f"{scope}:ip_guard", ident, ip_rule)
+    except VALKEY_ERRORS as exc:
+        note_degraded("ratelimit", exc)
+        return
+    if not res.allowed:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="too many requests from your IP, try again later",
+            headers={"Retry-After": str(res.retry_after)},
+        )
 
 async def _enforce(
     request: Request,

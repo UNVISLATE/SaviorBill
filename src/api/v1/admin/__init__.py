@@ -19,6 +19,7 @@ from .purchases import router as purchases_router
 from .roles import router as roles_router
 from .services import router as services_router
 from .servicekeys import router as servicekeys_router
+from .global_servicekeys import router as global_servicekeys_router
 from .settings import router as settings_router
 from .tasks import router as tasks_router
 from .triggers import router as triggers_router
@@ -34,6 +35,7 @@ router.include_router(users_router, prefix="/users", tags=["admin: users"])
 router.include_router(roles_router, tags=["admin: roles"])
 router.include_router(services_router, prefix="/services", tags=["admin: services"])
 router.include_router(servicekeys_router, prefix="/services", tags=["admin: services"])
+router.include_router(global_servicekeys_router, prefix="/service-keys", tags=["admin: service keys"])
 router.include_router(catalogs_router, prefix="/catalogs", tags=["admin: catalogs"])
 router.include_router(orders_router, prefix="/orders", tags=["admin: orders"])
 router.include_router(purchases_router, prefix="/purchases", tags=["admin: purchases"])

@@ -311,42 +311,41 @@ class TokenSvc:
         return True
 
     async def revoke_all_sessions(
-        self, account_id: int, *, commit: bool = True
+        self,
+        account_id: int,
+        *,
+        except_session_id: str | None = None,
+        commit: bool = True,
     ) -> int:
         """Завершить все сессии аккаунта (смена пароля, роли, бан).
 
-        Отзываются refresh-токены: выданный ранее access живёт до своего
-        короткого TTL, но прав он не даёт — RBAC на каждом запросе читает роль
-        из БД, так что бан вступает в силу сразу.
-
+        :arg except_session_id: session_id текущей сессии (digest jti), которую нужно сохранить.
         :return: сколько сессий было отозвано.
         """
         if self.session is not None:
             now = datetime.now(timezone.utc)
-            account = await self.session.scalar(
-                select(UserModel)
-                .where(UserModel.id == account_id)
-                .with_for_update(of=UserModel)
+            if not except_session_id:
+                account = await self.session.scalar(
+                    select(UserModel)
+                    .where(UserModel.id == account_id)
+                    .with_for_update(of=UserModel)
+                )
+                if account is None:
+                    return 0
+                account.auth_session_version = (
+                    getattr(account, "auth_session_version", 0) + 1
+                )
+            stmt = select(AuthSessionModel).where(
+                AuthSessionModel.account_id == account_id,
+                AuthSessionModel.revoked_at.is_(None),
+                AuthSessionModel.expires_at > now,
             )
-            if account is None:
-                return 0
-            account.auth_session_version = (
-                getattr(account, "auth_session_version", 0) + 1
-            )
-            rows = list(
-                (
-                    await self.session.scalars(
-                        select(AuthSessionModel).where(
-                            AuthSessionModel.account_id == account_id,
-                            AuthSessionModel.revoked_at.is_(None),
-                            AuthSessionModel.expires_at > now,
-                        )
-                    )
-                ).all()
-            )
+            if except_session_id:
+                stmt = stmt.where(AuthSessionModel.refresh_jti_hash != except_session_id)
+            rows = list((await self.session.scalars(stmt)).all())
             for row in rows:
                 row.revoked_at = now
-                row.revoke_reason = "all"
+                row.revoke_reason = "password_change" if except_session_id else "all"
             if commit:
                 await self.session.commit()
             return len(rows)
@@ -355,6 +354,10 @@ class TokenSvc:
         prefix = f"{_SESSION}{account_id}:"
         async for key in self.vk.scan_iter(match=prefix + "*"):
             jti = key.split(":", 2)[2] if isinstance(key, str) else key
+            if except_session_id:
+                digest = self._session_digest(jti)
+                if digest == except_session_id or str(jti) == str(except_session_id):
+                    continue
             if await self.revoke_session(account_id, jti):
                 revoked += 1
         return revoked
