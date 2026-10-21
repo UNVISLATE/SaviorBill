@@ -244,6 +244,15 @@ export function MediaLibraryPage() {
           onClose={() => setPreviewIndex(null)}
           onPrev={items.length > 1 ? () => setPreviewIndex((i) => ((i ?? 0) - 1 + items.length) % items.length) : undefined}
           onNext={items.length > 1 ? () => setPreviewIndex((i) => ((i ?? 0) + 1) % items.length) : undefined}
+          mediaUrl={previewItem.url}
+          onDelete={
+            canDelete
+              ? () => {
+                  del.mutate(previewItem.id)
+                  setPreviewIndex(null)
+                }
+              : undefined
+          }
           caption={
             <>
               {STATUS_LABEL[previewItem.status] ?? previewItem.status} · {fmtBytes(previewItem.size)} ·{" "}

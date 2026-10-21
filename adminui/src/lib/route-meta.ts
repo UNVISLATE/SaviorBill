@@ -1,7 +1,7 @@
 /**
  * Реестр меток маршрутов для хлебных крошек — включает не только
  * верхнеуровневые разделы сайдбара, но и под-страницы составных секций
- * (`/system/*`, `/settings/*`), которых раньше не было видно в крошках
+ * (`/system/*`, `/settings/*`, `/providers/*`), которых раньше не было видно в крошках
  * вообще (см. PLAN.md Ф5 — "хлебные крошки не видят подстраницы").
  *
  * `Breadcrumbs.tsx` строит цепочку из ВСЕХ записей, чей `path` — префикс
@@ -19,14 +19,21 @@ export const routeMeta: RouteMeta[] = [
   { path: "/audit", title: "Аудит" },
   { path: "/lua", title: "Скрипты" },
   { path: "/triggers", title: "Триггеры" },
+  { path: "/emailtemplate", title: "Email-шаблоны" },
   { path: "/email-templates", title: "Email-шаблоны" },
-  { path: "/oauth", title: "OAuth-вход" },
   { path: "/catalog", title: "Каталоги" },
   { path: "/services", title: "Услуги" },
+  { path: "/services/new", title: "Новая услуга" },
+  { path: "/service-keys", title: "Ключи услуг" },
   { path: "/media", title: "Медиатека" },
   { path: "/orders", title: "Заказы" },
   { path: "/purchases", title: "Платежи" },
   { path: "/promo", title: "Промокоды" },
+
+  { path: "/providers", title: "Провайдеры" },
+  { path: "/providers/payment", title: "Платежи" },
+  { path: "/providers/oauth", title: "OAuth" },
+  { path: "/oauth", title: "OAuth" },
 
   { path: "/system", title: "Система" },
   { path: "/system/overview", title: "Обзор" },
@@ -40,9 +47,9 @@ export const routeMeta: RouteMeta[] = [
   { path: "/settings/branding", title: "Брендирование" },
   { path: "/settings/ratelimits", title: "Rate limiting" },
   { path: "/settings/domains", title: "Заблокированные домены" },
-  { path: "/settings/payment-providers", title: "Платёжные провайдеры" },
   { path: "/settings/raw", title: "Raw settings" },
   { path: "/settings/roles", title: "Роли" },
+  { path: "/settings/about", title: "О системе" },
 ]
 
 /**

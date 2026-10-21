@@ -1,5 +1,5 @@
 import type { ReactNode } from "react"
-import { ArrowDown, ArrowUp, ArrowUpDown, Search, SearchX } from "lucide-react"
+import { ArrowDown, ArrowUp, ArrowUpDown, ChevronLeft, ChevronRight, Search, SearchX } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import {
@@ -67,6 +67,19 @@ export interface DataTableProps<T> {
 /** Общая таблица со серверной сортировкой/поиском/пагинацией + выбором строк
  * (см. IMPLEMENTATION_PLAN.md §0.1). Сама не хранит query-состояние — это
  * делает `useDataTableQuery`, компонент только рендерит и дёргает колбэки. */
+function getPaginationItems(current: number, total: number): (number | "...")[] {
+  if (total <= 7) {
+    return Array.from({ length: total }, (_, i) => i + 1)
+  }
+  if (current <= 4) {
+    return [1, 2, 3, 4, 5, "...", total]
+  }
+  if (current >= total - 3) {
+    return [1, "...", total - 4, total - 3, total - 2, total - 1, total]
+  }
+  return [1, "...", current - 1, current, current + 1, "...", total]
+}
+
 export function DataTable<T>({
   columns,
   data,
@@ -82,7 +95,7 @@ export function DataTable<T>({
   searchPlaceholder = "Поиск…",
   limit,
   offset,
-  hasMore,
+  hasMore: _hasMore,
   onLimitChange,
   onOffsetChange,
   selectable,
@@ -246,11 +259,12 @@ export function DataTable<T>({
         </Table>
       </div>
 
-      <div className="flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>На странице:</span>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        {/* Левая часть: На странице: [30 v] 1–2 из 2 строго в 1 строку */}
+        <div className="flex items-center gap-2.5 text-xs text-muted-foreground whitespace-nowrap shrink-0 sm:text-sm">
+          <span className="whitespace-nowrap">На странице:</span>
           <Select value={String(limit)} onValueChange={(v) => onLimitChange(Number(v))}>
-            <SelectTrigger size="sm">
+            <SelectTrigger size="sm" className="h-8 w-[72px] shrink-0 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -261,28 +275,69 @@ export function DataTable<T>({
               ))}
             </SelectContent>
           </Select>
-          <span>
+          <span className="whitespace-nowrap tabular-nums font-medium text-foreground/80">
             {from}–{to} из {total}
           </span>
         </div>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={offset === 0}
-            onClick={() => onOffsetChange(Math.max(0, offset - limit))}
-          >
-            Назад
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!hasMore}
-            onClick={() => onOffsetChange(offset + limit)}
-          >
-            Далее
-          </Button>
-        </div>
+
+        {/* Правая часть: современная пагинация с номерами и стрелками */}
+        {(() => {
+          const currentPage = Math.floor(offset / limit) + 1
+          const totalPages = Math.max(1, Math.ceil(total / limit))
+          const pages = getPaginationItems(currentPage, totalPages)
+
+          return (
+            <div className="flex items-center gap-1 self-center sm:self-auto">
+              <Button
+                variant="outline"
+                size="icon-sm"
+                className="size-8 rounded-md"
+                disabled={currentPage <= 1}
+                onClick={() => onOffsetChange(Math.max(0, offset - limit))}
+                title="Предыдущая страница"
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+
+              {pages.map((p, idx) =>
+                p === "..." ? (
+                  <span
+                    key={`ellipsis-${idx}`}
+                    className="flex size-8 select-none items-center justify-center text-xs text-muted-foreground"
+                  >
+                    …
+                  </span>
+                ) : (
+                  <Button
+                    key={p}
+                    variant={p === currentPage ? "default" : "ghost"}
+                    size="sm"
+                    className={cn(
+                      "min-w-8 h-8 px-2 text-xs font-medium transition-all",
+                      p === currentPage
+                        ? "font-semibold shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                    onClick={() => onOffsetChange((p - 1) * limit)}
+                  >
+                    {p}
+                  </Button>
+                )
+              )}
+
+              <Button
+                variant="outline"
+                size="icon-sm"
+                className="size-8 rounded-md"
+                disabled={currentPage >= totalPages}
+                onClick={() => onOffsetChange(offset + limit)}
+                title="Следующая страница"
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+          )
+        })()}
       </div>
     </div>
   )

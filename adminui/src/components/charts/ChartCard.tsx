@@ -101,7 +101,7 @@ export function ChartCardBody({
   return (
     <>
       <div style={{ height }} className="w-full px-2">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height="100%" minWidth={0} debounce={50}>
           <AreaChart data={data} margin={{ top: 4, right: 8, left: 0, bottom: 0 }}>
             <defs>
               {series.map((s) => (

@@ -87,6 +87,8 @@ function ProviderFormDialog({
   const [pickerOpen, setPickerOpen] = useState(false)
   const qc = useQueryClient()
 
+  const selectedScript = authScripts?.find((s) => String(s.id) === scriptId)
+
   const save = useMutation({
     mutationFn: async () => {
       let secrets: unknown = {}
@@ -151,7 +153,9 @@ function ProviderFormDialog({
             <Label>Auth-скрипт (обрабатывает start/callback)</Label>
             <Select value={scriptId} onValueChange={(v) => setScriptId(v ?? "")}>
               <SelectTrigger>
-                <SelectValue placeholder="Выберите скрипт" />
+                <SelectValue placeholder="Выберите скрипт">
+                  {selectedScript ? selectedScript.name : undefined}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {authScripts?.map((s) => (
@@ -279,7 +283,12 @@ export function OAuthProvidersPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold">Вход через OAuth</h1>
+        <div>
+          <h1 className="text-xl font-semibold">OAuth</h1>
+          <p className="text-sm text-muted-foreground">
+            Провайдеры авторизации через внешние сервисы.
+          </p>
+        </div>
         {canCreate && (
           <Button size="sm" onClick={() => setCreating(true)}>
             <Plus className="size-4" /> Добавить провайдера

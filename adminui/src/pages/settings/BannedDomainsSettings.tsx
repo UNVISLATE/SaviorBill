@@ -19,6 +19,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/shadsnui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/shadsnui/alert-dialog"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 interface BannedDomain {
@@ -71,6 +81,21 @@ export function BannedDomainsSettings() {
   const canEdit = can("settings.email_domains.edit")
   const qc = useQueryClient()
   const table = useDataTableQuery()
+  const [selected, setSelected] = useState<Set<string | number>>(new Set())
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
+  const [singleDeleteDomain, setSingleDeleteDomain] = useState<string | null>(null)
+
+  const bulkDelete = useMutation({
+    mutationFn: async (domains: string[]) =>
+      (await api.post<{ requested: number; removed: number }>("/v1/admin/settings/email-domains/bulk/delete", { domains })).data,
+    onSuccess: (res) => {
+      toastSuccess(`Удалено доменов: ${res.removed}`)
+      setSelected(new Set())
+      setBulkDeleteOpen(false)
+      void qc.invalidateQueries({ queryKey: ["admin-banned-domains"] })
+    },
+    onError: (e: unknown) => toastError("Не удалось удалить домены", getErrorDetail(e)),
+  })
 
   const { data, isLoading } = useQuery({
     queryKey: ["admin-banned-domains", table.limit, table.offset, table.search, table.sort],
@@ -204,7 +229,7 @@ export function BannedDomainsSettings() {
                         variant="ghost"
                         size="icon"
                         className="size-7 text-destructive"
-                        onClick={() => remove.mutate(d.domain)}
+                        onClick={() => setSingleDeleteDomain(d.domain)}
                       >
                         <Trash2 className="size-3.5" />
                       </Button>
@@ -217,6 +242,20 @@ export function BannedDomainsSettings() {
           total={data?.total ?? 0}
           isLoading={isLoading}
           getRowId={(d) => d.domain}
+          selectable={canEdit}
+          selected={selected}
+          onSelectedChange={setSelected}
+          toolbarExtra={
+            selected.size > 0 && canEdit ? (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setBulkDeleteOpen(true)}
+              >
+                <Trash2 className="size-4" /> Удалить выбранные ({selected.size})
+              </Button>
+            ) : null
+          }
           sort={table.sort}
           onToggleSort={table.toggleSort}
           searchValue={table.searchInput}
@@ -429,6 +468,52 @@ export function BannedDomainsSettings() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить выбранные домены?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Будет разблокировано доменов: {selected.size}. Пользователи смогут снова регистрироваться с почтой на этих доменах.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={bulkDelete.isPending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={bulkDelete.isPending}
+              onClick={() => bulkDelete.mutate(Array.from(selected) as string[])}
+            >
+              {bulkDelete.isPending ? "Удаление…" : "Удалить"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={!!singleDeleteDomain} onOpenChange={(v) => !v && setSingleDeleteDomain(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Разблокировать домен?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Домен <code className="rounded bg-muted px-1 py-0.5">{singleDeleteDomain}</code> будет удалён из списка заблокированных.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={remove.isPending}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={remove.isPending}
+              onClick={() => {
+                if (singleDeleteDomain) {
+                  remove.mutate(singleDeleteDomain)
+                  setSingleDeleteDomain(null)
+                }
+              }}
+            >
+              {remove.isPending ? "Удаление…" : "Разблокировать"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Card>
   )
 }

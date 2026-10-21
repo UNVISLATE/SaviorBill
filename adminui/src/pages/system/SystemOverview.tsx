@@ -63,7 +63,6 @@ export function SystemOverview() {
       ]
       return next.slice(-MAX_POINTS)
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data])
 
   return (

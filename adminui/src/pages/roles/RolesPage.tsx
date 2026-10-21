@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { ChevronRight, Minus, Trash2 } from "lucide-react"
 
@@ -55,7 +55,9 @@ interface RoleImpact {
   can_delete: boolean
 }
 
-type PermTree = Record<string, PermTree | true>
+interface PermTree {
+  [key: string]: PermTree | boolean
+}
 
 /** Собрать вложенный perms-объект из списка плоских путей (только true-листья) —
  * зеркалит `security/rbac.py::perms_tree`, но строит дерево только по выбранным
@@ -78,9 +80,12 @@ function buildPermsTree(paths: string[]): Record<string, unknown> {
 function treePaths(tree: PermTree, prefix = ""): string[] {
   return Object.entries(tree).flatMap(([key, value]) => {
     const path = prefix ? `${prefix}.${key}` : key
-    return value === true || Object.keys(value).length === 0
-      ? [path]
-      : treePaths(value, path)
+    if (value === true) return [path]
+    if (typeof value === "object" && value !== null) {
+      const keys = Object.keys(value)
+      return keys.length === 0 ? [path] : treePaths(value as PermTree, path)
+    }
+    return [path]
   })
 }
 
@@ -202,12 +207,12 @@ export function RolesPage() {
     })
   }
 
-  function permissionRows(tree: PermTree, prefix = "", depth = 0): JSX.Element[] {
+  function permissionRows(tree: PermTree, prefix = "", depth = 0): ReactNode[] {
     return Object.entries(tree).flatMap(([key, value]) => {
       const path = prefix ? `${prefix}.${key}` : key
       const descendants = treePaths({ [key]: value }, prefix)
       const selected = descendants.filter((item) => checked.has(item))
-      const isLeaf = value === true || Object.keys(value).length === 0
+      const isLeaf = value === true || (typeof value === "object" && value !== null && Object.keys(value).length === 0)
       const isExpanded = depth === 0 ? !collapsedPermGroups.has(path) : collapsedPermGroups.has(path)
       const isCollapsed = !isExpanded
       const isPartiallySelected = selected.length > 0 && selected.length < descendants.length
@@ -243,7 +248,7 @@ export function RolesPage() {
           key={`${path}-children`}
           className="ml-3 border-l border-border/70 pl-2"
         >
-          {permissionRows(value, path, depth + 1)}
+          {permissionRows(value as PermTree, path, depth + 1)}
         </div>,
       ]
     })

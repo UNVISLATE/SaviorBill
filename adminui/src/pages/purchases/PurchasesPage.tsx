@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { RefreshCw, Undo2 } from "lucide-react"
+import { ExternalLink, RefreshCw, Undo2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -8,7 +8,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { useDataTableQuery } from "@/hooks/use-data-table"
 import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
 import { Badge } from "@/components/shadsnui/badge"
-import { Button } from "@/components/shadsnui/button"
+import { Button, buttonVariants } from "@/components/shadsnui/button"
 import {
   Dialog,
   DialogContent,
@@ -29,6 +29,7 @@ interface Payment {
   external_id: string | null
   public_data: Record<string, unknown>
   private_data: Record<string, unknown>
+  payment_url: string | null
   created_at: string
 }
 
@@ -106,6 +107,19 @@ function PaymentDetailDialog({ payment, onOpenChange }: { payment: Payment; onOp
               <p className="text-xs text-muted-foreground">ID у провайдера</p>
               <p className="truncate font-mono text-xs">{payment.external_id ?? "—"}</p>
             </div>
+            {payment.payment_url && (
+              <div className="col-span-2">
+                <p className="text-xs text-muted-foreground">Ссылка на оплату</p>
+                <a
+                  href={payment.payment_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="truncate text-xs text-primary hover:underline block max-w-full font-mono"
+                >
+                  {payment.payment_url}
+                </a>
+              </div>
+            )}
           </div>
           <div>
             <p className="mb-1 text-xs text-muted-foreground">Ответ провайдера (private_data)</p>
@@ -115,6 +129,16 @@ function PaymentDetailDialog({ payment, onOpenChange }: { payment: Payment; onOp
           </div>
         </div>
         <DialogFooter>
+          {payment.status === "pending" && payment.payment_url && (
+            <a
+              href={payment.payment_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={buttonVariants({ variant: "default" })}
+            >
+              <ExternalLink className="mr-1.5 size-4" /> Перейти к оплате
+            </a>
+          )}
           {canRecheck && (
             <Button variant="outline" disabled={recheck.isPending} onClick={() => recheck.mutate()}>
               <RefreshCw className="size-4" /> Проверить статус
@@ -160,7 +184,22 @@ export function PurchasesPage() {
     { key: "amount", header: "Сумма", render: (p) => `${p.amount} ${p.currency}` },
     {
       header: "Статус",
-      render: (p) => <Badge variant={STATUS_VARIANT[p.status] ?? "outline"}>{p.status}</Badge>,
+      render: (p) => (
+        <div className="flex items-center gap-2">
+          <Badge variant={STATUS_VARIANT[p.status] ?? "outline"}>{p.status}</Badge>
+          {p.status === "pending" && p.payment_url && (
+            <a
+              href={p.payment_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className={buttonVariants({ variant: "ghost", size: "xs", className: "text-primary hover:text-primary" })}
+            >
+              <ExternalLink className="mr-1 size-3" /> Оплатить
+            </a>
+          )}
+        </div>
+      ),
     },
     {
       key: "created_at",
