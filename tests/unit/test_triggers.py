@@ -186,3 +186,42 @@ async def test_fire_antiloop_blocks_after_limit():
     # Третье срабатывание в течение того же окна — заблокировано анти-петлёй.
     assert await disp.fire(TriggerEvent.ORDER_CREATED, {}) == 0
     assert len(action.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_key_stock_triggers():
+    from lifecycle.triggers.stock import check_and_fire_key_stock_triggers
+    from unittest.mock import AsyncMock
+
+    class _DispatcherMock:
+        def __init__(self):
+            self.fired = []
+            self.settings = None
+
+        async def fire(self, event, ctx):
+            self.fired.append((event, ctx))
+
+    disp = _DispatcherMock()
+    svc = SimpleNamespace(id=10, name="VPN", slug="vpn-test")
+
+    session = AsyncMock()
+    session.scalar.return_value = 0
+    session.get.return_value = None
+
+    await check_and_fire_key_stock_triggers(session, svc, disp)
+    assert len(disp.fired) == 1
+    assert disp.fired[0][0] == TriggerEvent.SERVICE_KEYS_EMPTY
+    assert disp.fired[0][1]["keys_left"] == 0
+    assert disp.fired[0][1]["service_id"] == 10
+
+    disp.fired.clear()
+    session.scalar.return_value = 2
+    await check_and_fire_key_stock_triggers(session, svc, disp)
+    assert len(disp.fired) == 1
+    assert disp.fired[0][0] == TriggerEvent.SERVICE_KEYS_LOW
+    assert disp.fired[0][1]["keys_left"] == 2
+
+    disp.fired.clear()
+    session.scalar.return_value = 10
+    await check_and_fire_key_stock_triggers(session, svc, disp)
+    assert len(disp.fired) == 0

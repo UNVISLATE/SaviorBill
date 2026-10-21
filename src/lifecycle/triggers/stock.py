@@ -26,11 +26,20 @@ async def check_and_fire_key_stock_triggers(
         return
 
     from models.service_keys import ServiceKeysModel
-    from models.system_settings import SystemSettingsMngr
 
     try:
-        settings_mngr = SystemSettingsMngr(session)
-        threshold = await settings_mngr.get_int("service.keys_low_threshold", 5) or 5
+        threshold = 5
+        if getattr(dispatcher, "settings", None) is not None:
+            threshold = await dispatcher.settings.get_int("service.keys_low_threshold", 5) or 5
+        else:
+            from models.system_settings import SystemSettingsModel
+
+            row = await session.get(SystemSettingsModel, "service.keys_low_threshold")
+            if row is not None and row.value is not None:
+                try:
+                    threshold = int(row.value)
+                except ValueError:
+                    threshold = 5
 
         remaining = await session.scalar(
             select(func.count(ServiceKeysModel.id)).where(

@@ -126,13 +126,21 @@ class BillingLoop:
         биллинга не порождали уведомлений, а анти-петля триггеров была
         отключена (`settings is None`, см. AUDIT.md §3.2).
         """
+    async def _dispatcher(self, session: AsyncSession) -> TriggerDispatcher:
         settings = SystemSettingsMngr(
             session, self.vk, make_secbox(self.cfg), self.cfg.SETTINGS_CACHE_TTL
         )
         bus = await self._bus(session)
-        dispatcher = build_dispatcher(
+        return build_dispatcher(
             session, settings, bus, await build_mail_svc(settings), self.cfg
         )
+
+    async def _pay_mngr(self, session: AsyncSession) -> PayMngr:
+        settings = SystemSettingsMngr(
+            session, self.vk, make_secbox(self.cfg), self.cfg.SETTINGS_CACHE_TTL
+        )
+        bus = await self._bus(session)
+        dispatcher = await self._dispatcher(session)
         return PayMngr(
             session,
             bus,
@@ -142,8 +150,9 @@ class BillingLoop:
         )
 
     async def _usvc_mngr(self, session: AsyncSession) -> UserServicesMngr:
+        dispatcher = await self._dispatcher(session)
         return UserServicesMngr(
-            session, await self._bus(session), make_secbox(self.cfg)
+            session, await self._bus(session), make_secbox(self.cfg), dispatcher=dispatcher
         )
 
     @property
