@@ -1,35 +1,42 @@
-import { useQuery } from "@tanstack/react-query"
+import { useEffect } from "react"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { api } from "@/api/api.ts"
+
+export const BRANDING_UPDATED_EVENT = "sb-admin:branding-updated"
 
 interface BrandingResponse {
   name: string | null
   logo_url: string | null
   favicon_url: string | null
   theme: Record<string, unknown>
+  version?: string
 }
 
 const FALLBACK_NAME = "SaviorBill Admin"
 
-/**
- * Брендинг admin-панели (`ui.admin.*`) — публичный, не требует авторизации
- * (см. `api/v1/branding.py`), поэтому доступен и на странице логина.
- *
- * Раньше `ui.admin.name`/`ui.admin.logo` можно было поменять через API, но
- * сама панель их нигде не читала — заголовок и логотип оставались
- * захардкоженными вне зависимости от настроек (см. PLAN.md).
- */
 export function useBranding() {
+  const qc = useQueryClient()
   const { data } = useQuery({
     queryKey: ["branding-admin"],
     queryFn: async () => (await api.get<BrandingResponse>("/v1/branding/admin")).data,
-    staleTime: 5 * 60_000,
+    staleTime: 0,
     retry: false,
   })
+
+  useEffect(() => {
+    const onBrandingUpdated = () => {
+      void qc.invalidateQueries({ queryKey: ["branding-admin"] })
+      void qc.refetchQueries({ queryKey: ["branding-admin"] })
+    }
+    window.addEventListener(BRANDING_UPDATED_EVENT, onBrandingUpdated)
+    return () => window.removeEventListener(BRANDING_UPDATED_EVENT, onBrandingUpdated)
+  }, [qc])
 
   return {
     name: data?.name || FALLBACK_NAME,
     logoUrl: data?.logo_url ?? null,
     faviconUrl: data?.favicon_url ?? null,
+    version: data?.version ?? "",
   }
 }

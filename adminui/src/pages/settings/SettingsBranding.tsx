@@ -7,6 +7,7 @@ import { uploadOwnMedia } from "@/api/media-upload.ts"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { useSettingsMap } from "@/hooks/use-settings-map"
+import { BRANDING_UPDATED_EVENT } from "@/hooks/use-branding"
 import { ThemeSettings } from "./ThemeSettings"
 import { Button } from "@/components/shadsnui/button"
 import {
@@ -53,6 +54,7 @@ function AssetSlot({
     onSuccess: () => {
       toastSuccess(`${label} обновлён`)
       setPreview(null)
+      window.dispatchEvent(new Event(BRANDING_UPDATED_EVENT))
       onDone()
     },
     onError: () => toastError(`Не удалось сохранить ${label.toLowerCase()}`),
@@ -68,6 +70,7 @@ function AssetSlot({
     onSuccess: () => {
       toastSuccess(`${label} обновлён`)
       setPreview(null)
+      window.dispatchEvent(new Event(BRANDING_UPDATED_EVENT))
       onDone()
     },
     onError: (err: unknown) => {

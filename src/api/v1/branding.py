@@ -12,7 +12,7 @@ from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 
 router = APIRouter(prefix="/api/v1/branding", tags=["branding"])
 
-_CACHE_CONTROL = "public, max-age=300, stale-while-revalidate=86400"
+_CACHE_CONTROL = "no-cache, must-revalidate"
 
 
 def _media_url(token: str) -> str:
@@ -37,11 +37,13 @@ def _build_body(scope: str, raw: dict[str, str]) -> dict:
     logo = raw.get(f"ui.{scope}.logo")
     favicon = raw.get(f"ui.{scope}.favicon")
     theme_raw = raw.get(f"ui.{scope}.theme")
+    ver = hashlib.md5(f"{logo}:{favicon}:{raw.get(f'ui.{scope}.name')}:{theme_raw}".encode()).hexdigest()[:8]
     return {
         "name": raw.get(f"ui.{scope}.name"),
-        "logo_url": _media_url(logo) if logo else None,
-        "favicon_url": _media_url(favicon) if favicon else None,
+        "logo_url": f"{_media_url(logo)}?v={ver}" if logo else None,
+        "favicon_url": f"{_media_url(favicon)}?v={ver}" if favicon else None,
         "theme": json.loads(theme_raw) if theme_raw else {},
+        "version": ver,
     }
 
 

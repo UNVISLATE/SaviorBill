@@ -29,6 +29,7 @@ class PayStatus:
     FAILED = "failed"
     REFUNDED = "refunded"
     WAIT = "wait"
+    CANCELLED = "cancelled"
 
 
 TopupStatus = PayStatus

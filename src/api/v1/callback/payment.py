@@ -49,9 +49,7 @@ async def _build_request(request: Request) -> LuaRequest:
 
 
 async def _notify(svc: PayMngr, triggers: TriggerDispatcher, payment) -> None:
-    """Best-effort триггеры по итогам колбэка (оплата/выдача услуги)."""
-    if payment.status != PayStatus.PAID:
-        return
+    """Best-effort триггеры по итогам колбэка (оплата/выдача услуги/отмена/сбой)."""
     acc = await svc.s.get(UserModel, payment.account_id)
     email = acc.email if acc else None
     base = {
@@ -65,22 +63,28 @@ async def _notify(svc: PayMngr, triggers: TriggerDispatcher, payment) -> None:
             "amount": str(payment.amount),
             "currency": payment.currency,
             "target": payment.target,
+            "status": payment.status,
         },
     }
-    await triggers.fire(TriggerEvent.PAYMENT_PAID, base)
 
-    if payment.target == PayTarget.SERVICE and payment.user_svc_id:
-        usvc = await svc.s.get(UserServicesModel, payment.user_svc_id)
-        if usvc is not None:
-            ctx = {
-                **base,
-                "service": {
-                    "id": usvc.service_id,
-                    "status": usvc.status,
-                    "public_data": usvc.public_data or {},
-                },
-            }
-            await triggers.fire(TriggerEvent.SERVICE_DELIVERED, ctx)
+    if payment.status == PayStatus.PAID:
+        await triggers.fire(TriggerEvent.PAYMENT_PAID, base)
+        if payment.target == PayTarget.SERVICE and payment.user_svc_id:
+            usvc = await svc.s.get(UserServicesModel, payment.user_svc_id)
+            if usvc is not None:
+                ctx = {
+                    **base,
+                    "service": {
+                        "id": usvc.service_id,
+                        "status": usvc.status,
+                        "public_data": usvc.public_data or {},
+                    },
+                }
+                await triggers.fire(TriggerEvent.SERVICE_DELIVERED, ctx)
+    elif payment.status == PayStatus.FAILED:
+        await triggers.fire(TriggerEvent.PAYMENT_FAILED, base)
+    elif payment.status in (PayStatus.CANCELLED, "cancelled"):
+        await triggers.fire(TriggerEvent.PAYMENT_CANCELLED, base)
 
 
 @router.post(
