@@ -5,27 +5,31 @@ services:
       POSTGRES_USER: ${DB_USER:-saviorbill}
       POSTGRES_PASSWORD: ${DB_PASS:-test123}
       POSTGRES_DB: ${DB_NAME:-saviorbill}
+    ports:
+      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-saviorbill}"]
-      interval: 5s
+      interval: 3s
       timeout: 3s
-      retries: 10
+      retries: 5
 
   valkey:
     image: valkey/valkey:8-alpine
-    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
-      interval: 5s
+      interval: 3s
       timeout: 3s
-      retries: 10
+      retries: 5
 
   billing:
     build:
       context: ../..
       dockerfile: src/Dockerfile
+      target: runtime
     depends_on:
       db:
         condition: service_healthy
@@ -39,11 +43,11 @@ services:
       DB_NAME: ${DB_NAME:-saviorbill}
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
-      SECRETS_BACKEND: ${SECRETS_BACKEND:-file}
-      SECRETS_KEY: ${SECRETS_KEY:-}
-      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8000}
-      LUA_SERVICE_TOKEN: ${LUA_SERVICE_TOKEN:-dev-service-token}
-      BUS_SIGNING_KEY: ${BUS_SIGNING_KEY:-dev-only-bus-signing-key-not-for-prod}
+      VALKEY_DB: 0
+      HOST: 0.0.0.0
+      PORT: 8000
+      DEBUG: ${DEBUG:-true}
+      DOCS_ENABLED: "true"
       DATA_DIR: /app/data
       PRIVATE_DATA_DIR: /app/private
       LUA_SCRIPTS_DIR: /app/data/lua
@@ -128,6 +132,13 @@ services:
       - ../../data:/app/data:rw
     ports:
       - "8001:8001"
+
+  adminui:
+    build:
+      context: ../../adminui
+    restart: unless-stopped
+    ports:
+      - "3000:80"
 
 volumes:
   pgdata:

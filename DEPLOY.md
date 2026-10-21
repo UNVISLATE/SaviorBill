@@ -21,14 +21,19 @@
                                            ▼
                            ┌───────────────────────────────┐
                            │  Reverse Proxy (Caddy/Nginx)  │
-                           └───────┬───────────────┬───────┘
-                     /api, /ws, UI │               │ /media, /uploads
-                                   ▼               ▼
-                       ┌────────────────┐    ┌─────────────────┐
-                       │    billing     │    │   mediaworker   │
-                       │ (FastAPI:8000) │    │  (FastAPI:8001) │
-                       └───────┬────────┘    └────────┬────────┘
-                               │                      │
+                           └───────┬───────┬───────┬───────┘
+                                   │       │       │
+                      /api, /ws    │       │ /*    │ /api/media
+                                   ▼       │ (UI)  ▼
+                       ┌────────────────┐  │ ┌─────────────────┐
+                       │    billing     │  │ │   mediaworker   │
+                       │ (FastAPI:8000) │  │ │  (FastAPI:8001) │
+                       └───────┬────────┘  │ └────────┬────────┘
+                               │           ▼          │
+                               │   ┌───────────────┐  │
+                               │   │    adminui    │  │
+                               │   │  (Nginx:80)   │  │
+                               │   └───────────────┘  │
         ┌──────────────────────┼──────────────────────┼──────────────────────┐
         │                      │                      │                      │
         ▼                      ▼                      ▼                      ▼
@@ -38,9 +43,10 @@
 └──────────────┘       └──────────────┘       └──────────────┘       └──────────────┘
 ```
 
-* **billing** (FastAPI): ядро системы, API, авторизация (JWT RS256), админ-панель (React SPA), планировщик жизненного цикла и списаний (`BillingLoop`), работа с PostgreSQL.
+* **billing** (FastAPI): ядро системы, REST API, авторизация (JWT RS256), планировщик жизненного цикла и списаний (`BillingLoop`), работа с PostgreSQL.
+* **adminui** (Nginx Alpine): независимый легковесный контейнер панели управления (React 19, TypeScript, Tailwind CSS, Monaco Editor). Отдаёт статику с кэшированием и SPA-маршрутизацией.
 * **luaworker** (Lua 5.4 / LuaJIT): изолированная среда исполнения скриптов жизненного цикла услуг (`create`, `renew`, `freeze`, `unfreeze`, `delete`), обработки триггеров остатков, интеграций с внешними API и фоновых задач. Получает задания из шины `lua:tasks` в Valkey. **Масштабируется горизонтально.**
-* **mediaworker** (Python/FastAPI): изолированный сервис загрузки и сжатия картинок (WebP/WebM) и аватарок. Получает задачи из `media:tasks`.
+* **mediaworker** (Python/FastAPI): микросервис загрузки и сжатия картинок (WebP/WebM) и аватарок. Получает задачи из `media:tasks`.
 * **Valkey 8** (форк Redis): высокоскоростная шина сообщений (Redis Streams), распределённый кэш, блокировки и rate-limiting.
 * **PostgreSQL 16**: надёжное реляционное хранилище всех транзакций, аккаунтов, услуг и системных логов.
 * **Caddy / Nginx**: внешний шлюз с автоматическим выпуском SSL-сертификатов (Let's Encrypt).
@@ -201,7 +207,7 @@ OWNER_EMAIL=admin@example.com
 
 ### 1.5. Настройка Caddyfile (Reverse Proxy & Auto-SSL)
 
-Файл `deploy/Caddyfile` уже преднастроен. Убедитесь, что он выглядит следующим образом:
+Файл `deploy/Caddyfile` преднастроен для маршрутизации REST API, WebSocket, микросервиса медиа и SPA Admin UI:
 
 ```caddyfile
 {$DOMAIN} {
@@ -212,12 +218,27 @@ OWNER_EMAIL=admin@example.com
         respond "Not Found" 404
     }
 
-    # Перенаправление всех остальных запросов на Billing
-    handle {
+    # Маршрутизация загрузки медиа напрямую в mediaworker
+    handle /api/media/* {
+        reverse_proxy mediaworker:8001
+    }
+
+    # Маршрутизация REST API в Billing Engine
+    handle /api/* {
         reverse_proxy billing:8000 {
             header_up X-Forwarded-Proto {scheme}
             header_up X-Real-IP {remote_host}
         }
+    }
+
+    # Маршрутизация WebSocket в Billing Engine
+    handle /ws/* {
+        reverse_proxy billing:8000
+    }
+
+    # Раздача SPA интерфейса Admin UI
+    handle {
+        reverse_proxy adminui:80
     }
 }
 
@@ -265,6 +286,7 @@ docker compose ps
 * `saviorvalkey` (Valkey 8) — status `healthy`
 * `saviorbill` (Billing Engine) — status `healthy`
 * `saviormedia` (MediaWorker) — status `healthy`
+* `saviorui` (Admin UI Nginx) — status `healthy`
 * `saviorlua` (реплики luaworker) — status `running`
 * `saviorcaddy` (Caddy) — status `running`, порты 80, 443
 
@@ -274,7 +296,7 @@ docker compose ps
 docker compose logs -f billing
 ```
 
-После завершения инициализации откройте в браузере `https://bill.example.com` и авторизуйтесь под администратором.
+После завершения инициализации откройте в браузере `https://bill.example.com` — отобразится панель управления SaviorBill. Авторизуйтесь под администратором.
 
 ---
 
@@ -331,8 +353,8 @@ chmod +x /opt/saviorbill/backup.sh
 
 ```text
                ┌────────────────────────────────────────────────────────┐
-               │         СЕРВЕР 1: Web & Edge (API Gateway)             │
-               │   Caddy + Billing (FastAPI) + AdminUI (Static)         │
+               │         СЕРВЕР 1: Web & Edge (API & UI Gateway)        │
+               │   Caddy + Billing (FastAPI) + AdminUI (Nginx)          │
                └───────────────────────────┬────────────────────────────┘
                                            │
                       Приватный зашифрованный WireGuard Mesh
@@ -352,7 +374,7 @@ chmod +x /opt/saviorbill/backup.sh
                                                    └──────────────────────────────────┘
 ```
 
-1. **Сервер 1 (Web/API):** Публичный шлюз. Принимает внешние клиентские запросы, раздаёт веб-интерфейс, исполняет ядро биллинга.
+1. **Сервер 1 (Web/API & UI):** Публичный шлюз. Принимает внешние клиентские запросы, раздаёт интерфейс Admin UI, исполняет ядро биллинга.
 2. **Сервер 2 (Data Core):** Изолированный сервер данных. **Не имеет публичных портов** (доступ только через защищённую приватную сеть). На нём работают PostgreSQL и Valkey.
 3. **Сервер 3 (Compute):** Вычислительная нода. Не хранит персистентных данных БД. Подключается к Valkey на Сервере 2 и параллельно исполняет скрипты услуг, триггеры и внешние сетевые вызовы.
 4. **Облачное хранилище S3:** Файлы картинок и медиа хранятся в совместимом S3-хранилище (Cloudflare R2, MinIO, AWS S3).
@@ -374,7 +396,7 @@ wg genkey | tee privatekey | wg pubkey > publickey
 
 Пример адресации:
 * **Сервер 2 (Data Core):** `10.10.0.2`
-* **Сервер 1 (Billing API):** `10.10.0.1`
+* **Сервер 1 (Billing API & UI):** `10.10.0.1`
 * **Сервер 3 (Lua Workers):** `10.10.0.3`
 * **Сервер 4 (Media Worker):** `10.10.0.4`
 
@@ -450,7 +472,7 @@ docker compose up -d
 
 ---
 
-### 2.4. Настройка Сервера 1: Billing Engine & Web Gateway
+### 2.4. Настройка Сервера 1: Billing Engine, Admin UI & Web Gateway
 
 На Сервере 1 создайте `.env`:
 
@@ -479,8 +501,9 @@ SECRETS_BACKEND=file
 PRIVATE_DATA_DIR=/app/private
 ```
 
-В `docker-compose.yml` на Сервере 1 остаются только:
+В `docker-compose.yml` на Сервере 1 работают:
 * `caddy` (порты 80, 443)
+* `adminui` (Nginx SPA)
 * `billing` (FastAPI)
 
 Приватные ключи JWT (`data-private/`) хранятся **исключительно на Сервере 1**.

@@ -6,14 +6,14 @@
 # 3) Просит отредактировать .env.
 # 4) Показывает команды для запуска, просмотра логов и остановки.
 #
-# Использование (запускать из репо, в котором хотите разместить стек, например /opt/saviorbill/):
+# Использование:
 #   mkdir -p /opt/saviorbill && cd /opt/saviorbill
-#   bash <(curl -fsSL https://raw.githubusercontent.com/UNVISLATE/SaviorBill/main/deploy/setup.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/UNVISLATE/SaviorBill/master/deploy/setup.sh)
 # или:
-#   bash <(wget -qO- https://raw.githubusercontent.com/UNVISLATE/SaviorBill/main/deploy/setup.sh)
+#   bash <(wget -qO- https://raw.githubusercontent.com/UNVISLATE/SaviorBill/master/deploy/setup.sh)
 set -euo pipefail
 
-RAW="https://raw.githubusercontent.com/UNVISLATE/SaviorBill/main/deploy"
+RAW="https://raw.githubusercontent.com/UNVISLATE/SaviorBill/master/deploy"
 
 # ── 1. Docker ────────────────────────────────────────────────────────────────
 if ! command -v docker >/dev/null 2>&1; then
@@ -80,15 +80,16 @@ cat <<'EOF'
 
    docker compose ps            # статус контейнеров
    docker compose logs -f       # все логи (Ctrl+C для выхода)
-   docker compose logs -f billing mediaworker   # логи конкретных сервисов
+   docker compose logs -f billing mediaworker adminui # логи конкретных сервисов
    docker compose down          # остановить стек
-   docker compose pull && docker compose up -d  # обновить образы
+   docker compose pull && docker compose up -d       # обновить образы
 
  После запуска:
-   API billing:      https://<DOMAIN>/api/v1/
-   Swagger billing:  https://<DOMAIN>/api/docs
-   Swagger media:    https://<MEDIA_DOMAIN>/api/media/docs
-   Health:           https://<DOMAIN>/api/health
+   Панель управления (Admin UI):  https://<DOMAIN>/
+   REST API billing:             https://<DOMAIN>/api/v1/
+   Swagger billing:              https://<DOMAIN>/api/docs
+   Swagger media:                https://<MEDIA_DOMAIN>/docs
+   Health:                       https://<DOMAIN>/api/health
 ============================================================================
 EOF
 

@@ -6,8 +6,24 @@
 		respond "not found" 404
 	}
 
-	handle {
+	# Маршрутизация загрузки медиа в mediaworker
+	handle /api/media/* {
+		reverse_proxy mediaworker:8001
+	}
+
+	# Маршрутизация REST API в Billing Engine
+	handle /api/* {
 		reverse_proxy billing:8000
+	}
+
+	# Маршрутизация WebSocket в Billing Engine
+	handle /ws/* {
+		reverse_proxy billing:8000
+	}
+
+	# Раздача SPA интерфейса Admin UI
+	handle {
+		reverse_proxy adminui:80
 	}
 }
 

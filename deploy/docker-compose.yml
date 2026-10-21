@@ -114,6 +114,17 @@ services:
       retries: 10
       start_period: 30s
 
+  adminui:
+    container_name: saviorui
+    image: ${IMAGE_PREFIX:-ghcr.io/unvislate/saviorbill}/adminui:${TAG:-latest}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:80/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
   caddy:
     container_name: saviorcaddy
     image: caddy:2-alpine
@@ -122,6 +133,8 @@ services:
       billing:
         condition: service_healthy
       mediaworker:
+        condition: service_healthy
+      adminui:
         condition: service_healthy
     environment:
       DOMAIN: ${DOMAIN:-localhost:8000}

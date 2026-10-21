@@ -38,6 +38,10 @@ jobs:
             context: ./mediaworker
             file: ./mediaworker/Dockerfile
             target: runtime
+          - name: adminui
+            context: ./adminui
+            file: ./adminui/Dockerfile
+            target: runtime
     steps:
       - uses: actions/checkout@v7
         with:
@@ -84,17 +88,18 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VITE_GIT_COMMIT=${{ github.sha }}
+            VITE_GIT_COMMIT_DATE=${{ github.event.release.published_at }}
+            VITE_APP_VERSION=${{ github.event.release.tag_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   release-complete:
-    # Единая точка "весь набор образов релиза опубликован успешно" — матрица
-    # publish и так гарантирует это через needs, но отдельная джоба даёт
-    # понятную точку для последующих уведомлений/тега "released" и защищает
-    # от иллюзии "релиз готов", если хотя бы один образ матрицы не собрался
+    # Единая точка "весь набор образов релиза опубликован успешно"
     runs-on: ubuntu-latest
     needs: [publish]
     steps:
       - name: All images published
         run: |
-          echo "release ${{ github.event.release.tag_name }}: all images (billing/luaworker/mediaworker) published successfully"
+          echo "release ${{ github.event.release.tag_name }}: all images (billing/luaworker/mediaworker/adminui) published successfully"
