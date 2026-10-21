@@ -8,7 +8,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route
 from starlette.testclient import TestClient
 
-from security.csrf import CookieCSRFMiddleware, _origin_allowed, _origin_of
+from security.csrf import CookieCSRFMiddleware, _is_exempt, _origin_allowed, _origin_of
 from security.sec.cookies import ACCESS_COOKIE
 
 pytestmark = pytest.mark.unit
@@ -27,6 +27,18 @@ def test_origin_allowed_matches_ignoring_trailing_slash():
     assert not _origin_allowed("https://evil.com", ["https://admin.example.com"])
 
 
+def test_is_exempt_helper():
+    assert _is_exempt("/api/v1/auth/login")
+    assert _is_exempt("/api/v1/auth/register")
+    assert _is_exempt("/api/v1/auth/refresh")
+    assert _is_exempt("/api/v1/auth/logout")
+    assert _is_exempt("/api/v1/auth/password/reset/request")
+    assert _is_exempt("/api/v1/auth/password/reset/confirm")
+    assert _is_exempt("/api/v1/callback/pay/crypto")
+    assert not _is_exempt("/api/v1/user/me/password")
+    assert not _is_exempt("/api/v1/admin/users")
+
+
 class _FakeCfg:
     def __init__(self, origins: list[str]) -> None:
         self.cors_origins_list = origins
@@ -37,7 +49,13 @@ async def _ok(request):
 
 
 def _make_app(origins: list[str]) -> Starlette:
-    app = Starlette(routes=[Route("/x", _ok, methods=["GET", "POST"])])
+    app = Starlette(
+        routes=[
+            Route("/x", _ok, methods=["GET", "POST"]),
+            Route("/api/v1/auth/login", _ok, methods=["POST"]),
+            Route("/api/v1/callback/pay/test", _ok, methods=["POST"]),
+        ]
+    )
     app.add_middleware(CookieCSRFMiddleware, cfg=_FakeCfg(origins))
     return app
 
@@ -92,4 +110,16 @@ def test_no_allowed_origins_configured_allows_any_origin():
     resp = client.post(
         "/x", cookies={ACCESS_COOKIE: "tok"}, headers={"Origin": "http://127.0.0.1:5173"}
     )
+    assert resp.status_code == 200
+
+
+def test_exempt_endpoints_allowed_even_with_cookie_and_no_origin():
+    """Эндпоинты входа и вебхуков не должны блокироваться из-за остаточных кук."""
+    client = TestClient(_make_app(["https://admin.example.com"]))
+    # Логин с кукой в клиенте и без Origin
+    resp = client.post("/api/v1/auth/login", cookies={ACCESS_COOKIE: "stale_token"})
+    assert resp.status_code == 200
+
+    # Вебхук колбэка с кукой и без Origin
+    resp = client.post("/api/v1/callback/pay/test", cookies={ACCESS_COOKIE: "stale_token"})
     assert resp.status_code == 200

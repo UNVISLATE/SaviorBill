@@ -8,6 +8,11 @@ Auth-cookie (``sb_access``/``sb_refresh``, см. ``security/sec/cookies.py``)
 для небезопасных методов, аутентифицированных именно cookie (не
 ``Authorization``-заголовком, который CSRF не умеет подделать), сверяет
 ``Origin`` с разрешённым списком (``CORS_ORIGINS``).
+
+Эндпоинты аутентификации (логин, регистрация, refresh, сброс пароля) и
+внешние webhook'и (платежи/OAuth-callback) освобождены от проверки: они не
+используют ``sb_access`` для авторизации действий текущей сессии и не
+должны отклоняться при наличии остаточных cookie в клиенте.
 """
 
 from __future__ import annotations
@@ -22,6 +27,28 @@ from core.config import AppConfig
 from security.sec.cookies import ACCESS_COOKIE
 
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS", "TRACE"})
+
+# Эндпоинты, не авторизующие действия через sb_access
+_CSRF_EXEMPT_PATHS = frozenset(
+    {
+        "/api/v1/auth/login",
+        "/api/v1/auth/register",
+        "/api/v1/auth/refresh",
+        "/api/v1/auth/logout",
+        "/api/v1/auth/password/reset/request",
+        "/api/v1/auth/password/reset/confirm",
+    }
+)
+
+_CSRF_EXEMPT_PREFIXES = (
+    "/api/v1/callback/",
+)
+
+
+def _is_exempt(path: str) -> bool:
+    if path in _CSRF_EXEMPT_PATHS:
+        return True
+    return path.startswith(_CSRF_EXEMPT_PREFIXES)
 
 
 def _origin_of(url: str) -> str:
@@ -47,6 +74,7 @@ class CookieCSRFMiddleware(BaseHTTPMiddleware):
     ) -> Response:
         if (
             request.method not in _SAFE_METHODS
+            and not _is_exempt(request.url.path)
             and not request.headers.get("authorization")
             and request.cookies.get(ACCESS_COOKIE)
         ):
@@ -59,4 +87,4 @@ class CookieCSRFMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
-__all__ = ["CookieCSRFMiddleware"]
+__all__ = ["CookieCSRFMiddleware", "_is_exempt"]
