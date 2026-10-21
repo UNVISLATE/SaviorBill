@@ -86,6 +86,20 @@ async def http() -> AsyncIterator[httpx.AsyncClient]:
 
 
 @pytest_asyncio.fixture(scope="session", autouse=True)
+async def clean_stale_triggers(cfg: AppConfig) -> AsyncIterator[None]:
+    """Очистить триггеры перед тестами, чтобы остаточные записи в персистентной БД не ломали тесты."""
+    eng = create_async_engine(cfg.db_url)
+    try:
+        async with eng.begin() as c:
+            await c.execute(text("DELETE FROM triggers"))
+        yield
+    except Exception:
+        yield
+    finally:
+        await eng.dispose()
+
+
+@pytest_asyncio.fixture(scope="session", autouse=True)
 async def worker_ready(cfg: AppConfig) -> AsyncIterator[None]:
     """Прогреть lua-воркер до старта интеграционных тестов.
 
