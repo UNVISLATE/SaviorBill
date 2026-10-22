@@ -134,12 +134,5 @@ services:
     ports:
       - "8001:8001"
 
-  adminui:
-    build:
-      context: ../../adminui
-    restart: unless-stopped
-    ports:
-      - "3000:80"
-
 volumes:
   pgdata:
