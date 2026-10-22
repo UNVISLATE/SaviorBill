@@ -50,7 +50,7 @@ function AssetSlot({
 
   const write = useMutation({
     mutationFn: async (value: string) =>
-      api.post(`/v1/admin/settings/ui/${scope}.${asset}`, { value }),
+      api.put(`/v1/branding/${scope}`, { [asset]: value }),
     onSuccess: () => {
       toastSuccess(`${label} обновлён`)
       setPreview(null)
@@ -65,7 +65,7 @@ function AssetSlot({
       // tag — метка для админки; сервер требует до 16 символов, только
       // латиница и цифры (никаких дефисов, см. mediaworker _TAG_RE).
       const { token: uploaded } = await uploadOwnMedia(file, { tag: `${scope}${asset}` })
-      await api.post(`/v1/admin/settings/ui/${scope}.${asset}`, { value: uploaded })
+      await api.put(`/v1/branding/${scope}`, { [asset]: uploaded })
     },
     onSuccess: () => {
       toastSuccess(`${label} обновлён`)
@@ -164,7 +164,7 @@ function ScopeCard({
   }
 
   const saveName = useMutation({
-    mutationFn: async () => api.post(`/v1/admin/settings/ui/${scope}.name`, { value: currentName }),
+    mutationFn: async () => api.put(`/v1/branding/${scope}`, { name: currentName }),
     onSuccess: () => {
       toastSuccess("Название сохранено")
       setName(null)

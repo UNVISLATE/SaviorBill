@@ -61,6 +61,8 @@ export interface SettingFieldSpec {
   suffix?: string
   /** Поле на всю ширину карточки, с подписью сверху (для таблиц/JSON). */
   wide?: boolean
+  /** Заблокировано для редактирования */
+  disabled?: boolean
   /** Показывать поле только если другое поле секции имеет одно из значений. */
   showIf?: { key: string; equals: string[] }
 }
@@ -110,10 +112,12 @@ function CurrencyPicker({
   value,
   onChange,
   placeholder,
+  disabled,
 }: {
   value: string
   onChange: (next: string) => void
   placeholder?: string
+  disabled?: boolean
 }) {
   const items = useMemo(() => CURRENCIES.map(([code, name]) => `${code} — ${name}`), [])
 
@@ -122,8 +126,9 @@ function CurrencyPicker({
       items={items}
       value={value ? (items.find((i) => i.startsWith(`${value} `)) ?? value) : null}
       onValueChange={(v) => onChange(typeof v === "string" ? v.slice(0, 3).toUpperCase() : "")}
+      disabled={disabled}
     >
-      <ComboboxInput placeholder={placeholder ?? "Код валюты"} />
+      <ComboboxInput placeholder={placeholder ?? "Код валюты"} disabled={disabled} />
       <ComboboxContent>
         <ComboboxEmpty>Ничего не найдено — можно ввести код вручную.</ComboboxEmpty>
         <ComboboxList>
@@ -274,6 +279,7 @@ function FieldControl({
   if (kind === "switch") {
     return (
       <Switch
+        disabled={spec.disabled}
         checked={value.toLowerCase() === "true"}
         onCheckedChange={(checked) => onChange(String(checked))}
       />
@@ -281,12 +287,19 @@ function FieldControl({
   }
 
   if (kind === "currency") {
-    return <CurrencyPicker value={value} onChange={onChange} placeholder={spec.placeholder} />
+    return (
+      <CurrencyPicker
+        value={value}
+        onChange={onChange}
+        placeholder={spec.placeholder}
+        disabled={spec.disabled}
+      />
+    )
   }
 
   if (kind === "select") {
     return (
-      <Select value={value || undefined} onValueChange={(v) => v && onChange(v)}>
+      <Select value={value || undefined} onValueChange={(v) => v && onChange(v)} disabled={spec.disabled}>
         <SelectTrigger className="w-full">
           <SelectValue placeholder={spec.placeholder ?? "Не задано"} />
         </SelectTrigger>
@@ -311,6 +324,7 @@ function FieldControl({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={spec.placeholder}
+        disabled={spec.disabled}
         inputMode={kind === "number" ? "numeric" : undefined}
         className={cn(spec.suffix && "pr-14")}
       />

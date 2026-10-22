@@ -66,55 +66,6 @@ export function SettingsGeneral() {
       />
 
       <SettingsSection
-        title="Медиа"
-        description="Ограничения на загрузку и хранение файлов пользователями."
-        fields={[
-          {
-            key: "media.quota.image_bytes",
-            label: "Квота хранения (фото)",
-            kind: "number",
-            suffix: "байт",
-            placeholder: "52428800",
-            hint: "Суммарный объём файлов аккаунта без права media.upload.video. По умолчанию 50 MiB.",
-          },
-          {
-            key: "media.quota.video_bytes",
-            label: "Квота хранения (видео)",
-            kind: "number",
-            suffix: "байт",
-            placeholder: "2147483648",
-            hint: "То же для аккаунтов с правом media.upload.video. По умолчанию 2 GiB.",
-          },
-          {
-            key: "media.small_max_bytes",
-            label: "Размер файла (фото)",
-            kind: "number",
-            suffix: "байт",
-            hint: "Потолок для одной загрузки без права media.upload.video.",
-          },
-          {
-            key: "media.max_bytes",
-            label: "Размер файла (видео)",
-            kind: "number",
-            suffix: "байт",
-            hint: "Потолок для одной загрузки с правом media.upload.video.",
-          },
-          {
-            key: "media.uploads_per_hour",
-            label: "Загрузок в час",
-            kind: "number",
-            hint: "Не применяется к аккаунтам с правом media.upload.video.",
-          },
-          {
-            key: "user.media.limit",
-            label: "Файлов на аккаунт",
-            kind: "number",
-            hint: "Жёсткий отказ при превышении — старые файлы не удаляются автоматически.",
-          },
-        ]}
-      />
-
-      <SettingsSection
         title="Реферальная программа"
         fields={[
           {

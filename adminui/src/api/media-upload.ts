@@ -38,32 +38,61 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
-/**
- * Загрузить файл как медиа текущего пользователя и дождаться готовности
- * (конвертация в mediaworker асинхронная — статус приходит по поллингу).
- *
- * Поток: mediaworker (`/api/media/upload`, отдельный сервис — см.
- * vite.config.ts и deploy/Caddyfile) выдаёт одноразовый upload_token → сам
- * файл льётся туда же по upload_url → billing (`/v1/media/status/{token}`)
- * знает о готовности по мере конвертации → как только `state === "ready"`,
- * находим числовой `media_id` по списку `/v1/user/media` (сам статус его не
- * возвращает) для `PUT /v1/user/me/avatar`.
- */
+export interface MediaUploadConfig {
+  video_codec?: "copy" | "libvpx-vp9" | "libx264"
+  audio_codec?: "copy" | "libopus" | "aac" | "none"
+  format?: "original" | "webm" | "mp4" | "gif" | "webp"
+  scale?: string
+  poster_scale?: string
+  crf?: number
+  video_preset?: string
+  audio_bitrate?: string
+  keep_animation?: boolean
+  tag?: string
+}
+
+export function isMediaConfigRequired(file: File): boolean {
+  if (file.type === "image/gif" || file.name.toLowerCase().endsWith(".gif")) return true
+  if (file.type.startsWith("video/") || /\.(mp4|webm|mkv|mov|avi)$/i.test(file.name)) return true
+  return false
+}
+
+export interface BeginUploadOptions extends MediaUploadConfig {
+  onProgress?: (p: UploadProgress) => void
+  signal?: AbortSignal
+}
+
+function buildUploadParams(opts: BeginUploadOptions): Record<string, string | number | boolean> {
+  const params: Record<string, string | number | boolean> = {}
+  if (opts.tag) params.tag = opts.tag
+  if (opts.video_codec) params.video_codec = opts.video_codec
+  if (opts.audio_codec) params.audio_codec = opts.audio_codec
+  if (opts.format) params.format = opts.format
+  if (opts.scale) params.scale = opts.scale
+  if (opts.poster_scale) params.poster_scale = opts.poster_scale
+  if (opts.crf != null) params.crf = opts.crf
+  if (opts.video_preset) params.video_preset = opts.video_preset
+  if (opts.audio_bitrate) params.audio_bitrate = opts.audio_bitrate
+  if (opts.keep_animation != null) params.keep_animation = opts.keep_animation
+  return params
+}
+
 /**
  * Загрузить файл (шаги 1+2), не дожидаясь готовности конвертации — вернуть
  * сразу после приёма файла mediaworker'ом (``state: "queued"``).
  *
  * Используется там, где готовность отслеживается отдельно и параллельно для
  * нескольких файлов сразу (WS ``/api/media/mine``, см.
- * ``hooks/use-media-status-ws.ts``) — в отличие от ``uploadOwnMedia()``,
- * которая гоняет REST-поллинг сама и ждёт синхронно один файл.
+ * ``hooks/use-media-status-ws.ts``).
  */
 export async function beginOwnMediaUpload(
   file: File,
-  opts: { tag?: string; onProgress?: (p: UploadProgress) => void; signal?: AbortSignal } = {},
+  opts: BeginUploadOptions = {},
 ): Promise<{ token: string }> {
+  const params = buildUploadParams(opts)
+
   const { data: initiate } = await api.post<InitiateResponse>("/media/upload", null, {
-    params: opts.tag ? { tag: opts.tag } : undefined,
+    params: Object.keys(params).length > 0 ? params : undefined,
   })
   const uploadPath = initiate.upload_url.replace(/^\/api/, "")
   const { data: uploaded } = await api.post<UploadStepResponse>(uploadPath, file, {
@@ -78,23 +107,18 @@ export async function beginOwnMediaUpload(
 
 export async function uploadOwnMedia(
   file: File,
-  opts: { tag?: string; onProgress?: (p: UploadProgress) => void; signal?: AbortSignal } = {},
+  opts: BeginUploadOptions = {},
 ): Promise<{ mediaId: number; token: string }> {
   if (opts.tag === "avatar" && !file.type.startsWith("image/")) {
-    // Серверный set_avatar тоже это проверяет (kind !== "image" → 400), но
-    // без этой проверки видео сначала долго конвертируется в mediaworker и
-    // только потом отбрасывается — впустую тратим слот конвертации и время
-    // пользователя на файл, который заведомо не подойдёт.
     throw new Error("для аватара нужна картинка (jpg/png/webp), не видео")
   }
 
+  const params = buildUploadParams(opts)
+
   const { data: initiate } = await api.post<InitiateResponse>("/media/upload", null, {
-    params: opts.tag ? { tag: opts.tag } : undefined,
+    params: Object.keys(params).length > 0 ? params : undefined,
   })
 
-  // upload_url приходит абсолютным ("/api/media/upload/{token}") — у `api`
-  // уже есть baseURL="/api", так что префикс нужно срезать, иначе получится
-  // "/api/api/media/...".
   const uploadPath = initiate.upload_url.replace(/^\/api/, "")
 
   const { data: uploaded } = await api.post<UploadStepResponse>(uploadPath, file, {

@@ -98,7 +98,7 @@ export function ThemeSettings({ scope }: { scope: "admin" | "client" }) {
 
   const save = useMutation({
     mutationFn: async (value: string) =>
-      api.post(`/v1/admin/settings/ui/${scope}.theme`, { value }),
+      api.put(`/v1/branding/${scope}`, { theme: value ? JSON.parse(value) : {} }),
     onSuccess: () => {
       toastSuccess("Тема сохранена")
       setDraft(null)
