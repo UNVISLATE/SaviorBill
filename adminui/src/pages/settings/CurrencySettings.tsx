@@ -1,11 +1,20 @@
 import { useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
-import { CheckCircle2, ExternalLink, KeyRound, Loader2, XCircle } from "lucide-react"
+import { CheckCircle2, ExternalLink, KeyRound, Loader2, Lock, XCircle } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { SettingsSection } from "./SettingsSection"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
+
+interface CurrencyStatus {
+  currency: string
+  can_change: boolean
+  reason: string | null
+  accounts_with_balance: number
+  total_balance: string
+  total_bonus: string
+}
 
 interface FxProvider {
   key: string
@@ -140,6 +149,12 @@ function ProvidersReference({ providers }: { providers: FxProvider[] }) {
 /** Отдельная страница настроек курсов: базовая валюта, ручные курсы и
  * источник автоматических курсов с проверкой. */
 export function CurrencySettings() {
+  const { data: status } = useQuery({
+    queryKey: ["admin-currency-status"],
+    queryFn: async () => (await api.get<CurrencyStatus>("/v1/admin/settings/fx/currency-status")).data,
+    staleTime: 10_000,
+  })
+
   const { data: providers } = useQuery({
     queryKey: ["fx-providers"],
     queryFn: async () => (await api.get<FxProvider[]>("/v1/admin/settings/fx/providers")).data,
@@ -151,8 +166,20 @@ export function CurrencySettings() {
     { value: "lua", label: "Lua-скрипт (свой источник)" },
   ]
 
+  const isLocked = status ? !status.can_change : false
+
   return (
     <div className="max-w-3xl space-y-4">
+      {isLocked && (
+        <div className="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-600 dark:text-amber-400">
+          <Lock className="size-4 shrink-0 mt-0.5 text-amber-500" />
+          <div className="space-y-1">
+            <p className="font-semibold text-sm">Смена валюты инстанса заблокирована</p>
+            <p className="text-muted-foreground leading-relaxed">{status?.reason}</p>
+          </div>
+        </div>
+      )}
+
       <SettingsSection
         title="Базовая валюта"
         description="Балансы аккаунтов ведутся только в ней. Платежи в других валютах конвертируются при зачислении."
@@ -162,7 +189,10 @@ export function CurrencySettings() {
             label: "Валюта инстанса",
             kind: "currency",
             placeholder: "RUB",
-            hint: "Не меняйте на работающем инстансе без переноса данных: уже начисленные балансы не пересчитываются.",
+            disabled: isLocked,
+            hint: isLocked
+              ? "Заблокировано: на балансах пользователей есть средства. Сначала обнулите их."
+              : "Не меняйте на работающем инстансе без переноса данных: уже начисленные балансы не пересчитываются.",
           },
           {
             key: "billing.fx.markup_percent",

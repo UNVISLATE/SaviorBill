@@ -10,7 +10,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import not_, or_, select
+from sqlalchemy import func, not_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
@@ -26,6 +26,7 @@ from schemas.settings_raw import (
     effective_group,
 )
 from services.audit import audit
+from services.fx import DEFAULT_CURRENCY
 from utils.pagination import (
     PageParams,
     apply_sort,
@@ -186,6 +187,23 @@ async def upsert_setting_raw(
             status.HTTP_403_FORBIDDEN,
             "secret system settings cannot be edited here",
         )
+    if key == "billing.currency":
+        curr_val = (existing.value if existing and existing.value else DEFAULT_CURRENCY).strip().upper()
+        new_val = (body.value or "").strip().upper()
+        if curr_val != new_val:
+            stmt = select(
+                func.count(UserModel.id),
+                func.coalesce(func.sum(UserModel.balance), 0),
+                func.coalesce(func.sum(UserModel.bonus_balance), 0),
+            ).where(or_(UserModel.balance > 0, UserModel.bonus_balance > 0))
+            count, sum_bal, sum_bon = (await session.execute(stmt)).one()
+            if count > 0:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    f"Смена валюты заблокирована: у {count} пользователей на балансе есть средства "
+                    f"(баланс: {sum_bal}, бонусы: {sum_bon}). "
+                    "Для смены валюты инстанса балансы всех пользователей должны быть равны нулю.",
+                )
     await mngr.set(key, body.value, is_secret=False)
     await audit(
         session,
@@ -224,6 +242,18 @@ async def delete_setting_raw(
             status.HTTP_403_FORBIDDEN,
             "this setting cannot be deleted (system/secret/protected)",
         )
+    if key == "billing.currency":
+        stmt = select(
+            func.count(UserModel.id),
+            func.coalesce(func.sum(UserModel.balance), 0),
+            func.coalesce(func.sum(UserModel.bonus_balance), 0),
+        ).where(or_(UserModel.balance > 0, UserModel.bonus_balance > 0))
+        count, _, _ = (await session.execute(stmt)).one()
+        if count > 0:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Удаление настройки валюты заблокировано: у пользователей на балансе есть средства.",
+            )
     await session.delete(row)
     await mngr.invalidate(key)
     await audit(

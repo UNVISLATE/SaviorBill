@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { MoreHorizontal, Plus } from "lucide-react"
+import { CreditCard, KeyRound, MoreHorizontal, Plus } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -10,7 +10,6 @@ import { Button } from "@/components/shadsnui/button"
 import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
 import { Switch } from "@/components/shadsnui/switch"
-import { Textarea } from "@/components/shadsnui/textarea"
 import { Card, CardContent } from "@/components/shadsnui/card"
 import {
   Select,
@@ -20,18 +19,14 @@ import {
   SelectValue,
 } from "@/components/shadsnui/select"
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/shadsnui/dialog"
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/shadsnui/dropdown-menu"
+import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
+import { KeySecretEditor, COMMON_PAYMENT_PRESETS } from "@/components/common/forms/KeySecretEditor"
+import { useInstanceCurrency } from "@/lib/currency"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 interface Provider {
@@ -64,13 +59,25 @@ function ProviderFormDialog({
   paymentScripts: LuaScript[] | undefined
 }) {
   const isEdit = !!provider
-  const [slug, setSlug] = useState(provider?.slug ?? "")
-  const [title, setTitle] = useState(provider?.title ?? "")
-  const [currency, setCurrency] = useState(provider?.currency ?? "RUB")
-  const [scriptId, setScriptId] = useState(provider?.script_id ? String(provider.script_id) : "")
-  const [enabled, setEnabled] = useState(provider?.enabled ?? false)
+  const [slug, setSlug] = useState("")
+  const [title, setTitle] = useState("")
+  const { currency: instanceCurrency } = useInstanceCurrency()
+  const [currency, setCurrency] = useState(instanceCurrency || "RUB")
+  const [scriptId, setScriptId] = useState("")
+  const [enabled, setEnabled] = useState(false)
   const [secretsText, setSecretsText] = useState("{}")
   const qc = useQueryClient()
+
+  useEffect(() => {
+    if (open) {
+      setSlug(provider?.slug ?? "")
+      setTitle(provider?.title ?? "")
+      setCurrency(provider?.currency ?? instanceCurrency ?? "RUB")
+      setScriptId(provider?.script_id ? String(provider.script_id) : "")
+      setEnabled(provider?.enabled ?? false)
+      setSecretsText("{}")
+    }
+  }, [open, provider])
 
   const selectedScript = paymentScripts?.find((s) => String(s.id) === scriptId)
 
@@ -106,77 +113,123 @@ function ProviderFormDialog({
       ),
   })
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{isEdit ? "Изменить провайдера" : "Новый платёжный провайдер"}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
+  const tabs: TabDefinition[] = [
+    {
+      id: "general",
+      label: "Основное",
+      icon: CreditCard,
+      content: (
+        <div className="space-y-4">
           {!isEdit && (
-            <div className="space-y-1">
-              <Label>Слаг</Label>
-              <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="yookassa" autoFocus />
+            <div className="space-y-1.5">
+              <Label className="text-xs">Слаг провайдера (уникальный ключ)</Label>
+              <Input
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                placeholder="yookassa"
+                autoFocus
+                className="font-mono text-xs"
+              />
+              <p className="text-[10px] text-muted-foreground">Используется в API, например `yookassa`, `robokassa`, `cryptopay`</p>
             </div>
           )}
-          <div className="space-y-1">
-            <Label>Название</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="ЮKassa" />
+          <div className="space-y-1.5">
+            <Label className="text-xs">Отображаемое название</Label>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="ЮKassa (Банковские карты)"
+              className="text-xs"
+            />
           </div>
-          <div className="space-y-1">
-            <Label>Валюта</Label>
-            <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={8} />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Базовая валюта</Label>
+              <Input
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+                maxLength={8}
+                className="font-mono text-xs uppercase"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Статус активности</Label>
+              <div className="flex h-9 items-center justify-between rounded-md border border-input bg-background px-3 py-1">
+                <span className="text-xs text-muted-foreground">{enabled ? "Активен" : "Отключен"}</span>
+                <Switch checked={enabled} onCheckedChange={setEnabled} />
+              </div>
+            </div>
           </div>
-          <div className="space-y-1">
-            <Label>Lua-скрипт (обрабатывает создание/проверку/возврат платежа)</Label>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Lua-скрипт обработки платежей</Label>
             <Select value={scriptId} onValueChange={(v) => setScriptId(v ?? "")}>
-              <SelectTrigger>
-                <SelectValue placeholder="Выберите скрипт">
+              <SelectTrigger className="text-xs">
+                <SelectValue placeholder="Выберите Lua-скрипт">
                   {selectedScript ? (selectedScript.name ?? selectedScript.slug) : undefined}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {paymentScripts?.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
+                  <SelectItem key={s.id} value={String(s.id)} className="text-xs">
                     {s.name ?? s.slug}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {(paymentScripts?.length ?? 0) === 0 && (
+            {(paymentScripts?.length ?? 0) === 0 ? (
               <p className="text-xs text-muted-foreground">
-                Нет скриптов типа «payment» — создайте на странице «Скрипты».
+                Нет скриптов типа «payment» — создайте их на странице «Lua-скрипты».
+              </p>
+            ) : (
+              <p className="text-[10px] text-muted-foreground">
+                Скрипт формирует ссылки на оплату и проверяет webhook-нотификации
               </p>
             )}
           </div>
-          <div className="flex items-center justify-between">
-            <Label>Включён</Label>
-            <Switch checked={enabled} onCheckedChange={setEnabled} />
-          </div>
-          <div className="space-y-1">
-            <Label>Секреты (JSON, шифруются на сервере)</Label>
-            <Textarea
-              className="font-mono text-xs"
-              rows={4}
-              value={secretsText}
-              onChange={(e) => setSecretsText(e.target.value)}
-              placeholder={isEdit ? "Оставьте {} чтобы не менять" : '{"shop_id": "...", "secret_key": "..."}'}
-            />
-          </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Отмена
-          </Button>
-          <Button
-            disabled={(!isEdit && slug.trim().length < 2) || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            {isEdit ? "Сохранить" : "Создать"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      ),
+    },
+    {
+      id: "secrets",
+      label: "Ключи и секреты",
+      icon: KeyRound,
+      badge: isEdit ? "Зашифровано" : undefined,
+      content: (
+        <div className="space-y-3">
+          <KeySecretEditor
+            title="Секретные ключи API"
+            description={
+              isEdit
+                ? "Оставьте значения пустыми или {}, если не хотите менять сохранённые секреты"
+                : "Укажите ключи мерчанта или выберите готовый шаблон провайдера"
+            }
+            presets={COMMON_PAYMENT_PRESETS}
+            value={secretsText}
+            onChange={(_, text) => setSecretsText(text)}
+          />
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <TabbedDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isEdit ? `Провайдер «${provider?.title || provider?.slug}»` : "Новый платёжный провайдер"}
+      description="Настройка шлюза приёма платежей и интеграции с платёжной системой"
+      tabs={tabs}
+      primaryAction={{
+        label: isEdit ? "Сохранить изменения" : "Создать провайдера",
+        onClick: () => save.mutate(),
+        disabled: (!isEdit && slug.trim().length < 2) || save.isPending,
+        loading: save.isPending,
+      }}
+      secondaryAction={{
+        label: "Отмена",
+        onClick: () => onOpenChange(false),
+      }}
+    />
   )
 }
 

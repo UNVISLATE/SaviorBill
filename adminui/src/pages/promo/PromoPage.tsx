@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { MoreHorizontal, Plus, Ticket, Trash2 } from "lucide-react"
+import { Gift, MoreHorizontal, Plus, Ticket, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -22,13 +22,6 @@ import {
 } from "@/components/shadsnui/select"
 import { Card, CardContent } from "@/components/shadsnui/card"
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/shadsnui/dialog"
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -44,6 +37,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/shadsnui/dropdown-menu"
+import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
+import { useInstanceCurrency } from "@/lib/currency"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 interface Catalog {
@@ -99,15 +94,29 @@ function CatalogFormDialog({
   services: Service[] | undefined
 }) {
   const isEdit = !!catalog
-  const [name, setName] = useState(catalog?.name ?? "")
-  const [slug, setSlug] = useState(catalog?.slug ?? "")
-  const [kind, setKind] = useState<Catalog["kind"]>(catalog?.kind ?? "bonus")
-  const [value, setValue] = useState(catalog?.value ?? "0")
-  const [discountType, setDiscountType] = useState<"percent" | "fixed">(catalog?.discount_type ?? "percent")
-  const [serviceId, setServiceId] = useState(catalog?.service_id ? String(catalog.service_id) : "")
-  const [perUser, setPerUser] = useState(catalog?.per_user ? String(catalog.per_user) : "")
-  const [isActive, setIsActive] = useState(catalog?.is_active ?? true)
+  const { symbol: currencySymbol } = useInstanceCurrency()
+  const [name, setName] = useState("")
+  const [slug, setSlug] = useState("")
+  const [kind, setKind] = useState<Catalog["kind"]>("bonus")
+  const [value, setValue] = useState("0")
+  const [discountType, setDiscountType] = useState<"percent" | "fixed">("percent")
+  const [serviceId, setServiceId] = useState("")
+  const [perUser, setPerUser] = useState("")
+  const [isActive, setIsActive] = useState(true)
   const qc = useQueryClient()
+
+  useEffect(() => {
+    if (open) {
+      setName(catalog?.name ?? "")
+      setSlug(catalog?.slug ?? "")
+      setKind(catalog?.kind ?? "bonus")
+      setValue(catalog?.value ?? "0")
+      setDiscountType(catalog?.discount_type ?? "percent")
+      setServiceId(catalog?.service_id ? String(catalog.service_id) : "")
+      setPerUser(catalog?.per_user ? String(catalog.per_user) : "")
+      setIsActive(catalog?.is_active ?? true)
+    }
+  }, [open, catalog])
 
   const save = useMutation({
     mutationFn: async () => {
@@ -131,66 +140,89 @@ function CatalogFormDialog({
     onError: (e: unknown) => toastError(isEdit ? "Не удалось обновить каталог" : "Не удалось создать каталог", getErrorDetail(e)),
   })
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{isEdit ? "Изменить каталог промокодов" : "Новый каталог промокодов"}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label>Название</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+  const tabs: TabDefinition[] = [
+    {
+      id: "general",
+      label: "Параметры кампании",
+      icon: Gift,
+      content: (
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Название каталога промокодов</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Новогодняя акция 2025"
+              className="text-xs"
+              autoFocus
+            />
           </div>
+
           {!isEdit && (
-            <div className="space-y-1">
-              <Label>Слаг</Label>
-              <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="new-year-2025" />
+            <div className="space-y-1.5">
+              <Label className="text-xs">Слаг каталога (уникальный ключ)</Label>
+              <Input
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                placeholder="new-year-2025"
+                className="font-mono text-xs"
+              />
             </div>
           )}
-          <div className="space-y-1">
-            <Label>Тип действия</Label>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Тип действия промокода</Label>
             <Select value={kind} onValueChange={(v) => setKind((v as Catalog["kind"]) ?? "bonus")}>
-              <SelectTrigger>
+              <SelectTrigger className="text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="bonus">Бонус на баланс</SelectItem>
-                <SelectItem value="discount">Скидка на услугу</SelectItem>
-                <SelectItem value="service">Выдача услуги</SelectItem>
+                <SelectItem value="bonus">Бонус на баланс аккаунта</SelectItem>
+                <SelectItem value="discount">Скидка на заказ</SelectItem>
+                <SelectItem value="service">Прямая выдача услуги</SelectItem>
               </SelectContent>
             </Select>
           </div>
+
           {kind !== "service" && (
-            <div className="space-y-1">
-              <Label>{kind === "bonus" ? "Сумма бонуса" : "Размер скидки"}</Label>
-              <Input type="number" min={0} step="0.01" value={value} onChange={(e) => setValue(e.target.value)} />
+            <div className="space-y-1.5">
+              <Label className="text-xs">{kind === "bonus" ? "Сумма начисляемого бонуса" : "Размер скидки"}</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                className="font-mono text-xs"
+              />
             </div>
           )}
+
           {kind === "discount" && (
-            <div className="space-y-1">
-              <Label>Тип скидки</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Тип расчёта скидки</Label>
               <Select value={discountType} onValueChange={(v) => setDiscountType((v as "percent" | "fixed") ?? "percent")}>
-                <SelectTrigger>
+                <SelectTrigger className="text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="percent">Процент от цены</SelectItem>
-                  <SelectItem value="fixed">Фиксированная сумма</SelectItem>
+                  <SelectItem value="percent">Процент от стоимости (%)</SelectItem>
+                  <SelectItem value="fixed">Фиксированная сумма ({currencySymbol})</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           )}
+
           {kind === "service" && (
-            <div className="space-y-1">
-              <Label>Услуга для выдачи</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Услуга для выдачи</Label>
               <Select value={serviceId} onValueChange={(v) => setServiceId(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите услугу" />
+                <SelectTrigger className="text-xs">
+                  <SelectValue placeholder="Выберите выдаваемую услугу" />
                 </SelectTrigger>
                 <SelectContent>
                   {services?.map((s) => (
-                    <SelectItem key={s.id} value={String(s.id)}>
+                    <SelectItem key={s.id} value={String(s.id)} className="text-xs">
                       {s.name}
                     </SelectItem>
                   ))}
@@ -198,34 +230,46 @@ function CatalogFormDialog({
               </Select>
             </div>
           )}
-          <div className="space-y-1">
-            <Label>Лимит разных кодов каталога на пользователя</Label>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Лимит активаций разных кодов на одного пользователя</Label>
             <Input
               type="number"
               min={1}
               value={perUser}
               onChange={(e) => setPerUser(e.target.value)}
               placeholder="без лимита"
+              className="text-xs font-mono"
             />
           </div>
-          <div className="flex items-center justify-between">
-            <Label>Активен</Label>
+
+          <div className="flex h-9 items-center justify-between rounded-md border border-input bg-background px-3 py-1">
+            <span className="text-xs text-muted-foreground">{isActive ? "Активен" : "Отключен"}</span>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Отмена
-          </Button>
-          <Button
-            disabled={name.trim().length < 1 || (!isEdit && slug.trim().length < 2) || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            {isEdit ? "Сохранить" : "Создать"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      ),
+    },
+  ]
+
+  return (
+    <TabbedDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isEdit ? `Каталог промокодов «${catalog?.name}»` : "Новый каталог промокодов"}
+      description="Группа промокодов с едиными правилами начисления бонусов или скидок"
+      tabs={tabs}
+      primaryAction={{
+        label: isEdit ? "Сохранить изменения" : "Создать каталог",
+        onClick: () => save.mutate(),
+        disabled: name.trim().length < 1 || (!isEdit && slug.trim().length < 2) || save.isPending,
+        loading: save.isPending,
+      }}
+      secondaryAction={{
+        label: "Отмена",
+        onClick: () => onOpenChange(false),
+      }}
+    />
   )
 }
 
@@ -307,77 +351,114 @@ function IssueCodesDialog({
     onError: (e: unknown) => toastError("Не удалось выпустить коды", getErrorDetail(e)),
   })
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Выпустить промокоды</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label>Способ</Label>
+  const tabs: TabDefinition[] = [
+    {
+      id: "issue",
+      label: "Выпуск промокодов",
+      icon: Ticket,
+      content: (
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Способ генерации</Label>
             <Select value={mode} onValueChange={(v) => setMode((v as "generate" | "explicit") ?? "generate")}>
-              <SelectTrigger>
+              <SelectTrigger className="text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="generate">Сгенерировать случайные</SelectItem>
-                <SelectItem value="explicit">Указать вручную</SelectItem>
+                <SelectItem value="generate">Сгенерировать случайные коды автоматически</SelectItem>
+                <SelectItem value="explicit">Задать список кодов вручную</SelectItem>
               </SelectContent>
             </Select>
           </div>
+
           {mode === "generate" ? (
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <Label>Количество</Label>
-                <Input type="number" min={1} max={10000} value={count} onChange={(e) => setCount(e.target.value)} />
+              <div className="space-y-1.5">
+                <Label className="text-xs">Количество кодов</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={count}
+                  onChange={(e) => setCount(e.target.value)}
+                  className="font-mono text-xs"
+                />
               </div>
-              <div className="space-y-1">
-                <Label>Префикс</Label>
-                <Input value={prefix} onChange={(e) => setPrefix(e.target.value)} maxLength={16} placeholder="NY2025" />
+              <div className="space-y-1.5">
+                <Label className="text-xs">Префикс кодов</Label>
+                <Input
+                  value={prefix}
+                  onChange={(e) => setPrefix(e.target.value)}
+                  maxLength={16}
+                  placeholder="NY2025"
+                  className="font-mono text-xs uppercase"
+                />
               </div>
             </div>
           ) : (
-            <div className="space-y-1">
-              <Label>Коды (по одному на строку)</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Коды (по одному на строку)</Label>
               <Textarea
                 className="font-mono text-xs"
                 rows={5}
                 value={explicitCodes}
                 onChange={(e) => setExplicitCodes(e.target.value)}
+                placeholder="PROMO-123&#10;PROMO-456&#10;PROMO-789"
               />
             </div>
           )}
+
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1">
-              <Label>Лимит активаций</Label>
-              <Input type="number" min={1} value={maxUses} onChange={(e) => setMaxUses(e.target.value)} placeholder="без лимита" />
+            <div className="space-y-1.5">
+              <Label className="text-xs">Лимит использований на один код</Label>
+              <Input
+                type="number"
+                min={1}
+                value={maxUses}
+                onChange={(e) => setMaxUses(e.target.value)}
+                placeholder="без лимита"
+                className="font-mono text-xs"
+              />
             </div>
-            <div className="space-y-1">
-              <Label>Действует до</Label>
-              <Input type="date" value={validTo} onChange={(e) => setValidTo(e.target.value)} />
+            <div className="space-y-1.5">
+              <Label className="text-xs">Срок действия (до даты)</Label>
+              <Input
+                type="date"
+                value={validTo}
+                onChange={(e) => setValidTo(e.target.value)}
+                className="text-xs"
+              />
             </div>
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Отмена
-          </Button>
-          <Button disabled={issue.isPending} onClick={() => issue.mutate()}>
-            Выпустить
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      ),
+    },
+  ]
+
+  return (
+    <TabbedDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Выпуск промокодов"
+      description="Генерация уникальных кодов для выбранного промо-каталога"
+      tabs={tabs}
+      primaryAction={{
+        label: "Выпустить коды",
+        onClick: () => issue.mutate(),
+        disabled: issue.isPending || (mode === "generate" ? !Number(count) : !explicitCodes.trim()),
+        loading: issue.isPending,
+      }}
+      secondaryAction={{
+        label: "Отмена",
+        onClick: () => onOpenChange(false),
+      }}
+    />
   )
 }
 
 function CatalogCodesPanel({ catalog }: { catalog: Catalog }) {
-  const { can } = useAuth()
   const table = useDataTableQuery()
   const [issuing, setIssuing] = useState(false)
-  const canCreate = can("promo.codes.create")
-  const canEdit = can("promo.codes.edit")
   const qc = useQueryClient()
 
   const { data, isLoading, isError } = useQuery({
@@ -403,8 +484,17 @@ function CatalogCodesPanel({ catalog }: { catalog: Catalog }) {
     onError: (e: unknown) => toastError("Не удалось изменить код", getErrorDetail(e)),
   })
 
+  const remove = useMutation({
+    mutationFn: async (id: number) => api.delete(`/v1/admin/promo/codes/${id}`),
+    onSuccess: () => {
+      toastSuccess("Код удалён")
+      void qc.invalidateQueries({ queryKey: ["admin-promo-codes", catalog.id] })
+    },
+    onError: (e: unknown) => toastError("Не удалось удалить код", getErrorDetail(e)),
+  })
+
   const columns: DataTableColumn<Code>[] = [
-    { key: "code", header: "Код", render: (c) => <span className="font-mono text-xs">{c.code}</span> },
+    { key: "code", header: "Код", render: (c) => <span className="font-mono text-xs font-semibold">{c.code}</span> },
     {
       header: "Активаций",
       render: (c) => `${c.used_count}${c.max_uses ? ` / ${c.max_uses}` : ""}`,
@@ -414,34 +504,41 @@ function CatalogCodesPanel({ catalog }: { catalog: Catalog }) {
       render: (c) => (c.valid_to ? new Date(c.valid_to).toLocaleDateString() : "бессрочно"),
     },
     {
-      header: "Статус",
-      render: (c) => <Badge variant={c.is_active ? "default" : "outline"}>{c.is_active ? "активен" : "выключен"}</Badge>,
+      header: "Активен",
+      render: (c) => (
+        <Switch
+          checked={c.is_active}
+          onCheckedChange={(val) => toggle.mutate({ id: c.id, is_active: val })}
+        />
+      ),
     },
-    ...(canEdit
-      ? [
-          {
-            header: "",
-            render: (c: Code) => (
-              <Switch
-                checked={c.is_active}
-                onCheckedChange={(v) => toggle.mutate({ id: c.id, is_active: v })}
-                onClick={(e) => e.stopPropagation()}
-              />
-            ),
-          } satisfies DataTableColumn<Code>,
-        ]
-      : []),
+    {
+      header: "",
+      className: "w-10 text-right",
+      render: (c) => (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="size-7 text-muted-foreground hover:text-destructive"
+          onClick={() => remove.mutate(c.id)}
+        >
+          <Trash2 className="size-3.5" />
+        </Button>
+      ),
+    },
   ]
 
   return (
-    <div className="space-y-3">
-      <div className="flex justify-end">
-        {canCreate && (
-          <Button size="sm" onClick={() => setIssuing(true)}>
-            <Plus className="size-4" /> Выпустить коды
-          </Button>
-        )}
+    <div className="space-y-3 pt-2">
+      <div className="flex items-center justify-between">
+        <p className="text-xs text-muted-foreground">
+          Список кодов каталога «{catalog.name}» (всего {data?.total ?? 0})
+        </p>
+        <Button size="sm" variant="outline" onClick={() => setIssuing(true)}>
+          <Plus className="size-3.5" /> Выпустить ещё
+        </Button>
       </div>
+
       <DataTable
         columns={columns}
         data={data?.items ?? []}
@@ -462,6 +559,7 @@ function CatalogCodesPanel({ catalog }: { catalog: Catalog }) {
         onLimitChange={table.changeLimit}
         onOffsetChange={table.setOffset}
       />
+
       <IssueCodesDialog open={issuing} onOpenChange={setIssuing} catalogId={catalog.id} />
     </div>
   )
@@ -469,14 +567,15 @@ function CatalogCodesPanel({ catalog }: { catalog: Catalog }) {
 
 export function PromoPage() {
   const { can } = useAuth()
+  const { symbol: currencySymbol } = useInstanceCurrency()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Catalog | null>(null)
   const [deleting, setDeleting] = useState<Catalog | null>(null)
-  const [expanded, setExpanded] = useState<number | null>(null)
+  const [selectedCatalog, setSelectedCatalog] = useState<Catalog | null>(null)
 
-  const canCreate = can("promo.catalogs.create")
-  const canEdit = can("promo.catalogs.edit")
-  const canDelete = can("promo.catalogs.delete")
+  const canCreate = can("promo.create")
+  const canEdit = can("promo.edit")
+  const canDelete = can("promo.delete")
 
   const { data: catalogs, isLoading } = useQuery({
     queryKey: ["admin-promo-catalogs"],
@@ -485,17 +584,22 @@ export function PromoPage() {
 
   const { data: services } = useQuery({
     queryKey: ["admin-services-lookup"],
-    queryFn: async () => (await api.get<Page<Service>>("/v1/admin/services", { params: { limit: 200 } })).data.items,
-    staleTime: 30_000,
+    queryFn: async () => (await api.get<Service[]>("/v1/admin/services")).data,
+    staleTime: 60_000,
   })
 
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold">Промокоды</h1>
+        <div>
+          <h1 className="text-xl font-semibold">Промокоды и акции</h1>
+          <p className="text-sm text-muted-foreground">
+            Каталоги промокодов: бонусы на баланс, скидки в процентах/суммах, выдача услуг.
+          </p>
+        </div>
         {canCreate && (
           <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> Новый каталог
+            <Plus className="size-4" /> Добавить каталог
           </Button>
         )}
       </div>
@@ -504,8 +608,8 @@ export function PromoPage() {
       {!isLoading && (catalogs?.length ?? 0) === 0 && (
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
-            <Ticket className="size-6" />
-            Каталогов промокодов пока нет.
+            <Ticket className="size-6 text-primary" />
+            Каталогов промокодов ещё нет.
           </CardContent>
         </Card>
       )}
@@ -513,58 +617,71 @@ export function PromoPage() {
       <div className="grid gap-2">
         {catalogs?.map((c) => (
           <Card key={c.id}>
-            <CardContent
-              className="flex cursor-pointer items-center justify-between gap-3 py-3"
-              onClick={() => setExpanded(expanded === c.id ? null : c.id)}
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-medium">{c.name}</span>
-                  <span className="font-mono text-xs text-muted-foreground">{c.slug}</span>
-                  {!c.is_active && <Badge variant="destructive">неактивен</Badge>}
+            <CardContent className="space-y-2 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">{c.name}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{c.slug}</span>
+                    <Badge variant="outline">{KIND_LABEL[c.kind]}</Badge>
+                    <Badge variant={c.is_active ? "default" : "secondary"}>
+                      {c.is_active ? "активен" : "скрыт"}
+                    </Badge>
+                  </div>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {c.kind === "bonus" && `Бонус: ${c.value} ${currencySymbol}`}
+                    {c.kind === "discount" &&
+                      `Скидка: ${c.value} ${c.discount_type === "percent" ? "%" : currencySymbol}`}
+                    {c.kind === "service" && `Услуга #${c.service_id}`}
+                    {c.per_user && ` · не более ${c.per_user} шт/пользователь`}
+                  </p>
                 </div>
-                <div className="mt-0.5 text-xs text-muted-foreground">
-                  {KIND_LABEL[c.kind]}
-                  {c.kind === "bonus" && ` · +${c.value}`}
-                  {c.kind === "discount" && ` · ${c.value}${c.discount_type === "percent" ? "%" : ""}`}
-                  {c.per_user ? ` · лимит ${c.per_user} на пользователя` : ""}
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant={selectedCatalog?.id === c.id ? "secondary" : "outline"}
+                    onClick={() => setSelectedCatalog(selectedCatalog?.id === c.id ? null : c)}
+                  >
+                    <Ticket className="size-3.5" /> Коды
+                  </Button>
+                  {(canEdit || canDelete) && (
+                    <DropdownMenu>
+                      <DropdownMenuTrigger
+                        render={
+                          <Button variant="ghost" size="icon" className="size-8">
+                            <MoreHorizontal className="size-4" />
+                          </Button>
+                        }
+                      />
+                      <DropdownMenuContent align="end">
+                        {canEdit && <DropdownMenuItem onClick={() => setEditing(c)}>Изменить</DropdownMenuItem>}
+                        {canDelete && (
+                          <DropdownMenuItem
+                            onClick={() => setDeleting(c)}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="size-4 mr-1.5" /> Удалить
+                          </DropdownMenuItem>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  )}
                 </div>
               </div>
-              {(canEdit || canDelete) && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="size-8 shrink-0"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <MoreHorizontal className="size-4" />
-                      </Button>
-                    }
-                  />
-                  <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-                    {canEdit && <DropdownMenuItem onClick={() => setEditing(c)}>Изменить</DropdownMenuItem>}
-                    {canDelete && (
-                      <DropdownMenuItem variant="destructive" onClick={() => setDeleting(c)}>
-                        <Trash2 className="size-4" /> Удалить
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
+
+              {selectedCatalog?.id === c.id && <CatalogCodesPanel catalog={c} />}
             </CardContent>
-            {expanded === c.id && (
-              <CardContent className="border-t pt-3">
-                <CatalogCodesPanel catalog={c} />
-              </CardContent>
-            )}
           </Card>
         ))}
       </div>
 
-      <CatalogFormDialog open={creating} onOpenChange={setCreating} catalog={null} services={services} />
+      <CatalogFormDialog
+        open={creating}
+        onOpenChange={setCreating}
+        catalog={null}
+        services={services}
+      />
+
       {editing && (
         <CatalogFormDialog
           open={!!editing}
@@ -573,8 +690,13 @@ export function PromoPage() {
           services={services}
         />
       )}
+
       {deleting && (
-        <DeleteCatalogDialog catalog={deleting} open={!!deleting} onOpenChange={(v) => !v && setDeleting(null)} />
+        <DeleteCatalogDialog
+          catalog={deleting}
+          open={!!deleting}
+          onOpenChange={(v) => !v && setDeleting(null)}
+        />
       )}
     </div>
   )

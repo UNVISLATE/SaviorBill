@@ -5,14 +5,11 @@ import {
   ArrowLeft,
   FileCode2,
   FileUp,
-  ImagePlus,
   KeyRound,
-  Loader2,
   Package,
   Plus,
   Save,
   Trash2,
-  Upload,
   XCircle,
 } from "lucide-react"
 
@@ -42,7 +39,8 @@ import {
   DialogTitle,
 } from "@/components/shadsnui/dialog"
 import { MediaPickerDialog } from "@/components/media/MediaPickerDialog"
-import { uploadOwnMedia } from "@/api/media-upload"
+import { ServiceMediaWidget } from "@/components/media/ServiceMediaWidget"
+import { useInstanceCurrency } from "@/lib/currency"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 interface Catalog {
@@ -80,6 +78,8 @@ interface Attachment {
   media_id: number
   token: string
   kind: string
+  mime: string | null
+  status: string
   tag: string | null
   position: number
   url: string
@@ -157,6 +157,7 @@ export function ServiceEditorPage() {
   const [description, setDescription] = useState("")
   const [catalogId, setCatalogId] = useState<string>("")
   const [price, setPrice] = useState("0")
+  const { currency: instanceCurrency } = useInstanceCurrency()
   const [currency, setCurrency] = useState("RUB")
   const [delivery, setDelivery] = useState<"key" | "lua">("key")
   const [luaScriptId, setLuaScriptId] = useState<string>("")
@@ -168,30 +169,24 @@ export function ServiceEditorPage() {
 
   // Модалки
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false)
-  const [uploadingDirectMedia, setUploadingDirectMedia] = useState(false)
-  const directFileInputRef = useRef<HTMLInputElement>(null)
-
-  const handleDirectUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file || !serviceId) return
-    setUploadingDirectMedia(true)
-    try {
-      const { mediaId } = await uploadOwnMedia(file, { tag: "service" })
-      await addAttachmentMutation.mutateAsync(mediaId)
-      toastSuccess("Медиафайл успешно загружен и прикреплен")
-    } catch (err) {
-      toastError("Ошибка при загрузке медиафайла", err instanceof Error ? err.message : String(err))
-    } finally {
-      setUploadingDirectMedia(false)
-      if (directFileInputRef.current) directFileInputRef.current.value = ""
-    }
-  }
   const [quickImportOpen, setQuickImportOpen] = useState(false)
   const [quickImportText, setQuickImportText] = useState("")
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Заполнение полей при загрузке существующей услуги
+  useEffect(() => {
+    if (isNew && instanceCurrency) {
+      setCurrency(instanceCurrency)
+    }
+  }, [isNew, instanceCurrency])
+  useEffect(() => {
+    if (isNew && instanceCurrency) {
+      setCurrency(instanceCurrency)
+    }
+  }, [isNew, instanceCurrency])
+
+
   useEffect(() => {
     if (service) {
       setName(service.name)
@@ -318,15 +313,6 @@ export function ServiceEditorPage() {
     onError: (e) => toastError("Не удалось прикрепить медиа", getErrorDetail(e)),
   })
 
-  // Удаление вложения
-  const removeAttachmentMutation = useMutation({
-    mutationFn: async (attId: number) => api.delete(`/v1/admin/services/${serviceId}/attachments/${attId}`),
-    onSuccess: () => {
-      toastSuccess("Вложение удалено")
-      void qc.invalidateQueries({ queryKey: ["admin-service-attachments", serviceId] })
-    },
-    onError: (e) => toastError("Не удалось удалить вложение", getErrorDetail(e)),
-  })
 
   // Быстрый импорт ключей
   const quickImportMutation = useMutation({
@@ -499,7 +485,7 @@ export function ServiceEditorPage() {
                     value={currency}
                     onChange={(e) => setCurrency(e.target.value.toUpperCase())}
                     maxLength={8}
-                    placeholder="RUB"
+                    placeholder={instanceCurrency || "RUB"}
                     className="font-mono text-sm"
                   />
                 </div>
@@ -685,115 +671,40 @@ export function ServiceEditorPage() {
             </CardContent>
           </Card>
 
-          {/* Блок 3: Медиа и изображения карточки товара */}
-          <Card className="bg-card/90 shadow-2xs border-border/80">
-            <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <div>
+          {/* Блок 3: Медиа карточки товара */}
+          {isNew ? (
+            <Card className="bg-card/90 shadow-2xs border-border/80">
+              <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold">
                   Медиа карточки товара
                 </CardTitle>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Изображения, баннеры и промо-файлы, прикрепленные к услуге.
-                </p>
-              </div>
-
-              {!isNew && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="file"
-                    ref={directFileInputRef}
-                    onChange={handleDirectUpload}
-                    accept="image/*,video/*"
-                    className="hidden"
-                  />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => directFileInputRef.current?.click()}
-                    disabled={uploadingDirectMedia}
-                    className="gap-1.5 text-xs h-8"
-                  >
-                    {uploadingDirectMedia ? (
-                      <>
-                        <Loader2 className="size-3.5 animate-spin" /> Загрузка…
-                      </>
-                    ) : (
-                      <>
-                        <Upload className="size-3.5" /> Загрузить файл
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setMediaPickerOpen(true)}
-                    className="gap-1.5 text-xs h-8"
-                  >
-                    <ImagePlus className="size-3.5" /> Выбрать из медиатеки
-                  </Button>
-                </div>
-              )}
-            </CardHeader>
-            <CardContent>
-              {isNew ? (
-                <div className="p-6 text-center text-xs text-muted-foreground border border-dashed rounded-xl">
                   Медиафайлы можно будет прикрепить к карточке сразу после сохранения услуги.
+                </p>
+              </CardHeader>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between px-1">
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">
+                    Медиа карточки товара
+                  </h3>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Изображения, баннеры и промо-файлы с распределением по расположению (placement).
+                  </p>
                 </div>
-              ) : (attachments?.length ?? 0) === 0 ? (
-                <div className="p-6 text-center text-xs text-muted-foreground border border-dashed rounded-xl flex flex-col items-center justify-center gap-2">
-                  <ImagePlus className="size-8 text-muted-foreground/50" />
-                  <span>К услуге пока не прикреплено ни одного изображения.</span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setMediaPickerOpen(true)}
-                    className="mt-1"
-                  >
-                    Выбрать из медиатеки
-                  </Button>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                  {attachments!.map((a) => (
-                    <div
-                      key={a.id}
-                      className="group relative overflow-hidden rounded-xl border bg-muted/20 shadow-2xs aspect-square"
-                    >
-                      {a.kind === "image" ? (
-                        <img
-                          src={a.url}
-                          alt={a.tag ?? ""}
-                          className="size-full object-cover transition-transform group-hover:scale-105"
-                        />
-                      ) : (
-                        <div className="flex size-full items-center justify-center bg-muted text-xs text-muted-foreground">
-                          {a.kind}
-                        </div>
-                      )}
-
-                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                        <Button
-                          variant="destructive"
-                          size="icon"
-                          className="size-8 rounded-lg shadow-sm"
-                          onClick={() => removeAttachmentMutation.mutate(a.id)}
-                          title="Удалить вложение"
-                        >
-                          <Trash2 className="size-4" />
-                        </Button>
-                      </div>
-
-                      <div className="absolute left-1.5 bottom-1.5">
-                        <Badge variant="secondary" className="text-[9px] px-1.5 py-0 bg-background/80 backdrop-blur-xs">
-                          #{a.position + 1}
-                        </Badge>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+              </div>
+              <ServiceMediaWidget
+                serviceId={serviceId!}
+                serviceName={name || `Услуга #${serviceId}`}
+                attachments={attachments ?? []}
+                onRefresh={() => {
+                  void qc.invalidateQueries({ queryKey: ["admin-service-attachments", serviceId] })
+                }}
+              />
+            </div>
+          )}
 
           {/* Блок 4: Описание услуги */}
           <Card className="bg-card/90 shadow-2xs border-border/80">

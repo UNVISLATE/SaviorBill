@@ -11,6 +11,7 @@ interface BrandingResponse {
   favicon_url: string | null
   theme: Record<string, unknown>
   version?: string
+  currency?: string
 }
 
 const FALLBACK_NAME = "SaviorBill Admin"
@@ -38,5 +39,6 @@ export function useBranding() {
     logoUrl: data?.logo_url ?? null,
     faviconUrl: data?.favicon_url ?? null,
     version: data?.version ?? "",
+    currency: data?.currency ?? "RUB",
   }
 }

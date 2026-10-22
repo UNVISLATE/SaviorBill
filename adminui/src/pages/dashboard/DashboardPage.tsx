@@ -4,6 +4,7 @@ import { AlertCircle } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
+import { useInstanceCurrency } from "@/lib/currency"
 import { Button } from "@/components/shadsnui/button"
 import { ButtonGroup } from "@/components/shadsnui/button-group"
 import {
@@ -81,16 +82,19 @@ function sinceFor(days: string): string {
   return d.toISOString()
 }
 
-function fmtAmount(v: string | undefined): string {
+function fmtAmount(v: string | undefined, symbol: string = ""): string {
   if (v === undefined) return "—"
   const n = Number(v)
-  return Number.isFinite(n) ? n.toLocaleString("ru-RU", { maximumFractionDigits: 2 }) : v
+  if (!Number.isFinite(n)) return v
+  const formatted = n.toLocaleString("ru-RU", { maximumFractionDigits: 2 })
+  return symbol ? `${formatted} ${symbol}` : formatted
 }
 
 /** Список долей провайдеров в выручке — прогресс-бары вместо полноценного
  * графика: значений мало (число подключённых провайдеров), сравнение долей
  * читается лучше в виде шкал, чем точками на оси времени. */
 function ProviderRevenueCard({ items, isLoading }: { items: ProviderRevenue[] | undefined; isLoading: boolean }) {
+  const { symbol } = useInstanceCurrency()
   const max = Math.max(1, ...(items ?? []).map((i) => Number(i.revenue)))
   return (
     <Card>
@@ -113,7 +117,7 @@ function ProviderRevenueCard({ items, isLoading }: { items: ProviderRevenue[] | 
             <div className="flex w-full items-center justify-between text-sm">
               <span className="font-medium">{p.provider}</span>
               <span className="text-muted-foreground">
-                {fmtAmount(p.revenue)} · {p.count} {p.count === 1 ? "платёж" : "платежей"}
+                {fmtAmount(p.revenue, symbol)} · {p.count} {p.count === 1 ? "платёж" : "платежей"}
               </span>
             </div>
             <ProgressTrack>
@@ -262,6 +266,7 @@ export function DashboardPage() {
 
   const canBasic = can("analytics.basic.read")
   const canAdvanced = can("analytics.advanced.read")
+  const { symbol } = useInstanceCurrency()
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ["dash-payments-summary", since],
@@ -345,7 +350,7 @@ export function DashboardPage() {
       ) : (
         <div className="animate-in fade-in duration-300" key={period}>
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Доход за период" value={summaryLoading ? undefined : fmtAmount(summary?.revenue)} />
+            <StatCard label="Доход за период" value={summaryLoading ? undefined : fmtAmount(summary?.revenue, symbol)} />
             <StatCard label="Оплачено заказов" value={summaryLoading ? undefined : summary?.paid_count} />
             <StatCard label="Ожидают оплаты" value={summaryLoading ? undefined : summary?.pending_count} />
             <StatCard label="Погашено промокодов" value={promoSummary?.total_redemptions} />
