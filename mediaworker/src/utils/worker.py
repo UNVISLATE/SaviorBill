@@ -527,10 +527,16 @@ class Worker:
         # video_allowed (см. upload.py::upload_file) — квота на общий объём
         # (см. ниже, перед emit_result) для него не проверяется вовсе.
         is_unlimited = data.get("unlimited") == "1"
-        cpu_used_raw = data.get("cpu_used") or ""
+        video_codec = data.get("video_codec") or "copy"
+        audio_codec = data.get("audio_codec") or "copy"
+        format_choice = data.get("format") or "original"
+        scale = data.get("scale") or "original"
+        poster_scale = data.get("poster_scale") or "original"
+        video_preset = data.get("video_preset") or None
+        audio_bitrate = data.get("audio_bitrate") or None
         crf_raw = data.get("crf") or ""
-        cpu_used = int(cpu_used_raw) if cpu_used_raw.isdigit() else None
         crf = int(crf_raw) if crf_raw.isdigit() else None
+        keep_animation = data.get("keep_animation") != "0"
         src = self.storage.orig_path(token)
 
         # Идемпотентность: at-least-once доставка (crash/redelivery) может
@@ -636,8 +642,15 @@ class Worker:
                 src,
                 self.cfg.uploads_dir,
                 token,
-                cpu_used=cpu_used,
+                video_codec=video_codec,
+                audio_codec=audio_codec,
+                format_choice=format_choice,
+                scale=scale,
+                poster_scale=poster_scale,
                 crf=crf,
+                keep_animation=keep_animation,
+                video_preset=video_preset,
+                audio_bitrate=audio_bitrate,
                 on_output=sink,
                 on_progress=progress_sink,
                 on_stage=lambda stage: self.proc_log.set_stage(job_id, stage),

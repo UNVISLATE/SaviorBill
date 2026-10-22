@@ -76,7 +76,15 @@ _TAG_RE = re.compile(r"^[A-Za-z0-9]{1,16}$")
 # надолго); admin.media.upload может выбрать любой + переопределить CRF.
 _VIDEO_PRESETS: dict[str, int] = {"fast": 8, "balanced": 5, "quality": 2}
 _DEFAULT_PRESET = "balanced"
-_CRF_MIN, _CRF_MAX = 15, 40
+
+_VALID_SCALE_RE = re.compile(
+    r"^(?:original|none|2160p|4k|1440p|2k|1080p|fhd|720p|hd|480p|sd|360p|\d{3,4}p|\d{2,4}x\d{2,4})$",
+    re.IGNORECASE,
+)
+_VALID_AUDIO_BITRATE_RE = re.compile(r"^\d{2,4}k$", re.IGNORECASE)
+_VALID_FFMPEG_PRESETS: set[str] = {
+    "ultrafast", "superfast", "veryfast", "faster", "fast", "medium", "slow", "slower", "veryslow"
+}
 
 
 def _valkey_unavailable(exc: BaseException) -> HTTPException:
@@ -179,28 +187,22 @@ async def _enforce_storage_quota(
 async def request_upload_token(
     request: Request,
     tag: str | None = None,
-    preset: str | None = None,
+    video_codec: str | None = None,
+    audio_codec: str | None = None,
+    format: str | None = None,
+    scale: str | None = None,
+    poster_scale: str | None = None,
     crf: int | None = None,
+    video_preset: str | None = None,
+    audio_bitrate: str | None = None,
+    keep_animation: bool | None = None,
+    preset: str | None = None,
+    mode: str | None = None,
+    gif_mode: str | None = None,
+    remove_audio: bool = False,
     _creds: HTTPAuthorizationCredentials | None = Security(bearer_scheme),
 ) -> dict:
-    """Шаг 1: проверить права и выдать одноразовый upload-token.
-
-    ``tag`` — необязательная метка (до 16 символов, латиница/цифры) только
-    для удобства UI (сортировка/поиск в админке и у клиента); формат файла
-    сервер определяет сам по содержимому, а не по этой метке.
-
-    ``preset``/``crf`` — управление скоростью/качеством конвертации видео
-    (см. IMPLEMENTATION_PLAN.md §1.5): доступны только для
-    ``admin.media.upload`` (полный выбор пресета + CRF); ``media.upload.video``
-    всегда получает самый быстрый пресет независимо от переданных значений;
-    ``media.upload`` видео вообще не грузит (см. ``video_allowed`` ниже), эти
-    параметры для него ни на что не влияют.
-
-    ``_creds`` не используется напрямую (реальный разбор — в
-    ``authenticate()``/``bearer()`` из ``utils/authctx.py``) — параметр здесь
-    только чтобы зарегистрировать HTTP Bearer security scheme в OpenAPI
-    (кнопка "Authorize" и замочек в Swagger UI, см. ``utils/openapi_auth.py``).
-    """
+    """Шаг 1: проверить права и выдать одноразовый upload-token."""
     cfg: Config = request.app.state.cfg
     vk: valkey.Valkey = request.app.state.vk
     settings: SettingsResolver = request.app.state.settings
@@ -217,6 +219,30 @@ async def request_upload_token(
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             "tag: до 16 символов, только латиница и цифры",
+        )
+
+    if video_preset is not None and video_preset not in _VALID_FFMPEG_PRESETS:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"недопустимый video_preset: {video_preset}. Допустимы: {', '.join(sorted(_VALID_FFMPEG_PRESETS))}",
+        )
+
+    if audio_bitrate is not None and not _VALID_AUDIO_BITRATE_RE.match(audio_bitrate):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"недопустимый audio_bitrate: {audio_bitrate}. Пример: 128k, 192k, 256k",
+        )
+
+    if scale is not None and not _VALID_SCALE_RE.match(scale):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"недопустимый scale: {scale}. Допустимы: original, 2160p, 1440p, 1080p, 720p, 480p или WxH",
+        )
+
+    if poster_scale is not None and not _VALID_SCALE_RE.match(poster_scale):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"недопустимый poster_scale: {poster_scale}. Допустимы: original, 2160p, 1440p, 1080p, 720p, 480p или WxH",
         )
 
     acc_id = await authenticate(request)
@@ -236,21 +262,41 @@ async def request_upload_token(
         )
 
     if is_unlimited:
-        if preset is not None and preset not in _VIDEO_PRESETS:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                f"preset: один из {sorted(_VIDEO_PRESETS)}",
-            )
-        cpu_used = _VIDEO_PRESETS[preset or _DEFAULT_PRESET]
-        if crf is not None and not (_CRF_MIN <= crf <= _CRF_MAX):
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, f"crf: {_CRF_MIN}..{_CRF_MAX}"
-            )
+        eff_format = format or ("original" if mode == "original" else "original")
+        if gif_mode == "to_webm":
+            eff_format = "webm"
+        elif gif_mode == "to_static":
+            eff_format = "webp"
+        elif gif_mode == "keep_gif":
+            eff_format = "gif"
+
+        if eff_format in ("gif", "webp"):
+            eff_video_codec = "copy"
+            eff_audio_codec = "none"
+        else:
+            eff_video_codec = video_codec or ("copy" if mode == "original" or eff_format == "original" else "libvpx-vp9")
+            eff_audio_codec = audio_codec or ("none" if remove_audio else ("copy" if eff_video_codec == "copy" else "libopus"))
+        eff_scale = scale or "original"
+        eff_poster_scale = poster_scale or "original"
+        eff_crf = str(crf) if crf is not None else ""
+        eff_video_preset = video_preset or ""
+        eff_audio_bitrate = audio_bitrate or ""
+        if keep_animation is not None:
+            eff_keep_anim = "1" if keep_animation else "0"
+        else:
+            eff_keep_anim = "0" if (gif_mode == "to_static" or eff_format == "webp") else "1"
+        cpu_used = _VIDEO_PRESETS.get(preset or _DEFAULT_PRESET, 5)
     else:
-        # uploadlarge/обычные — без выбора: всегда самый быстрый пресет,
-        # дефолтный CRF из конфига.
+        eff_format = "original"
+        eff_video_codec = "copy"
+        eff_audio_codec = "copy"
+        eff_scale = "original"
+        eff_poster_scale = "original"
+        eff_crf = ""
+        eff_keep_anim = "0"
+        eff_video_preset = ""
+        eff_audio_bitrate = ""
         cpu_used = _VIDEO_PRESETS["fast"]
-        crf = None
 
     try:
         await _enforce_hourly_limit(request, acc_id, perms)
@@ -265,25 +311,22 @@ async def request_upload_token(
         await vk.hset(
             uptoken_hkey,
             mapping={
-            "owner": str(acc_id),
-            "tag": tag or "",
-            "max_bytes": str(max_bytes),
-            # Флаг права media.upload.video/admin.media.upload — переносим на
-            # шаг 2, чтобы решить, банить ли IP за подложный Content-Length
-            # (см. upload_file).
-            "large": "1" if (is_large or is_unlimited) else "0",
-            # Право загружать видео (не только фото) — media.upload сам по
-            # себе не даёт video, см. IMPLEMENTATION_PLAN.md §0.1.3. Kind
-            # определяется по сигнатуре файла только в фоне (worker.py),
-            # поэтому решение принимается здесь и переносится через очередь.
-            "video_allowed": "1" if (is_large or is_unlimited) else "0",
-            # admin.media.upload — единственное по-настоящему безлимитное
-            # право (без потолка на общий объём хранимых медиа тоже, см.
-            # worker.py::_convert). Переносим на шаг 2 и дальше в задачу
-            # конвертации так же, как video_allowed.
-            "unlimited": "1" if is_unlimited else "0",
-            "cpu_used": str(cpu_used),
-            "crf": str(crf) if crf is not None else "",
+                "owner": str(acc_id),
+                "tag": tag or "",
+                "max_bytes": str(max_bytes),
+                "large": "1" if (is_large or is_unlimited) else "0",
+                "video_allowed": "1" if (is_large or is_unlimited) else "0",
+                "unlimited": "1" if is_unlimited else "0",
+                "cpu_used": str(cpu_used),
+                "crf": eff_crf,
+                "video_codec": eff_video_codec,
+                "audio_codec": eff_audio_codec,
+                "format": eff_format,
+                "scale": eff_scale,
+                "poster_scale": eff_poster_scale,
+                "video_preset": eff_video_preset,
+                "audio_bitrate": eff_audio_bitrate,
+                "keep_animation": eff_keep_anim,
             },
         )
         await vk.expire(uptoken_hkey, cfg.upload_token_ttl)
@@ -366,6 +409,14 @@ async def upload_file(request: Request, upload_token: str) -> dict:
     is_unlimited = payload.get("unlimited") == "1"
     cpu_used = payload.get("cpu_used") or ""
     crf = payload.get("crf") or ""
+    video_codec = payload.get("video_codec") or "copy"
+    audio_codec = payload.get("audio_codec") or "copy"
+    format_choice = payload.get("format") or "original"
+    scale = payload.get("scale") or "original"
+    poster_scale = payload.get("poster_scale") or "original"
+    video_preset = payload.get("video_preset") or ""
+    audio_bitrate = payload.get("audio_bitrate") or ""
+    keep_animation = payload.get("keep_animation") or "1"
 
     # Пре-проверка: честно заявленный слишком большой Content-Length → отказ.
     clen = request.headers.get("content-length")
@@ -426,6 +477,14 @@ async def upload_file(request: Request, upload_token: str) -> dict:
                         "unlimited": "1" if is_unlimited else "0",
                         "cpu_used": cpu_used,
                         "crf": crf,
+                        "video_codec": video_codec,
+                        "audio_codec": audio_codec,
+                        "format": format_choice,
+                        "scale": scale,
+                        "poster_scale": poster_scale,
+                        "video_preset": video_preset,
+                        "audio_bitrate": audio_bitrate,
+                        "keep_animation": keep_animation,
                     }
                 ),
             ),
