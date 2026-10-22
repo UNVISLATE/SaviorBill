@@ -12,7 +12,7 @@ from dependencies.catalog import (
 )
 from dependencies.rbac import require_perm
 from models.service import ServiceModel
-from schemas.media import Attachment, AttachmentIn
+from schemas.media import Attachment, AttachmentIn, AttachmentPatch
 from schemas.page import Page
 from schemas.service import ServiceAdmin, ServiceCreate, ServicePatch
 from utils.pagination import (
@@ -150,6 +150,25 @@ async def add_attachment(
     att = await mngr.add(
         service_id, body.media_id, tag=body.tag, position=body.position
     )
+    await mngr.s.commit()
+    await mngr.s.refresh(att, attribute_names=["media"])
+    return Attachment.from_model(att)
+
+
+@router.patch(
+    "/{service_id}/attachments/{att_id}",
+    response_model=Attachment,
+    dependencies=[Depends(require_perm("services.attachments.create"))],
+    summary="Update attachment",
+    description="Update attachment tag / placement or position.",
+)
+async def update_attachment(
+    service_id: int,
+    att_id: int,
+    body: AttachmentPatch,
+    mngr: ServiceAttachmentMngr = Depends(get_attachment_mngr),
+) -> Attachment:
+    att = await mngr.update(att_id, tag=body.tag, position=body.position)
     await mngr.s.commit()
     await mngr.s.refresh(att, attribute_names=["media"])
     return Attachment.from_model(att)

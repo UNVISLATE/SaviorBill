@@ -45,6 +45,7 @@ class Media(BaseModel):
 
     id: int
     token: str
+    name: str | None = Field(default=None, description="Custom name / filename")
     kind: str
     tag: str | None = Field(
         default=None, description="Optional UI label (latin+digits, up to 16 chars)"
@@ -86,6 +87,7 @@ class Media(BaseModel):
         return cls(
             id=m.id,
             token=m.token,
+            name=(m.meta or {}).get("name"),
             kind=m.kind,
             tag=m.tag,
             status=m.status,
@@ -166,6 +168,7 @@ class Attachment(BaseModel):
     id: int
     media_id: int
     token: str
+    name: str | None = Field(default=None, description="Custom name / filename")
     kind: str
     tag: str | None = None
     position: int
@@ -202,6 +205,17 @@ class AttachmentIn(BaseModel):
     position: int = Field(default=0, description="Sort order (optional)")
 
 
+class AttachmentPatch(BaseModel):
+    """Update service attachment tag/position."""
+
+    tag: str | None = Field(
+        default=None,
+        max_length=16,
+        description="Attachment tag / placement, up to 16 chars",
+    )
+    position: int | None = Field(default=None, description="Sort order (optional)")
+
+
 __all__ = [
     "Media",
     "MediaVariant",
@@ -210,4 +224,5 @@ __all__ = [
     "OpStatus",
     "Attachment",
     "AttachmentIn",
+    "AttachmentPatch",
 ]

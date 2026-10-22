@@ -25,7 +25,7 @@ from services.audit import audit
 from core.config import AppConfig
 from messaging.mediabus import MediaBus
 from utils.pagination import apply_sort, paginate, q_param, sort_param
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 router = APIRouter()
 
@@ -75,7 +75,10 @@ async def list_media(
         stmt = stmt.order_by(SystemMediaModel.id.desc())
     if q:
         stmt = stmt.where(
-            SystemMediaModel.tag.ilike(f"%{q}%") | SystemMediaModel.mime.ilike(f"%{q}%")
+            SystemMediaModel.tag.ilike(f"%{q}%")
+            | SystemMediaModel.mime.ilike(f"%{q}%")
+            | SystemMediaModel.token.ilike(f"%{q}%")
+            | func.json_extract_path_text(SystemMediaModel.meta, "name").ilike(f"%{q}%")
         )
     items, total, has_more = await paginate(
         mngr.s, stmt, Media.from_model, limit=limit, offset=offset
@@ -217,6 +220,45 @@ async def update_media_tag(
         meta={"tag": body.tag},
     )
     await mngr.s.commit()
+    return Media.from_model(media)
+
+
+class MediaNameIn(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255, description="Название / имя файла")
+
+
+@router.put(
+    "/{media_id}/name",
+    response_model=Media,
+    summary="Update media name",
+    description="Переименовать медиа-файл (сохраняется в meta.name).",
+)
+async def update_media_name(
+    request: Request,
+    media_id: int,
+    body: MediaNameIn,
+    mngr: SystemMediaMngr = Depends(get_media_mngr),
+    acc: UserModel = Depends(require_perm("media.write")),
+) -> Media:
+    media = await mngr.by_id(media_id)
+    if media is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
+    new_meta = dict(media.meta or {})
+    clean_name = body.name.strip()
+    new_meta["name"] = clean_name
+    media.meta = new_meta
+    await audit(
+        mngr.s,
+        action="media.rename",
+        actor_id=acc.id,
+        actor_role=acc.role.name if acc.role else None,
+        target_type="media",
+        target_id=str(media_id),
+        ip=request.client.host if request.client else None,
+        meta={"name": clean_name, "token": media.token},
+    )
+    await mngr.s.commit()
+    await mngr.s.refresh(media)
     return Media.from_model(media)
 
 

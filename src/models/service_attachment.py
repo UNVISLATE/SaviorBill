@@ -88,6 +88,23 @@ class ServiceAttachmentMngr:
         await self.s.flush()
         return att
 
+    async def update(
+        self,
+        att_id: int,
+        *,
+        tag: str | None = None,
+        position: int | None = None,
+    ) -> ServiceAttachmentModel:
+        att = await self.by_id(att_id)
+        if att is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "attachment not found")
+        if tag is not None:
+            att.tag = tag
+        if position is not None:
+            att.position = position
+        await self.s.flush()
+        return att
+
     async def remove(self, att_id: int) -> None:
         att = await self.by_id(att_id)
         if att is None:
