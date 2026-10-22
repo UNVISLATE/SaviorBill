@@ -16,14 +16,12 @@ from .fx import router as fx_router
 from .ratelimits import router as ratelimits_router
 from .raw import router as raw_router
 from .secrets import router as secrets_router
-from .ui import router as ui_router
 from .smtp import router as smtp_router
 
 router = APIRouter()
 router.include_router(ratelimits_router, prefix="/ratelimits")
 router.include_router(raw_router, prefix="/raw")
 router.include_router(secrets_router, prefix="/secrets")
-router.include_router(ui_router, prefix="/ui")
 router.include_router(fx_router, prefix="/fx")
 router.include_router(smtp_router, prefix="/smtp")
 
