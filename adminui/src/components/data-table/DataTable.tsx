@@ -40,6 +40,7 @@ export interface DataTableProps<T> {
   isError?: boolean
   getRowId: (row: T) => string | number
   onRowClick?: (row: T) => void
+  renderRow?: (row: T, rowElement: React.ReactElement) => React.ReactNode
 
   sort: string | null
   onToggleSort: (field: string) => void
@@ -68,16 +69,16 @@ export interface DataTableProps<T> {
  * (см. IMPLEMENTATION_PLAN.md §0.1). Сама не хранит query-состояние — это
  * делает `useDataTableQuery`, компонент только рендерит и дёргает колбэки. */
 function getPaginationItems(current: number, total: number): (number | "...")[] {
-  if (total <= 7) {
+  if (total <= 5) {
     return Array.from({ length: total }, (_, i) => i + 1)
   }
-  if (current <= 4) {
-    return [1, 2, 3, 4, 5, "...", total]
+  if (current <= 3) {
+    return [1, 2, 3, "...", total]
   }
-  if (current >= total - 3) {
-    return [1, "...", total - 4, total - 3, total - 2, total - 1, total]
+  if (current >= total - 2) {
+    return [1, "...", total - 2, total - 1, total]
   }
-  return [1, "...", current - 1, current, current + 1, "...", total]
+  return [1, "...", current, "...", total]
 }
 
 export function DataTable<T>({
@@ -88,6 +89,7 @@ export function DataTable<T>({
   isError,
   getRowId,
   onRowClick,
+  renderRow,
   sort,
   onToggleSort,
   searchValue,
@@ -227,12 +229,21 @@ export function DataTable<T>({
               !isError &&
               data.map((row) => {
                 const id = getRowId(row)
-                return (
+                const rowElement = (
                   <TableRow
                     key={id}
                     role={onRowClick ? "button" : undefined}
                     tabIndex={onRowClick ? 0 : undefined}
-                    onClick={() => onRowClick?.(row)}
+                    onClick={(e) => {
+                      const target = e.target as HTMLElement | null
+                      const interactive = target?.closest(
+                        "button, a, input, select, textarea, [role='menuitem'], [data-radix-collection-item]"
+                      )
+                      if (interactive && interactive !== e.currentTarget) {
+                        return
+                      }
+                      onRowClick?.(row)
+                    }}
                     onKeyDown={(e) => {
                       if (onRowClick && (e.key === "Enter" || e.key === " ")) onRowClick(row)
                     }}
@@ -248,12 +259,28 @@ export function DataTable<T>({
                       </TableCell>
                     )}
                     {columns.map((col, i) => (
-                      <TableCell key={i} className={col.className}>
+                      <TableCell
+                        key={i}
+                        className={col.className}
+                        onClick={(e) => {
+                          const target = e.target as HTMLElement | null
+                          const interactive = target?.closest(
+                            "button, a, input, select, textarea, [role='menuitem'], [data-radix-collection-item]"
+                          )
+                          if (interactive && interactive !== e.currentTarget) {
+                            e.stopPropagation()
+                          }
+                        }}
+                      >
                         {col.render(row)}
                       </TableCell>
                     ))}
                   </TableRow>
                 )
+                if (renderRow) {
+                  return renderRow(row, rowElement)
+                }
+                return rowElement
               })}
           </TableBody>
         </Table>
@@ -291,7 +318,7 @@ export function DataTable<T>({
               <Button
                 variant="outline"
                 size="icon-sm"
-                className="size-8 rounded-md"
+                className="size-8 p-0 rounded-md shrink-0"
                 disabled={currentPage <= 1}
                 onClick={() => onOffsetChange(Math.max(0, offset - limit))}
                 title="Предыдущая страница"
@@ -303,19 +330,20 @@ export function DataTable<T>({
                 p === "..." ? (
                   <span
                     key={`ellipsis-${idx}`}
-                    className="flex size-8 select-none items-center justify-center text-xs text-muted-foreground"
+                    className="flex size-8 shrink-0 select-none items-center justify-center text-xs font-semibold text-muted-foreground"
+                    aria-hidden="true"
                   >
                     …
                   </span>
                 ) : (
                   <Button
                     key={p}
-                    variant={p === currentPage ? "default" : "ghost"}
+                    variant={p === currentPage ? "default" : "outline"}
                     size="sm"
                     className={cn(
-                      "min-w-8 h-8 px-2 text-xs font-medium transition-all",
+                      "size-8 p-0 shrink-0 text-xs font-medium transition-all",
                       p === currentPage
-                        ? "font-semibold shadow-sm"
+                        ? "font-semibold shadow-xs"
                         : "text-muted-foreground hover:text-foreground"
                     )}
                     onClick={() => onOffsetChange((p - 1) * limit)}
@@ -328,7 +356,7 @@ export function DataTable<T>({
               <Button
                 variant="outline"
                 size="icon-sm"
-                className="size-8 rounded-md"
+                className="size-8 p-0 rounded-md shrink-0"
                 disabled={currentPage >= totalPages}
                 onClick={() => onOffsetChange(offset + limit)}
                 title="Следующая страница"

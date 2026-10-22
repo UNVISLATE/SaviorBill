@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { MoreHorizontal, Plus, ShieldCheck, Trash2 } from "lucide-react"
+import { KeyRound, MoreHorizontal, Plus, ShieldCheck, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -10,7 +10,7 @@ import { Button } from "@/components/shadsnui/button"
 import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
 import { Switch } from "@/components/shadsnui/switch"
-import { Textarea } from "@/components/shadsnui/textarea"
+import { Card, CardContent } from "@/components/shadsnui/card"
 import {
   Select,
   SelectContent,
@@ -18,14 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/shadsnui/select"
-import { Card, CardContent } from "@/components/shadsnui/card"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/shadsnui/dialog"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -43,6 +35,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/shadsnui/dropdown-menu"
 import { MediaPickerDialog } from "@/components/media/MediaPickerDialog"
+import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
+import { KeySecretEditor, COMMON_OAUTH_PRESETS } from "@/components/common/forms/KeySecretEditor"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 interface Provider {
@@ -50,12 +44,10 @@ interface Provider {
   slug: string
   title: string | null
   enabled: boolean
-  script_id: number | null
-  script_version: number | null
+  script_id: number
+  scopes: string
   icon_media_id: number | null
   icon_url: string | null
-  scopes: string
-  extra: Record<string, unknown>
 }
 
 interface LuaScript {
@@ -76,16 +68,29 @@ function ProviderFormDialog({
   authScripts: LuaScript[] | undefined
 }) {
   const isEdit = !!provider
-  const [slug, setSlug] = useState(provider?.slug ?? "")
-  const [title, setTitle] = useState(provider?.title ?? "")
-  const [scriptId, setScriptId] = useState(provider?.script_id ? String(provider.script_id) : "")
-  const [enabled, setEnabled] = useState(provider?.enabled ?? false)
-  const [scopes, setScopes] = useState(provider?.scopes ?? "openid email profile")
+  const [slug, setSlug] = useState("")
+  const [title, setTitle] = useState("")
+  const [scriptId, setScriptId] = useState("")
+  const [enabled, setEnabled] = useState(false)
+  const [scopes, setScopes] = useState("openid email profile")
   const [secretsText, setSecretsText] = useState("{}")
-  const [iconMediaId, setIconMediaId] = useState<number | null>(provider?.icon_media_id ?? null)
-  const [iconUrl, setIconUrl] = useState<string | null>(provider?.icon_url ?? null)
+  const [iconMediaId, setIconMediaId] = useState<number | null>(null)
+  const [iconUrl, setIconUrl] = useState<string | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
   const qc = useQueryClient()
+
+  useEffect(() => {
+    if (open) {
+      setSlug(provider?.slug ?? "")
+      setTitle(provider?.title ?? "")
+      setScriptId(provider?.script_id ? String(provider.script_id) : "")
+      setEnabled(provider?.enabled ?? false)
+      setScopes(provider?.scopes ?? "openid email profile")
+      setIconMediaId(provider?.icon_media_id ?? null)
+      setIconUrl(provider?.icon_url ?? null)
+      setSecretsText("{}")
+    }
+  }, [open, provider])
 
   const selectedScript = authScripts?.find((s) => String(s.id) === scriptId)
 
@@ -122,44 +127,81 @@ function ProviderFormDialog({
       ),
   })
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{isEdit ? "Изменить OAuth-провайдера" : "Новый OAuth-провайдер"}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="flex items-center gap-3">
+  const tabs: TabDefinition[] = [
+    {
+      id: "general",
+      label: "Основное",
+      icon: ShieldCheck,
+      content: (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 p-2.5">
             <button
               type="button"
               onClick={() => setPickerOpen(true)}
-              className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted"
+              className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-background hover:border-primary transition-colors cursor-pointer"
+              title="Выбрать иконку из медиаархива"
             >
-              {iconUrl ? <img src={iconUrl} alt="" className="size-full object-cover" /> : <ShieldCheck className="size-5 text-muted-foreground" />}
+              {iconUrl ? (
+                <img src={iconUrl} alt="" className="size-full object-cover" />
+              ) : (
+                <ShieldCheck className="size-5 text-muted-foreground" />
+              )}
             </button>
-            <p className="text-xs text-muted-foreground">Иконка провайдера (опционально)</p>
+            <div className="space-y-0.5">
+              <p className="text-xs font-medium">Иконка OAuth-провайдера</p>
+              <p className="text-[10px] text-muted-foreground">
+                Отображается на кнопке входа для пользователей
+              </p>
+              {iconUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIconMediaId(null)
+                    setIconUrl(null)
+                  }}
+                  className="text-[10px] text-destructive hover:underline cursor-pointer"
+                >
+                  Удалить иконку
+                </button>
+              )}
+            </div>
           </div>
+
           {!isEdit && (
-            <div className="space-y-1">
-              <Label>Слаг</Label>
-              <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="google" autoFocus />
+            <div className="space-y-1.5">
+              <Label className="text-xs">Слаг провайдера (уникальный ключ)</Label>
+              <Input
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+                placeholder="google"
+                autoFocus
+                className="font-mono text-xs"
+              />
+              <p className="text-[10px] text-muted-foreground">Используется в URL роутинге, например `/auth/oauth/google`</p>
             </div>
           )}
-          <div className="space-y-1">
-            <Label>Название</Label>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Google" />
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Отображаемое название</Label>
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Google (Вход через аккаунт)"
+              className="text-xs"
+            />
           </div>
-          <div className="space-y-1">
-            <Label>Auth-скрипт (обрабатывает start/callback)</Label>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Lua-скрипт (обработка start/callback)</Label>
             <Select value={scriptId} onValueChange={(v) => setScriptId(v ?? "")}>
-              <SelectTrigger>
-                <SelectValue placeholder="Выберите скрипт">
+              <SelectTrigger className="text-xs">
+                <SelectValue placeholder="Выберите Lua-скрипт">
                   {selectedScript ? selectedScript.name : undefined}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {authScripts?.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
+                  <SelectItem key={s.id} value={String(s.id)} className="text-xs">
                     {s.name}
                   </SelectItem>
                 ))}
@@ -167,50 +209,83 @@ function ProviderFormDialog({
             </Select>
             {(authScripts?.length ?? 0) === 0 && (
               <p className="text-xs text-muted-foreground">
-                Нет скриптов типа «auth» — создайте на странице «Скрипты».
+                Нет скриптов типа «auth» — создайте их на странице «Lua-скрипты».
               </p>
             )}
           </div>
-          <div className="space-y-1">
-            <Label>Scopes</Label>
-            <Input value={scopes} onChange={(e) => setScopes(e.target.value)} />
-          </div>
-          <div className="flex items-center justify-between">
-            <Label>Включён</Label>
-            <Switch checked={enabled} onCheckedChange={setEnabled} />
-          </div>
-          <div className="space-y-1">
-            <Label>Секреты (JSON: client_id, client_secret и т.п., шифруются на сервере)</Label>
-            <Textarea
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Запрашиваемые права (OAuth Scopes)</Label>
+            <Input
+              value={scopes}
+              onChange={(e) => setScopes(e.target.value)}
               className="font-mono text-xs"
-              rows={4}
-              value={secretsText}
-              onChange={(e) => setSecretsText(e.target.value)}
-              placeholder={isEdit ? "Оставьте {} чтобы не менять" : '{"client_id": "...", "client_secret": "..."}'}
+              placeholder="openid email profile"
             />
           </div>
+
+          <div className="flex h-9 items-center justify-between rounded-md border border-input bg-background px-3 py-1">
+            <div>
+              <span className="text-xs font-medium">Статус провайдера</span>
+              <p className="text-[10px] text-muted-foreground">Разрешить вход через этот сервис</p>
+            </div>
+            <Switch checked={enabled} onCheckedChange={setEnabled} />
+          </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Отмена
-          </Button>
-          <Button
-            disabled={(!isEdit && slug.trim().length < 2) || !scriptId || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            {isEdit ? "Сохранить" : "Создать"}
-          </Button>
-        </DialogFooter>
-        <MediaPickerDialog
-          open={pickerOpen}
-          onOpenChange={setPickerOpen}
-          onSelect={(m) => {
-            setIconMediaId(m.id)
-            setIconUrl(m.url)
-          }}
-        />
-      </DialogContent>
-    </Dialog>
+      ),
+    },
+    {
+      id: "secrets",
+      label: "Ключи и секреты",
+      icon: KeyRound,
+      badge: isEdit ? "Зашифровано" : undefined,
+      content: (
+        <div className="space-y-3">
+          <KeySecretEditor
+            title="OAuth Client Credentials"
+            description={
+              isEdit
+                ? "Оставьте значения пустыми или {}, если не хотите менять сохранённые ключи"
+                : "Укажите client_id, client_secret и адреса эндпоинтов"
+            }
+            presets={COMMON_OAUTH_PRESETS}
+            value={secretsText}
+            onChange={(_, text) => setSecretsText(text)}
+          />
+        </div>
+      ),
+    },
+  ]
+
+  return (
+    <>
+      <TabbedDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        title={isEdit ? `OAuth «${provider?.title || provider?.slug}»` : "Новый OAuth-провайдер"}
+        description="Настройка внешней авторизации и входа через соцсети"
+        tabs={tabs}
+        primaryAction={{
+          label: isEdit ? "Сохранить изменения" : "Создать провайдера",
+          onClick: () => save.mutate(),
+          disabled: (!isEdit && slug.trim().length < 2) || !scriptId || save.isPending,
+          loading: save.isPending,
+        }}
+        secondaryAction={{
+          label: "Отмена",
+          onClick: () => onOpenChange(false),
+        }}
+      />
+
+      <MediaPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onSelect={(m) => {
+          setIconMediaId(m.id)
+          setIconUrl(m.url)
+        }}
+      />
+    </>
   )
 }
 
@@ -263,7 +338,6 @@ export function OAuthProvidersPage() {
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Provider | null>(null)
   const [deleting, setDeleting] = useState<Provider | null>(null)
-
   const canCreate = can("oauth.create")
   const canEdit = can("oauth.edit")
   const canDelete = can("oauth.delete")
@@ -284,9 +358,9 @@ export function OAuthProvidersPage() {
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
         <div>
-          <h1 className="text-xl font-semibold">OAuth</h1>
+          <h1 className="text-xl font-semibold">OAuth-провайдеры</h1>
           <p className="text-sm text-muted-foreground">
-            Провайдеры авторизации через внешние сервисы.
+            Вход через социальные сети и сторонние сервисы (Google, Telegram, GitHub…).
           </p>
         </div>
         {canCreate && (
@@ -297,10 +371,11 @@ export function OAuthProvidersPage() {
       </div>
 
       {isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
+
       {!isLoading && (data?.length ?? 0) === 0 && (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            OAuth-провайдеры ещё не настроены. Вход по паролю продолжит работать как обычно.
+            OAuth-провайдеры ещё не настроены.
           </CardContent>
         </Card>
       )}
@@ -309,7 +384,7 @@ export function OAuthProvidersPage() {
         {data?.map((p) => (
           <Card key={p.id}>
             <CardContent className="flex items-center justify-between gap-3 py-3">
-              <div className="flex min-w-0 items-center gap-3">
+              <div className="flex items-center gap-3">
                 <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
                   {p.icon_url ? (
                     <img src={p.icon_url} alt="" className="size-full object-cover" />
@@ -317,29 +392,40 @@ export function OAuthProvidersPage() {
                     <ShieldCheck className="size-4 text-muted-foreground" />
                   )}
                 </div>
-                <div className="min-w-0">
+                <div>
                   <div className="flex items-center gap-2">
-                    <span className="truncate font-medium">{p.title ?? p.slug}</span>
+                    <span className="font-medium">{p.title ?? p.slug}</span>
                     <span className="font-mono text-xs text-muted-foreground">{p.slug}</span>
-                    <Badge variant={p.enabled ? "default" : "outline"}>{p.enabled ? "включён" : "выключен"}</Badge>
+                    <Badge variant={p.enabled ? "default" : "outline"}>
+                      {p.enabled ? "включён" : "выключен"}
+                    </Badge>
                   </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{p.scopes}</p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Scopes: <span className="font-mono">{p.scopes}</span>
+                    {` · Lua-скрипт #${p.script_id}`}
+                  </p>
                 </div>
               </div>
+
               {(canEdit || canDelete) && (
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     render={
-                      <Button variant="ghost" size="icon" className="size-8 shrink-0">
+                      <Button variant="ghost" size="icon" className="size-8">
                         <MoreHorizontal className="size-4" />
                       </Button>
                     }
                   />
                   <DropdownMenuContent align="end">
-                    {canEdit && <DropdownMenuItem onClick={() => setEditing(p)}>Изменить</DropdownMenuItem>}
+                    {canEdit && (
+                      <DropdownMenuItem onClick={() => setEditing(p)}>Изменить</DropdownMenuItem>
+                    )}
                     {canDelete && (
-                      <DropdownMenuItem variant="destructive" onClick={() => setDeleting(p)}>
-                        <Trash2 className="size-4" /> Удалить
+                      <DropdownMenuItem
+                        onClick={() => setDeleting(p)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="size-4 mr-1.5" /> Удалить
                       </DropdownMenuItem>
                     )}
                   </DropdownMenuContent>
@@ -350,7 +436,13 @@ export function OAuthProvidersPage() {
         ))}
       </div>
 
-      <ProviderFormDialog open={creating} onOpenChange={setCreating} provider={null} authScripts={authScripts} />
+      <ProviderFormDialog
+        open={creating}
+        onOpenChange={setCreating}
+        provider={null}
+        authScripts={authScripts}
+      />
+
       {editing && (
         <ProviderFormDialog
           open={!!editing}
@@ -359,8 +451,13 @@ export function OAuthProvidersPage() {
           authScripts={authScripts}
         />
       )}
+
       {deleting && (
-        <DeleteProviderDialog provider={deleting} open={!!deleting} onOpenChange={(v) => !v && setDeleting(null)} />
+        <DeleteProviderDialog
+          provider={deleting}
+          open={!!deleting}
+          onOpenChange={(v) => !v && setDeleting(null)}
+        />
       )}
     </div>
   )

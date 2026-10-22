@@ -60,6 +60,9 @@ import {
 } from "@/components/shadsnui/context-menu"
 import { MediaLightbox } from "./MediaLightbox"
 import { MediaPreviewGallery } from "./MediaPreviewGallery"
+import { MediaUploadConfigModal } from "@/components/media/MediaUploadConfigModal"
+import { isMediaConfigRequired, type MediaUploadConfig } from "@/api/media-upload"
+import { useAdminUiSettings } from "@/api/admin-ui-settings"
 
 interface MediaVariant {
   mime: string | null
@@ -142,8 +145,12 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
   const [galleryToken, setGalleryToken] = useState<string | null>(null)
   const [jobs, setJobs] = useState<UploadJob[]>([])
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([])
+  const [configModalOpen, setConfigModalOpen] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const { data: adminSettings } = useAdminUiSettings()
 
   const canRead = isOwn || can("media.read")
   const canDelete = isOwn || can("media.delete")
@@ -299,7 +306,12 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
     const list = Array.from(files).filter(
       (f) => f.type.startsWith("image/") || f.type.startsWith("video/"),
     )
-    for (const file of list) {
+    if (list.length === 0) return
+
+    const autoUploadFiles = list.filter((f) => !isMediaConfigRequired(f))
+    const configNeededFiles = list.filter((f) => isMediaConfigRequired(f))
+
+    for (const file of autoUploadFiles) {
       const id = `up${++jobSeq}`
       const previewUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : null
       setJobs((prev) => [
@@ -318,12 +330,66 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
       ])
       runUpload(id, file)
     }
+
+    if (configNeededFiles.length > 0) {
+      const isDialogEnabled = adminSettings?.mediadialog?.enabled ?? true
+      if (!isDialogEnabled) {
+        // Upload immediately with defaults
+        const def = adminSettings?.mediadialog?.default
+        for (const file of configNeededFiles) {
+          const id = `up${++jobSeq}`
+          const isGif = file.type === "image/gif" || file.name.toLowerCase().endsWith(".gif")
+          const isVideo = file.type.startsWith("video/") || /\.(mp4|webm|mkv|mov|avi)$/i.test(file.name)
+          let config: MediaUploadConfig
+          if (isGif) {
+            const fmt = def?.gif_format || "gif"
+            config = {
+              format: fmt as any,
+              keep_animation: fmt === "gif",
+              video_codec: fmt === "gif" ? "copy" : "libvpx-vp9",
+              poster_scale: def?.poster_scale || "1080p",
+            }
+          } else if (isVideo) {
+            const isOriginal = (def?.video_format || "webm") === "original"
+            config = isOriginal
+              ? { format: "original", video_codec: "copy", audio_codec: "copy", poster_scale: def?.poster_scale || "1080p" }
+              : {
+                  format: (def?.video_format as any) || "webm",
+                  video_codec: (def?.video_codec as any) || "libvpx-vp9",
+                  audio_codec: (def?.audio_codec as any) || "libopus",
+                  scale: (def?.scale as any) || "original",
+                  poster_scale: def?.poster_scale || "1080p",
+                  crf: def?.crf ?? 32,
+                }
+          } else {
+            config = { format: "webp" }
+          }
+          const previewUrl = file.type.startsWith("image/") ? URL.createObjectURL(file) : null
+          setJobs((prev) => [
+            { id, file, previewUrl, phase: "uploading", uploadPct: 0, token: null, convertPct: null, etaSec: null, error: null },
+            ...prev,
+          ])
+          runUpload(id, file, config)
+        }
+      } else {
+        setPendingUploadFiles(configNeededFiles)
+        setConfigModalOpen(true)
+      }
+    }
   }
 
   useImperativeHandle(ref, () => ({ startUploads }))
 
-  function runUpload(id: string, file: File) {
+  function runUpload(id: string, file: File, config?: MediaUploadConfig) {
     beginOwnMediaUpload(file, {
+      tag: config?.tag,
+      video_codec: config?.video_codec,
+      audio_codec: config?.audio_codec,
+      format: config?.format,
+      scale: config?.scale,
+      poster_scale: config?.poster_scale,
+      crf: config?.crf,
+      keep_animation: config?.keep_animation,
       onProgress: (p: UploadProgress) => {
         const pct = p.total ? Math.round((p.loaded / p.total) * 100) : 0
         setJobs((prev) => prev.map((j) => (j.id === id ? { ...j, uploadPct: pct } : j)))
@@ -674,6 +740,38 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
           )}
         </MediaLightbox>
       )}
+
+      <MediaUploadConfigModal
+        open={configModalOpen}
+        files={pendingUploadFiles}
+        onConfirmBatch={(items) => {
+          for (const it of items) {
+            const id = `up${++jobSeq}`
+            const previewUrl = it.file.type.startsWith("image/") ? URL.createObjectURL(it.file) : null
+            setJobs((prev) => [
+              {
+                id,
+                file: it.file,
+                previewUrl,
+                phase: "uploading",
+                uploadPct: 0,
+                token: null,
+                convertPct: null,
+                etaSec: null,
+                error: null,
+              },
+              ...prev,
+            ])
+            runUpload(id, it.file, it.config)
+          }
+          setConfigModalOpen(false)
+          setPendingUploadFiles([])
+        }}
+        onCancel={() => {
+          setConfigModalOpen(false)
+          setPendingUploadFiles([])
+        }}
+      />
     </div>
   )
 })
@@ -846,6 +944,15 @@ function MediaCard({
           <ContextMenuItem onClick={onCopyLink}>
             <Copy className="size-4" />
             Скопировать ссылку
+          </ContextMenuItem>
+          <ContextMenuItem
+            onClick={async () => {
+              await navigator.clipboard.writeText(item.token)
+              toastSuccess("Токен скопирован в буфер")
+            }}
+          >
+            <Copy className="size-4" />
+            Скопировать токен ({item.token.slice(0, 8)}…)
           </ContextMenuItem>
           {canDelete && (
             <>

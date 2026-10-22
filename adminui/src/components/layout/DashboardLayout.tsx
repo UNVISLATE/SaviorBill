@@ -26,6 +26,7 @@ import { Separator } from "@/components/shadsnui/separator"
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs"
 import { BreadcrumbProvider } from "@/hooks/use-breadcrumb"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/shadsnui/tooltip"
+import { ErrorBoundary } from "@/components/common/ErrorBoundary"
 
 export function DashboardLayout() {
   const { can } = useAuth()
@@ -112,7 +113,9 @@ export function DashboardLayout() {
           </div>
         </header>
         <main className="flex-1 overflow-auto p-6">
-          <Outlet />
+          <ErrorBoundary key={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </SidebarInset>
       </BreadcrumbProvider>

@@ -39,10 +39,13 @@ export const routeMeta: RouteMeta[] = [
   { path: "/system/overview", title: "Обзор" },
   { path: "/system/instances", title: "Инстансы" },
   { path: "/system/tasks", title: "Задачи" },
+  { path: "/system/tasks/archive", title: "Архив задач" },
   { path: "/system/dlq", title: "DLQ" },
 
   { path: "/settings", title: "Настройки" },
   { path: "/settings/general", title: "Основное" },
+  { path: "/settings/media", title: "Медиа" },
+  { path: "/settings/smtp", title: "Почта (SMTP)" },
   { path: "/settings/currency", title: "Валюта и курсы" },
   { path: "/settings/branding", title: "Брендирование" },
   { path: "/settings/ratelimits", title: "Rate limiting" },

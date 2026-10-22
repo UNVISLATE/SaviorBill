@@ -1,6 +1,6 @@
-import { useMemo, useState } from "react"
+import { useMemo, useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { MoreHorizontal, Plus, Trash2 } from "lucide-react"
+import { FolderTree, MoreHorizontal, Plus, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -19,13 +19,6 @@ import {
   SelectValue,
 } from "@/components/shadsnui/select"
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/shadsnui/dialog"
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -41,6 +34,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/shadsnui/dropdown-menu"
+import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 interface Catalog {
@@ -66,13 +60,24 @@ function CatalogFormDialog({
   catalogs: Catalog[]
 }) {
   const isEdit = !!catalog
-  const [name, setName] = useState(catalog?.name ?? "")
-  const [slug, setSlug] = useState(catalog?.slug ?? "")
-  const [parentId, setParentId] = useState<string>(catalog?.parent_id ? String(catalog.parent_id) : "")
-  const [description, setDescription] = useState(catalog?.description ?? "")
-  const [sort, setSort] = useState(String(catalog?.sort ?? 0))
-  const [isActive, setIsActive] = useState(catalog?.is_active ?? true)
+  const [name, setName] = useState("")
+  const [slug, setSlug] = useState("")
+  const [parentId, setParentId] = useState<string>("")
+  const [description, setDescription] = useState("")
+  const [sort, setSort] = useState("0")
+  const [isActive, setIsActive] = useState(true)
   const qc = useQueryClient()
+
+  useEffect(() => {
+    if (open) {
+      setName(catalog?.name ?? "")
+      setSlug(catalog?.slug ?? "")
+      setParentId(catalog?.parent_id ? String(catalog.parent_id) : "")
+      setDescription(catalog?.description ?? "")
+      setSort(String(catalog?.sort ?? 0))
+      setIsActive(catalog?.is_active ?? true)
+    }
+  }, [open, catalog])
 
   const options = catalogs.filter((c) => c.id !== catalog?.id)
 
@@ -98,63 +103,102 @@ function CatalogFormDialog({
       toastError(isEdit ? "Не удалось обновить каталог" : "Не удалось создать каталог", getErrorDetail(e)),
   })
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{isEdit ? "Изменить каталог" : "Новый каталог"}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label>Название</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+  const tabs: TabDefinition[] = [
+    {
+      id: "general",
+      label: "Основное",
+      icon: FolderTree,
+      content: (
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Название категории</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="VPN Серверы"
+              className="text-xs"
+              autoFocus
+            />
           </div>
-          <div className="space-y-1">
-            <Label>Слаг</Label>
-            <Input value={slug} onChange={(e) => setSlug(e.target.value)} placeholder="vpn-servers" />
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Слаг категории (URL slug)</Label>
+            <Input
+              value={slug}
+              onChange={(e) => setSlug(e.target.value)}
+              placeholder="vpn-servers"
+              className="font-mono text-xs"
+            />
           </div>
-          <div className="space-y-1">
-            <Label>Родительский каталог</Label>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Родительский каталог</Label>
             <Select value={parentId || "root"} onValueChange={(v) => setParentId(v === "root" ? "" : v ?? "")}>
-              <SelectTrigger>
-                <SelectValue placeholder="Корень" />
+              <SelectTrigger className="text-xs">
+                <SelectValue placeholder="Корень (верхний уровень)" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="root">— Корень —</SelectItem>
+                <SelectItem value="root">— Корневой уровень —</SelectItem>
                 {options.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
+                  <SelectItem key={c.id} value={String(c.id)} className="text-xs">
                     {c.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1">
-            <Label>Описание</Label>
-            <Input value={description} onChange={(e) => setDescription(e.target.value)} />
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Описание (опционально)</Label>
+            <Input
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Краткое описание категории"
+              className="text-xs"
+            />
           </div>
-          <div className="space-y-1">
-            <Label>Порядок сортировки</Label>
-            <Input type="number" value={sort} onChange={(e) => setSort(e.target.value)} />
-          </div>
-          <div className="flex items-center justify-between">
-            <Label>Активен</Label>
-            <Switch checked={isActive} onCheckedChange={setIsActive} />
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-xs">Порядок сортировки</Label>
+              <Input
+                type="number"
+                value={sort}
+                onChange={(e) => setSort(e.target.value)}
+                className="font-mono text-xs"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Видимость</Label>
+              <div className="flex h-9 items-center justify-between rounded-md border border-input bg-background px-3 py-1">
+                <span className="text-xs text-muted-foreground">{isActive ? "Активен" : "Скрыт"}</span>
+                <Switch checked={isActive} onCheckedChange={setIsActive} />
+              </div>
+            </div>
           </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Отмена
-          </Button>
-          <Button
-            disabled={name.trim().length < 1 || slug.trim().length < 2 || save.isPending}
-            onClick={() => save.mutate()}
-          >
-            {isEdit ? "Сохранить" : "Создать"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      ),
+    },
+  ]
+
+  return (
+    <TabbedDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isEdit ? `Каталог «${catalog?.name}»` : "Новый каталог"}
+      description="Управление структурой каталогов и категорий товаров"
+      tabs={tabs}
+      primaryAction={{
+        label: isEdit ? "Сохранить изменения" : "Создать каталог",
+        onClick: () => save.mutate(),
+        disabled: name.trim().length < 1 || slug.trim().length < 2 || save.isPending,
+        loading: save.isPending,
+      }}
+      secondaryAction={{
+        label: "Отмена",
+        onClick: () => onOpenChange(false),
+      }}
+    />
   )
 }
 
@@ -202,12 +246,6 @@ function DeleteCatalogDialog({
   )
 }
 
-/** Плоский список каталогов с указанием родителя — иерархия у нас неглубокая
- * (1-2 уровня), полноценное дерево с drag&drop избыточно для текущих
- * потребностей. Таблица вместо карточек: список каталогов обычно длиннее
- * экрана и карточки не несли доп. функционала — только занимали место.
- * Пагинация не нужна — backend отдаёт каталоги одним списком, сортировка и
- * поиск здесь чисто клиентские. */
 export function CatalogsPage() {
   const { can } = useAuth()
   const [creating, setCreating] = useState(false)
@@ -291,8 +329,11 @@ export function CatalogsPage() {
             <DropdownMenuContent align="end">
               {canEdit && <DropdownMenuItem onClick={() => setEditing(c)}>Изменить</DropdownMenuItem>}
               {canDelete && (
-                <DropdownMenuItem variant="destructive" onClick={() => setDeleting(c)}>
-                  <Trash2 className="size-4" /> Удалить
+                <DropdownMenuItem
+                  onClick={() => setDeleting(c)}
+                  className="text-destructive focus:text-destructive"
+                >
+                  <Trash2 className="size-4 mr-1.5" /> Удалить
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -304,7 +345,10 @@ export function CatalogsPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold">Каталоги услуг</h1>
+        <div>
+          <h1 className="text-xl font-semibold">Каталоги услуг</h1>
+          <p className="text-sm text-muted-foreground">Иерархические категории каталога услуг</p>
+        </div>
         {canCreate && (
           <Button size="sm" onClick={() => setCreating(true)}>
             <Plus className="size-4" /> Создать

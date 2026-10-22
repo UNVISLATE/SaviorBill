@@ -5,6 +5,7 @@ import {
   Camera,
   Copy,
   KeyRound,
+  Loader2,
   Trash2,
   Wallet,
 } from "lucide-react"
@@ -12,6 +13,7 @@ import {
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
 import { toastError, toastSuccess } from "@/lib/toast.ts"
+import { useInstanceCurrency } from "@/lib/currency"
 import { useAuth } from "@/hooks/use-auth.tsx"
 import { useProfileDialog } from "@/hooks/use-profile-dialog"
 import {
@@ -19,7 +21,9 @@ import {
   useInvalidateUserProfile,
   type UserProfile,
 } from "@/hooks/use-user-profile.ts"
-import { uploadOwnMedia } from "@/api/media-upload.ts"
+import { useMediaUploadQueue } from "@/hooks/use-media-upload-queue"
+import { MediaUploadConfigModal } from "@/components/media/MediaUploadConfigModal"
+import { isMediaConfigRequired, type MediaUploadConfig } from "@/api/media-upload"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/shadsnui/avatar"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
@@ -92,6 +96,7 @@ function BalanceAdjustDialog({
   const [amount, setAmount] = useState("")
   const [reason, setReason] = useState("")
   const qc = useQueryClient()
+  const { symbol } = useInstanceCurrency()
 
   const adjust = useMutation({
     mutationFn: async () => {
@@ -107,7 +112,7 @@ function BalanceAdjustDialog({
       const num = Number(amount)
       const actionText = num > 0 ? "Начислено" : "Списано"
       toastSuccess(
-        `${actionText} ${Math.abs(num)} ₽ на ${kind === "bonus" ? "бонусный" : "основной"} баланс`,
+        `${actionText} ${Math.abs(num)} ${symbol} на ${kind === "bonus" ? "бонусный" : "основной"} баланс`,
       )
       onOpenChange(false)
       setAmount("")
@@ -130,7 +135,7 @@ function BalanceAdjustDialog({
         </DialogHeader>
         <div className="space-y-3">
           <Field>
-            <FieldLabel htmlFor="balance-delta-amount">Сумма (₽)</FieldLabel>
+            <FieldLabel htmlFor="balance-delta-amount">Сумма ({symbol})</FieldLabel>
             <Input
               id="balance-delta-amount"
               type="number"
@@ -182,6 +187,7 @@ export function ProfileOverviewSection({
   const isOwn = mode === "own"
   const qc = useQueryClient()
   const { can } = useAuth()
+  const { symbol } = useInstanceCurrency()
   const ownProfile = useUserProfile()
   const invalidateOwnProfile = useInvalidateUserProfile()
   const viewProfile = useQuery({
@@ -216,8 +222,9 @@ export function ProfileOverviewSection({
   const { setBusy } = useProfileDialog()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const [uploadPct, setUploadPct] = useState<number | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [pendingAvatarFile, setPendingAvatarFile] = useState<File | null>(null)
+  const [avatarConfigOpen, setAvatarConfigOpen] = useState(false)
 
   const [login, setLogin] = useState("")
   const [email, setEmail] = useState("")
@@ -238,29 +245,39 @@ export function ProfileOverviewSection({
     setSyncedFor(profile.id)
   }
 
-  async function doUpload(file: File) {
-    if (!isOwn && !canManageAvatar) return
-    setUploadPct(0)
-    setBusy(true)
-    try {
-      const { mediaId } = await uploadOwnMedia(file, {
-        tag: "avatar",
-        onProgress: (p: { loaded: number; total: number }) => setUploadPct(Math.round((p.loaded / Math.max(p.total, 1)) * 100)),
-      })
-      if (isOwn) {
-        await api.put("/v1/user/me/avatar", { media_id: mediaId })
-      } else if (userId) {
-        await api.put(`/v1/admin/users/${userId}/avatar`, { media_id: mediaId })
+  const {
+    jobs: avatarJobs,
+    uploadFile: uploadAvatarFile,
+    isBusy: avatarUploading,
+  } = useMediaUploadQueue({
+    tag: "avatar",
+    autoRestoreJobs: false,
+    onJobSuccess: async (_job, mediaId) => {
+      try {
+        let resolvedId = mediaId
+        if (!resolvedId && _job.token) {
+          const { data: page } = await api.get<{ items: { id: number; token: string }[] }>("/v1/user/media", {
+            params: { limit: 10, offset: 0 },
+          })
+          const found = page.items?.find((m) => m.token === _job.token)
+          resolvedId = found?.id
+        }
+        if (resolvedId) {
+          if (isOwn) {
+            await api.put("/v1/user/me/avatar", { media_id: resolvedId })
+          } else if (userId) {
+            await api.put(`/v1/admin/users/${userId}/avatar`, { media_id: resolvedId })
+          }
+          invalidateProfile()
+          toastSuccess("Аватар обновлён")
+        }
+      } catch (err) {
+        toastError("Не удалось установить аватар", err instanceof Error ? err.message : undefined)
+      } finally {
+        setBusy(false)
       }
-      invalidateProfile()
-      toastSuccess("Аватар обновлён")
-    } catch (err) {
-      toastError("Не удалось загрузить аватар", err instanceof Error ? err.message : undefined)
-    } finally {
-      setUploadPct(null)
-      setBusy(false)
-    }
-  }
+    },
+  })
 
   const { data: oauthProviders } = useQuery({
     queryKey: ["oauth-providers"],
@@ -338,14 +355,42 @@ export function ProfileOverviewSection({
   function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     e.target.value = ""
-    if (file) void doUpload(file)
+    if (file) {
+      if (!isMediaConfigRequired(file)) {
+        void uploadAvatarFile(file, undefined, "avatar")
+      } else {
+        setPendingAvatarFile(file)
+        setAvatarConfigOpen(true)
+      }
+    }
   }
 
   function handleDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault()
     setDragOver(false)
     const file = e.dataTransfer.files?.[0]
-    if (file) void doUpload(file)
+    if (file) {
+      if (!isMediaConfigRequired(file)) {
+        void uploadAvatarFile(file, undefined, "avatar")
+      } else {
+        setPendingAvatarFile(file)
+        setAvatarConfigOpen(true)
+      }
+    }
+  }
+
+  const handleConfirmAvatarConfig = async (config: MediaUploadConfig) => {
+    if (!pendingAvatarFile) return
+    const file = pendingAvatarFile
+    setAvatarConfigOpen(false)
+    setPendingAvatarFile(null)
+    setBusy(true)
+    try {
+      await uploadAvatarFile(file, config, "avatar")
+    } catch (err) {
+      setBusy(false)
+      toastError("Ошибка при загрузке", err instanceof Error ? err.message : undefined)
+    }
   }
 
   async function handleSaveProfile() {
@@ -476,7 +521,7 @@ export function ProfileOverviewSection({
           onDragLeave={() => setDragOver(false)}
           onDrop={handleDrop}
           onClick={() => {
-            if ((isOwn || canManageAvatar) && uploadPct === null) fileInputRef.current?.click()
+            if ((isOwn || canManageAvatar) && !avatarUploading) fileInputRef.current?.click()
           }}
           title={isOwn || canManageAvatar ? "Нажмите для выбора файла или перетащите изображение" : undefined}
         >
@@ -487,7 +532,18 @@ export function ProfileOverviewSection({
             </AvatarFallback>
           </Avatar>
 
-          {(isOwn || canManageAvatar) && (
+          {avatarUploading && (
+            <div className="absolute inset-0 flex flex-col items-center justify-center rounded-full bg-black/70 text-white z-10">
+              <Loader2 className="size-4 animate-spin mb-0.5" />
+              <span className="font-mono text-[9px] font-bold">
+                {avatarJobs[0]?.phase === "uploading"
+                  ? `${avatarJobs[0].uploadPct}%`
+                  : `${Math.round(avatarJobs[0]?.convertPct ?? 0)}%`}
+              </span>
+            </div>
+          )}
+
+          {(isOwn || canManageAvatar) && !avatarUploading && (
             <div className="absolute inset-0 flex items-center justify-center rounded-full bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
               <Camera className="size-5 text-white" />
             </div>
@@ -577,7 +633,7 @@ export function ProfileOverviewSection({
             >
               <Wallet className="size-3.5 text-muted-foreground" />
               <span className="text-muted-foreground">Баланс:</span>
-              <span className="font-semibold tabular-nums text-foreground">{profile.balance} ₽</span>
+              <span className="font-semibold tabular-nums text-foreground">{profile.balance} {symbol}</span>
             </div>
 
             <div
@@ -594,13 +650,19 @@ export function ProfileOverviewSection({
               }`}
             >
               <span className="text-muted-foreground">Бонусный:</span>
-              <span className="font-semibold tabular-nums text-foreground">{profile.bonus_balance} ₽</span>
+              <span className="font-semibold tabular-nums text-foreground">{profile.bonus_balance} {symbol}</span>
             </div>
           </div>
 
-          {uploadPct !== null && (
+          {avatarUploading && avatarJobs.length > 0 && (
             <div className="w-56 space-y-1 pt-1">
-              <Progress value={uploadPct} />
+              <Progress
+                value={
+                  avatarJobs[0].phase === "uploading"
+                    ? avatarJobs[0].uploadPct
+                    : (avatarJobs[0].convertPct ?? 0)
+                }
+              />
             </div>
           )}
         </div>
@@ -870,6 +932,17 @@ export function ProfileOverviewSection({
           onOpenChange={(v) => !v && setTopUpKind(null)}
         />
       )}
+
+      <MediaUploadConfigModal
+        open={avatarConfigOpen}
+        file={pendingAvatarFile}
+        initialTag="avatar"
+        onConfirm={handleConfirmAvatarConfig}
+        onCancel={() => {
+          setAvatarConfigOpen(false)
+          setPendingAvatarFile(null)
+        }}
+      />
     </div>
   )
 }

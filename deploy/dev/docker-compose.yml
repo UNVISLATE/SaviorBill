@@ -65,6 +65,7 @@ services:
       SMTP_TLS: ${SMTP_TLS:-true}
       BILLING_LOOP_ENABLED: ${BILLING_LOOP_ENABLED:-true}
     volumes:
+      - ../../src:/app/src:ro
       - ../../data:/app/data:rw
       # Приватный ключ подписи JWT (RS256) — билинг-only, НЕ монтируется в
       # mediaworker/luaworker (см. AUDIT.md, Phase 1).

@@ -15,6 +15,7 @@ import {
   TableRow,
 } from "@/components/shadsnui/table"
 import { toastSuccess } from "@/lib/toast"
+import { useInstanceCurrency } from "@/lib/currency"
 
 interface ReferralItem {
   id: number
@@ -50,6 +51,7 @@ export function ProfileReferralsSection({
   userId?: number
 }) {
   const [codeCopied, setCodeCopied] = useState(false)
+  const { symbol } = useInstanceCurrency()
 
   // Получаем аккаунт для отображения ref_code и бонусного баланса
   const { data: account } = useQuery({
@@ -224,7 +226,7 @@ export function ProfileReferralsSection({
               <span className="text-xl font-bold tracking-tight text-emerald-500 dark:text-emerald-400">
                 {account?.bonus_balance ?? "0.00"}
               </span>
-              <span className="text-xs font-normal text-muted-foreground">₽</span>
+              <span className="text-xs font-normal text-muted-foreground">{symbol}</span>
             </div>
           </div>
         </div>

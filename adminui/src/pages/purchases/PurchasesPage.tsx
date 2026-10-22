@@ -204,7 +204,7 @@ export function PurchasesPage() {
     {
       key: "created_at",
       header: "Создан",
-      render: (p) => new Date(p.created_at).toLocaleString(),
+      render: (p) => (p.created_at ? new Date(p.created_at).toLocaleString() : "—"),
     },
   ]
 

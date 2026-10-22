@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { MoreHorizontal, Plus, Trash2, Zap } from "lucide-react"
+import { Mail, MoreHorizontal, PlayCircle, Plus, SlidersHorizontal, Trash2, Zap } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -10,7 +10,7 @@ import { Button } from "@/components/shadsnui/button"
 import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
 import { Switch } from "@/components/shadsnui/switch"
-import { Textarea } from "@/components/shadsnui/textarea"
+import { Card, CardContent } from "@/components/shadsnui/card"
 import {
   Select,
   SelectContent,
@@ -18,14 +18,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/shadsnui/select"
-import { Card, CardContent } from "@/components/shadsnui/card"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/shadsnui/dialog"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -42,6 +34,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/shadsnui/dropdown-menu"
+import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
+import { ConditionRuleBuilder } from "@/components/common/forms/ConditionRuleBuilder"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 interface Trigger {
@@ -77,6 +71,10 @@ const EVENT_LABEL: Record<string, string> = {
   "payment.paid": "Платёж оплачен",
   "payment.refunded": "Платёж возвращён",
   "service.delivered": "Услуга выдана",
+  "service.keys.low": "Мало ключей в остатке",
+  "service.keys.empty": "Ключи закончились",
+  "payment.cancelled": "Платёж отменён",
+  "payment.failed": "Ошибка платежа",
 }
 
 function TriggerFormDialog({
@@ -95,22 +93,34 @@ function TriggerFormDialog({
   scripts: LuaScript[] | undefined
 }) {
   const isEdit = !!trigger
-  const [name, setName] = useState(trigger?.name ?? "")
-  const [event, setEvent] = useState(trigger?.event ?? meta?.events[0] ?? "")
-  const [action, setAction] = useState(trigger?.action ?? "email")
-  const [templateId, setTemplateId] = useState(
-    trigger?.action === "email" ? String((trigger.config as { template_id?: number }).template_id ?? "") : "",
-  )
-  const [toField, setToField] = useState(
-    trigger?.action === "email" ? String((trigger.config as { to_field?: string }).to_field ?? "") : "",
-  )
-  const [scriptId, setScriptId] = useState(
-    trigger?.action === "lua" ? String((trigger.config as { script_id?: number }).script_id ?? "") : "",
-  )
-  const [condText, setCondText] = useState(JSON.stringify(trigger?.cond ?? {}, null, 2))
-  const [isActive, setIsActive] = useState(trigger?.is_active ?? true)
-  const [jsonError, setJsonError] = useState<string | null>(null)
+  const [name, setName] = useState("")
+  const [event, setEvent] = useState("")
+  const [action, setAction] = useState("email")
+  const [templateId, setTemplateId] = useState("")
+  const [toField, setToField] = useState("")
+  const [scriptId, setScriptId] = useState("")
+  const [condText, setCondText] = useState("{}")
+  const [isActive, setIsActive] = useState(true)
   const qc = useQueryClient()
+
+  useEffect(() => {
+    if (open) {
+      setName(trigger?.name ?? "")
+      setEvent(trigger?.event ?? meta?.events[0] ?? "payment.paid")
+      setAction(trigger?.action ?? "email")
+      setTemplateId(
+        trigger?.action === "email" ? String((trigger.config as { template_id?: number }).template_id ?? "") : "",
+      )
+      setToField(
+        trigger?.action === "email" ? String((trigger.config as { to_field?: string }).to_field ?? "") : "",
+      )
+      setScriptId(
+        trigger?.action === "lua" ? String((trigger.config as { script_id?: number }).script_id ?? "") : "",
+      )
+      setCondText(JSON.stringify(trigger?.cond ?? {}, null, 2))
+      setIsActive(trigger?.is_active ?? true)
+    }
+  }, [open, trigger, meta])
 
   const save = useMutation({
     mutationFn: async () => {
@@ -118,10 +128,8 @@ function TriggerFormDialog({
       try {
         cond = JSON.parse(condText)
       } catch {
-        setJsonError("Условия должны быть корректным JSON")
         throw new Error("invalid json")
       }
-      setJsonError(null)
       const config =
         action === "email"
           ? { template_id: Number(templateId), ...(toField ? { to_field: toField } : {}) }
@@ -136,85 +144,124 @@ function TriggerFormDialog({
       void qc.invalidateQueries({ queryKey: ["admin-triggers"] })
     },
     onError: (e: unknown) => {
-      if ((e as Error).message !== "invalid json") {
-        toastError(isEdit ? "Не удалось обновить триггер" : "Не удалось создать триггер", getErrorDetail(e))
-      }
+      toastError(
+        isEdit ? "Не удалось обновить триггер" : "Не удалось создать триггер",
+        (e as Error).message === "invalid json" ? "Условия должны быть корректным JSON" : getErrorDetail(e),
+      )
     },
   })
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{isEdit ? "Изменить триггер" : "Новый триггер"}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          <div className="space-y-1">
-            <Label>Название (опционально)</Label>
-            <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+  const tabs: TabDefinition[] = [
+    {
+      id: "event",
+      label: "Событие",
+      icon: Zap,
+      content: (
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Название триггера (опционально)</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Например: Уведомление об успешной оплате"
+              className="text-xs"
+              autoFocus
+            />
           </div>
-          <div className="space-y-1">
-            <Label>Событие</Label>
-            <Select value={event} onValueChange={(v) => setEvent(v ?? "")}>
-              <SelectTrigger>
-                <SelectValue />
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Доменное событие системы</Label>
+            <Select value={event} onValueChange={(v) => v && setEvent(v)}>
+              <SelectTrigger className="text-xs">
+                <SelectValue placeholder="Выберите событие" />
               </SelectTrigger>
               <SelectContent>
                 {meta?.events.map((ev) => (
-                  <SelectItem key={ev} value={ev}>
-                    {EVENT_LABEL[ev] ?? ev}
+                  <SelectItem key={ev} value={ev} className="text-xs">
+                    <span className="font-medium">{EVENT_LABEL[ev] ?? ev}</span>
+                    <span className="font-mono text-[10px] text-muted-foreground ml-2">({ev})</span>
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            <p className="text-[10px] text-muted-foreground">
+              Событие, при возникновении которого запускается этот сценарий
+            </p>
           </div>
-          <div className="space-y-1">
-            <Label>Действие</Label>
-            <Select value={action} onValueChange={(v) => setAction(v ?? "email")}>
-              <SelectTrigger>
+
+          <div className="flex h-9 items-center justify-between rounded-md border border-input bg-background px-3 py-1">
+            <div>
+              <span className="text-xs font-medium">Статус триггера</span>
+              <p className="text-[10px] text-muted-foreground">Активен и обрабатывает поступающие события</p>
+            </div>
+            <Switch checked={isActive} onCheckedChange={setIsActive} />
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "action",
+      label: "Действие",
+      icon: action === "email" ? Mail : PlayCircle,
+      content: (
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Тип действия</Label>
+            <Select value={action} onValueChange={(v) => v && setAction(v)}>
+              <SelectTrigger className="text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 {meta?.actions.map((a) => (
-                  <SelectItem key={a} value={a}>
-                    {a === "email" ? "Отправить письмо" : "Выполнить Lua-скрипт"}
+                  <SelectItem key={a} value={a} className="text-xs">
+                    {a === "email" ? "Отправить Email-письмо" : "Выполнить Lua-скрипт"}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
+
           {action === "email" ? (
-            <>
-              <div className="space-y-1">
-                <Label>Шаблон письма</Label>
+            <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Шаблон Email</Label>
                 <Select value={templateId} onValueChange={(v) => setTemplateId(v ?? "")}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Выберите шаблон" />
+                  <SelectTrigger className="text-xs bg-background">
+                    <SelectValue placeholder="Выберите почтовый шаблон" />
                   </SelectTrigger>
                   <SelectContent>
                     {templates?.map((t) => (
-                      <SelectItem key={t.id} value={String(t.id)}>
+                      <SelectItem key={t.id} value={String(t.id)} className="text-xs">
                         {t.name ?? t.slug}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-1">
-                <Label>Путь к email получателя в контексте</Label>
-                <Input value={toField} onChange={(e) => setToField(e.target.value)} placeholder="user.email" />
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Путь к получателю в контексте (JSON dot-path)</Label>
+                <Input
+                  value={toField}
+                  onChange={(e) => setToField(e.target.value)}
+                  placeholder="user.email"
+                  className="font-mono text-xs bg-background"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  По умолчанию используется email пользователя из контекста события
+                </p>
               </div>
-            </>
+            </div>
           ) : (
-            <div className="space-y-1">
-              <Label>Lua-скрипт</Label>
+            <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-3">
+              <Label className="text-xs">Lua-скрипт автоматизации</Label>
               <Select value={scriptId} onValueChange={(v) => setScriptId(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите скрипт" />
+                <SelectTrigger className="text-xs bg-background">
+                  <SelectValue placeholder="Выберите Lua-скрипт" />
                 </SelectTrigger>
                 <SelectContent>
                   {scripts?.map((s) => (
-                    <SelectItem key={s.id} value={String(s.id)}>
+                    <SelectItem key={s.id} value={String(s.id)} className="text-xs">
                       {s.name}
                     </SelectItem>
                   ))}
@@ -222,39 +269,41 @@ function TriggerFormDialog({
               </Select>
             </div>
           )}
-          <div className="space-y-1">
-            <Label>Дополнительные условия (JSON, все должны совпасть)</Label>
-            <Textarea
-              className="font-mono text-xs"
-              rows={3}
-              value={condText}
-              onChange={(e) => setCondText(e.target.value)}
-              placeholder='{"payment.target": "service"}'
-            />
-            {jsonError && <p className="text-xs text-destructive">{jsonError}</p>}
-          </div>
-          <div className="flex items-center justify-between">
-            <Label>Активен</Label>
-            <Switch checked={isActive} onCheckedChange={setIsActive} />
-          </div>
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Отмена
-          </Button>
-          <Button
-            disabled={
-              !event ||
-              (action === "email" ? !templateId : !scriptId) ||
-              save.isPending
-            }
-            onClick={() => save.mutate()}
-          >
-            {isEdit ? "Сохранить" : "Создать"}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      ),
+    },
+    {
+      id: "conditions",
+      label: "Условия фильтрации",
+      icon: SlidersHorizontal,
+      content: (
+        <ConditionRuleBuilder
+          event={event}
+          value={condText}
+          onChange={(_, text) => setCondText(text)}
+        />
+      ),
+    },
+  ]
+
+  return (
+    <TabbedDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={isEdit ? `Триггер «${trigger?.name || EVENT_LABEL[trigger?.event || ""] || trigger?.event}»` : "Новый триггер"}
+      description="Автоматический запуск сценариев и уведомлений при доменных событиях"
+      tabs={tabs}
+      primaryAction={{
+        label: isEdit ? "Сохранить изменения" : "Создать триггер",
+        onClick: () => save.mutate(),
+        disabled: !event || (action === "email" ? !templateId : !scriptId) || save.isPending,
+        loading: save.isPending,
+      }}
+      secondaryAction={{
+        label: "Отмена",
+        onClick: () => onOpenChange(false),
+      }}
+    />
   )
 }
 
@@ -335,10 +384,15 @@ export function TriggersPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold">Триггеры</h1>
+        <div>
+          <h1 className="text-xl font-semibold">Триггеры автоматизации</h1>
+          <p className="text-sm text-muted-foreground">
+            Автоматическая реакция на системные события (оплата, регистрация, доставка)
+          </p>
+        </div>
         {canCreate && (
           <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> Создать
+            <Plus className="size-4" /> Создать триггер
           </Button>
         )}
       </div>
@@ -347,8 +401,8 @@ export function TriggersPage() {
       {!isLoading && (data?.length ?? 0) === 0 && (
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-10 text-center text-sm text-muted-foreground">
-            <Zap className="size-6" />
-            Триггеров пока нет — создайте первый, чтобы автоматизировать письма/скрипты по событиям.
+            <Zap className="size-6 text-primary" />
+            Триггеров пока нет — создайте первый, чтобы автоматизировать письма и Lua-скрипты по событиям.
           </CardContent>
         </Card>
       )}
@@ -382,8 +436,11 @@ export function TriggersPage() {
                   <DropdownMenuContent align="end">
                     {canEdit && <DropdownMenuItem onClick={() => setEditing(t)}>Изменить</DropdownMenuItem>}
                     {canDelete && (
-                      <DropdownMenuItem variant="destructive" onClick={() => setDeleting(t)}>
-                        <Trash2 className="size-4" /> Удалить
+                      <DropdownMenuItem
+                        onClick={() => setDeleting(t)}
+                        className="text-destructive focus:text-destructive"
+                      >
+                        <Trash2 className="size-4 mr-1.5" /> Удалить
                       </DropdownMenuItem>
                     )}
                   </DropdownMenuContent>

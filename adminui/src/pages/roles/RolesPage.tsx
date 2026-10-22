@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronRight, Minus, Trash2 } from "lucide-react"
+import { ChevronRight, KeyRound, Minus, ShieldCheck, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { hasPerm, type PermNode } from "@/api/rbac.ts"
@@ -9,14 +9,8 @@ import { Button } from "@/components/shadsnui/button"
 import { Badge } from "@/components/shadsnui/badge"
 import { Checkbox } from "@/components/shadsnui/checkbox"
 import { Input } from "@/components/shadsnui/input"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/shadsnui/dialog"
+import { Label } from "@/components/shadsnui/label"
+import { Switch } from "@/components/shadsnui/switch"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -35,6 +29,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/shadsnui/table"
+import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
 
 interface Role {
   id: number
@@ -59,9 +54,6 @@ interface PermTree {
   [key: string]: PermTree | boolean
 }
 
-/** Собрать вложенный perms-объект из списка плоских путей (только true-листья) —
- * зеркалит `security/rbac.py::perms_tree`, но строит дерево только по выбранным
- * правам, а не по всему каталогу. */
 function buildPermsTree(paths: string[]): Record<string, unknown> {
   const tree: Record<string, unknown> = {}
   for (const path of paths) {
@@ -92,6 +84,7 @@ function treePaths(tree: PermTree, prefix = ""): string[] {
 export function RolesPage() {
   const qc = useQueryClient()
   const [editing, setEditing] = useState<Role | null>(null)
+  const [editTitle, setEditTitle] = useState("")
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [permFilter, setPermFilter] = useState("")
   const [adminLoginAllowed, setAdminLoginAllowed] = useState(false)
@@ -124,6 +117,7 @@ export function RolesPage() {
     mutationFn: async () => {
       if (!editing) return
       await api.patch(`/v1/admin/roles/${editing.id}`, {
+        title: editTitle.trim() || null,
         perms: buildPermsTree(Array.from(checked)),
         admin_login_allowed: adminLoginAllowed,
         allow_login: allowLogin,
@@ -172,6 +166,7 @@ export function RolesPage() {
     const flat = catalog?.flat ?? []
     setChecked(new Set(flat.filter((p) => hasPerm(role.perms, p))))
     setPermFilter("")
+    setEditTitle(role.title ?? "")
     setAdminLoginAllowed(role.admin_login_allowed)
     setAllowLogin(role.allow_login)
     setEditing(role)
@@ -254,16 +249,196 @@ export function RolesPage() {
     })
   }
 
+  const editTabs: TabDefinition[] = editing ? [
+    {
+      id: "general",
+      label: "Свойства роли",
+      icon: ShieldCheck,
+      content: (
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Системный идентификатор роли</Label>
+            <div className="flex items-center gap-2">
+              <Input value={editing.name} disabled className="font-mono text-xs bg-muted/40" />
+              {editing.is_system && <Badge variant="secondary">системная</Badge>}
+              {editing.is_protected && <Badge variant="outline">защищенная</Badge>}
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Отображаемое название роли</Label>
+            <Input
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              placeholder="Менеджер контента"
+              className="text-xs"
+            />
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-xs font-medium">Вход в панель администратора</Label>
+                <p className="text-[10px] text-muted-foreground">
+                  Без этого флага роль не может зайти в админку, даже имея права
+                </p>
+              </div>
+              <Switch checked={adminLoginAllowed} onCheckedChange={setAdminLoginAllowed} />
+            </div>
+
+            <div className="border-t border-border/40 pt-2 flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-xs font-medium">Получение и обновление токенов (Логин)</Label>
+                <p className="text-[10px] text-muted-foreground">
+                  Блокирует авторизацию всех пользователей с этой ролью
+                </p>
+              </div>
+              <Switch checked={allowLogin} onCheckedChange={setAllowLogin} />
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "permissions",
+      label: "Права доступа",
+      icon: KeyRound,
+      badge: `${checked.size}`,
+      content: (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Input
+              value={permFilter}
+              onChange={(e) => setPermFilter(e.target.value)}
+              placeholder="Быстрый поиск права (например: services.edit)..."
+              className="h-8 text-xs"
+            />
+            {permFilter && (
+              <Button size="sm" variant="ghost" onClick={() => setPermFilter("")} className="h-8 text-xs">
+                Сбросить
+              </Button>
+            )}
+          </div>
+
+          <div className="max-h-[350px] overflow-y-auto rounded-lg border border-border/60 p-2.5 space-y-1 bg-background/50">
+            {permFilter.trim() ? (
+              filteredPerms.map((p) => (
+                <label key={p} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/50 cursor-pointer">
+                  <Checkbox checked={checked.has(p)} onCheckedChange={(v) => togglePermission(p, !!v)} />
+                  <span className="font-mono text-xs">{p}</span>
+                </label>
+              ))
+            ) : (
+              permissionRows(permissionTree)
+            )}
+          </div>
+        </div>
+      ),
+    },
+  ] : []
+
+  const createTabs: TabDefinition[] = [
+    {
+      id: "general",
+      label: "Свойства роли",
+      icon: ShieldCheck,
+      content: (
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label className="text-xs">Системное имя роли (slug)</Label>
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder="support_lead"
+              className="font-mono text-xs"
+              autoFocus
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Отображаемое название (необязательно)</Label>
+            <Input
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="Старший специалист поддержки"
+              className="text-xs"
+            />
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-border/60 bg-muted/20 p-3">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-xs font-medium">Вход в панель администратора</Label>
+                <p className="text-[10px] text-muted-foreground">
+                  Разрешить вход в интерфейс панели управления
+                </p>
+              </div>
+              <Switch checked={adminLoginAllowed} onCheckedChange={setAdminLoginAllowed} />
+            </div>
+
+            <div className="border-t border-border/40 pt-2 flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-xs font-medium">Разрешить логин</Label>
+                <p className="text-[10px] text-muted-foreground">
+                  Разрешить пользователям с этой ролью входить в систему
+                </p>
+              </div>
+              <Switch checked={allowLogin} onCheckedChange={setAllowLogin} />
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: "permissions",
+      label: "Права доступа",
+      icon: KeyRound,
+      badge: `${checked.size}`,
+      content: (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <Input
+              value={permFilter}
+              onChange={(e) => setPermFilter(e.target.value)}
+              placeholder="Фильтр прав..."
+              className="h-8 text-xs"
+            />
+          </div>
+
+          <div className="max-h-[350px] overflow-y-auto rounded-lg border border-border/60 p-2.5 space-y-1 bg-background/50">
+            {permFilter.trim() ? (
+              filteredPerms.map((p) => (
+                <label key={p} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/50 cursor-pointer">
+                  <Checkbox checked={checked.has(p)} onCheckedChange={(v) => togglePermission(p, !!v)} />
+                  <span className="font-mono text-xs">{p}</span>
+                </label>
+              ))
+            ) : (
+              permissionRows(permissionTree)
+            )}
+          </div>
+        </div>
+      ),
+    },
+  ]
+
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold">Роли</h1>
+        <div>
+          <h1 className="text-xl font-semibold">Роли и права доступа</h1>
+          <p className="text-sm text-muted-foreground">
+            Управление правами доступа (RBAC), системными ролями и разрешениями
+          </p>
+        </div>
         <div className="flex items-center gap-2">
           {roles && <span className="text-sm text-muted-foreground">Всего: {roles.length}</span>}
           <Button onClick={() => {
             setChecked(new Set())
             setAdminLoginAllowed(false)
             setAllowLogin(true)
+            setNewName("")
+            setNewTitle("")
             setCreating(true)
           }}>
             Создать роль
@@ -363,92 +538,44 @@ export function RolesPage() {
         </Table>
       </div>
 
-      <Dialog open={!!editing} onOpenChange={(open) => !open && setEditing(null)}>
-        <DialogContent className="!fixed !flex h-[80vh] max-h-[80vh] min-h-0 max-w-lg flex-col overflow-hidden">
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-            <DialogHeader>
-              <DialogTitle>Права роли «{editing?.title ?? editing?.name}»</DialogTitle>
-              <DialogDescription>
-                Отметьте разрешения, доступные этой роли. Права наследуются по иерархии.
-              </DialogDescription>
-            </DialogHeader>
-            <Input
-              value={permFilter}
-              onChange={(e) => setPermFilter(e.target.value)}
-              placeholder="Фильтр прав…"
-            />
-            <label className="flex items-center gap-2 rounded border px-2.5 py-2 text-sm">
-            <Checkbox
-              checked={adminLoginAllowed}
-              onCheckedChange={(v) => setAdminLoginAllowed(!!v)}
-            />
-            <span>
-              Разрешить вход в админ-панель
-              <span className="ml-1 block text-xs text-muted-foreground">
-                Без этого флага роль не может войти в админку, даже если у неё есть права.
-              </span>
-            </span>
-            </label>
-            <label className="flex items-center gap-2 rounded border px-2.5 py-2 text-sm">
-            <Checkbox
-              checked={allowLogin}
-              onCheckedChange={(v) => setAllowLogin(!!v)}
-            />
-            <span>
-              Разрешить получение/обновление токенов (логин)
-              <span className="ml-1 block text-xs text-muted-foreground">
-                Без этого флага аккаунты с этой ролью не могут залогиниться и
-                обновить токен вообще — жёсткая блокировка независимо от прав.
-              </span>
-            </span>
-            </label>
-            <div className="min-h-0 space-y-1">
-              {permFilter.trim()
-                ? filteredPerms.map((p) => (
-                  <label key={p} className="flex items-center gap-2 rounded px-1.5 py-1 text-sm hover:bg-muted/50">
-                    <Checkbox checked={checked.has(p)} onCheckedChange={(v) => togglePermission(p, !!v)} />
-                    <span className="font-mono text-xs">{p}</span>
-                  </label>
-                ))
-                : permissionRows(permissionTree)}
-            </div>
-          </div>
-          <DialogFooter className="flex-shrink-0">
-            <Button variant="outline" onClick={() => setEditing(null)}>
-              Отмена
-            </Button>
-            <Button onClick={() => save.mutate()} disabled={save.isPending}>
-              Сохранить
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {editing && (
+        <TabbedDialog
+          open={!!editing}
+          onOpenChange={(v) => !v && setEditing(null)}
+          title={`Роль «${editing.title ?? editing.name}»`}
+          description="Редактирование параметров и матрицы разрешений роли"
+          tabs={editTabs}
+          primaryAction={{
+            label: "Сохранить изменения",
+            onClick: () => save.mutate(),
+            loading: save.isPending,
+          }}
+          secondaryAction={{
+            label: "Отмена",
+            onClick: () => setEditing(null),
+          }}
+        />
+      )}
 
-      <Dialog open={creating} onOpenChange={setCreating}>
-        <DialogContent className="!fixed !flex h-[80vh] max-h-[80vh] min-h-0 max-w-lg flex-col overflow-hidden">
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
-            <DialogHeader>
-              <DialogTitle>Новая роль</DialogTitle>
-              <DialogDescription>Создайте пользовательскую роль и задайте её права.</DialogDescription>
-            </DialogHeader>
-            <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Системное имя" />
-            <Input value={newTitle} onChange={(e) => setNewTitle(e.target.value)} placeholder="Отображаемое название (необязательно)" />
-            <div className="min-h-0 space-y-1">{permissionRows(permissionTree)}</div>
-            <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={adminLoginAllowed} onCheckedChange={(v) => setAdminLoginAllowed(!!v)} />
-            Разрешить вход в админ-панель
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-            <Checkbox checked={allowLogin} onCheckedChange={(v) => setAllowLogin(!!v)} />
-            Разрешить логин и обновление токенов
-            </label>
-          </div>
-          <DialogFooter className="flex-shrink-0">
-            <Button variant="outline" onClick={() => setCreating(false)}>Отмена</Button>
-            <Button onClick={() => create.mutate()} disabled={!newName.trim() || create.isPending}>Создать</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {creating && (
+        <TabbedDialog
+          open={creating}
+          onOpenChange={setCreating}
+          title="Новая роль"
+          description="Создание пользовательской роли и настройка прав доступа"
+          tabs={createTabs}
+          primaryAction={{
+            label: "Создать роль",
+            onClick: () => create.mutate(),
+            disabled: !newName.trim() || create.isPending,
+            loading: create.isPending,
+          }}
+          secondaryAction={{
+            label: "Отмена",
+            onClick: () => setCreating(false),
+          }}
+        />
+      )}
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
@@ -458,21 +585,18 @@ export function RolesPage() {
               {isImpactLoading
                 ? "Проверяем назначения роли…"
                 : isImpactError
-                  ? "Не удалось получить информацию о назначениях роли. Удаление заблокировано."
-                  : deleteImpact?.assigned_accounts
-                    ? `Роль назначена ${deleteImpact.assigned_accounts} аккаунтам. Сначала назначьте им другую роль.`
-                    : "Роль не назначена аккаунтам. Удаление необратимо."}
+                  ? "Не удалось проверить назначения роли. Удаление может быть заблокировано сервером."
+                  : deleteImpact && deleteImpact.assigned_accounts > 0
+                    ? `Роль назначена ${deleteImpact.assigned_accounts} аккаунтам. Удаление будет отклонено — сначала снимите её со всех пользователей.`
+                    : "Роль не назначена ни одному аккаунту и будет удалена безвозвратно."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              variant="destructive"
-              disabled={remove.isPending || isImpactLoading || isImpactError || !deleteImpact?.can_delete}
-              onClick={() => {
-                if (deleteTarget) remove.mutate(deleteTarget)
-                setDeleteTarget(null)
-              }}
+              disabled={remove.isPending || (deleteImpact ? !deleteImpact.can_delete : false)}
+              onClick={() => deleteTarget && remove.mutate(deleteTarget)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
               Удалить
             </AlertDialogAction>

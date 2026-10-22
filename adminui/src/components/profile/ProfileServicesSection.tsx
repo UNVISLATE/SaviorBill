@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
+import { useInstanceCurrency } from "@/lib/currency"
 import { Badge } from "@/components/shadsnui/badge"
 import { Skeleton } from "@/components/shadsnui/skeleton"
 import { Empty, EmptyDescription, EmptyMedia, EmptyTitle } from "@/components/shadsnui/empty"
@@ -36,6 +37,7 @@ export function ProfileServicesSection({
   userId?: number
 }) {
   const { can } = useAuth()
+  const { symbol } = useInstanceCurrency()
   const allowed = mode === "own" || can("orders.read")
   const { data, isLoading } = useQuery({
     queryKey: mode === "own" ? ["user-services"] : ["admin-user-services", userId],
@@ -95,7 +97,7 @@ export function ProfileServicesSection({
             <p className="text-xs text-muted-foreground">Заказ #{o.id}</p>
           </div>
           <div className="flex items-center gap-3">
-            <span className="tabular-nums">{o.price} ₽</span>
+            <span className="tabular-nums">{o.price} {symbol}</span>
             <Badge variant={STATUS_VARIANT[o.status] ?? "outline"}>{o.status}</Badge>
           </div>
         </div>

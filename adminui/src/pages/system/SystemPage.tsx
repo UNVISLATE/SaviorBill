@@ -1,10 +1,11 @@
 import { Navigate, Route, Routes } from "react-router-dom"
-import { Activity, AlertTriangle, ListTodo, Server } from "lucide-react"
+import { Activity, AlertTriangle, Clock, ListTodo, Server } from "lucide-react"
 
 import { SectionTabs } from "@/components/layout/SectionTabs"
 import { SystemOverview } from "./SystemOverview"
 import { SystemInstances } from "./SystemInstances"
 import { SystemTasks } from "./SystemTasks"
+import { SystemTasksArchive } from "./SystemTasksArchive"
 import { SystemDlq } from "./SystemDlq"
 
 /** /system — мониторинг инстансов/потребления (см. IMPLEMENTATION_PLAN.md §2).
@@ -19,6 +20,7 @@ export function SystemPage() {
           { title: "Обзор", to: "/system/overview", icon: <Activity className="size-4" /> },
           { title: "Инстансы", to: "/system/instances", icon: <Server className="size-4" /> },
           { title: "Задачи", to: "/system/tasks", icon: <ListTodo className="size-4" /> },
+          { title: "Архив задач", to: "/system/tasks/archive", icon: <Clock className="size-4" /> },
           { title: "DLQ", to: "/system/dlq", icon: <AlertTriangle className="size-4" /> },
         ]}
       >
@@ -27,6 +29,7 @@ export function SystemPage() {
           <Route path="overview" element={<SystemOverview />} />
           <Route path="instances" element={<SystemInstances />} />
           <Route path="tasks" element={<SystemTasks />} />
+          <Route path="tasks/archive" element={<SystemTasksArchive />} />
           <Route path="dlq" element={<SystemDlq />} />
         </Routes>
       </SectionTabs>

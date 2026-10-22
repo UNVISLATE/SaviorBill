@@ -249,9 +249,12 @@ export function ProfileDialogHost() {
     onError: (e) => toastError("Не удалось завершить сессии", getErrorDetail(e)),
   })
 
-  const sections = ALL_SECTIONS.filter(
-    (s) => (!s.viewOnly || mode === "view") && (!s.ownOnly || mode === "own"),
-  )
+  const sections =
+    mode === "create"
+      ? [{ id: "profile" as Section, title: "Создание", icon: UserRound }]
+      : ALL_SECTIONS.filter(
+          (s) => (!s.viewOnly || mode === "view") && (!s.ownOnly || mode === "own"),
+        )
 
   // Изоляция состояния вкладок по контексту: свой профиль ("own"), создание ("create")
   // и каждый отдельный пользователь ("user:4") хранят свои активные вкладки независимо.
@@ -332,35 +335,12 @@ export function ProfileDialogHost() {
     </div>
   )
 
-  // РЕЖИМ СОЗДАНИЯ: компактное окно без боковой панели вкладок (1 вкладка)
-  if (mode === "create") {
-    if (isMobile) {
-      return (
-        <Drawer open={isOpen} onOpenChange={handleOpenChange} disablePointerDismissal={isBusy}>
-          <DrawerContent className="p-4">
-            <DrawerHeader className="mb-2 flex items-center justify-between">
-              <DrawerTitle>Новый пользователь</DrawerTitle>
-              <DrawerClose render={<Button variant="ghost" size="sm" />}>Закрыть</DrawerClose>
-            </DrawerHeader>
-            <CreateUserSection onCreated={openUserProfile} onCancel={closeProfile} />
-          </DrawerContent>
-        </Drawer>
-      )
-    }
-
-    return (
-      <Dialog open={isOpen} onOpenChange={handleOpenChange} disablePointerDismissal={isBusy}>
-        <DialogContent className="max-w-md p-6 sm:max-w-lg">
-          <DialogHeader className="mb-2">
-            <DialogTitle>Создание пользователя</DialogTitle>
-          </DialogHeader>
-          <CreateUserSection onCreated={openUserProfile} onCancel={closeProfile} />
-        </DialogContent>
-      </Dialog>
-    )
-  }
-
-  const drawerTitle = mode === "view" ? `Профиль: ${viewedUser?.login ?? "…"}` : "Профиль"
+  const drawerTitle =
+    mode === "create"
+      ? "Создание пользователя"
+      : mode === "view"
+      ? `Профиль: ${viewedUser?.login ?? "…"}`
+      : "Профиль"
 
   if (isMobile) {
     return (
@@ -430,7 +410,9 @@ export function ProfileDialogHost() {
           <div className="flex-1 overflow-y-auto p-6">
             <DialogHeader className="mb-4 flex flex-row items-center justify-between gap-3 space-y-0 pr-8">
               <DialogTitle className="truncate">
-                {mode === "view"
+                {mode === "create"
+                  ? "Создание пользователя"
+                  : mode === "view"
                   ? `${sections.find((s) => s.id === section)?.title} — ${viewedUser?.login ?? "…"}`
                   : sections.find((s) => s.id === section)?.title}
               </DialogTitle>

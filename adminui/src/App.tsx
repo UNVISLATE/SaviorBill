@@ -27,11 +27,13 @@ import { ProfileDialogProvider } from "@/hooks/use-profile-dialog"
 import { ProfileDialogHost } from "@/components/profile/ProfileDialogHost"
 import { TooltipProvider } from "@/components/shadsnui/tooltip"
 import { Toaster } from "@/components/shadsnui/sonner"
+import { ErrorBoundary } from "@/components/common/ErrorBoundary"
 
 export function App() {
   return (
-    <TooltipProvider>
-    <ProfileDialogProvider>
+    <ErrorBoundary>
+      <TooltipProvider>
+        <ProfileDialogProvider>
       <BrandingHead />
       <BrowserRouter>
         <Routes>
@@ -73,6 +75,7 @@ export function App() {
       <Toaster position="top-center" />
     </ProfileDialogProvider>
     </TooltipProvider>
+    </ErrorBoundary>
   )
 }
 
