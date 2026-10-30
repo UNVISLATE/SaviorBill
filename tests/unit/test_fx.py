@@ -24,6 +24,10 @@ class _Settings:
         raw = self.values.get(key)
         return int(raw) if raw is not None else default
 
+    async def get_bool(self, key, default=False):
+        raw = self.values.get(key)
+        return str(raw).lower() in ("1", "true", "yes") if raw is not None else default
+
 
 class _Valkey:
     def __init__(self) -> None:
@@ -204,3 +208,89 @@ async def test_manual_rate_overrides_provider(monkeypatch):
     )
     _, rate, _ = await fx.to_base(Decimal("1"), "USD")
     assert rate == Decimal("99")
+
+
+@pytest.mark.asyncio
+async def test_multi_source_priority_order():
+    """Источники опрашиваются строго по порядку в billing.fx.sources."""
+    sources = [
+        {"id": "src_top", "type": "manual", "enabled": True},
+        {"id": "src_bottom", "type": "manual", "enabled": True},
+    ]
+    fx = _fx(
+        **{
+            "billing.currency": "RUB",
+            "billing.fx.sources": json.dumps(sources),
+            "billing.fx.rates": json.dumps({"USD": "91.0", "EUR": "100.0"}),
+        }
+    )
+    rate = await fx.rate_to_base("USD")
+    assert rate == Decimal("91.0")
+
+
+@pytest.mark.asyncio
+async def test_from_base_conversion():
+    """from_base конвертирует сумму из базовой валюты инстанса в целевую."""
+    fx = _fx(
+        **{
+            "billing.currency": "USD",
+            "billing.fx.rates": json.dumps({"RUB": "0.01"}),
+        }
+    )
+    target_amount, rate = await fx.from_base(Decimal("10.00"), "RUB")
+    assert rate == Decimal("0.01")
+    assert target_amount == Decimal("1000.00")
+
+
+@pytest.mark.asyncio
+async def test_from_base_with_markup():
+    """Спред увеличивает сумму к оплате в целевой валюте."""
+    fx = _fx(
+        **{
+            "billing.currency": "USD",
+            "billing.fx.rates": json.dumps({"RUB": "0.01"}),
+            "billing.fx.markup_percent": 5,
+        }
+    )
+    target_amount, _ = await fx.from_base(Decimal("10.00"), "RUB")
+    assert target_amount == Decimal("1050.00")
+
+
+@pytest.mark.asyncio
+async def test_to_base_with_locked_rate():
+    """При передаче locked_rate конвертация использует его напрямую без обращения к live-курсам."""
+    fx = _fx(
+        **{
+            "billing.currency": "USD",
+            "billing.fx.rates": json.dumps({"RUB": "0.02"}),
+        }
+    )
+    base_amount, rate, base = await fx.to_base(
+        Decimal("950.00"), "RUB", locked_rate=Decimal("0.01")
+    )
+    assert rate == Decimal("0.01")
+    assert base == "USD"
+    assert base_amount == Decimal("9.50")
+
+
+@pytest.mark.asyncio
+async def test_fail_open_uses_last_rates():
+    """Если источник падает, но включен fail_open и есть last_rates, возвращаются сохранённые курсы."""
+    sources = [
+        {
+            "id": "src_broken",
+            "type": "provider",
+            "provider": "nope",
+            "enabled": True,
+            "last_rates": {"USD": "95.5"},
+        }
+    ]
+    fx = _fx(
+        **{
+            "billing.currency": "RUB",
+            "billing.fx.sources": json.dumps(sources),
+            "billing.fx.fail_open": "true",
+        }
+    )
+    _, rate, _ = await fx.to_base(Decimal("1"), "USD")
+    assert rate == Decimal("95.5")

@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Integer,
     JSON,
+    Numeric,
     String,
     Text,
     select,
@@ -62,6 +63,10 @@ class PaymentProvidersModel(Base):
     # Зашифрованный JSON секретов/доп-данных платёжки.
     secrets_enc: Mapped[str] = mapped_column(Text, default="", nullable=False)
     currency: Mapped[str] = mapped_column(String(8), default="RUB", nullable=False)
+    # Список поддерживаемых/опциональных валют провайдера.
+    currencies: Mapped[list[str]] = mapped_column(
+        JSON, default=list, server_default="[]", nullable=False
+    )
 
     # Единый action-driven скрипт провайдера (create/callback/check/refund).
     script_id: Mapped[int | None] = mapped_column(
@@ -69,6 +74,11 @@ class PaymentProvidersModel(Base):
     )
     # Версия скрипта: NULL — latest (по умолчанию), число — закреплённая версия.
     script_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Комиссия платёжного провайдера
+    fee_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+    fee_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0.00, server_default="0.00", nullable=False)
+    add_fee_to_amount: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
 
     # Несекретные дополнительные настройки провайдера.
     extra: Mapped[dict] = mapped_column(

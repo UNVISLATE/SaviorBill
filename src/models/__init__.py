@@ -28,6 +28,7 @@ from .audit_log import AuditLogModel
 from .worker_jobs import WorkerJobModel, WorkerJobEventModel, WorkerJobsMngr
 from .banned_email_domains import BannedEmailDomainModel, BannedEmailDomainsMngr
 from .auth_sessions import AuthSessionModel
+from .fx_sources import FxSourcesModel, FxSourcesMngr
 
 __all__ = [
     "Base",
@@ -76,4 +77,6 @@ __all__ = [
     "BannedEmailDomainModel",
     "BannedEmailDomainsMngr",
     "AuthSessionModel",
+    "FxSourcesModel",
+    "FxSourcesMngr",
 ]

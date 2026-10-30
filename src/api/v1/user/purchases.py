@@ -27,9 +27,11 @@ from enums import PayTarget, PromoKind
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
+from models.user_services import UserServicesModel
 from schemas.page import Page
 from schemas.payment_provider import PayProviderPublic
 from schemas.payments import PaymentCreate, Payment
+from services.pricing import resolve_service_order
 from utils.pagination import PageParams, page_params, paginate
 from utils.urls import is_safe_return_url
 
@@ -46,10 +48,26 @@ router = APIRouter()
 async def list_pay_providers(
     acc: UserModel = Depends(get_current_acc),
     mngr: PaymentProvidersMngr = Depends(get_pay_providers_mngr),
+    pay_mngr: PayMngr = Depends(get_pay_mngr),
 ) -> list[PayProviderPublic]:
     """Включённые провайдеры (без секретов и служебных полей)."""
     rows = await mngr.list_enabled()
-    return [PayProviderPublic.from_model(p) for p in rows]
+    available_fx: set[str] | None = None
+    if pay_mngr.fx is not None:
+        try:
+            available_fx = await pay_mngr.fx.get_available_currencies()
+        except Exception:
+            available_fx = None
+
+    res: list[PayProviderPublic] = []
+    for p in rows:
+        supported = [p.currency] + [c for c in (p.currencies or []) if c != p.currency]
+        if available_fx is not None:
+            filtered = [c for c in supported if c.upper() in available_fx]
+        else:
+            filtered = supported
+        res.append(PayProviderPublic.from_model(p, available_currencies=filtered))
+    return res
 
 
 @router.get(
@@ -115,7 +133,7 @@ async def create_purchase(
     user_svc_id: int | None = None
     # Авторитетная сумма: для услуги — только server-side service.price
     # (body.amount для target=service запрещён самой схемой); для
-    # пополнения баланса — то, что прислал клиент.
+    # пополнения баланса — то, что прислал клиент (в базовой валюте инстанса).
     amount = body.amount
 
     if body.target == PayTarget.SERVICE:
@@ -124,21 +142,14 @@ async def create_purchase(
                 status.HTTP_400_BAD_REQUEST, "service_id is required for target=service"
             )
         service = await svc_mngr.get_active(body.service_id)
-
-        # Если уже есть неоплаченный счёт на эту услугу с готовой ссылкой оплаты — возвращаем его
-        existing_pending = await pay_mngr.s.scalar(
-            select(UserPaymentsModel)
-            .join(UserServicesModel, UserPaymentsModel.user_svc_id == UserServicesModel.id)
-            .where(
-                UserPaymentsModel.account_id == acc.id,
-                UserPaymentsModel.status == PayStatus.PENDING,
-                UserServicesModel.service_id == service.id,
-            )
-            .order_by(UserPaymentsModel.id.desc())
-            .limit(1)
+        resolved = resolve_service_order(
+            service,
+            custom_amount=body.custom_amount,
+            tier_code=body.tier_code,
+            components=body.components,
+            form=body.form,
         )
-        if existing_pending is not None and existing_pending.payment_url:
-            return Payment.from_model(existing_pending)
+        base_price = resolved.price
 
         discount = Decimal("0")
         promo_id: int | None = None
@@ -150,17 +161,42 @@ async def create_purchase(
                     status.HTTP_400_BAD_REQUEST,
                     "promo code is not a discount code",
                 )
-            discount = promo_mngr.discount_for(catalog, service)
+            discount = promo_mngr.discount_for(catalog, service, base_price=base_price)
             promo_id = promo.id
-        amount = service.price - discount
+        amount = base_price - discount
         if amount <= Decimal("0"):
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
                 "service is fully discounted by promo code, order it via /api/v1/user/services/create",
             )
+
+        # Если уже есть неоплаченный счёт на эту услугу с такой же суммой — возвращаем его
+        existing_pending = await pay_mngr.s.scalar(
+            select(UserPaymentsModel)
+            .join(UserServicesModel, UserPaymentsModel.user_svc_id == UserServicesModel.id)
+            .where(
+                UserPaymentsModel.account_id == acc.id,
+                UserPaymentsModel.status == PayStatus.PENDING,
+                UserPaymentsModel.amount == amount,
+                UserServicesModel.service_id == service.id,
+            )
+            .order_by(UserPaymentsModel.id.desc())
+            .limit(1)
+        )
+        if existing_pending is not None and existing_pending.payment_url:
+            return Payment.from_model(existing_pending)
+
         # Создаём отложенную выдачу (без списания/доставки — доставит колбэк).
         usvc = await usvc_mngr.create(
-            acc, service, discount=discount, charge=False, deliver=False
+            acc,
+            service,
+            discount=discount,
+            custom_amount=body.custom_amount,
+            tier_code=body.tier_code,
+            components=body.components,
+            form=body.form,
+            charge=False,
+            deliver=False,
         )
         if promo_id is not None:
             # Погашение кода фиксируется только при подтверждённой оплате
@@ -175,6 +211,7 @@ async def create_purchase(
         body.provider,
         target=body.target,
         user_svc_id=user_svc_id,
+        currency=body.currency,
         return_url=body.return_url,
     )
     await pay_mngr.s.commit()

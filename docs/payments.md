@@ -58,21 +58,40 @@ Lua-скриптом, который изолирует её особеннос�
 
 Скрипт получает `ctx`:
 
-```
+```lua
 ctx.action  = "create" | "callback" | "check" | "refund"
 ctx.user    = { id, login, email, ... }
 ctx.payment = {
-  id, amount, currency, target, user_svc_id, external_id, return_url,
-  provider_data = { slug, secrets = {<секреты>}, extra = {<несекретное>}, currency },
+  id,
+  amount,        -- рассчитанная сумма в валюте провайдера (например "950.00")
+  currency,      -- валюта провайдера (например "RUB")
+  base_amount,   -- сумма в базовой валюте инстанса (например "10.00")
+  base_currency, -- базовая валюта инстанса (например "USD")
+  fx_rate,       -- зафиксированный курс обмена на момент создания счёта
+  target, user_svc_id, external_id, return_url,
+  provider_data = {
+    slug, currency,
+    currencies = { "RUB", "USD", ... },
+    secrets = {<секреты>},
+    extra = {<несекретное>}
+  },
 }
 ctx.request = { method, ip, headers, query, body }   -- только для action="callback"
 ```
 
+> **Курсы валют и обратная конвертация (Rate Lock):**
+> 1. В `action=create` ядро биллинга конвертирует сумму заказа/пополнения из базовой
+>    валюты инстанса в валюту провайдера и фиксирует курс (`payment.fx_rate`).
+> 2. В `action=callback` и `action=check` скрипт сообщает подтверждённую сумму и валюту:
+>    `private = { ok = true, paid = true, paid_amount = "950.00", paid_currency = "RUB", ... }`.
+> 3. Ядро биллинга выполняет обратную конвертацию оплаченной суммы в базовую валюту
+>    инстанса по зафиксированному курсу счёта.
+
 Возврат `{ public = {...}, private = {...} }`:
 
 - `create`   → `public.pay_url`, `private.external_id`;
-- `callback` → `private.ok`, `private.paid`|`failed`, `private.payment_id` | `external_id`;
-- `check`    → `private.ok`, `private.paid`|`failed`, `private.external_id`;
+- `callback` → `private.ok`, `private.paid`|`failed`, `private.paid_amount`, `private.paid_currency`, `private.payment_id` | `external_id`;
+- `check`    → `private.ok`, `private.paid`|`failed`, `private.paid_amount`, `private.paid_currency`, `private.external_id`;
 - `refund`   → `private.ok`, `private.refunded`.
 
 > **Безопасность.** Готовые шаблоны ЮKassa/Platega не доверяют телу вебхука: они

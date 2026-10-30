@@ -284,6 +284,14 @@ SETTINGS: tuple[SettingDef, ...] = (
         "(провайдер из billing.fx.provider; ручные курсы имеют приоритет)",
     ),
     SettingDef(
+        "billing.fx.sources",
+        None,
+        type="json",
+        group="billing",
+        desc="Упорядоченный список источников курсов валют (приоритеты 0..N): "
+        '[{"id": "...", "type": "provider"|"lua"|"manual", "name": "...", "enabled": true}, ...]',
+    ),
+    SettingDef(
         "billing.fx.rates",
         None,
         type="json",
@@ -326,6 +334,13 @@ SETTINGS: tuple[SettingDef, ...] = (
         group="billing",
         desc="Спред при конвертации, % — на столько уменьшается зачисляемая "
         "сумма (0 — конвертация по курсу без наценки)",
+    ),
+    SettingDef(
+        "billing.fx.fail_open",
+        None,
+        type="bool",
+        group="billing",
+        desc="Использовать последние сохранённые курсы из БД при сбое внешнего источника (Fail-Open)",
     ),
     # Заказы: повтор выдачи и компенсация при окончательном провале
     SettingDef(

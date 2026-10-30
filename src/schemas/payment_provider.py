@@ -15,6 +15,10 @@ class PayProvider(BaseModel):
     title: str | None = None
     enabled: bool
     currency: str
+    currencies: list[str] = Field(default_factory=list)
+    fee_enabled: bool = False
+    fee_percent: float = 0.00
+    add_fee_to_amount: bool = True
     script_id: int | None = None
     script_version: int | None = None
     extra: dict
@@ -38,6 +42,12 @@ class PayProviderCreate(BaseModel):
     currency: str = Field(
         default="RUB", max_length=8, description="Default currency (optional)"
     )
+    currencies: list[str] = Field(
+        default_factory=list, description="Supported optional currencies"
+    )
+    fee_enabled: bool = Field(default=False, description="Enable provider fee accounting")
+    fee_percent: float = Field(default=0.00, description="Provider fee percent")
+    add_fee_to_amount: bool = Field(default=True, description="Add fee to payment amount for customer")
     secrets: dict = Field(
         default_factory=dict,
         description="Provider secrets JSON (optional)",
@@ -60,6 +70,12 @@ class PayProviderPatch(BaseModel):
     title: str | None = Field(default=None, description="Display name")
     enabled: bool | None = Field(default=None, description="Enabled")
     currency: str | None = Field(default=None, description="Default currency")
+    currencies: list[str] | None = Field(
+        default=None, description="Supported optional currencies"
+    )
+    fee_enabled: bool | None = Field(default=None, description="Enable provider fee accounting")
+    fee_percent: float | None = Field(default=None, description="Provider fee percent")
+    add_fee_to_amount: bool | None = Field(default=None, description="Add fee to payment amount for customer")
     secrets: dict | None = Field(default=None, description="New secrets JSON")
     script_id: int | None = Field(
         default=None, description="Unified provider Lua script ID"
@@ -78,13 +94,19 @@ class PayProviderPublic(BaseModel):
     slug: str
     title: str | None = None
     currency: str
+    currencies: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_model(
-        cls, m
+        cls, m, available_currencies: list[str] | None = None
     ) -> "PayProviderPublic":  # noqa: ANN001 — PaymentProvidersModel
-        """Явное преобразование ORM-провайдера в публичную схему."""
-        return cls.model_validate(m)
+        """Явное преобразование ORM-провайдера в публичную схему с доступными валютами."""
+        prov = cls.model_validate(m)
+        if available_currencies is not None:
+            prov.currencies = available_currencies
+        elif not prov.currencies:
+            prov.currencies = [prov.currency]
+        return prov
 
 
 __all__ = [
