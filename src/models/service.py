@@ -24,7 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
-from enums import Delivery, UsvcStatus
+from enums import Delivery, PriceType, UsvcStatus
 from models.service_catalogs import ServiceCatalogsModel
 from models.system_scripts import SystemScriptsModel
 from utils.datetime_utils import utc_now
@@ -83,6 +83,15 @@ class ServiceModel(Base):
     )
     currency: Mapped[str] = mapped_column(String(8), default="RUB", nullable=False)
 
+    # Тип ценообразования: fixed | custom | tiered | configurable (см. PriceType).
+    price_type: Mapped[str] = mapped_column(
+        String(16), default=PriceType.FIXED, server_default=PriceType.FIXED, nullable=False
+    )
+    # Конфигурация ценообразования (min/max/step/form для custom, tiers для tiered, components для configurable).
+    pricing_config: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
+    )
+
     # key | lua (см. Delivery).
     delivery: Mapped[str] = mapped_column(
         String(8), default=Delivery.KEY, nullable=False
@@ -121,6 +130,44 @@ class ServiceModel(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+
+
+def _resolve_min_price(price_type: str, pricing_cfg: dict | None) -> Decimal | None:
+    """Zero-Trust: автовычисление минимальной базовой цены для каталога."""
+    if not isinstance(pricing_cfg, dict):
+        return None
+    if price_type == PriceType.CUSTOM:
+        min_v = pricing_cfg.get("min")
+        if min_v is not None:
+            try:
+                return Decimal(str(min_v))
+            except Exception:
+                pass
+    elif price_type == PriceType.TIERED:
+        tiers = pricing_cfg.get("tiers", [])
+        prices: list[Decimal] = []
+        if isinstance(tiers, list):
+            for t in tiers:
+                if isinstance(t, dict):
+                    if "price" in t:
+                        try:
+                            p = Decimal(str(t["price"]))
+                            if p > 0:
+                                prices.append(p)
+                        except Exception:
+                            pass
+                    if isinstance(t.get("subtiers"), list):
+                        for st in t["subtiers"]:
+                            if isinstance(st, dict) and "price" in st:
+                                try:
+                                    p = Decimal(str(st["price"]))
+                                    if p > 0:
+                                        prices.append(p)
+                                except Exception:
+                                    pass
+        if prices:
+            return min(prices)
+    return None
 
 
 class ServiceMngr:
@@ -217,6 +264,14 @@ class ServiceMngr:
         await self._validate_lua_script(
             data.get("delivery", Delivery.KEY), data.get("lua_script_id")
         )
+        # Бэк автоматически подставляет минимальную цену для динамических режимов
+        price_type = data.get("price_type", PriceType.FIXED)
+        if price_type in (PriceType.CUSTOM, PriceType.TIERED):
+            pricing_cfg = data.get("pricing_config")
+            auto_p = _resolve_min_price(price_type, pricing_cfg)
+            if auto_p is not None:
+                data["price"] = auto_p
+
         svc = ServiceModel(**data)
         self.s.add(svc)
         await self.s.flush()
@@ -238,6 +293,14 @@ class ServiceMngr:
         warnings: list[str] = []
         if data.get("is_active") is False and svc.is_active:
             warnings = await self._active_orders_warning(service_id)
+
+        # Бэк автоматически подставляет минимальную цену для динамических режимов
+        price_type = data.get("price_type", svc.price_type)
+        if price_type in (PriceType.CUSTOM, PriceType.TIERED):
+            pricing_cfg = data.get("pricing_config", svc.pricing_config)
+            auto_p = _resolve_min_price(price_type, pricing_cfg)
+            if auto_p is not None:
+                data["price"] = auto_p
 
         for field, value in data.items():
             setattr(svc, field, value)

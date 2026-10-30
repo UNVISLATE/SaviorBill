@@ -260,24 +260,28 @@ class PromoCodesMngr:
         await self.s.flush()
         return promo
 
-    def discount_for(self, catalog: PromoCatalogsModel, service) -> Decimal:
+    def discount_for(
+        self, catalog: PromoCatalogsModel, service, base_price: Decimal | None = None
+    ) -> Decimal:
         """Рассчитать скидку каталога для услуги.
 
         :arg catalog: каталог промокода (kind=discount).
         :arg service: услуга, к которой применяется скидка.
+        :arg base_price: опциональная базовая цена (для динамических/тарифицированных услуг).
         :return: размер скидки (не больше цены услуги).
         """
         if catalog.kind != PromoKind.DISCOUNT:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, "promo code is not a discount code"
             )
+        target_price = base_price if base_price is not None else service.price
         if catalog.discount_type == DiscountType.PERCENT:
-            disc = (service.price * catalog.value / Decimal("100")).quantize(
+            disc = (target_price * catalog.value / Decimal("100")).quantize(
                 Decimal("0.01")
             )
         else:
             disc = catalog.value
-        return max(Decimal("0"), min(disc, service.price))
+        return max(Decimal("0"), min(disc, target_price))
 
     async def quote_for(
         self, code: str, service, acc=None

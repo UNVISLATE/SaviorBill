@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -14,6 +15,18 @@ class OrderCreate(BaseModel):
     service_id: int = Field(description="Service ID")
     promocode: str | None = Field(
         default=None, max_length=64, description="Discount promo code (optional)"
+    )
+    custom_amount: Decimal | None = Field(
+        default=None, gt=0, description="Arbitrary sum for price_type=custom"
+    )
+    tier_code: str | None = Field(
+        default=None, max_length=64, description="Subtier code for price_type=tiered"
+    )
+    components: dict[str, Any] | None = Field(
+        default=None, description="Component quantities for price_type=configurable"
+    )
+    form: dict[str, Any] | None = Field(
+        default=None, description="Client form values (e.g. steam_login) for price_type=custom"
     )
 
 
@@ -28,6 +41,10 @@ class Order(BaseModel):
     status: str = Field(description="Service status")
     price: Decimal
     discount: Decimal
+    order_config: dict = Field(
+        default_factory=dict,
+        description="Snapshot of user selection (tier, components, form)",
+    )
     public_data: dict
     product_key: str | None = Field(
         default=None,

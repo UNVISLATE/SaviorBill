@@ -16,6 +16,7 @@ from lua.schemas import (
     LuaUser,
 )
 from lua.bus import LuaBus
+from services.pricing import unflatten_dot_dict
 
 log = logging.getLogger("saviorbill.lua.context")
 
@@ -45,11 +46,31 @@ def build_service_ctx(
     :arg script: модель шаблона — метаданные и настройки в ``lua.*`` (опционально).
     :return: словарь контекста для Lua.
     """
+    service_data = LuaService.from_model(service).model_dump(mode="json")
+    order_cfg = getattr(usvc, "order_config", {}) or {}
+    effective_settings = (
+        getattr(usvc, "effective_settings", None)
+        or order_cfg.get("settings")
+    )
+    if effective_settings is not None:
+        service_data["settings"] = effective_settings
+
+    order_form = unflatten_dot_dict(order_cfg.get("form", {}))
+    order_data = {
+        "amount": str(usvc.price),
+        "currency": getattr(service, "currency", "RUB"),
+        "tier": order_cfg.get("tier"),
+        "group": order_cfg.get("group"),
+        "components": order_cfg.get("components"),
+        "form": order_form,
+    }
+
     ctx = {
         "action": action,
         "lua": _lua_meta(script),
         "user": LuaUser.from_model(acc, usvc).model_dump(mode="json"),
-        "service": LuaService.from_model(service).model_dump(mode="json"),
+        "service": service_data,
+        "order": order_data,
         "payment": (
             LuaPayment.from_model(payment).model_dump(mode="json")
             if payment is not None

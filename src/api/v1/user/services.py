@@ -22,6 +22,7 @@ from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderCreate, Order
 from schemas.page import Page
+from services.pricing import resolve_service_order
 from utils.pagination import PageParams, page_params, paginate
 
 router = APIRouter()
@@ -76,6 +77,13 @@ async def create_service(
     triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> Order:
     service = await svc_mngr.get_active(body.service_id)
+    resolved = resolve_service_order(
+        service,
+        custom_amount=body.custom_amount,
+        tier_code=body.tier_code,
+        components=body.components,
+        form=body.form,
+    )
     discount = Decimal("0")
     promo = None
     if body.promocode:
@@ -86,8 +94,16 @@ async def create_service(
                 status.HTTP_400_BAD_REQUEST,
                 "promo code is not a discount code",
             )
-        discount = promo_mngr.discount_for(catalog, service)
-    usvc = await usvc_mngr.create(acc, service, discount=discount)
+        discount = promo_mngr.discount_for(catalog, service, base_price=resolved.price)
+    usvc = await usvc_mngr.create(
+        acc,
+        service,
+        discount=discount,
+        custom_amount=body.custom_amount,
+        tier_code=body.tier_code,
+        components=body.components,
+        form=body.form,
+    )
     if usvc.status != UsvcStatus.ACTIVE:
         await usvc_mngr.s.rollback()
         raise HTTPException(

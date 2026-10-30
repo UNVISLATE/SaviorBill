@@ -26,6 +26,7 @@ from utils.datetime_utils import utc_now
 from lua.bus import LuaBus
 from security.sec.box import SecBox
 from services.account import lock_account
+from services.pricing import resolve_service_order
 
 log = logging.getLogger("saviorbill.user_services")
 
@@ -86,6 +87,10 @@ class UserServicesModel(Base):
     # Снимок поддерживаемых действий услуги (для фронтенда).
     actions: Mapped[list] = mapped_column(
         JSON, default=list, server_default="[]", nullable=False
+    )
+    # Снимок выбора клиента при заказе (tier, components, form).
+    order_config: Mapped[dict] = mapped_column(
+        JSON, default=dict, server_default="{}", nullable=False
     )
     price: Mapped[Decimal] = mapped_column(
         Numeric(18, 2), default=Decimal("0"), server_default="0", nullable=False
@@ -180,6 +185,10 @@ class UserServicesMngr:
         params: dict | None = None,
         discount: Decimal = Decimal("0"),
         *,
+        custom_amount: Decimal | None = None,
+        tier_code: str | None = None,
+        components: dict | None = None,
+        form: dict | None = None,
         charge: bool = True,
         deliver: bool = True,
         payment_id: int | None = None,
@@ -190,8 +199,20 @@ class UserServicesMngr:
         ``deliver`` — сразу выполнить доставку (False — отложить до оплаты
         платежом, см. :class:`PayMngr`). ``payment_id`` — привязка к платежу.
         """
-        discount = max(Decimal("0"), min(discount, service.price))
-        price = service.price - discount
+        resolved = resolve_service_order(
+            service,
+            custom_amount=custom_amount,
+            tier_code=tier_code,
+            components=components,
+            form=form,
+        )
+        base_price = resolved.price
+        duration = resolved.duration
+        order_config = dict(resolved.order_config)
+        order_config["settings"] = resolved.effective_settings
+
+        discount = max(Decimal("0"), min(discount, base_price))
+        price = base_price - discount
 
         charged_bonus = Decimal("0")
         charged_balance = Decimal("0")
@@ -212,7 +233,8 @@ class UserServicesMngr:
             status=UsvcStatus.PENDING,
             price=price,
             discount=discount,
-            duration=service.duration,
+            duration=duration,
+            order_config=order_config,
             actions=list(service.actions or []),
             private_data={
                 "charged_bonus": str(charged_bonus),
@@ -221,6 +243,7 @@ class UserServicesMngr:
         )
         # Кастом-параметры заказа передаём в доставку транзитно (не храним в БД).
         usvc.order_params = merged
+        usvc.effective_settings = resolved.effective_settings
         self.s.add(usvc)
         await self.s.flush()
 

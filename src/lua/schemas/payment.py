@@ -14,6 +14,7 @@ class LuaProvider(BaseModel):
     slug: str
     title: str | None = None
     currency: str = "RUB"
+    currencies: list[str] = []
     enabled: bool = True
     secrets: dict = {}
     extra: dict = {}
@@ -25,6 +26,7 @@ class LuaProvider(BaseModel):
             slug=prov.slug,
             title=prov.title,
             currency=prov.currency,
+            currencies=getattr(prov, "currencies", []) or [],
             enabled=prov.enabled,
             secrets=secrets or {},
             extra=prov.extra or {},
@@ -41,6 +43,9 @@ class LuaPayment(BaseModel):
     provider: str
     amount: Decimal
     currency: str = "RUB"
+    base_amount: Decimal | None = None
+    base_currency: str | None = None
+    fx_rate: Decimal | None = None
     status: str
     target: str
     user_svc_id: int | None = None
@@ -56,6 +61,10 @@ class LuaPayment(BaseModel):
     @field_serializer("amount")
     def _money(self, v: Decimal) -> str:
         return str(v)
+
+    @field_serializer("base_amount", "fx_rate")
+    def _opt_money(self, v: Decimal | None) -> str | None:
+        return str(v) if v is not None else None
 
     @field_serializer("created_at", "paid_at")
     def _ts(self, v: datetime | None) -> int | None:

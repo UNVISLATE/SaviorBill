@@ -94,18 +94,46 @@ ctx = {
 
 Общий контекст:
 
-```
+```lua
 ctx = {
   action  = "create" | "callback" | "check" | "refund",
   lua     = { id, slug, name, kind, actions, settings },
   user    = { id, login, email, ... },
   payment = {
-    id, amount, currency, target, user_svc_id, external_id, return_url,
-    provider_data = { slug, secrets = {<секреты>}, extra = {<несекретное>} },
+    id,
+    -- Валюта и сумма для внешнего шлюза:
+    amount,        -- рассчитанная сумма в валюте провайдера (например "950.00")
+    currency,      -- валюта провайдера (например "RUB")
+    
+    -- Исходные данные счёта в базовой валюте инстанса:
+    base_amount,   -- сумма в валюте инстанса (например "10.00")
+    base_currency, -- базовая валюта инстанса (например "USD")
+    fx_rate,       -- зафиксированный курс конвертации на момент создания счёта
+    
+    target, user_svc_id, external_id, return_url,
+    provider_data = {
+      slug,
+      currency,
+      currencies = { "RUB", "USD", ... },
+      secrets = { <секреты> },
+      extra = { <несекретное> }
+    },
   },
   request = { method, ip, headers, query, body },   -- только для action="callback"
 }
 ```
+
+> **Важно (Курсы и суммы):**
+> 1. В `action = "create"` ядро биллинга **автоматически конвертирует** сумму из базовой
+>    валюты инстанса в валюту провайдера (`payment.currency`) и **замораживает курс**
+>    в счёте (`payment.fx_rate`). Скрипт получает уже готовую сумму в `payment.amount`.
+> 2. В `action = "callback"` и `action = "check"` скрипт **обязан вернуть** в `private`
+>    фактически подтверждённую шлюзом сумму и валюту:
+>    `private = { ok = true, paid = true, paid_amount = "950.00", paid_currency = "RUB", ... }`.
+> 3. Ядро биллинга **автоматически выполняет обратную конвертацию** фактически оплаченной
+>    суммы `paid_amount` в базовую валюту аккаунта по **зафиксированному в счёте курсу**
+>    (`payment.fx_rate`). Это гарантирует защиту от колебаний курса и корректную обработку
+>    частичных оплат / переплат.
 
 Секреты провайдера приходят в `payment.provider_data.secrets` (шифруются),
 иные параметры в `payment.provider_data.extra`.
@@ -124,10 +152,10 @@ ctx = {
 (`ctx.request.body`). 
 Скрипт сам проверяет подпись/секрет, биллинг полагается на его ответ.
 
-Возвращает `private = { ok, paid, failed, payment_id, external_id, status }`:
+Возвращает `private = { ok, paid, failed, paid_amount, paid_currency, payment_id, external_id, status }`:
 
 - `ok = false` → отвечает `401`;
-- `paid = true` → платёж проводится (баланс/выдача услуги) идемпотентно;
+- `paid = true` → платёж проводится (баланс/выдача услуги) идемпотентно с обратной конвертацией `paid_amount` по `fx_rate`;
 - `payment_id` / `external_id` — по ним ядро находит наш платёж.
 
 ### `action = "check"` — перепроверка биллингом

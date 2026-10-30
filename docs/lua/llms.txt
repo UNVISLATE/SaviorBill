@@ -63,11 +63,20 @@ Payment scripts
 - ctx.action selects the operation.
 - Payment data is in ctx.payment. Provider secrets are in
   ctx.payment.provider_data.secrets; non-secret configuration is in extra.
+- Currencies and amounts (CRITICAL):
+  * create receives ctx.payment.amount and ctx.payment.currency already converted
+    by the billing core into the provider's currency at a frozen exchange rate.
+  * ctx.payment also includes base_amount, base_currency, and fx_rate of the
+    created invoice.
+  * callback and check must return private.paid_amount and private.paid_currency
+    (the exact confirmed amount and currency reported by the external gateway).
+    The billing core converts paid_amount back to base_currency using the payment's
+    locked fx_rate (preventing FX fluctuation exploits and handling partial payments).
 - callback receives ctx.request. Validate the provider webhook or re-check the
   provider API before reporting payment success.
 - create returns public.pay_url and private.external_id.
 - callback/check return private.ok and a payment result such as paid, failed,
-  payment_id, or external_id.
+  paid_amount, paid_currency, payment_id, or external_id.
 - refund returns private.ok and private.refunded.
 - Do not trust client return_url, callback body, or provider-facing identifiers
   without validation.

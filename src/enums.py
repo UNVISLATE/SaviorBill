@@ -83,6 +83,17 @@ class DiscountType:
     FIXED = "fixed"
 
 
+class PriceType:
+    """Тип ценообразования услуги."""
+
+    FIXED = "fixed"  # фиксированная цена (по умолчанию)
+    CUSTOM = "custom"  # произвольная сумма (Steam/пополнения)
+    TIERED = "tiered"  # тарифная сетка (периоды/тарифы)
+    CONFIGURABLE = "configurable"  # конфигуратор ресурсов (VDS/хостинг)
+
+    ALL = (FIXED, CUSTOM, TIERED, CONFIGURABLE)
+
+
 class AuthAction:
     """Действие OAuth-скрипта (единый скрипт провайдера, action-driven).
 
@@ -135,6 +146,7 @@ __all__ = [
     "ServiceAction",
     "PromoKind",
     "DiscountType",
+    "PriceType",
     "ScriptKind",
     "BaseRole",
 ]
