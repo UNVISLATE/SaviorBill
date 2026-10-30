@@ -1,12 +1,30 @@
 import { isAxiosError } from "axios"
 
 /** Достаёт `detail` из тела ответа бэкенда (FastAPI `{"detail": "..."}`),
- * если `err` — ошибка axios и `detail` — строка. Заменяет разбросанные по
- * компонентам `// @ts-expect-error — axios error shape`. */
+ * если `err` — ошибка axios. Поддерживает как строковые ошибки, так и
+ * структурированные ошибки валидации Pydantic/FastAPI (HTTP 422). */
 export function getErrorDetail(err: unknown): string | undefined {
   if (!isAxiosError(err)) return undefined
   const detail = (err.response?.data as { detail?: unknown } | undefined)?.detail
-  return typeof detail === "string" ? detail : undefined
+  if (typeof detail === "string") return detail
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item: unknown) => {
+        if (typeof item === "string") return item
+        if (item && typeof item === "object") {
+          const rec = item as { loc?: unknown[]; msg?: string }
+          const field = Array.isArray(rec.loc)
+            ? rec.loc.filter((part) => part !== "body").join(".")
+            : ""
+          const msg = rec.msg || "Ошибка валидации"
+          return field ? `${field}: ${msg}` : msg
+        }
+        return String(item)
+      })
+      .filter(Boolean)
+      .join("; ")
+  }
+  return undefined
 }
 
 /** HTTP статус ответа, если `err` — ошибка axios. */

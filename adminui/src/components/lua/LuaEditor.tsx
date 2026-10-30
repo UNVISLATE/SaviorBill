@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import * as monaco from "monaco-editor"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Check, Copy, History, MoreVertical, Settings2, X } from "lucide-react"
+import { AlertTriangle, Check, Copy, History, MoreVertical, Settings2, X } from "lucide-react"
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/shadsnui/tooltip"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail, getErrorStatus } from "@/lib/api-error.ts"
@@ -51,6 +56,8 @@ export interface LuaScriptVersionDetail extends LuaScriptVersion {
 
 export interface LuaEditorProps {
   scriptId: number
+  scriptKind?: string
+  scriptName?: string | null
   initialCode: string
   initialSettings: Record<string, unknown>
   /** Текущая версия скрипта (для подсветки в списке версий). */
@@ -85,6 +92,8 @@ function formatDateTime(iso: string): string {
  */
 export function LuaEditor({
   scriptId,
+  scriptKind,
+  scriptName,
   initialCode,
   initialSettings,
   currentVersion,
@@ -92,6 +101,14 @@ export function LuaEditor({
   canEdit,
   canTest,
 }: LuaEditorProps) {
+  const isPaymentScript = scriptKind === "payment"
+  const [showPaymentNotice, setShowPaymentNotice] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("sb_dismiss_pay_lua_notice") !== "true"
+    } catch {
+      return true
+    }
+  })
   const qc = useQueryClient()
   const editorHostRef = useRef<HTMLDivElement>(null)
   const diffHostRef = useRef<HTMLDivElement>(null)
@@ -429,7 +446,28 @@ export function LuaEditor({
         <div className="flex items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">Lua</Badge>
+            {scriptKind && <Badge variant="secondary">{scriptKind}</Badge>}
             <Badge variant="outline">v{currentVersion}</Badge>
+            {isPaymentScript && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      type="button"
+                      onClick={() => setShowPaymentNotice((v) => !v)}
+                      className="inline-flex items-center gap-1 rounded bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-600 hover:bg-amber-500/20 dark:text-amber-400 cursor-pointer border border-amber-500/30"
+                      title="Требования к валютам и суммам платежа"
+                    >
+                      <AlertTriangle className="size-3.5 text-amber-500" />
+                      <span>Сумма и валюта</span>
+                    </button>
+                  }
+                />
+                <TooltipContent className="max-w-xs text-xs">
+                  Нажмите, чтобы открыть или скрыть требования к суммам и валютам (ctx.payment.amount, paid_amount)
+                </TooltipContent>
+              </Tooltip>
+            )}
             {dirty && <Badge variant="secondary">не сохранено</Badge>}
             {conflict && <Badge variant="destructive">конфликт версий — обновите страницу</Badge>}
             {diffAgainst !== null && (
@@ -483,6 +521,50 @@ export function LuaEditor({
             </Button>
           </div>
         </div>
+
+        {isPaymentScript && showPaymentNotice && (
+          <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-700 dark:text-amber-400">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="size-4 shrink-0 mt-0.5 text-amber-500" />
+                <div className="space-y-1">
+                  <p className="font-semibold text-xs text-foreground">
+                    Требования к платёжным скриптам (kind = payment){scriptName ? ` · ${scriptName}` : ""}
+                  </p>
+                  <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-muted-foreground leading-relaxed">
+                    <li>
+                      <strong>action = &quot;create&quot;</strong>: сумма и валюта в <code className="font-mono text-foreground">ctx.payment.amount</code> и <code className="font-mono text-foreground">ctx.payment.currency</code> уже автоматически сконвертированы ядром в валюту провайдера по зафиксированному курсу счёта.
+                    </li>
+                    <li>
+                      <strong>action = &quot;callback&quot; / &quot;check&quot;</strong>: скрипт обязан возвращать фактически подтверждённые шлюзом сумму и валюту (<code className="font-mono text-foreground">private.paid_amount</code>, <code className="font-mono text-foreground">private.paid_currency</code>). Ядро выполнит обратную конвертацию в базовую валюту по зафиксированному курсу платежа.
+                    </li>
+                    <li>
+                      <strong>Контекст счёта</strong>: в <code className="font-mono text-foreground">ctx.payment</code> также передаются исходные <code className="font-mono text-foreground">base_amount</code>, <code className="font-mono text-foreground">base_currency</code> и <code className="font-mono text-foreground">fx_rate</code>.
+                    </li>
+                  </ul>
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="icon"
+                variant="ghost"
+                className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+                aria-label="Закрыть напоминание"
+                title="Закрыть напоминание"
+                onClick={() => {
+                  setShowPaymentNotice(false)
+                  try {
+                    localStorage.setItem("sb_dismiss_pay_lua_notice", "true")
+                  } catch {
+                    // ignore
+                  }
+                }}
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          </div>
+        )}
 
         {lintResult && (
           <div
