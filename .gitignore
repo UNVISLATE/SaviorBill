@@ -51,12 +51,12 @@ docker-compose.override.yml
 
 # Локальные документы аудита и планирования
 /AUDIT.md
-/AUDIT_GEMINI.md
-/CLOUD.md
+/CLOUD_PLAN.md
 /IMPLEMENTATION_PLAN.md
 /WS_ROUTES.md
-/FEATURE_ROADMAP.md
-/ppp/
+
+# Локальные тесты и инструменты временные
+/tools
 
 # Logs / runtime
 *.log

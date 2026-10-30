@@ -47,7 +47,7 @@ from schemas.user import (
     UserReferralItem,
     UserStats,
 )
-from services.account import account_response, release_old_avatar
+from services.account import account_response, lock_account, release_old_avatar
 from services.audit import audit
 from services.auth import TokenSvc
 from security.sec.pwd import hash_pass
@@ -421,7 +421,9 @@ async def adjust_balance(
     session: AsyncSession = Depends(get_db_session),
     caller: UserModel = Depends(require_perm("admin.user.balance.edit")),
 ) -> User:
-    acc = await _get_user(session, user_id)
+    acc = await lock_account(session, user_id)
+    if acc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
     assert_can_modify_account(caller, acc)
     field = "balance" if body.kind == "main" else "bonus_balance"
     current: Decimal = getattr(acc, field)

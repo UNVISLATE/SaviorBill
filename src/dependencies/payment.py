@@ -133,11 +133,68 @@ class PayMngr:
         script, filename, script_version = await self._script(prov, PayAction.CREATE)
         secrets = self._secrets(prov)
 
+        base_currency = (await self.fx.base_currency()) if self.fx else "RUB"
+        prov_currencies = [prov.currency] + [
+            c for c in (getattr(prov, "currencies", []) or []) if c != prov.currency
+        ]
+
+        if currency:
+            requested = currency.strip().upper()
+            if requested not in [c.upper() for c in prov_currencies]:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"currency '{currency}' is not supported by provider '{prov.slug}'",
+                )
+            chosen_currency = requested
+        else:
+            chosen_currency = None
+            for cand in prov_currencies:
+                cand_upper = cand.upper()
+                if cand_upper == base_currency:
+                    chosen_currency = cand_upper
+                    break
+                if self.fx:
+                    try:
+                        await self.fx.rate_to_base(cand_upper)
+                        chosen_currency = cand_upper
+                        break
+                    except Exception:
+                        continue
+            if chosen_currency is None:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"no exchange rate available for provider '{prov.slug}' currencies",
+                )
+
+        if chosen_currency == base_currency:
+            pay_amount = amount
+            fx_rate = Decimal(1)
+        else:
+            if self.fx is None:
+                raise HTTPException(
+                    status.HTTP_500_INTERNAL_SERVER_ERROR, "FX service is unavailable"
+                )
+            try:
+                pay_amount, fx_rate = await self.fx.from_base(amount, chosen_currency)
+            except Exception as exc:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST, f"currency conversion failed: {exc}"
+                )
+
+        if getattr(prov, "fee_enabled", False) and getattr(prov, "add_fee_to_amount", True):
+            fee_p = Decimal(str(getattr(prov, "fee_percent", 0) or 0))
+            if fee_p > Decimal("0"):
+                pay_amount = pay_amount * (Decimal("1") + fee_p / Decimal("100"))
+                pay_amount = pay_amount.quantize(_CENT, rounding=ROUND_HALF_UP)
+
         payment = UserPaymentsModel(
             account_id=acc.id,
             provider=prov.slug,
-            amount=amount,
-            currency=currency or prov.currency,
+            amount=pay_amount,
+            currency=chosen_currency,
+            base_amount=amount,
+            base_currency=base_currency,
+            fx_rate=fx_rate,
             status=PayStatus.PENDING,
             target=target,
             user_svc_id=user_svc_id,
@@ -459,6 +516,17 @@ class PayMngr:
 
         acc = await lock_account(self.s, payment.account_id)
 
+        paid_currency = priv.get("paid_currency")
+        if paid_currency and str(paid_currency).strip().upper() != payment.currency.strip().upper():
+            priv["currency_mismatch"] = {
+                "expected": payment.currency,
+                "got": str(paid_currency),
+            }
+
+        raw_paid = priv.get("paid_amount")
+        actual_paid = Decimal(str(raw_paid)) if raw_paid is not None else None
+        credited = await self._credited_amount(payment, actual_paid=actual_paid)
+
         if payment.target == PayTarget.SERVICE and payment.user_svc_id:
             usvc = await self.s.get(UserServicesModel, payment.user_svc_id)
             if usvc is not None:
@@ -467,30 +535,33 @@ class PayMngr:
                 await UserServicesMngr(self.s, self.bus, self.box, dispatcher=self.dispatcher).deliver(
                     usvc, service, acc
                 )
-                # Промокод скидки (если был указан при создании платежа) —
-                # погашение фиксируем только сейчас, при подтверждённой
-                # оплате, а не в момент создания платежа (см. purchases.py):
-                # платёж может быть не оплачен вовсе, использованный код в
-                # этом случае не должен считаться потраченным.
                 promo_id = (usvc.private_data or {}).get("promocode_id")
                 if promo_id:
                     await self._redeem_promo(promo_id, payment, usvc)
         else:  # пополнение баланса
-            acc.balance += await self._credited_amount(payment)
+            if acc is not None:
+                acc.balance += credited
 
-    async def _credited_amount(self, payment: UserPaymentsModel) -> Decimal:
+    async def _credited_amount(
+        self, payment: UserPaymentsModel, actual_paid: Decimal | None = None
+    ) -> Decimal:
         """Сумма зачисления в базовой валюте инстанса.
 
-        Без конвертации платёж в USD прибавлялся к рублёвому балансу как есть
-        (см. AUDIT.md §2.3). Отсутствие курса — ошибка: вебхук ответит 5xx,
-        провайдер повторит доставку, а оператор успеет задать курс.
+        Конвертирует фактически оплаченную сумму обратно в базовую валюту
+        по зафиксированному в платеже курсу `payment.fx_rate` (Rate Lock).
         """
+        paid = actual_paid if actual_paid is not None else payment.amount
         if self.fx is None:
-            return payment.amount
-        credited, rate, base = await self.fx.to_base(payment.amount, payment.currency)
+            return paid
+
+        locked_rate = payment.fx_rate
+        credited, rate, base = await self.fx.to_base(
+            paid, payment.currency, locked_rate=locked_rate
+        )
         payment.base_amount = credited
         payment.base_currency = base
-        payment.fx_rate = rate
+        if locked_rate is None:
+            payment.fx_rate = rate
         return credited
 
     async def _redeem_promo(
@@ -572,8 +643,9 @@ async def get_pay_mngr(
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> PayMngr:
     cfg = request.app.state.settings
-    fx = FxRates(settings, request.app.state.valkey)
-    return PayMngr(session, bus, make_secbox(cfg), dispatcher, fx)
+    secbox = make_secbox(cfg)
+    fx = FxRates(settings, request.app.state.valkey, bus=bus, session=session, box=secbox)
+    return PayMngr(session, bus, secbox, dispatcher, fx)
 
 
 def get_pay_providers_mngr(
