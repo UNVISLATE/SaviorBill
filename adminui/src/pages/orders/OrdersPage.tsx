@@ -11,18 +11,12 @@ import { useDataTableQuery } from "@/hooks/use-data-table"
 import { DataTable, type DataTableColumn } from "@/components/data-table/DataTable"
 import { UserPickerDialog } from "@/components/users/UserPickerDialog"
 import { TabbedDialog } from "@/components/common/TabbedDialog"
+import { ServiceSelect } from "@/components/common/ServiceSelect"
 import { DataPropertySheet } from "@/components/common/DataPropertySheet"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
 import { Label } from "@/components/shadsnui/label"
 import { Switch } from "@/components/shadsnui/switch"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/shadsnui/select"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 interface Order {
@@ -38,14 +32,11 @@ interface Order {
   created_at: string
   delivered_at: string | null
   error: string | null
+  order_config?: Record<string, unknown>
   public_data: Record<string, unknown>
   private_data: Record<string, unknown>
 }
 
-interface Service {
-  id: number
-  name: string
-}
 
 interface Page<T> {
   items: T[]
@@ -138,6 +129,56 @@ function OrderDetailDialog({ order, onOpenChange }: { order: Order; onOpenChange
             </div>
           </div>
 
+          {order.order_config && Object.keys(order.order_config).length > 0 && (
+            <div className="rounded-xl border border-border/80 bg-card/60 p-4 space-y-3">
+              <span className="text-xs text-muted-foreground font-medium block">
+                Конфигурация услуги (Service Engine 2.0)
+              </span>
+              <div className="space-y-2">
+                {(order.order_config.tier as any) && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground">Тариф:</span>
+                    <Badge variant="outline" className="font-mono text-xs">
+                      {((order.order_config.group as any)?.title || "")} {((order.order_config.tier as any)?.title || "")}
+                    </Badge>
+                    {((order.order_config.tier as any)?.duration_days) && (
+                      <span className="text-[11px] text-muted-foreground font-mono">
+                        ({(order.order_config.tier as any).duration_days} дн.)
+                      </span>
+                    )}
+                  </div>
+                )}
+
+                {(order.order_config.components as any) && (
+                  <div className="space-y-1 text-xs">
+                    <span className="text-muted-foreground block">Ресурсы:</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {Object.entries((order.order_config.components as Record<string, any>)).map(([code, comp]) => (
+                        <Badge key={code} variant="secondary" className="text-xs font-mono">
+                          {code}: {comp.value} {comp.unit || ""} {comp.label ? `(${comp.label})` : ""}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {(order.order_config.form as any) && (
+                  <div className="space-y-1 text-xs">
+                    <span className="text-muted-foreground block">Данные клиента:</span>
+                    <div className="rounded-lg bg-muted/40 p-2.5 font-mono text-xs space-y-1">
+                      {Object.entries((order.order_config.form as Record<string, any>)).map(([k, v]) => (
+                        <div key={k} className="flex justify-between">
+                          <span className="text-muted-foreground">{k}:</span>
+                          <span className="font-semibold select-all">{String(v)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {order.product_key && (
             <div className="rounded-xl border border-border/80 bg-card/60 p-4 space-y-1.5">
               <span className="text-xs text-muted-foreground font-medium">Выданный лицензионный ключ</span>
@@ -183,14 +224,6 @@ function GrantServiceDialog({ open, onOpenChange }: { open: boolean; onOpenChang
   const [charge, setCharge] = useState(false)
   const qc = useQueryClient()
 
-  const { data: services } = useQuery({
-    queryKey: ["admin-services-lookup"],
-    queryFn: async () =>
-      (await api.get<Page<Service>>("/v1/admin/services", { params: { limit: 200 } })).data.items,
-    enabled: open,
-    staleTime: 30_000,
-  })
-
   const reset = () => {
     setAccountId(null)
     setAccountLabel("")
@@ -230,8 +263,6 @@ function GrantServiceDialog({ open, onOpenChange }: { open: boolean; onOpenChang
         tabs={tabs}
         activeTab={activeTab}
         onTabChange={setActiveTab}
-        maxWidth="max-w-2xl"
-        height="h-[460px]"
         footer={
           <div className="flex items-center justify-end gap-2 w-full">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
@@ -264,18 +295,10 @@ function GrantServiceDialog({ open, onOpenChange }: { open: boolean; onOpenChang
 
           <div className="space-y-1.5">
             <Label>Услуга / Товар</Label>
-            <Select value={serviceId} onValueChange={(v) => setServiceId(v ?? "")}>
-              <SelectTrigger>
-                <SelectValue placeholder="Выберите услугу" />
-              </SelectTrigger>
-              <SelectContent>
-                {services?.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)}>
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <ServiceSelect
+              value={serviceId}
+              onChange={setServiceId}
+            />
           </div>
 
           <div className="flex items-center justify-between rounded-xl border border-border/80 bg-card/60 p-3.5">

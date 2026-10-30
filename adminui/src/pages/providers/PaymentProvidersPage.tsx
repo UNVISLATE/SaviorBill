@@ -1,33 +1,30 @@
-import { useState, useEffect } from "react"
+import { useEffect, useState, useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { CreditCard, KeyRound, MoreHorizontal, Plus } from "lucide-react"
+import {
+  CreditCard,
+  ExternalLink,
+  KeyRound,
+  Percent,
+  Plus,
+  Trash2,
+} from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth"
+import { useInstanceCurrency } from "@/lib/currency"
+import { toastError, toastSuccess } from "@/lib/toast"
+import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
+import { KeySecretEditor } from "@/components/common/forms/KeySecretEditor"
+import { CurrencySelect } from "@/components/common/CurrencySelect"
+import { CurrencyTagSelect } from "@/components/common/CurrencyTagSelect"
+import { LuaScriptSelect, type LuaScriptOption } from "@/components/common/LuaScriptSelect"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/shadsnui/card"
 import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
 import { Switch } from "@/components/shadsnui/switch"
-import { Card, CardContent } from "@/components/shadsnui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/shadsnui/select"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/shadsnui/dropdown-menu"
-import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
-import { KeySecretEditor, COMMON_PAYMENT_PRESETS } from "@/components/common/forms/KeySecretEditor"
-import { useInstanceCurrency } from "@/lib/currency"
-import { toastError, toastSuccess } from "@/lib/toast"
 
 interface Provider {
   id: number
@@ -35,17 +32,15 @@ interface Provider {
   title: string | null
   enabled: boolean
   currency: string
+  currencies: string[]
+  fee_enabled?: boolean
+  fee_percent?: number
+  add_fee_to_amount?: boolean
   script_id: number | null
   script_version: number | null
   extra: Record<string, unknown>
 }
 
-interface LuaScript {
-  id: number
-  name: string | null
-  slug: string
-  kind: string
-}
 
 function ProviderFormDialog({
   open,
@@ -56,13 +51,17 @@ function ProviderFormDialog({
   open: boolean
   onOpenChange: (v: boolean) => void
   provider: Provider | null
-  paymentScripts: LuaScript[] | undefined
+  paymentScripts: LuaScriptOption[] | undefined
 }) {
   const isEdit = !!provider
   const [slug, setSlug] = useState("")
   const [title, setTitle] = useState("")
   const { currency: instanceCurrency } = useInstanceCurrency()
   const [currency, setCurrency] = useState(instanceCurrency || "RUB")
+  const [optionalCurrencies, setOptionalCurrencies] = useState<string[]>([])
+  const [feeEnabled, setFeeEnabled] = useState(false)
+  const [feePercent, setFeePercent] = useState("0")
+  const [addFeeToAmount, setAddFeeToAmount] = useState(true)
   const [scriptId, setScriptId] = useState("")
   const [enabled, setEnabled] = useState(false)
   const [secretsText, setSecretsText] = useState("{}")
@@ -73,13 +72,15 @@ function ProviderFormDialog({
       setSlug(provider?.slug ?? "")
       setTitle(provider?.title ?? "")
       setCurrency(provider?.currency ?? instanceCurrency ?? "RUB")
+      setOptionalCurrencies(provider?.currencies ?? [])
+      setFeeEnabled(provider?.fee_enabled ?? false)
+      setFeePercent(String(provider?.fee_percent ?? 0))
+      setAddFeeToAmount(provider?.add_fee_to_amount ?? true)
       setScriptId(provider?.script_id ? String(provider.script_id) : "")
       setEnabled(provider?.enabled ?? false)
       setSecretsText("{}")
     }
-  }, [open, provider])
-
-  const selectedScript = paymentScripts?.find((s) => String(s.id) === scriptId)
+  }, [open, provider, instanceCurrency])
 
   const save = useMutation({
     mutationFn: async () => {
@@ -95,6 +96,10 @@ function ProviderFormDialog({
         title: title || null,
         enabled,
         currency,
+        currencies: optionalCurrencies,
+        fee_enabled: feeEnabled,
+        fee_percent: Number(feePercent) || 0,
+        add_fee_to_amount: addFeeToAmount,
         script_id: scriptId ? Number(scriptId) : null,
         secrets,
       }
@@ -119,7 +124,7 @@ function ProviderFormDialog({
       label: "Основное",
       icon: CreditCard,
       content: (
-        <div className="space-y-4">
+        <div className="space-y-4 text-xs">
           {!isEdit && (
             <div className="space-y-1.5">
               <Label className="text-xs">Слаг провайдера (уникальный ключ)</Label>
@@ -144,12 +149,11 @@ function ProviderFormDialog({
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs">Базовая валюта</Label>
-              <Input
+              <Label className="text-xs">Основная валюта *</Label>
+              <CurrencySelect
                 value={currency}
-                onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-                maxLength={8}
-                className="font-mono text-xs uppercase"
+                onChange={setCurrency}
+                placeholder="RUB"
               />
             </div>
             <div className="space-y-1.5">
@@ -160,31 +164,82 @@ function ProviderFormDialog({
               </div>
             </div>
           </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Поддерживаемые валюты (теги)</Label>
+            <CurrencyTagSelect
+              value={optionalCurrencies}
+              onChange={setOptionalCurrencies}
+              placeholder="Выберите или введите валюту..."
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Дополнительные валюты, которые поддерживает платёжка (если для основной нет курса).
+            </p>
+          </div>
+
+          {/* Настройка комиссии платежного провайдера */}
+          <div className="space-y-3 rounded-lg border p-3 bg-muted/20">
+            <div className="flex items-center justify-between">
+              <div className="space-y-0.5">
+                <Label className="text-xs flex items-center gap-1.5">
+                  <Percent className="size-3.5 text-primary" /> Учитывать комиссию платёжной системы
+                </Label>
+                <p className="text-[11px] text-muted-foreground">
+                  Настройка тарифа платёжного шлюза для автоматического расчёта
+                </p>
+              </div>
+              <Switch checked={feeEnabled} onCheckedChange={setFeeEnabled} />
+            </div>
+
+            {feeEnabled && (
+              <div className="space-y-3 pt-2 border-t text-xs">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Комиссия платёжного провайдера (%)</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      max="100"
+                      value={feePercent}
+                      onChange={(e) => setFeePercent(e.target.value)}
+                      placeholder="3.5"
+                      className="font-mono text-xs max-w-[120px]"
+                    />
+                    <span className="text-xs font-semibold text-muted-foreground">%</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    Процент, который шлюз взимает за эквайринг/обработку платежа.
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-xs">Прибавлять комиссию к сумме счёта</Label>
+                    <p className="text-[10px] text-muted-foreground">
+                      {addFeeToAmount
+                        ? "Комиссию оплачивает покупатель (прибавляется к счёту при создании платежа)"
+                        : "Комиссию покрывает магазин (покупатель платит ровную сумму без наценки)"}
+                    </p>
+                  </div>
+                  <Switch checked={addFeeToAmount} onCheckedChange={setAddFeeToAmount} />
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="space-y-1.5">
             <Label className="text-xs">Lua-скрипт обработки платежей</Label>
-            <Select value={scriptId} onValueChange={(v) => setScriptId(v ?? "")}>
-              <SelectTrigger className="text-xs">
-                <SelectValue placeholder="Выберите Lua-скрипт">
-                  {selectedScript ? (selectedScript.name ?? selectedScript.slug) : undefined}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {paymentScripts?.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)} className="text-xs">
-                    {s.name ?? s.slug}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {(paymentScripts?.length ?? 0) === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                Нет скриптов типа «payment» — создайте их на странице «Lua-скрипты».
-              </p>
-            ) : (
-              <p className="text-[10px] text-muted-foreground">
-                Скрипт формирует ссылки на оплату и проверяет webhook-нотификации
-              </p>
-            )}
+            <LuaScriptSelect
+              value={scriptId}
+              onChange={setScriptId}
+              scripts={paymentScripts}
+              kind="payment"
+              placeholder="Выберите скрипт обработки платежей..."
+            />
+            <p className="text-[10px] text-muted-foreground">
+              Скрипт формирует ссылки на оплату и проверяет webhook-нотификации
+            </p>
           </div>
         </div>
       ),
@@ -201,9 +256,8 @@ function ProviderFormDialog({
             description={
               isEdit
                 ? "Оставьте значения пустыми или {}, если не хотите менять сохранённые секреты"
-                : "Укажите ключи мерчанта или выберите готовый шаблон провайдера"
+                : "Укажите параметры и секретные ключи API платёжного шлюза"
             }
-            presets={COMMON_PAYMENT_PRESETS}
             value={secretsText}
             onChange={(_, text) => setSecretsText(text)}
           />
@@ -239,18 +293,45 @@ export function PaymentProvidersPage() {
   const [editing, setEditing] = useState<Provider | null>(null)
   const canCreate = can("purchases.providers.create")
   const canEdit = can("purchases.providers.edit")
+  const canDelete = can("purchases.providers.delete")
+  const qc = useQueryClient()
 
-  const { data, isLoading } = useQuery({
+  const { data: providers, isLoading } = useQuery({
     queryKey: ["admin-pay-providers"],
     queryFn: async () => (await api.get<Provider[]>("/v1/admin/purchases/providers")).data,
   })
 
-  const { data: scripts } = useQuery({
-    queryKey: ["admin-lua-scripts-lookup"],
-    queryFn: async () => (await api.get<LuaScript[]>("/v1/admin/lua")).data,
-    staleTime: 60_000,
+  const { data: allScripts } = useQuery({
+    queryKey: ["admin-lua-scripts"],
+    queryFn: async () => {
+      const res = await api.get<LuaScriptOption[]>("/v1/admin/lua")
+      return Array.isArray(res.data) ? res.data : []
+    },
   })
-  const paymentScripts = scripts?.filter((s) => s.kind === "payment")
+
+  const paymentScripts = useMemo(
+    () => allScripts?.filter((s) => s.kind === "payment") ?? [],
+    [allScripts]
+  )
+
+  const toggle = useMutation({
+    mutationFn: async ({ id, enabled }: { id: number; enabled: boolean }) =>
+      api.patch(`/v1/admin/purchases/providers/${id}`, { enabled }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin-pay-providers"] })
+      toastSuccess("Статус провайдера обновлён")
+    },
+    onError: (e: unknown) => toastError("Не удалось обновить статус", getErrorDetail(e)),
+  })
+
+  const remove = useMutation({
+    mutationFn: async (id: number) => api.delete(`/v1/admin/purchases/providers/${id}`),
+    onSuccess: () => {
+      toastSuccess("Провайдер удалён")
+      void qc.invalidateQueries({ queryKey: ["admin-pay-providers"] })
+    },
+    onError: (e: unknown) => toastError("Не удалось удалить провайдера", getErrorDetail(e)),
+  })
 
   return (
     <div className="space-y-4">
@@ -258,65 +339,109 @@ export function PaymentProvidersPage() {
         <div>
           <h1 className="text-xl font-semibold">Платёжные провайдеры</h1>
           <p className="text-sm text-muted-foreground">
-            Провайдеры пополнения баланса и оплаты услуг — каждый обрабатывается своим Lua-скриптом.
+            Шлюзы оплаты и интеграции с внешними системами
           </p>
         </div>
         {canCreate && (
           <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> Добавить провайдера
+            <Plus className="mr-1.5 size-4" /> Добавить
           </Button>
         )}
       </div>
-      {isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
-      {!isLoading && (data?.length ?? 0) === 0 && (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            Провайдеры ещё не настроены.
-          </CardContent>
-        </Card>
+
+      {isLoading && <p className="text-sm text-muted-foreground">Загрузка провайдеров…</p>}
+
+      {!isLoading && (!providers || providers.length === 0) && (
+        <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+          Нет подключенных провайдеров. Создайте первого провайдера, чтобы пользователи могли пополнять баланс.
+        </p>
       )}
-      <div className="grid gap-2">
-        {data?.map((p) => (
-          <Card key={p.id}>
-            <CardContent className="flex items-center justify-between gap-3 py-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium">{p.title ?? p.slug}</span>
-                  <span className="font-mono text-xs text-muted-foreground">{p.slug}</span>
-                  <Badge variant={p.enabled ? "default" : "outline"}>{p.enabled ? "включён" : "выключен"}</Badge>
-                </div>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Валюта: {p.currency}
-                  {p.script_id ? ` · Lua-скрипт #${p.script_id}` : ""}
-                </p>
-              </div>
-              {canEdit && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button variant="ghost" size="icon" className="size-8">
-                        <MoreHorizontal className="size-4" />
-                      </Button>
-                    }
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {providers?.map((p) => {
+          const script = paymentScripts?.find((s) => s.id === p.script_id)
+          return (
+            <Card
+              key={p.id}
+              className="flex flex-col justify-between transition-colors hover:border-primary/50 cursor-pointer"
+              onClick={() => canEdit && setEditing(p)}
+            >
+              <CardHeader className="space-y-1">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-0.5 min-w-0 pr-2">
+                    <CardTitle className="text-base truncate">{p.title || p.slug}</CardTitle>
+                    <p className="font-mono text-xs text-muted-foreground">{p.slug}</p>
+                  </div>
+                  <Switch
+                    checked={p.enabled}
+                    disabled={!canEdit || toggle.isPending}
+                    onCheckedChange={(v) => toggle.mutate({ id: p.id, enabled: v })}
+                    onClick={(e) => e.stopPropagation()}
                   />
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem onClick={() => setEditing(p)}>Изменить</DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2 text-xs">
+                <div className="flex flex-wrap items-center gap-1">
+                  <Badge variant="outline" className="font-mono text-[10px]">
+                    Основная: {p.currency}
+                  </Badge>
+                  {p.currencies && p.currencies.length > 0 && (
+                    p.currencies.map((c) => (
+                      <Badge key={c} variant="secondary" className="font-mono text-[10px]">
+                        {c}
+                      </Badge>
+                    ))
+                  )}
+                  {p.fee_enabled && (
+                    <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-500/30">
+                      +{p.fee_percent}% {p.add_fee_to_amount ? "к счёту" : "комиссия"}
+                    </Badge>
+                  )}
+                </div>
+                <div className="text-muted-foreground">
+                  Скрипт: {script ? <span className="text-foreground">{script.name ?? script.slug}</span> : <span className="italic">не выбран</span>}
+                </div>
+                <div className="flex items-center justify-between pt-2 border-t">
+                  <a
+                    href={`/api/v1/user/purchases/callback/${p.slug}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
+                    className="text-[11px] text-muted-foreground hover:text-foreground inline-flex items-center gap-1"
+                  >
+                    Webhook URL <ExternalLink className="size-3" />
+                  </a>
+                  {canDelete && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        if (confirm(`Удалить провайдера ${p.slug}?`)) remove.mutate(p.id)
+                      }}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
-      <ProviderFormDialog open={creating} onOpenChange={setCreating} provider={null} paymentScripts={paymentScripts} />
-      {editing && (
-        <ProviderFormDialog
-          open={!!editing}
-          onOpenChange={(v) => !v && setEditing(null)}
-          provider={editing}
-          paymentScripts={paymentScripts}
-        />
-      )}
+
+      <ProviderFormDialog
+        open={creating || editing !== null}
+        onOpenChange={(v) => {
+          if (!v) {
+            setCreating(false)
+            setEditing(null)
+          }
+        }}
+        provider={editing}
+        paymentScripts={paymentScripts}
+      />
     </div>
   )
 }

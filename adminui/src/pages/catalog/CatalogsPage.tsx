@@ -11,13 +11,7 @@ import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
 import { Switch } from "@/components/shadsnui/switch"
 import { Badge } from "@/components/shadsnui/badge"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/shadsnui/select"
+import { CatalogTreeSelect } from "@/components/common/CatalogTreeSelect"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -79,8 +73,6 @@ function CatalogFormDialog({
     }
   }, [open, catalog])
 
-  const options = catalogs.filter((c) => c.id !== catalog?.id)
-
   const save = useMutation({
     mutationFn: async () => {
       const body = {
@@ -133,19 +125,15 @@ function CatalogFormDialog({
 
           <div className="space-y-1.5">
             <Label className="text-xs">Родительский каталог</Label>
-            <Select value={parentId || "root"} onValueChange={(v) => setParentId(v === "root" ? "" : v ?? "")}>
-              <SelectTrigger className="text-xs">
-                <SelectValue placeholder="Корень (верхний уровень)" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="root">— Корневой уровень —</SelectItem>
-                {options.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)} className="text-xs">
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <CatalogTreeSelect
+              catalogs={catalogs}
+              value={parentId ? Number(parentId) : null}
+              onChange={(id) => setParentId(id !== null ? String(id) : "")}
+              excludeId={catalog?.id}
+              allowRoot={true}
+              rootLabel="— Корневой уровень —"
+              placeholder="Корень (верхний уровень)"
+            />
           </div>
 
           <div className="space-y-1.5">

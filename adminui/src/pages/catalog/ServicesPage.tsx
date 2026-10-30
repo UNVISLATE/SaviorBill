@@ -29,6 +29,7 @@ interface ServiceRow {
   catalog_id: number | null
   price: string
   currency: string
+  price_type?: string
   delivery: string
   is_active: boolean
   out_of_stock: boolean | null
@@ -106,9 +107,16 @@ export function ServicesPage() {
       key: "price",
       header: "Цена",
       render: (s) => (
-        <span className="font-mono text-xs font-semibold">
-          {s.price} {s.currency}
-        </span>
+        <div className="flex flex-col">
+          <span className="font-mono text-xs font-semibold">
+            {s.price_type && s.price_type !== "fixed" ? `от ${s.price}` : s.price} {s.currency}
+          </span>
+          {s.price_type && s.price_type !== "fixed" && (
+            <span className="text-[10px] text-muted-foreground uppercase font-mono">
+              {s.price_type}
+            </span>
+          )}
+        </div>
       ),
     },
     {

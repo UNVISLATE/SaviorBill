@@ -98,104 +98,105 @@ export function LuaScriptsPage() {
 
   // Хлебная крошка получает имя открытого скрипта — /lua сам по себе значит
   // "Скрипты", а конкретный id иначе никак не подписан в цепочке маршрута.
-  useBreadcrumbExtra(detail ? detail.name ?? detail.slug : undefined)
+  useBreadcrumbExtra(
+    detail ? detail.name ?? detail.slug : selectedId !== null ? `#${selectedId}` : null,
+  )
 
-  const del = useMutation({
-    mutationFn: async (id: number) => api.delete(`/v1/admin/lua/${id}`),
-    onSuccess: () => {
+  const remove = useMutation({
+    mutationFn: async (id: number) => (await api.delete(`/v1/admin/lua/${id}`)).data,
+    onSuccess: (_, deletedId) => {
       toastSuccess("Скрипт удалён")
-      setDeleteTarget(null)
       void qc.invalidateQueries({ queryKey: ["admin-lua-scripts"] })
-      if (selectedId === deleteTarget?.id) navigate("/lua")
+      if (selectedId === deletedId) {
+        navigate("/lua")
+      }
     },
-    onError: (err: unknown) => {
-      toastError("Не удалось удалить скрипт", getErrorDetail(err))
-    },
+    onError: (e) => toastError("Не удалось удалить скрипт", getErrorDetail(e)),
   })
 
-  const filtered =
-    scripts?.filter((s) => {
-      if (!search.trim()) return true
-      const q = search.trim().toLowerCase()
-      return (
-        s.slug.toLowerCase().includes(q) ||
-        (s.name ?? "").toLowerCase().includes(q)
-      )
-    }) ?? []
-
-  if (!canRead) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Недостаточно прав для просмотра Lua-скриптов.
-      </div>
-    )
-  }
+  const filtered = (scripts ?? []).filter(
+    (s) =>
+      s.slug.toLowerCase().includes(search.toLowerCase()) ||
+      (s.name ?? "").toLowerCase().includes(search.toLowerCase()),
+  )
 
   const showList = !isMobile || selectedId === null
   const showEditor = !isMobile || selectedId !== null
 
   const listPane = (
-    <div className="flex w-full shrink-0 flex-col gap-2 md:w-64">
-      <div className="flex items-baseline justify-between gap-2">
-        <h1 className="text-xl font-semibold">Lua-скрипты</h1>
+    <div className="flex w-full min-w-0 flex-col gap-2 md:w-80 md:shrink-0">
+      <div className="flex items-center gap-2">
+        <Input
+          placeholder="Поиск скриптов..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-8 text-xs"
+        />
         {canCreate && (
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> Создать
+          <Button
+            size="sm"
+            onClick={() => setCreating(true)}
+            aria-label="Создать новый скрипт"
+          >
+            <Plus className="size-4" />
           </Button>
         )}
       </div>
-      <Input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Поиск по slug/названию…"
-      />
-      <div className="flex-1 space-y-1 overflow-y-auto rounded-md border p-1.5">
+
+      <div className="flex-1 space-y-1 overflow-auto rounded-md border p-1">
         {scriptsLoading && (
-          <div className="space-y-1.5 p-1">
-            <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-9 w-full" />
+          <div className="space-y-2 p-2">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
           </div>
         )}
         {!scriptsLoading && filtered.length === 0 && (
-          <p className="p-3 text-center text-xs text-muted-foreground">
-            Ничего не найдено
+          <p className="p-4 text-center text-xs text-muted-foreground">
+            {search ? "Ничего не найдено" : "Скриптов пока нет"}
           </p>
         )}
         {filtered.map((s) => (
           <div
             key={s.id}
+            onClick={() => navigate(`/lua/${s.id}`)}
             className={cn(
-              "group flex w-full items-center gap-1 rounded-md px-1 transition-colors",
-              s.id === selectedId ? "bg-primary/10" : "hover:bg-muted/60",
+              "group flex cursor-pointer items-start justify-between rounded p-2 text-xs hover:bg-accent",
+              selectedId === s.id && "bg-accent font-medium",
             )}
           >
-            <button
-              type="button"
-              onClick={() => navigate(`/lua/${s.id}`)}
-              className="flex min-w-0 flex-1 flex-col gap-0.5 px-1.5 py-1.5 text-left text-sm"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate font-medium">{s.name ?? s.slug}</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="truncate">{s.name ?? s.slug}</span>
                 {!s.is_active && (
-                  <Badge variant="outline" className="shrink-0 text-[10px]">
-                    выключен
+                  <Badge variant="outline" className="text-[10px]">
+                    выкл
                   </Badge>
                 )}
-                {s.artifact_status !== "ready" && (
-                  <Badge variant="destructive" className="shrink-0 text-[10px]">
-                    {s.artifact_status === "missing"
-                      ? "файл отсутствует"
-                      : "файл повреждён"}
+                {s.artifact_status === "missing" && (
+                  <Badge variant="destructive" className="text-[10px]">
+                    нет файла
+                  </Badge>
+                )}
+                {s.artifact_status === "corrupt" && (
+                  <Badge variant="destructive" className="text-[10px]">
+                    битый файл
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <span className="truncate">{s.slug}</span>
-                <span>·</span>
-                <span>{s.kind}</span>
+              <p className="font-mono text-[10px] text-muted-foreground">{s.slug}</p>
+              <div className="mt-1 flex flex-wrap gap-1">
+                <Badge variant="secondary" className="text-[10px]">
+                  {s.kind}
+                </Badge>
+                {s.actions.map((a) => (
+                  <Badge key={a} variant="outline" className="text-[10px]">
+                    {a}
+                  </Badge>
+                ))}
               </div>
-            </button>
+            </div>
+
             {canDelete && (
               <DropdownMenu>
                 <DropdownMenuTrigger
@@ -258,11 +259,10 @@ export function LuaScriptsPage() {
       )}
       {selectedId !== null && detail && (
         <LuaEditor
-          // Смена key при выборе другого скрипта пересоздаёт Monaco-
-          // редактор с новым initialCode — проще и надёжнее, чем
-          // синхронизировать содержимое существующей модели вручную.
           key={detail.id}
           scriptId={detail.id}
+          scriptKind={detail.kind}
+          scriptName={detail.name ?? detail.slug}
           initialCode={detail.code}
           initialSettings={detail.settings}
           currentVersion={detail.current_version}
@@ -283,21 +283,27 @@ export function LuaScriptsPage() {
 
       <CreateLuaScriptDialog open={creating} onOpenChange={setCreating} />
 
-      <AlertDialog open={!!deleteTarget} onOpenChange={(v) => !v && setDeleteTarget(null)}>
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(v) => !v && setDeleteTarget(null)}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Удалить скрипт «{deleteTarget?.slug}»?</AlertDialogTitle>
+            <AlertDialogTitle>Удалить скрипт?</AlertDialogTitle>
             <AlertDialogDescription>
-              Нельзя удалить, если скрипт сейчас используется какой-либо услугой
-              или провайдером — сервер откажет с описанием, где именно.
+              Скрипт &laquo;{deleteTarget?.name ?? deleteTarget?.slug}&raquo; и все его
+              версии будут безвозвратно удалены. Если на него завязаны услуги или
+              провайдеры, они перестанут работать.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction
-              disabled={del.isPending}
-              onClick={() => deleteTarget && del.mutate(deleteTarget.id)}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (deleteTarget) remove.mutate(deleteTarget.id)
+                setDeleteTarget(null)
+              }}
             >
               Удалить
             </AlertDialogAction>

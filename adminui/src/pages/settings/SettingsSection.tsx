@@ -6,6 +6,7 @@ import { api } from "@/api/api.ts"
 import { cn } from "@/lib/utils"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { useSettingsMap } from "@/hooks/use-settings-map"
+import { CurrencySelect } from "@/components/common/CurrencySelect"
 import { Button } from "@/components/shadsnui/button"
 import {
   Card,
@@ -15,14 +16,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/shadsnui/card"
-import {
-  Combobox,
-  ComboboxContent,
-  ComboboxEmpty,
-  ComboboxInput,
-  ComboboxItem,
-  ComboboxList,
-} from "@/components/shadsnui/combobox"
 import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
 import {
@@ -67,28 +60,6 @@ export interface SettingFieldSpec {
   showIf?: { key: string; equals: string[] }
 }
 
-/** Ходовые валюты для подсказки в combobox — ввести можно любой ISO-код. */
-const CURRENCIES = [
-  ["RUB", "Российский рубль"],
-  ["USD", "Доллар США"],
-  ["EUR", "Евро"],
-  ["GBP", "Фунт стерлингов"],
-  ["CNY", "Юань"],
-  ["KZT", "Тенге"],
-  ["BYN", "Белорусский рубль"],
-  ["UAH", "Гривна"],
-  ["TRY", "Турецкая лира"],
-  ["AED", "Дирхам ОАЭ"],
-  ["GEL", "Лари"],
-  ["AMD", "Драм"],
-  ["UZS", "Сум"],
-  ["JPY", "Иена"],
-  ["CHF", "Швейцарский франк"],
-  ["PLN", "Злотый"],
-  ["INR", "Рупия"],
-  ["BRL", "Реал"],
-] as const
-
 function HintIcon({ text }: { text: string }) {
   return (
     <Tooltip>
@@ -105,41 +76,6 @@ function HintIcon({ text }: { text: string }) {
       />
       <TooltipContent>{text}</TooltipContent>
     </Tooltip>
-  )
-}
-
-function CurrencyPicker({
-  value,
-  onChange,
-  placeholder,
-  disabled,
-}: {
-  value: string
-  onChange: (next: string) => void
-  placeholder?: string
-  disabled?: boolean
-}) {
-  const items = useMemo(() => CURRENCIES.map(([code, name]) => `${code} — ${name}`), [])
-
-  return (
-    <Combobox
-      items={items}
-      value={value ? (items.find((i) => i.startsWith(`${value} `)) ?? value) : null}
-      onValueChange={(v) => onChange(typeof v === "string" ? v.slice(0, 3).toUpperCase() : "")}
-      disabled={disabled}
-    >
-      <ComboboxInput placeholder={placeholder ?? "Код валюты"} disabled={disabled} />
-      <ComboboxContent>
-        <ComboboxEmpty>Ничего не найдено — можно ввести код вручную.</ComboboxEmpty>
-        <ComboboxList>
-          {(item: string) => (
-            <ComboboxItem key={item} value={item}>
-              {item}
-            </ComboboxItem>
-          )}
-        </ComboboxList>
-      </ComboboxContent>
-    </Combobox>
   )
 }
 
@@ -215,16 +151,15 @@ function RatesEditor({
   return (
     <div className="space-y-2">
       {rows.map((r, i) => (
-        <div key={i} className="grid grid-cols-[7rem_1fr_auto] items-center gap-2">
-          <Input
+        <div key={i} className="grid grid-cols-[10rem_1fr_auto] items-center gap-2">
+          <CurrencySelect
             value={r.code}
-            onChange={(e) => {
+            onChange={(code) => {
               const next = [...rows]
-              next[i] = { ...r, code: e.target.value.toUpperCase() }
+              next[i] = { ...r, code }
               update(next)
             }}
-            placeholder="USD"
-            className="font-mono uppercase"
+            placeholder="Валюта"
           />
           <Input
             value={r.rate}
@@ -235,7 +170,7 @@ function RatesEditor({
             }}
             placeholder="95.5"
             inputMode="decimal"
-            className="font-mono"
+            className="font-mono text-xs"
           />
           <Button
             type="button"
@@ -288,12 +223,14 @@ function FieldControl({
 
   if (kind === "currency") {
     return (
-      <CurrencyPicker
-        value={value}
-        onChange={onChange}
-        placeholder={spec.placeholder}
-        disabled={spec.disabled}
-      />
+      <div className="w-full max-w-sm">
+        <CurrencySelect
+          value={value}
+          onChange={onChange}
+          placeholder={spec.placeholder ?? "RUB"}
+          disabled={spec.disabled}
+        />
+      </div>
     )
   }
 
@@ -351,6 +288,7 @@ export function SettingsSection({
   fields,
   footerNote,
   actions,
+  className,
 }: {
   title: string
   description?: string
@@ -360,6 +298,7 @@ export function SettingsSection({
    * секции — чтобы, например, кнопка проверки источника работала с тем, что
    * выбрано сейчас, а не с последним сохранённым. */
   actions?: ReactNode | ((current: Record<string, string>) => ReactNode)
+  className?: string
 }) {
   const qc = useQueryClient()
   const { map, isLoading } = useSettingsMap()
@@ -406,7 +345,7 @@ export function SettingsSection({
 
   if (isLoading) {
     return (
-      <Card className="mb-4 break-inside-avoid">
+      <Card className={cn("mb-4 break-inside-avoid", className)}>
         <CardHeader>
           <CardTitle>{title}</CardTitle>
         </CardHeader>
@@ -419,7 +358,7 @@ export function SettingsSection({
   }
 
   return (
-    <Card className="mb-4 break-inside-avoid">
+    <Card className={cn("mb-4 break-inside-avoid", className)}>
       <CardHeader>
         <CardTitle>{title}</CardTitle>
         {description && <CardDescription>{description}</CardDescription>}

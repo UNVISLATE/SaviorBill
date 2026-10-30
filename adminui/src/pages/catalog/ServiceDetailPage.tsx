@@ -19,6 +19,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/shadsnui/select"
+import { CatalogTreeSelect } from "@/components/common/CatalogTreeSelect"
+import { CurrencySelect } from "@/components/common/CurrencySelect"
+import { LuaScriptSelect } from "@/components/common/LuaScriptSelect"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/shadsnui/tabs"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/shadsnui/card"
 import {
@@ -31,11 +34,6 @@ import {
 } from "@/components/shadsnui/table"
 import { MediaPickerDialog } from "@/components/media/MediaPickerDialog"
 import { toastError, toastSuccess } from "@/lib/toast"
-
-interface Catalog {
-  id: number
-  name: string
-}
 
 interface ServiceAdmin {
   id: number
@@ -53,11 +51,6 @@ interface ServiceAdmin {
   params: Record<string, unknown>
   settings: Record<string, unknown>
   warnings: string[]
-}
-
-interface LuaScript {
-  id: number
-  name: string
 }
 
 interface Attachment {
@@ -84,7 +77,7 @@ interface Stock {
   out_of_stock: boolean
 }
 
-function GeneralTab({ service, catalogs }: { service: ServiceAdmin; catalogs: Catalog[] | undefined }) {
+function GeneralTab({ service }: { service: ServiceAdmin }) {
   const [name, setName] = useState(service.name)
   const [description, setDescription] = useState(service.description ?? "")
   const [catalogId, setCatalogId] = useState(service.catalog_id ? String(service.catalog_id) : "")
@@ -97,13 +90,6 @@ function GeneralTab({ service, catalogs }: { service: ServiceAdmin; catalogs: Ca
   const [settingsText, setSettingsText] = useState(JSON.stringify(service.settings, null, 2))
   const [jsonError, setJsonError] = useState<string | null>(null)
   const qc = useQueryClient()
-
-  const { data: luaScripts } = useQuery({
-    queryKey: ["admin-lua-scripts-lookup"],
-    queryFn: async () => (await api.get<LuaScript[]>("/v1/admin/lua")).data,
-    enabled: delivery === "lua",
-    staleTime: 60_000,
-  })
 
   const save = useMutation({
     mutationFn: async () => {
@@ -159,19 +145,10 @@ function GeneralTab({ service, catalogs }: { service: ServiceAdmin; catalogs: Ca
           </div>
           <div className="space-y-1">
             <Label>Каталог</Label>
-            <Select value={catalogId || "root"} onValueChange={(v) => setCatalogId(v === "root" ? "" : v ?? "")}>
-              <SelectTrigger>
-                <SelectValue placeholder="Без каталога" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="root">— Без каталога —</SelectItem>
-                {catalogs?.map((c) => (
-                  <SelectItem key={c.id} value={String(c.id)}>
-                    {c.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <CatalogTreeSelect
+              value={catalogId ? Number(catalogId) : null}
+              onChange={(id) => setCatalogId(id !== null ? String(id) : "")}
+            />
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
@@ -180,7 +157,7 @@ function GeneralTab({ service, catalogs }: { service: ServiceAdmin; catalogs: Ca
             </div>
             <div className="space-y-1">
               <Label>Валюта</Label>
-              <Input value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} maxLength={8} />
+              <CurrencySelect value={currency} onChange={setCurrency} />
             </div>
           </div>
           <div className="flex items-center justify-between">
@@ -210,18 +187,12 @@ function GeneralTab({ service, catalogs }: { service: ServiceAdmin; catalogs: Ca
           {delivery === "lua" && (
             <div className="space-y-1">
               <Label>Скрипт</Label>
-              <Select value={luaScriptId} onValueChange={(v) => setLuaScriptId(v ?? "")}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Выберите скрипт" />
-                </SelectTrigger>
-                <SelectContent>
-                  {luaScripts?.map((s) => (
-                    <SelectItem key={s.id} value={String(s.id)}>
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <LuaScriptSelect
+                value={luaScriptId}
+                onChange={setLuaScriptId}
+                kind={["service", "generic"]}
+                placeholder="Выберите скрипт автоматизации..."
+              />
             </div>
           )}
           <div className="space-y-1">
@@ -544,12 +515,6 @@ export function ServiceDetailPage() {
     enabled: Number.isFinite(serviceId),
   })
 
-  const { data: catalogs } = useQuery({
-    queryKey: ["admin-catalogs"],
-    queryFn: async () => (await api.get<Catalog[]>("/v1/admin/catalogs")).data,
-    staleTime: 60_000,
-  })
-
   if (isLoading || !service) {
     return <p className="text-sm text-muted-foreground">Загрузка…</p>
   }
@@ -575,7 +540,7 @@ export function ServiceDetailPage() {
           )}
         </TabsList>
         <TabsContent value="general">
-          <GeneralTab service={service} catalogs={catalogs} />
+          <GeneralTab service={service} />
         </TabsContent>
         <TabsContent value="attachments">
           <AttachmentsTab serviceId={service.id} />

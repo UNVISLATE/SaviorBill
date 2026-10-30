@@ -36,6 +36,7 @@ import {
 } from "@/components/shadsnui/dropdown-menu"
 import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
 import { ConditionRuleBuilder } from "@/components/common/forms/ConditionRuleBuilder"
+import { LuaScriptSelect } from "@/components/common/LuaScriptSelect"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 interface Trigger {
@@ -59,11 +60,6 @@ interface EmailTemplate {
   name: string | null
 }
 
-interface LuaScript {
-  id: number
-  name: string
-}
-
 const EVENT_LABEL: Record<string, string> = {
   "user.registered": "Регистрация пользователя",
   "user.verified": "Подтверждение email",
@@ -83,14 +79,12 @@ function TriggerFormDialog({
   trigger,
   meta,
   templates,
-  scripts,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   trigger: Trigger | null
   meta: TriggerMeta | undefined
   templates: EmailTemplate[] | undefined
-  scripts: LuaScript[] | undefined
 }) {
   const isEdit = !!trigger
   const [name, setName] = useState("")
@@ -254,19 +248,13 @@ function TriggerFormDialog({
             </div>
           ) : (
             <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-3">
-              <Label className="text-xs">Lua-скрипт автоматизации</Label>
-              <Select value={scriptId} onValueChange={(v) => setScriptId(v ?? "")}>
-                <SelectTrigger className="text-xs bg-background">
-                  <SelectValue placeholder="Выберите Lua-скрипт" />
-                </SelectTrigger>
-                <SelectContent>
-                  {scripts?.map((s) => (
-                    <SelectItem key={s.id} value={String(s.id)} className="text-xs">
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Label className="text-xs">Lua-скрипт автоматизации *</Label>
+              <LuaScriptSelect
+                kind={["trigger", "generic"]}
+                value={scriptId}
+                onChange={setScriptId}
+                placeholder="Выберите Lua-скрипт триггера"
+              />
             </div>
           )}
         </div>
@@ -370,12 +358,6 @@ export function TriggersPage() {
     staleTime: 60_000,
   })
 
-  const { data: scripts } = useQuery({
-    queryKey: ["admin-lua-scripts-lookup"],
-    queryFn: async () => (await api.get<LuaScript[]>("/v1/admin/lua")).data,
-    staleTime: 60_000,
-  })
-
   const { data, isLoading } = useQuery({
     queryKey: ["admin-triggers"],
     queryFn: async () => (await api.get<Trigger[]>("/v1/admin/triggers")).data,
@@ -457,7 +439,6 @@ export function TriggersPage() {
         trigger={null}
         meta={meta}
         templates={templates}
-        scripts={scripts}
       />
       {editing && (
         <TriggerFormDialog
@@ -466,7 +447,6 @@ export function TriggersPage() {
           trigger={editing}
           meta={meta}
           templates={templates}
-          scripts={scripts}
         />
       )}
       {deleting && (

@@ -12,13 +12,6 @@ import { Label } from "@/components/shadsnui/label"
 import { Switch } from "@/components/shadsnui/switch"
 import { Card, CardContent } from "@/components/shadsnui/card"
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/shadsnui/select"
-import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -36,7 +29,8 @@ import {
 } from "@/components/shadsnui/dropdown-menu"
 import { MediaPickerDialog } from "@/components/media/MediaPickerDialog"
 import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
-import { KeySecretEditor, COMMON_OAUTH_PRESETS } from "@/components/common/forms/KeySecretEditor"
+import { KeySecretEditor } from "@/components/common/forms/KeySecretEditor"
+import { LuaScriptSelect } from "@/components/common/LuaScriptSelect"
 import { toastError, toastSuccess } from "@/lib/toast"
 
 interface Provider {
@@ -54,18 +48,17 @@ interface LuaScript {
   id: number
   name: string
   kind: string
+  slug?: string
 }
 
 function ProviderFormDialog({
   open,
   onOpenChange,
   provider,
-  authScripts,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   provider: Provider | null
-  authScripts: LuaScript[] | undefined
 }) {
   const isEdit = !!provider
   const [slug, setSlug] = useState("")
@@ -91,8 +84,6 @@ function ProviderFormDialog({
       setSecretsText("{}")
     }
   }, [open, provider])
-
-  const selectedScript = authScripts?.find((s) => String(s.id) === scriptId)
 
   const save = useMutation({
     mutationFn: async () => {
@@ -192,26 +183,13 @@ function ProviderFormDialog({
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs">Lua-скрипт (обработка start/callback)</Label>
-            <Select value={scriptId} onValueChange={(v) => setScriptId(v ?? "")}>
-              <SelectTrigger className="text-xs">
-                <SelectValue placeholder="Выберите Lua-скрипт">
-                  {selectedScript ? selectedScript.name : undefined}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {authScripts?.map((s) => (
-                  <SelectItem key={s.id} value={String(s.id)} className="text-xs">
-                    {s.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {(authScripts?.length ?? 0) === 0 && (
-              <p className="text-xs text-muted-foreground">
-                Нет скриптов типа «auth» — создайте их на странице «Lua-скрипты».
-              </p>
-            )}
+            <Label className="text-xs">Lua-скрипт (обработка start/callback) *</Label>
+            <LuaScriptSelect
+              kind="auth"
+              value={scriptId}
+              onChange={setScriptId}
+              placeholder="Выберите Lua-скрипт аутентификации"
+            />
           </div>
 
           <div className="space-y-1.5">
@@ -248,7 +226,6 @@ function ProviderFormDialog({
                 ? "Оставьте значения пустыми или {}, если не хотите менять сохранённые ключи"
                 : "Укажите client_id, client_secret и адреса эндпоинтов"
             }
-            presets={COMMON_OAUTH_PRESETS}
             value={secretsText}
             onChange={(_, text) => setSecretsText(text)}
           />
@@ -352,7 +329,6 @@ export function OAuthProvidersPage() {
     queryFn: async () => (await api.get<LuaScript[]>("/v1/admin/lua")).data,
     staleTime: 60_000,
   })
-  const authScripts = scripts?.filter((s) => s.kind === "auth")
 
   return (
     <div className="space-y-4">
@@ -402,7 +378,10 @@ export function OAuthProvidersPage() {
                   </div>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     Scopes: <span className="font-mono">{p.scopes}</span>
-                    {` · Lua-скрипт #${p.script_id}`}
+                    {(() => {
+                      const s = scripts?.find((x) => x.id === p.script_id)
+                      return ` · Скрипт: ${s?.name || s?.slug || `#${p.script_id}`}`
+                    })()}
                   </p>
                 </div>
               </div>
@@ -440,7 +419,6 @@ export function OAuthProvidersPage() {
         open={creating}
         onOpenChange={setCreating}
         provider={null}
-        authScripts={authScripts}
       />
 
       {editing && (
@@ -448,7 +426,6 @@ export function OAuthProvidersPage() {
           open={!!editing}
           onOpenChange={(v) => !v && setEditing(null)}
           provider={editing}
-          authScripts={authScripts}
         />
       )}
 

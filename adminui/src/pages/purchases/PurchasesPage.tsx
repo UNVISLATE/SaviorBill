@@ -17,6 +17,7 @@ import {
   DialogTitle,
 } from "@/components/shadsnui/dialog"
 import { toastError, toastSuccess } from "@/lib/toast"
+import { FxHealthBanner } from "@/components/fx/FxHealthBanner"
 
 interface Payment {
   id: number
@@ -211,6 +212,7 @@ export function PurchasesPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Платежи</h1>
+      <FxHealthBanner />
       <DataTable
         columns={columns}
         data={data?.items ?? []}

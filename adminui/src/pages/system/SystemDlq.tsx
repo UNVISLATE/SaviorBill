@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
+import { FxHealthBanner } from "@/components/fx/FxHealthBanner"
 import {
   Select,
   SelectContent,
@@ -82,6 +83,7 @@ export function SystemDlq() {
 
   return (
     <div className="space-y-4">
+      <FxHealthBanner />
       <div className="flex items-baseline justify-between">
         <div>
           <h2 className="text-lg font-semibold">Мёртвые очереди</h2>

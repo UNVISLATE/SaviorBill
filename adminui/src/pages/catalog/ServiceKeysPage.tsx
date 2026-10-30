@@ -48,6 +48,7 @@ import {
   DialogTitle,
 } from "@/components/shadsnui/dialog"
 import { Textarea } from "@/components/shadsnui/textarea"
+import { ServiceSelect } from "@/components/common/ServiceSelect"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/shadsnui/tabs"
 import { toastError, toastSuccess } from "@/lib/toast"
 
@@ -173,21 +174,12 @@ function ImportKeysModal({
         <div className="space-y-4 py-2">
           <div className="space-y-1.5">
             <Label>Целевой товар / услуга</Label>
-            <Select
+            <ServiceSelect
+              services={services}
               value={selectedServiceId}
-              onValueChange={(val) => setSelectedServiceId(val ?? "")}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Выберите товар" />
-              </SelectTrigger>
-              <SelectContent>
-                {services.map((s) => (
-                  <SelectItem key={s.service_id} value={String(s.service_id)}>
-                    {s.service_name} ({s.currency} {s.price})
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              onChange={setSelectedServiceId}
+              placeholder="Выберите товар"
+            />
           </div>
 
           <div className="space-y-1.5">

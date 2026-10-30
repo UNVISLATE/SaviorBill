@@ -38,6 +38,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/shadsnui/dropdown-menu"
 import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
+import { ServiceSelect } from "@/components/common/ServiceSelect"
 import { useInstanceCurrency } from "@/lib/currency"
 import { toastError, toastSuccess } from "@/lib/toast"
 
@@ -53,10 +54,6 @@ interface Catalog {
   is_active: boolean
 }
 
-interface Service {
-  id: number
-  name: string
-}
 
 interface Code {
   id: number
@@ -86,12 +83,10 @@ function CatalogFormDialog({
   open,
   onOpenChange,
   catalog,
-  services,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   catalog: Catalog | null
-  services: Service[] | undefined
 }) {
   const isEdit = !!catalog
   const { symbol: currencySymbol } = useInstanceCurrency()
@@ -216,18 +211,11 @@ function CatalogFormDialog({
           {kind === "service" && (
             <div className="space-y-1.5">
               <Label className="text-xs">Услуга для выдачи</Label>
-              <Select value={serviceId} onValueChange={(v) => setServiceId(v ?? "")}>
-                <SelectTrigger className="text-xs">
-                  <SelectValue placeholder="Выберите выдаваемую услугу" />
-                </SelectTrigger>
-                <SelectContent>
-                  {services?.map((s) => (
-                    <SelectItem key={s.id} value={String(s.id)} className="text-xs">
-                      {s.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ServiceSelect
+                value={serviceId}
+                onChange={setServiceId}
+                placeholder="Выберите выдаваемую услугу"
+              />
             </div>
           )}
 
@@ -582,12 +570,6 @@ export function PromoPage() {
     queryFn: async () => (await api.get<Catalog[]>("/v1/admin/promo/catalogs")).data,
   })
 
-  const { data: services } = useQuery({
-    queryKey: ["admin-services-lookup"],
-    queryFn: async () => (await api.get<Service[]>("/v1/admin/services")).data,
-    staleTime: 60_000,
-  })
-
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
@@ -679,7 +661,6 @@ export function PromoPage() {
         open={creating}
         onOpenChange={setCreating}
         catalog={null}
-        services={services}
       />
 
       {editing && (
@@ -687,7 +668,6 @@ export function PromoPage() {
           open={!!editing}
           onOpenChange={(v) => !v && setEditing(null)}
           catalog={editing}
-          services={services}
         />
       )}
 
