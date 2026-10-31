@@ -27,9 +27,11 @@ async def test_log_security_event():
         reason="10 hits/sec",
         scope="api.login",
         kind="auth",
+        trace_id="0123456789abcdef0123456789abcdef",
     )
     assert ev["ip"] == "1.2.3.4"
     assert ev["action"] == "rate_limit_exceeded"
+    assert ev["trace_id"] == "0123456789abcdef0123456789abcdef"
     assert vk.lpush.called
     assert vk.ltrim.called
 
@@ -62,7 +64,6 @@ async def test_is_ip_banned_true():
 @pytest.mark.asyncio
 async def test_check_and_apply_autoban():
     vk = AsyncMock()
-    # 5-е нарушение при пороге 5
     vk.incr.return_value = 5
 
     settings = AsyncMock()

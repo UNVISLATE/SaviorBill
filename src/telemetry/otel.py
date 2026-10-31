@@ -99,8 +99,10 @@ def _install_error_handlers(app: FastAPI) -> None:
     """Обработчики ошибок, отдающие клиенту trace_id (ray id) в теле и заголовке."""
 
     def _with_trace(payload: dict) -> tuple[dict, dict]:
+        from utils.request_context import get_current_trace_id
+
         headers: dict[str, str] = {}
-        trace_id = current_trace_id()
+        trace_id = get_current_trace_id()
         if trace_id:
             payload = {**payload, "trace_id": trace_id}
             headers["X-Trace-Id"] = trace_id
@@ -187,16 +189,15 @@ def setup_observability(
         )
         _install_metrics_guard(app, config)
 
-    if not config.OTEL_ENABLED:
-        return
-    if not config.OTEL_EXPORTER_OTLP_ENDPOINT:
-        raise RuntimeError(
-            "OTEL_ENABLED=true, но OTEL_EXPORTER_OTLP_ENDPOINT не задан — "
-            "укажите OTLP-эндпоинт коллектора/Jaeger."
-        )
+    if config.OTEL_ENABLED:
+        if not config.OTEL_EXPORTER_OTLP_ENDPOINT:
+            raise RuntimeError(
+                "OTEL_ENABLED=true, но OTEL_EXPORTER_OTLP_ENDPOINT не задан — "
+                "укажите OTLP-эндпоинт коллектора/Jaeger."
+            )
+        _configure_tracer_provider(config, service_name, service_version)
+        FastAPIInstrumentor.instrument_app(app, excluded_urls="/metrics")
 
-    _configure_tracer_provider(config, service_name, service_version)
-    FastAPIInstrumentor.instrument_app(app, excluded_urls="/metrics")
     _install_error_handlers(app)
 
 

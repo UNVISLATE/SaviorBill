@@ -204,7 +204,7 @@ async def _enforce(
     if not res.allowed:
         client_ip = request.client.host if request.client else "unknown"
         vk = request.app.state.valkey
-        ray_id = getattr(getattr(request, "state", None), "ray_id", None)
+        trace_id = getattr(getattr(request, "state", None), "trace_id", None)
         await log_security_event(
             vk,
             ip=client_ip,
@@ -213,9 +213,9 @@ async def _enforce(
             scope=scope,
             kind=kind.value,
             details=f"Retry-After: {res.retry_after}s",
-            ray_id=ray_id,
+            trace_id=trace_id,
         )
-        was_banned = await check_and_apply_autoban(vk, client_ip, settings, ray_id=ray_id)
+        was_banned = await check_and_apply_autoban(vk, client_ip, settings, trace_id=trace_id)
         if was_banned:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,

@@ -33,7 +33,8 @@ import {
 
 interface SecurityEventItem {
   id: string
-  ray_id: string | null
+  trace_id: string | null
+  ray_id?: string | null
   timestamp: string
   ip: string
   scope: string
@@ -47,6 +48,7 @@ interface SecurityEventItem {
 
 const ACTION_BADGES: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
   rate_limit_exceeded: { label: "Rate Limit превышен", variant: "destructive" },
+  rate_limited: { label: "Rate Limit превышен", variant: "destructive" },
   ip_banned: { label: "IP заблокирован", variant: "destructive" },
   ip_unbanned: { label: "IP разблокирован", variant: "secondary" },
   scraping_detected: { label: "Подозрительный скрапинг", variant: "outline" },
@@ -61,7 +63,7 @@ export function SystemSecurityEvents() {
   const [filterIp, setFilterIp] = useState("")
   const [search, setSearch] = useState("")
   const [limit, setLimit] = useState("100")
-  const [copiedRayId, setCopiedRayId] = useState<string | null>(null)
+  const [copiedTraceId, setCopiedTraceId] = useState<string | null>(null)
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["system-security-events", limit, filterIp],
@@ -92,19 +94,20 @@ export function SystemSecurityEvents() {
     onError: () => toastError("Не удалось заблокировать IP"),
   })
 
-  const copyRayId = (rayId: string) => {
-    navigator.clipboard.writeText(rayId)
-    setCopiedRayId(rayId)
-    setTimeout(() => setCopiedRayId(null), 2000)
-    toastSuccess("Ray ID скопирован")
+  const copyTraceId = (traceId: string) => {
+    navigator.clipboard.writeText(traceId)
+    setCopiedTraceId(traceId)
+    setTimeout(() => setCopiedTraceId(null), 2000)
+    toastSuccess("Trace ID скопирован")
   }
 
   const filteredEvents = data?.filter((ev) => {
     if (!search.trim()) return true
     const q = search.toLowerCase()
+    const tid = ev.trace_id || ev.ray_id || ""
     return (
       ev.ip.toLowerCase().includes(q) ||
-      (ev.ray_id && ev.ray_id.toLowerCase().includes(q)) ||
+      tid.toLowerCase().includes(q) ||
       ev.action.toLowerCase().includes(q) ||
       ev.reason.toLowerCase().includes(q) ||
       ev.scope.toLowerCase().includes(q) ||
@@ -144,7 +147,7 @@ export function SystemSecurityEvents() {
         <div className="relative flex-1 w-full">
           <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
           <Input
-            placeholder="Поиск по причине, действию, пользователю или Ray ID..."
+            placeholder="Поиск по причине, действию, пользователю или Trace ID..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8 h-9"
@@ -185,7 +188,7 @@ export function SystemSecurityEvents() {
               <TableHead>Область / Категория</TableHead>
               <TableHead>Причина и детали</TableHead>
               <TableHead>Пользователь</TableHead>
-              <TableHead>Ray ID</TableHead>
+              <TableHead>Trace ID</TableHead>
               <TableHead className="w-24 text-right" />
             </TableRow>
           </TableHeader>
@@ -209,6 +212,7 @@ export function SystemSecurityEvents() {
                 label: ev.action,
                 variant: "secondary" as const,
               }
+              const tid = ev.trace_id || ev.ray_id
 
               return (
                 <TableRow key={ev.id}>
@@ -241,18 +245,18 @@ export function SystemSecurityEvents() {
                     )}
                   </TableCell>
                   <TableCell>
-                    {ev.ray_id ? (
+                    {tid ? (
                       <button
                         type="button"
-                        onClick={() => copyRayId(ev.ray_id!)}
-                        className="inline-flex items-center gap-1 font-mono text-[11px] bg-muted hover:bg-muted/80 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
-                        title="Нажмите для копирования Ray ID"
+                        onClick={() => copyTraceId(tid)}
+                        className="inline-flex items-center gap-1 font-mono text-[11px] bg-muted hover:bg-muted/80 px-1.5 py-0.5 rounded cursor-pointer transition-colors max-w-[120px] truncate"
+                        title={`Нажмите для копирования Trace ID: ${tid}`}
                       >
-                        {ev.ray_id}
-                        {copiedRayId === ev.ray_id ? (
-                          <Check className="size-3 text-emerald-500" />
+                        <span className="truncate">{tid.slice(0, 8)}…{tid.slice(-6)}</span>
+                        {copiedTraceId === tid ? (
+                          <Check className="size-3 text-emerald-500 shrink-0" />
                         ) : (
-                          <Copy className="size-3 text-muted-foreground" />
+                          <Copy className="size-3 text-muted-foreground shrink-0" />
                         )}
                       </button>
                     ) : (

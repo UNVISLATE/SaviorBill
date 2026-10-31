@@ -1,15 +1,19 @@
-import { useState } from "react"
+import React, { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import {
   Bug,
   Check,
   ChevronDown,
   ChevronRight,
+  Clock,
   Copy,
+  ExternalLink,
   FileCode2,
+  Globe,
   RefreshCw,
   Search,
   Server,
+  User,
 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
@@ -32,17 +36,31 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/shadsnui/table"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/shadsnui/dialog"
 
 interface ErrorLogEntry {
   id: string
-  ray_id: string
+  trace_id: string
+  ray_id?: string
   timestamp: string
   client_ip: string
   user_id: number | null
   user_login: string | null
+  user_role?: string | null
   method: string
   path: string
+  query_params?: string
   status_code: number
+  duration_ms?: number
+  user_agent?: string
+  referer?: string
+  exception_type?: string
   error_detail: string
   instance_id: string
 }
@@ -64,8 +82,9 @@ export function SystemErrorLogs() {
   const [statusCodeFilter, setStatusCodeFilter] = useState<string>("all")
   const [search, setSearch] = useState("")
   const [limit, setLimit] = useState("100")
-  const [copiedRayId, setCopiedRayId] = useState<string | null>(null)
+  const [copiedTraceId, setCopiedTraceId] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [modalEntry, setModalEntry] = useState<ErrorLogEntry | null>(null)
 
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ["system-error-logs", statusCodeFilter, limit, search],
@@ -83,11 +102,11 @@ export function SystemErrorLogs() {
     refetchInterval: 10000,
   })
 
-  const copyRayId = (rayId: string) => {
-    navigator.clipboard.writeText(rayId)
-    setCopiedRayId(rayId)
-    setTimeout(() => setCopiedRayId(null), 2000)
-    toastSuccess("Ray ID скопирован")
+  const copyTraceId = (traceId: string) => {
+    navigator.clipboard.writeText(traceId)
+    setCopiedTraceId(traceId)
+    setTimeout(() => setCopiedTraceId(null), 2000)
+    toastSuccess("Trace ID скопирован")
   }
 
   const toggleExpand = (id: string) => {
@@ -103,8 +122,8 @@ export function SystemErrorLogs() {
             Журнал ошибок API (4xx / 5xx)
           </h2>
           <p className="text-sm text-muted-foreground">
-            Фиксация сбоев и отклоненных запросов с привязкой к конкретному инстансу, IP-клиенту и
-            сквозному идентификатору трассировки (Ray ID).
+            Фиксация сбоев и отклоненных запросов с привязкой к инстансу, задержке, IP-клиенту и
+            сквозному Trace ID.
           </p>
         </div>
 
@@ -126,7 +145,7 @@ export function SystemErrorLogs() {
         <div className="relative flex-1 w-full">
           <Search className="absolute left-2.5 top-2.5 size-4 text-muted-foreground" />
           <Input
-            placeholder="Поиск по пути, IP, Ray ID, пользователю или деталям..."
+            placeholder="Поиск по пути, IP, Trace ID, пользователю или деталям..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8 h-9"
@@ -165,7 +184,7 @@ export function SystemErrorLogs() {
       </div>
 
       {/* Таблица журнала ошибок */}
-      <div className="rounded-lg border bg-card">
+      <div className="rounded-lg border bg-card overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -175,8 +194,8 @@ export function SystemErrorLogs() {
               <TableHead>Метод и путь</TableHead>
               <TableHead>Клиент (IP)</TableHead>
               <TableHead>Пользователь</TableHead>
-              <TableHead>Инстанс</TableHead>
-              <TableHead className="text-right">Ray ID</TableHead>
+              <TableHead>Задержка</TableHead>
+              <TableHead className="text-right">Trace ID</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -196,124 +215,301 @@ export function SystemErrorLogs() {
             )}
             {data?.map((err) => {
               const isExpanded = expandedId === err.id
+              const tid = err.trace_id || err.ray_id || ""
 
               return (
-                <TableRow
-                  key={err.id}
-                  className="group cursor-pointer hover:bg-muted/50 transition-colors"
-                  onClick={() => toggleExpand(err.id)}
-                >
-                  <TableCell className="p-2 text-center text-muted-foreground">
-                    {isExpanded ? (
-                      <ChevronDown className="size-4 inline" />
-                    ) : (
-                      <ChevronRight className="size-4 inline text-muted-foreground/60 group-hover:text-foreground" />
-                    )}
-                  </TableCell>
-                  <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
-                    {new Date(err.timestamp).toLocaleString("ru-RU")}
-                  </TableCell>
-                  <TableCell>
-                    {getStatusBadge(err.status_code)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1.5">
-                      <span className="font-mono text-xs font-semibold px-1 py-0.5 rounded bg-muted">
-                        {err.method}
-                      </span>
-                      <code className="text-xs font-mono font-medium">{err.path}</code>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <span className="font-mono text-xs">{err.client_ip}</span>
-                  </TableCell>
-                  <TableCell>
-                    {err.user_login ? (
-                      <span className="text-xs font-medium">
-                        {err.user_login} (id: {err.user_id})
-                      </span>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground font-mono">
-                      <Server className="size-3" />
-                      <span>{err.instance_id}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      type="button"
-                      onClick={() => copyRayId(err.ray_id)}
-                      className="inline-flex items-center gap-1 font-mono text-[11px] bg-muted hover:bg-muted/80 px-1.5 py-0.5 rounded cursor-pointer transition-colors"
-                      title="Нажмите для копирования Ray ID"
-                    >
-                      {err.ray_id}
-                      {copiedRayId === err.ray_id ? (
-                        <Check className="size-3 text-emerald-500" />
+                <React.Fragment key={err.id}>
+                  {/* Основная строка ошибки */}
+                  <TableRow
+                    className={`cursor-pointer transition-colors ${
+                      isExpanded ? "bg-muted/40 font-medium" : "hover:bg-muted/50"
+                    }`}
+                    onClick={() => toggleExpand(err.id)}
+                  >
+                    <TableCell className="p-2 text-center text-muted-foreground">
+                      {isExpanded ? (
+                        <ChevronDown className="size-4 inline text-primary transition-transform" />
                       ) : (
-                        <Copy className="size-3 text-muted-foreground" />
+                        <ChevronRight className="size-4 inline text-muted-foreground/60 transition-transform" />
                       )}
-                    </button>
-                  </TableCell>
-                </TableRow>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap font-mono">
+                      {new Date(err.timestamp).toLocaleString("ru-RU")}
+                    </TableCell>
+                    <TableCell>{getStatusBadge(err.status_code)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-mono text-xs font-semibold px-1 py-0.5 rounded bg-muted">
+                          {err.method}
+                        </span>
+                        <code className="text-xs font-mono font-medium text-foreground">{err.path}</code>
+                        {err.query_params && (
+                          <span className="text-[11px] text-muted-foreground font-mono truncate max-w-[150px]">
+                            ?{err.query_params}
+                          </span>
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <span className="font-mono text-xs">{err.client_ip}</span>
+                    </TableCell>
+                    <TableCell>
+                      {err.user_login ? (
+                        <span className="text-xs font-medium">
+                          {err.user_login}
+                          {err.user_role && (
+                            <Badge variant="outline" className="ml-1 text-[10px] py-0 px-1">
+                              {err.user_role}
+                            </Badge>
+                          )}
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {err.duration_ms !== undefined && err.duration_ms > 0 ? (
+                        <span
+                          className={`text-xs font-mono ${
+                            err.duration_ms > 1000
+                              ? "text-red-500 font-semibold"
+                              : err.duration_ms > 300
+                              ? "text-amber-500"
+                              : "text-muted-foreground"
+                          }`}
+                        >
+                          {err.duration_ms} мс
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                      {tid ? (
+                        <button
+                          type="button"
+                          onClick={() => copyTraceId(tid)}
+                          className="inline-flex items-center gap-1 font-mono text-[11px] bg-muted hover:bg-muted/80 px-1.5 py-0.5 rounded cursor-pointer transition-colors max-w-[130px] truncate"
+                          title={`Нажмите для копирования Trace ID: ${tid}`}
+                        >
+                          <span className="truncate">{tid.slice(0, 8)}…{tid.slice(-6)}</span>
+                          {copiedTraceId === tid ? (
+                            <Check className="size-3 text-emerald-500 shrink-0" />
+                          ) : (
+                            <Copy className="size-3 text-muted-foreground shrink-0" />
+                          )}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+
+                  {/* Вложенная строка деталей, раскрывающаяся ПРЯМО ПОД СТРОКОЙ */}
+                  {isExpanded && (
+                    <TableRow className="bg-muted/20 hover:bg-muted/20 border-b border-border">
+                      <TableCell colSpan={8} className="p-0">
+                        <div className="p-4 space-y-3 bg-muted/10 border-l-4 border-l-primary">
+                          <div className="flex items-center justify-between flex-wrap gap-2">
+                            <div className="flex items-center gap-2">
+                              <FileCode2 className="size-4 text-primary" />
+                              <span className="font-semibold text-sm">
+                                Детали инцидента: <code className="font-mono text-xs">{tid}</code>
+                              </span>
+                              {err.exception_type && (
+                                <Badge variant="destructive" className="font-mono text-xs">
+                                  {err.exception_type}
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => setModalEntry(err)}
+                              >
+                                <ExternalLink className="size-3 mr-1" />
+                                Открыть в окне
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 text-xs"
+                                onClick={() => setExpandedId(null)}
+                              >
+                                Свернуть
+                              </Button>
+                            </div>
+                          </div>
+
+                          {/* Сетка расширенных параметров запроса */}
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 p-3 rounded-lg bg-card text-xs border">
+                            <div className="space-y-0.5">
+                              <div className="text-muted-foreground flex items-center gap-1">
+                                <Server className="size-3 text-blue-500" />
+                                Инстанс / Контейнер:
+                              </div>
+                              <div className="font-mono font-medium">{err.instance_id}</div>
+                            </div>
+
+                            <div className="space-y-0.5">
+                              <div className="text-muted-foreground flex items-center gap-1">
+                                <Clock className="size-3 text-emerald-500" />
+                                Длительность (Latency):
+                              </div>
+                              <div className="font-mono font-medium">
+                                {err.duration_ms ? `${err.duration_ms} мс` : "Мгновенно (<1мс)"}
+                              </div>
+                            </div>
+
+                            <div className="space-y-0.5">
+                              <div className="text-muted-foreground flex items-center gap-1">
+                                <Globe className="size-3 text-purple-500" />
+                                IP клиента:
+                              </div>
+                              <div className="font-mono font-medium">{err.client_ip}</div>
+                            </div>
+
+                            <div className="space-y-0.5">
+                              <div className="text-muted-foreground flex items-center gap-1">
+                                <User className="size-3 text-amber-500" />
+                                Пользователь:
+                              </div>
+                              <div className="font-medium">
+                                {err.user_login ? `${err.user_login} (id: ${err.user_id})` : "Анонимный клиент"}
+                              </div>
+                            </div>
+
+                            {err.query_params && (
+                              <div className="col-span-2 space-y-0.5">
+                                <div className="text-muted-foreground">Query параметры:</div>
+                                <code className="font-mono text-[11px] block bg-muted p-1 rounded break-all">
+                                  {err.query_params}
+                                </code>
+                              </div>
+                            )}
+
+                            {err.referer && (
+                              <div className="col-span-2 space-y-0.5">
+                                <div className="text-muted-foreground">Referer (Источник):</div>
+                                <div className="font-mono text-[11px] truncate">{err.referer}</div>
+                              </div>
+                            )}
+
+                            {err.user_agent && (
+                              <div className="col-span-full space-y-0.5">
+                                <div className="text-muted-foreground">User-Agent:</div>
+                                <div className="font-mono text-[11px] text-muted-foreground break-all">
+                                  {err.user_agent}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Тело ошибки / Сообщение */}
+                          <div className="space-y-1">
+                            <div className="text-xs text-muted-foreground font-medium">
+                              Тело ответа / сообщение ошибки:
+                            </div>
+                            <pre className="p-3 rounded-lg bg-zinc-950 text-zinc-100 dark:bg-zinc-900 font-mono text-xs overflow-x-auto whitespace-pre-wrap max-h-56 overflow-y-auto">
+                              {err.error_detail}
+                            </pre>
+                          </div>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </React.Fragment>
               )
             })}
           </TableBody>
         </Table>
       </div>
 
-      {/* Детальный просмотр развернутой ошибки */}
-      {expandedId && (
-        (() => {
-          const selected = data?.find((e) => e.id === expandedId)
-          if (!selected) return null
+      {/* Модальное диалоговое окно для детального разбора ошибки */}
+      <Dialog open={!!modalEntry} onOpenChange={(open) => !open && setModalEntry(null)}>
+        {modalEntry && (
+          <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <div className="flex items-center gap-2">
+                <Bug className="size-5 text-destructive" />
+                <DialogTitle>Ошибка API: HTTP {modalEntry.status_code}</DialogTitle>
+                {modalEntry.exception_type && (
+                  <Badge variant="destructive">{modalEntry.exception_type}</Badge>
+                )}
+              </div>
+              <DialogDescription className="font-mono text-xs">
+                Trace ID: {modalEntry.trace_id || modalEntry.ray_id}
+              </DialogDescription>
+            </DialogHeader>
 
-          return (
-            <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <FileCode2 className="size-4 text-primary" />
-                  <span className="font-semibold text-sm">Детали ошибки: {selected.ray_id}</span>
-                  <Badge variant="outline" className="font-mono text-xs">
-                    HTTP {selected.status_code}
-                  </Badge>
+            <div className="space-y-4 py-2 text-xs">
+              {/* Сводка параметров */}
+              <div className="grid grid-cols-2 gap-2 p-3 rounded-lg border bg-muted/40">
+                <div>
+                  <span className="text-muted-foreground">Метод и путь: </span>
+                  <span className="font-mono font-semibold">{modalEntry.method} {modalEntry.path}</span>
                 </div>
-                <Button variant="ghost" size="sm" onClick={() => setExpandedId(null)}>
-                  Закрыть
-                </Button>
+                <div>
+                  <span className="text-muted-foreground">Время: </span>
+                  <span className="font-mono">{new Date(modalEntry.timestamp).toLocaleString("ru-RU")}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Инстанс: </span>
+                  <span className="font-mono">{modalEntry.instance_id}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Задержка: </span>
+                  <span className="font-mono">{modalEntry.duration_ms ?? 0} мс</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">IP-клиент: </span>
+                  <span className="font-mono">{modalEntry.client_ip}</span>
+                </div>
+                <div>
+                  <span className="text-muted-foreground">Пользователь: </span>
+                  <span>{modalEntry.user_login ? `${modalEntry.user_login} (${modalEntry.user_role || "user"})` : "Не авторизован"}</span>
+                </div>
+                {modalEntry.query_params && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground">Query: </span>
+                    <code className="font-mono break-all">{modalEntry.query_params}</code>
+                  </div>
+                )}
+                {modalEntry.user_agent && (
+                  <div className="col-span-2">
+                    <span className="text-muted-foreground">User-Agent: </span>
+                    <span className="font-mono text-[11px] break-all">{modalEntry.user_agent}</span>
+                  </div>
+                )}
               </div>
 
+              {/* Тело ошибки */}
               <div className="space-y-1.5">
-                <div className="text-xs text-muted-foreground">Тело / сообщение ошибки:</div>
-                <pre className="p-3 rounded bg-zinc-950 text-zinc-100 dark:bg-zinc-900 font-mono text-xs overflow-x-auto whitespace-pre-wrap max-h-60 overflow-y-auto">
-                  {selected.error_detail}
+                <div className="flex items-center justify-between text-muted-foreground font-medium">
+                  <span>Текст ошибки / стек вызовов:</span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 text-[11px]"
+                    onClick={() => {
+                      navigator.clipboard.writeText(modalEntry.error_detail)
+                      toastSuccess("Тело ошибки скопировано")
+                    }}
+                  >
+                    <Copy className="size-3 mr-1" />
+                    Скопировать
+                  </Button>
+                </div>
+                <pre className="p-3 rounded-lg bg-zinc-950 text-zinc-100 dark:bg-zinc-900 font-mono text-xs overflow-x-auto whitespace-pre-wrap max-h-72 overflow-y-auto">
+                  {modalEntry.error_detail}
                 </pre>
               </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-1 text-muted-foreground border-t">
-                <div>
-                  <span className="font-medium text-foreground">Инстанс: </span>
-                  {selected.instance_id}
-                </div>
-                <div>
-                  <span className="font-medium text-foreground">Клиент IP: </span>
-                  {selected.client_ip}
-                </div>
-                <div>
-                  <span className="font-medium text-foreground">Метод: </span>
-                  {selected.method}
-                </div>
-                <div>
-                  <span className="font-medium text-foreground">Путь: </span>
-                  {selected.path}
-                </div>
-              </div>
             </div>
-          )
-        })()
-      )}
+          </DialogContent>
+        )}
+      </Dialog>
     </div>
   )
 }

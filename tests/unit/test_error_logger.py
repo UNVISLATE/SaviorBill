@@ -19,10 +19,15 @@ async def test_log_request_error():
         method="GET",
         client_ip="1.2.3.4",
         error_detail="Not Found",
-        ray_id="sb_ray_abc123",
+        trace_id="0123456789abcdef0123456789abcdef",
+        query_params="foo=bar",
+        duration_ms=15.4,
+        user_agent="Mozilla/5.0",
     )
-    assert err["ray_id"] == "sb_ray_abc123"
+    assert err["trace_id"] == "0123456789abcdef0123456789abcdef"
     assert err["status_code"] == 404
+    assert err["duration_ms"] == 15.4
+    assert err["query_params"] == "foo=bar"
     assert vk.lpush.called
 
 
@@ -32,7 +37,7 @@ async def test_list_request_errors_filter():
     items = [
         json.dumps({
             "id": "1",
-            "ray_id": "ray1",
+            "trace_id": "trace1",
             "status_code": 404,
             "path": "/api/missing",
             "client_ip": "1.1.1.1",
@@ -40,7 +45,7 @@ async def test_list_request_errors_filter():
         }),
         json.dumps({
             "id": "2",
-            "ray_id": "ray2",
+            "trace_id": "trace2",
             "status_code": 500,
             "path": "/api/boom",
             "client_ip": "2.2.2.2",

@@ -12,7 +12,7 @@ import valkey.asyncio as valkey
 from models.system_settings import SystemSettingsMngr
 from utils.datetime_utils import utc_now
 from utils.degrade import VALKEY_ERRORS, note_degraded
-from utils.request_context import get_current_ray_id
+from utils.request_context import get_current_trace_id
 
 log = logging.getLogger("saviorbill.security")
 
@@ -34,16 +34,16 @@ async def log_security_event(
     details: str | None = None,
     user_id: int | None = None,
     user_login: str | None = None,
-    ray_id: str | None = None,
+    trace_id: str | None = None,
 ) -> dict[str, Any]:
     """Записать событие безопасности в кольцевой буфер Valkey."""
     event_id = f"sec_ev_{uuid.uuid4().hex[:10]}"
-    effective_ray_id = ray_id or get_current_ray_id()
+    effective_trace_id = trace_id or get_current_trace_id()
     now_iso = utc_now().isoformat()
 
     event = {
         "id": event_id,
-        "ray_id": effective_ray_id,
+        "trace_id": effective_trace_id,
         "timestamp": now_iso,
         "ip": ip,
         "scope": scope,
@@ -60,12 +60,12 @@ async def log_security_event(
         await vk.lpush(KEY_EVENTS_LIST, raw)
         await vk.ltrim(KEY_EVENTS_LIST, 0, MAX_EVENTS_STORED - 1)
         log.warning(
-            "security event [%s] action=%s ip=%s reason=%s ray_id=%s",
+            "security event [%s] action=%s ip=%s reason=%s trace_id=%s",
             event_id,
             action,
             ip,
             reason,
-            effective_ray_id,
+            effective_trace_id,
         )
     except VALKEY_ERRORS as exc:
         note_degraded("security", exc)
@@ -99,7 +99,7 @@ async def ban_ip(
     ip: str,
     duration_sec: int = 900,
     reason: str = "Manual admin block",
-    ray_id: str | None = None,
+    trace_id: str | None = None,
 ) -> None:
     """Заблокировать IP на duration_sec секунд."""
     try:
@@ -117,7 +117,7 @@ async def ban_ip(
             action="ip_banned",
             reason=reason,
             details=f"IP заблокирован на {duration_sec} сек.",
-            ray_id=ray_id,
+            trace_id=trace_id,
         )
     except VALKEY_ERRORS as exc:
         note_degraded("security", exc)
@@ -126,7 +126,7 @@ async def ban_ip(
 async def unban_ip(
     vk: valkey.Valkey,
     ip: str,
-    ray_id: str | None = None,
+    trace_id: str | None = None,
 ) -> bool:
     """Разблокировать IP."""
     try:
@@ -139,7 +139,7 @@ async def unban_ip(
                 ip=ip,
                 action="ip_unbanned",
                 reason="Unbanned by admin",
-                ray_id=ray_id,
+                trace_id=trace_id,
             )
             return True
         return False
@@ -152,14 +152,13 @@ async def check_and_apply_autoban(
     vk: valkey.Valkey,
     ip: str,
     settings: SystemSettingsMngr,
-    ray_id: str | None = None,
+    trace_id: str | None = None,
 ) -> bool:
     """Зафиксировать нарушение и при превышении порога активировать Auto-Ban.
 
     Возвращает True, если в результате проверки IP был забанен.
     """
     try:
-        # Читаем настройки
         enabled_raw = await settings.get("security.autoban.enabled", "1")
         enabled = enabled_raw.strip().lower() in ("1", "true", "yes", "on")
         if not enabled:
@@ -173,7 +172,6 @@ async def check_and_apply_autoban(
         window_sec = int(window_raw)
         duration_sec = int(duration_raw)
 
-        # Счётчик нарушений для IP
         v_key = f"{PREFIX_VIOLATIONS}{ip}"
         count = await vk.incr(v_key)
         if count == 1:
@@ -181,7 +179,7 @@ async def check_and_apply_autoban(
 
         if count >= threshold:
             reason = f"Превышен порог нарушений: {count} за {window_sec}с (Auto-Ban)"
-            await ban_ip(vk, ip, duration_sec=duration_sec, reason=reason, ray_id=ray_id)
+            await ban_ip(vk, ip, duration_sec=duration_sec, reason=reason, trace_id=trace_id)
             return True
 
         return False
@@ -200,6 +198,8 @@ async def list_security_events(
         for item in raw_items:
             try:
                 ev = json.loads(item)
+                if "trace_id" not in ev and "ray_id" in ev:
+                    ev["trace_id"] = ev["ray_id"]
                 if ip and ev.get("ip") != ip:
                     continue
                 events.append(ev)
@@ -239,3 +239,14 @@ async def list_banned_ips(vk: valkey.Valkey) -> list[dict[str, Any]]:
     except VALKEY_ERRORS as exc:
         note_degraded("security", exc)
     return result
+
+
+__all__ = [
+    "log_security_event",
+    "is_ip_banned",
+    "ban_ip",
+    "unban_ip",
+    "check_and_apply_autoban",
+    "list_security_events",
+    "list_banned_ips",
+]

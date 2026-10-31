@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from dependencies.rbac import require_any_perm, require_perm
 from dependencies.valkey import get_valkey_client
 from services.security_monitor import ban_ip, list_banned_ips, list_security_events, unban_ip
-from utils.request_context import get_current_ray_id
+from utils.request_context import get_current_trace_id
 
 router = APIRouter()
 
@@ -59,7 +59,7 @@ async def create_banned_ip(
         ip=body.ip,
         duration_sec=body.duration_sec,
         reason=body.reason,
-        ray_id=get_current_ray_id(),
+        trace_id=get_current_trace_id(),
     )
     return {"ok": True, "ip": body.ip, "duration_sec": body.duration_sec, "reason": body.reason}
 
@@ -73,7 +73,7 @@ async def remove_banned_ip(
     ip: str,
     vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> dict[str, Any]:
-    unbanned = await unban_ip(vk, ip=ip, ray_id=get_current_ray_id())
+    unbanned = await unban_ip(vk, ip=ip, trace_id=get_current_trace_id())
     return {"ok": unbanned, "ip": ip}
 
 
