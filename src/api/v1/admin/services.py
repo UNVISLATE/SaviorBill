@@ -13,7 +13,11 @@ from dependencies.catalog import (
 from dependencies.rbac import require_perm
 from dependencies.valkey import get_valkey_client
 import valkey.asyncio as valkey
-from services.catalog_cache import invalidate_catalog_cache
+from services.catalog_cache import (
+    invalidate_catalog_cache,
+    invalidate_catalog_indexes,
+    invalidate_service_entity,
+)
 from models.service import ServiceModel
 from schemas.media import Attachment, AttachmentIn, AttachmentPatch
 from schemas.page import Page
@@ -97,7 +101,7 @@ async def create_service(
 ) -> ServiceAdmin:
     svc = await mngr.create(body.model_dump())
     await mngr.s.commit()
-    await invalidate_catalog_cache(vk)
+    await invalidate_catalog_indexes(vk)
     # commit истощает (expire) все атрибуты, включая attachments — их читает
     # ServiceAdmin.from_model синхронно; без явного refresh async-сессия не
     # может догрузить связь на лету (упало бы MissingGreenlet).
@@ -120,7 +124,8 @@ async def update_service(
 ) -> ServiceAdmin:
     svc, warnings = await mngr.update(service_id, body.model_dump(exclude_unset=True))
     await mngr.s.commit()
-    await invalidate_catalog_cache(vk)
+    await invalidate_service_entity(vk, service_id)
+    await invalidate_catalog_indexes(vk)
     await mngr.s.refresh(svc, attribute_names=["attachments"])
     return ServiceAdmin.from_model(svc, warnings=warnings)
 
@@ -160,7 +165,7 @@ async def add_attachment(
         service_id, body.media_id, tag=body.tag, position=body.position
     )
     await mngr.s.commit()
-    await invalidate_catalog_cache(vk)
+    await invalidate_service_entity(vk, service_id)
     await mngr.s.refresh(att, attribute_names=["media"])
     return Attachment.from_model(att)
 
@@ -181,7 +186,7 @@ async def update_attachment(
 ) -> Attachment:
     att = await mngr.update(att_id, tag=body.tag, position=body.position)
     await mngr.s.commit()
-    await invalidate_catalog_cache(vk)
+    await invalidate_service_entity(vk, service_id)
     await mngr.s.refresh(att, attribute_names=["media"])
     return Attachment.from_model(att)
 
@@ -200,7 +205,7 @@ async def remove_attachment(
 ) -> None:
     await mngr.remove(att_id)
     await mngr.s.commit()
-    await invalidate_catalog_cache(vk)
+    await invalidate_service_entity(vk, service_id)
 
 
 __all__ = ["router"]

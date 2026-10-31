@@ -13,6 +13,8 @@ from utils.degrade import VALKEY_ERRORS, note_degraded
 log = logging.getLogger("saviorbill.cache")
 
 KEY_PREFIX_TREE = "cache:catalog:tree"
+KEY_PREFIX_IDS = "cache:catalog:ids"
+KEY_PREFIX_SERVICE = "cache:catalog:service"
 KEY_PREFIX_SERVICES = "cache:catalog:services"
 KEY_STATS_HITS = "cache:stats:hits"
 KEY_STATS_MISSES = "cache:stats:misses"
@@ -58,17 +60,20 @@ async def set_cached_catalogs(
         note_degraded("cache", exc)
 
 
-def _services_key(catalog_id: int | None, limit: int, offset: int) -> str:
+# ---------------------------------------------------------
+# Двухуровневый кэш: Уровень 1 (Индекс ID каталога)
+# ---------------------------------------------------------
+def _catalog_ids_key(catalog_id: int | None) -> str:
     cid = catalog_id if catalog_id is not None else "all"
-    return f"{KEY_PREFIX_SERVICES}:{cid}:{limit}:{offset}"
+    return f"{KEY_PREFIX_IDS}:{cid}"
 
 
-async def get_cached_services(
-    vk: valkey.Valkey, catalog_id: int | None, limit: int, offset: int
-) -> dict[str, Any] | None:
-    """Получить кэшированную страницу услуг."""
+async def get_cached_catalog_ids(
+    vk: valkey.Valkey, catalog_id: int | None
+) -> list[int] | None:
+    """Получить упорядоченный список ID активных услуг каталога (Уровень 1)."""
     try:
-        key = _services_key(catalog_id, limit, offset)
+        key = _catalog_ids_key(catalog_id)
         raw = await vk.get(key)
         if raw is not None:
             await vk.incr(KEY_STATS_HITS)
@@ -80,28 +85,126 @@ async def get_cached_services(
         return None
 
 
-async def set_cached_services(
+async def set_cached_catalog_ids(
     vk: valkey.Valkey,
     catalog_id: int | None,
-    limit: int,
-    offset: int,
-    data: dict[str, Any],
+    ids: list[int],
     ttl_sec: int = 180,
 ) -> None:
-    """Сохранить страницу услуг в кэш."""
+    """Сохранить упорядоченный список ID активных услуг каталога (Уровень 1)."""
     try:
-        key = _services_key(catalog_id, limit, offset)
-        raw = json.dumps(jsonable_encoder(data))
-        await vk.set(key, raw, ex=ttl_sec)
+        key = _catalog_ids_key(catalog_id)
+        await vk.set(key, json.dumps(ids), ex=ttl_sec)
     except VALKEY_ERRORS as exc:
         note_degraded("cache", exc)
 
 
-async def invalidate_catalog_cache(vk: valkey.Valkey) -> int:
-    """Инвалидировать все ключи кэша каталога (дерево и выборки услуг).
+# ---------------------------------------------------------
+# Двухуровневый кэш: Уровень 2 (Сущности услуг / карточки)
+# ---------------------------------------------------------
+def _service_entity_key(service_id: int) -> str:
+    return f"{KEY_PREFIX_SERVICE}:{service_id}"
 
-    Вызывается при создании/редактировании/удалении каталогов и услуг.
+
+async def get_cached_service_entities(
+    vk: valkey.Valkey, service_ids: list[int]
+) -> tuple[dict[int, dict[str, Any]], list[int]]:
+    """Пакетное чтение сущностей услуг через MGET (Уровень 2).
+
+    Возвращает:
+      - found: словарь {service_id: dict_data}
+      - missing: список ID, которых нет в кэше Valkey (промах)
     """
+    if not service_ids:
+        return {}, []
+
+    found: dict[int, dict[str, Any]] = {}
+    missing: list[int] = []
+
+    try:
+        keys = [_service_entity_key(sid) for sid in service_ids]
+        raw_items = await vk.mget(keys)
+
+        hits_count = 0
+        misses_count = 0
+
+        for sid, raw in zip(service_ids, raw_items):
+            if raw is not None:
+                try:
+                    found[sid] = json.loads(raw)
+                    hits_count += 1
+                except (ValueError, TypeError):
+                    missing.append(sid)
+                    misses_count += 1
+            else:
+                missing.append(sid)
+                misses_count += 1
+
+        if hits_count > 0:
+            await vk.incrby(KEY_STATS_HITS, hits_count)
+        if misses_count > 0:
+            await vk.incrby(KEY_STATS_MISSES, misses_count)
+
+        return found, missing
+    except VALKEY_ERRORS as exc:
+        note_degraded("cache", exc)
+        return {}, list(service_ids)
+
+
+async def set_cached_service_entities(
+    vk: valkey.Valkey,
+    entities: dict[int, dict[str, Any]],
+    ttl_sec: int = 180,
+) -> None:
+    """Пакетное сохранение сущностей услуг в кэш Valkey (Уровень 2)."""
+    if not entities:
+        return
+
+    try:
+        pipe = vk.pipeline(transaction=False)
+        for sid, data in entities.items():
+            key = _service_entity_key(sid)
+            raw = json.dumps(jsonable_encoder(data))
+            pipe.set(key, raw, ex=ttl_sec)
+        await pipe.execute()
+    except VALKEY_ERRORS as exc:
+        note_degraded("cache", exc)
+
+
+# ---------------------------------------------------------
+# Инвалидация кэша: точечная и глобальная
+# ---------------------------------------------------------
+async def invalidate_service_entity(vk: valkey.Valkey, service_id: int) -> int:
+    """Точечно удалить сущность услуги из кэша (при смене цены, остатка ключей, фото)."""
+    try:
+        key = _service_entity_key(service_id)
+        deleted = await vk.delete(key)
+        await vk.incr(KEY_STATS_INVALIDATIONS)
+        log.info("service entity cache invalidated: service_id=%d", service_id)
+        return deleted
+    except VALKEY_ERRORS as exc:
+        note_degraded("cache", exc)
+        return 0
+
+
+async def invalidate_catalog_indexes(vk: valkey.Valkey) -> int:
+    """Сбросить списки ID каталога (при создании/удалении услуг или смене категорий)."""
+    try:
+        keys_to_del: list[str] = []
+        async for k in vk.scan_iter(match=f"{KEY_PREFIX_IDS}:*", count=100):
+            keys_to_del.append(k if isinstance(k, str) else k.decode())
+        deleted = 0
+        if keys_to_del:
+            deleted = await vk.delete(*keys_to_del)
+        await vk.incr(KEY_STATS_INVALIDATIONS)
+        return deleted
+    except VALKEY_ERRORS as exc:
+        note_degraded("cache", exc)
+        return 0
+
+
+async def invalidate_catalog_cache(vk: valkey.Valkey) -> int:
+    """Полная инвалидация кэша каталога (дерево, индексы ID и все сущности услуг)."""
     deleted_count = 0
     try:
         keys_to_del: list[str] = []
@@ -110,7 +213,7 @@ async def invalidate_catalog_cache(vk: valkey.Valkey) -> int:
         if keys_to_del:
             deleted_count = await vk.delete(*keys_to_del)
         await vk.incr(KEY_STATS_INVALIDATIONS)
-        log.info("catalog cache invalidated: deleted %d keys", deleted_count)
+        log.info("catalog cache fully invalidated: deleted %d keys", deleted_count)
     except VALKEY_ERRORS as exc:
         note_degraded("cache", exc)
     return deleted_count

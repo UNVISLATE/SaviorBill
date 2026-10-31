@@ -21,7 +21,7 @@ from dependencies.catalog import (
 import valkey.asyncio as valkey
 from dependencies.rbac import require_perm
 from dependencies.valkey import get_valkey_client
-from services.catalog_cache import invalidate_catalog_cache
+from services.catalog_cache import invalidate_catalog_cache, invalidate_service_entity
 from schemas.page import Page
 from schemas.service_keys import (
     ServiceKeyOut,
@@ -133,7 +133,7 @@ async def import_keys(
     await _get_service_or_404(service_id, svc_mngr)
     created, skipped = await mngr.create_batch(service_id, body.values)
     await mngr.s.commit()
-    await invalidate_catalog_cache(vk)
+    await invalidate_service_entity(vk, service_id)
     return ServiceKeysImportOut(
         added=len(created),
         skipped=skipped,
@@ -160,7 +160,7 @@ async def delete_key(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "key not found")
     await mngr.delete(key_id)
     await mngr.s.commit()
-    await invalidate_catalog_cache(vk)
+    await invalidate_service_entity(vk, service_id)
 
 
 __all__ = ["router"]

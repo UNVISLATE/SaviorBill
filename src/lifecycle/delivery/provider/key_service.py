@@ -54,7 +54,8 @@ class KeyService(BaseIssuer):
                 )
             )
             if rem_count == 0:
-                await invalidate_catalog_cache(self.bus.vk)
+                from services.catalog_cache import invalidate_service_entity
+                await invalidate_service_entity(self.bus.vk, service.id)
 
 
 __all__ = ["KeyService"]

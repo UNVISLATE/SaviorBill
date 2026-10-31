@@ -14,7 +14,7 @@ from dependencies.catalog import (
 import valkey.asyncio as valkey
 from dependencies.rbac import require_perm
 from dependencies.valkey import get_valkey_client
-from services.catalog_cache import invalidate_catalog_cache
+from services.catalog_cache import invalidate_catalog_cache, invalidate_service_entity
 from models.service_catalogs import ServiceCatalogsModel
 from models.service import ServiceModel
 from models.service_keys import ServiceKeysModel
@@ -222,7 +222,7 @@ async def import_keys_globally(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
     created, skipped = await mngr.create_batch(body.service_id, body.values)
     await mngr.s.commit()
-    await invalidate_catalog_cache(vk)
+    await invalidate_service_entity(vk, body.service_id)
     from schemas.service_keys import ServiceKeyOut
     return ServiceKeysImportOut(
         added=len(created),
@@ -282,7 +282,7 @@ async def delete_key_globally(
     service_id = key.service_id
     await mngr.delete(key_id)
     await mngr.s.commit()
-    await invalidate_catalog_cache(vk)
+    await invalidate_service_entity(vk, service_id)
     service = await mngr.s.get(ServiceModel, service_id)
     if service is not None:
         await check_and_fire_key_stock_triggers(mngr.s, service, dispatcher)
