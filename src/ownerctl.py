@@ -153,7 +153,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
 async def _main(argv: list[str]) -> None:
     args = _parse_args(argv)
     cfg = AppConfig()
-    engine = create_db_engine(cfg.db_url)
+    engine = create_db_engine(
+        cfg.db_url,
+        pool_size=cfg.DB_POOL_SIZE,
+        max_overflow=cfg.DB_MAX_OVERFLOW,
+        pool_timeout=cfg.DB_POOL_TIMEOUT,
+        pool_recycle=cfg.DB_POOL_RECYCLE,
+    )
     try:
         sm = create_db_sessionmaker(engine)
         async with sm() as session:

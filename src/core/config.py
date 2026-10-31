@@ -66,6 +66,18 @@ class AppConfig(BaseSettings):
     DB_HOST: str = Field(default="localhost")
     DB_PORT: int = Field(default=5432)
     DB_NAME: str = Field(default="saviorbill")
+    DB_POOL_SIZE: int = Field(
+        default=20, ge=1, le=200, description="Размер постоянного пула соединений SQLAlchemy"
+    )
+    DB_MAX_OVERFLOW: int = Field(
+        default=30, ge=0, le=200, description="Запас дополнительных соединений при пиковой нагрузке"
+    )
+    DB_POOL_TIMEOUT: int = Field(
+        default=30, ge=1, le=120, description="Таймаут ожидания свободного соединения из пула (сек)"
+    )
+    DB_POOL_RECYCLE: int = Field(
+        default=1800, ge=-1, le=86400, description="Период обновления соединений для предотвращения обрывов (сек)"
+    )
 
     # Valkey / Redis
     VALKEY_HOST: str = Field(default="localhost")

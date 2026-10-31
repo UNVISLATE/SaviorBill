@@ -40,7 +40,13 @@ async def lifespan(app: FastAPI):
     _prepare_storage(config)
     app.state.settings = config
 
-    app.state.db_engine = create_db_engine(config.db_url)
+    app.state.db_engine = create_db_engine(
+        config.db_url,
+        pool_size=config.DB_POOL_SIZE,
+        max_overflow=config.DB_MAX_OVERFLOW,
+        pool_timeout=config.DB_POOL_TIMEOUT,
+        pool_recycle=config.DB_POOL_RECYCLE,
+    )
     app.state.db_sessionmaker = create_db_sessionmaker(app.state.db_engine)
     app.state.valkey = create_valkey_client(config.valkey_url)
     app.state.task_log = TaskLog(
