@@ -28,24 +28,49 @@ interface SystemTabDef {
   to: string
   icon: React.ReactNode
   element: React.ReactNode
+  group?: string
+  hint?: string
   anyPerm?: string[]
 }
 
 const SYSTEM_TABS: SystemTabDef[] = [
+  // Группа 1: Обзор
   {
     path: "overview",
     title: "Обзор",
     to: "/system/overview",
     icon: <Activity className="size-4" />,
     element: <SystemOverview />,
+    group: "Обзор",
     anyPerm: ["system.stats.read", "system.stats", "system"],
   },
+  {
+    path: "instances",
+    title: "Инстансы",
+    to: "/system/instances",
+    icon: <Server className="size-4" />,
+    element: <SystemInstances />,
+    group: "Обзор",
+    anyPerm: ["system.stats.read", "system.stats", "system"],
+  },
+  {
+    path: "cache",
+    title: "Кэш",
+    to: "/system/cache",
+    icon: <Database className="size-4" />,
+    element: <SystemCache />,
+    group: "Обзор",
+    anyPerm: ["system.cache.read", "system.cache.manage", "system.cache", "system"],
+  },
+
+  // Группа 2: Безопасность
   {
     path: "security-events",
     title: "Безопасность",
     to: "/system/security-events",
     icon: <ShieldAlert className="size-4" />,
     element: <SystemSecurityEvents />,
+    group: "Безопасность",
     anyPerm: ["system.security.read", "system.security.manage", "system.security", "system"],
   },
   {
@@ -54,46 +79,37 @@ const SYSTEM_TABS: SystemTabDef[] = [
     to: "/system/error-logs",
     icon: <Bug className="size-4" />,
     element: <SystemErrorLogs />,
+    group: "Безопасность",
     anyPerm: ["system.errors.read", "system.errors", "system"],
   },
-  {
-    path: "instances",
-    title: "Инстансы",
-    to: "/system/instances",
-    icon: <Server className="size-4" />,
-    element: <SystemInstances />,
-    anyPerm: ["system.stats.read", "system.stats", "system"],
-  },
-  {
-    path: "cache",
-    title: "Кэш Valkey",
-    to: "/system/cache",
-    icon: <Database className="size-4" />,
-    element: <SystemCache />,
-    anyPerm: ["system.cache.read", "system.cache.manage", "system.cache", "system"],
-  },
+
+  // Группа 3: Задачи
   {
     path: "tasks",
     title: "Задачи",
     to: "/system/tasks",
     icon: <ListTodo className="size-4" />,
     element: <SystemTasks />,
+    group: "Задачи",
     anyPerm: ["system.tasks.summary.read", "system.tasks.tail.read", "system.tasks", "system"],
   },
   {
     path: "tasks/archive",
-    title: "Архив задач",
+    title: "Архив",
     to: "/system/tasks/archive",
     icon: <Clock className="size-4" />,
     element: <SystemTasksArchive />,
+    group: "Задачи",
     anyPerm: ["system.tasks.summary.read", "system.tasks.tail.read", "system.tasks", "system"],
   },
   {
     path: "dlq",
-    title: "Очередь DLQ",
+    title: "DLQ",
     to: "/system/dlq",
     icon: <AlertTriangle className="size-4" />,
     element: <SystemDlq />,
+    group: "Задачи",
+    hint: "Очередь Dead Letter Queue: отложенные задачи, завершившиеся ошибкой после всех повторных попыток",
     anyPerm: ["system.tasks.dlq.read", "system.tasks.dlq.retry", "system.tasks.dlq", "system"],
   },
 ]
@@ -115,6 +131,8 @@ export function SystemPage() {
       title: tab.title,
       to: tab.to,
       icon: tab.icon,
+      group: tab.group,
+      hint: tab.hint,
     }))
   }, [visibleTabs])
 
