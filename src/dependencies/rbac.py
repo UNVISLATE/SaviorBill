@@ -48,4 +48,39 @@ def require_perm(path: str) -> Callable:
     return _dep
 
 
-__all__ = ["require_perm"]
+def require_any_perm(*paths: str) -> Callable:
+    """Зависимость-гейт: пускает аккаунт, если у него есть хотя бы одно право из ``paths``.
+
+    Побочно регистрирует все переданные права в реестре.
+    """
+    for path in paths:
+        reg_perm(path)
+
+    async def _dep(
+        request: Request,
+        acc: UserModel = Depends(get_current_acc),
+    ) -> UserModel:
+        app_token = getattr(request.state, "app_token", None)
+        if app_token is not None:
+            if not any(has_perm(app_token.perms_tree, p) for p in paths):
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    detail=f"insufficient permissions: any of {list(paths)}",
+                )
+            return acc
+
+        if acc.role and acc.role.key == "owner":
+            return acc
+        perms = acc.role.perms if acc.role else None
+        if not any(has_perm(perms, p) for p in paths):
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                detail=f"insufficient permissions: any of {list(paths)}",
+            )
+        return acc
+
+    _dep._required_perms = list(paths)
+    return _dep
+
+
+__all__ = ["require_perm", "require_any_perm"]

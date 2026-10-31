@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
-from dependencies.rbac import require_perm
+from dependencies.rbac import require_any_perm, require_perm
 from models.roles import Role as RoleModel
 from models.user import UserModel
 from schemas.role import PermsCatalog, RoleCreate, Role, RoleImpact, RolePatch
@@ -21,7 +21,7 @@ router = APIRouter()
 @router.get(
     "/perms",
     response_model=PermsCatalog,
-    dependencies=[Depends(require_perm("roles.read"))],
+    dependencies=[Depends(require_any_perm("roles.read", "apptokens.create"))],
     summary="Permissions catalog",
     description="List all available permissions for roles.",
 )
