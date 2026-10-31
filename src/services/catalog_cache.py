@@ -150,12 +150,16 @@ async def get_cache_stats(vk: valkey.Valkey) -> dict[str, Any]:
         # Сканирование префиксов
         tracked_prefixes = [
             ("cache:catalog", "Кэш каталога и услуг"),
-            ("ratelimit", "Счётчики Rate Limit"),
-            ("session", "Активные сессии пользователей"),
+            ("rl:", "Счётчики Rate Limit"),
+            ("auth:deny", "Отозванные токены и сессии"),
             ("settings", "Кэш системных настроек"),
-            ("fx", "Курсы валют"),
+            ("media:", "Медиа-задачи и файлы"),
+            ("lua:", "Стримы и задачи LuaWorker"),
+            ("billing:", "Очереди биллинга и планировщик"),
+            ("tasklog:", "Журналы выполнения задач"),
+            ("proclog:", "Логи обработки задач"),
             ("security", "События безопасности и баны"),
-            ("system", "Журналы ошибок и задачи"),
+            ("system", "Журналы ошибок и аудит"),
         ]
 
         for prefix, label in tracked_prefixes:

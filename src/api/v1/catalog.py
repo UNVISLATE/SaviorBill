@@ -77,19 +77,15 @@ async def list_services(
     keys_mngr: ServiceKeysMngr = Depends(get_servicekeys_mngr),
 ) -> Page[Service]:
     """Активные услуги каталога (опц. в рамках одного каталога), постранично."""
-    effective_limit = pp.limit
+    max_limit_raw = await settings.get("catalog.public.limit_max", "50")
+    step_raw = await settings.get("catalog.public.limit_step", "10")
+    max_limit = int(max_limit_raw) if max_limit_raw and max_limit_raw.isdigit() else 50
+    step = int(step_raw) if step_raw and step_raw.isdigit() else 10
+    effective_limit = normalize_public_limit(pp.limit, max_limit=max_limit, step=step)
 
-    # Для неавторизованных клиентов квантуем limit и проверяем кэш
-    if acc is None:
-        max_limit_raw = await settings.get("catalog.public.limit_max", "50")
-        step_raw = await settings.get("catalog.public.limit_step", "10")
-        max_limit = int(max_limit_raw) if max_limit_raw and max_limit_raw.isdigit() else 50
-        step = int(step_raw) if step_raw and step_raw.isdigit() else 10
-        effective_limit = normalize_public_limit(pp.limit, max_limit=max_limit, step=step)
-
-        cached = await get_cached_services(vk, catalog_id, effective_limit, pp.offset)
-        if cached is not None:
-            return Page[Service].model_validate(cached)
+    cached = await get_cached_services(vk, catalog_id, effective_limit, pp.offset)
+    if cached is not None:
+        return Page[Service].model_validate(cached)
 
     items, total, has_more = await paginate(
         mngr.s,
@@ -103,12 +99,11 @@ async def list_services(
         items=items, total=total, limit=effective_limit, offset=pp.offset, has_more=has_more
     )
 
-    if acc is None:
-        ttl_raw = await settings.get("cache.catalog.ttl_sec", "180")
-        ttl = int(ttl_raw) if ttl_raw and ttl_raw.isdigit() else 180
-        await set_cached_services(
-            vk, catalog_id, effective_limit, pp.offset, page_res.model_dump(), ttl_sec=ttl
-        )
+    ttl_raw = await settings.get("cache.catalog.ttl_sec", "180")
+    ttl = int(ttl_raw) if ttl_raw and ttl_raw.isdigit() else 180
+    await set_cached_services(
+        vk, catalog_id, effective_limit, pp.offset, page_res.model_dump(), ttl_sec=ttl
+    )
 
     return page_res
 
