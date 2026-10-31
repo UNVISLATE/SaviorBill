@@ -50,7 +50,9 @@ interface AutobanSettings {
 }
 
 interface CatalogPublicSettings {
-  limit_max: number
+  limit_max_guest?: number
+  limit_max_auth?: number
+  limit_max?: number
   limit_step: number
   cache_ttl_sec: number
 }
@@ -165,8 +167,10 @@ export function SecuritySettings() {
       void qc.invalidateQueries({ queryKey: ["admin-security-settings"] })
       setCatalogDraft(null)
       if (data) {
+        const gMax = data.catalog_public.limit_max_guest ?? data.catalog_public.limit_max ?? 20
+        const aMax = data.catalog_public.limit_max_auth ?? 100
         toastSuccess(
-          `Лимиты каталога обновлены. Снап: ${data.catalog_public.limit_max} (шаг ${data.catalog_public.limit_step})`
+          `Лимиты каталога обновлены. Гости: ${gMax}, Клиенты: ${aMax} (шаг ${data.catalog_public.limit_step})`
         )
       } else {
         toastSuccess("Лимиты каталога обновлены")
@@ -213,6 +217,8 @@ export function SecuritySettings() {
   }
 
   const curCatalog = catalogDraft ?? secData?.catalog_public ?? {
+    limit_max_guest: 20,
+    limit_max_auth: 100,
     limit_max: 20,
     limit_step: 10,
     cache_ttl_sec: 180,
@@ -337,27 +343,49 @@ export function SecuritySettings() {
             Пагинация и кэш публичного каталога
           </CardTitle>
           <CardDescription>
-            Защита базы данных от глубокого сканирования. Значение максимального limit для
-            неавторизованных запросов строго квантуется с фиксированным шагом (5 или 10) для
-            максимального кэш-попадания (Cache Hit Rate).
+            Защита базы данных от глубокого сканирования и DDoS. Лимиты страниц строго квантуются с
+            фиксированным шагом (5 или 10) для всех категорий клиентов для максимального
+            кэш-попадания (Cache Hit Rate).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Макс. limit элементов</Label>
+              <Label className="text-xs text-muted-foreground">Макс. limit (гости)</Label>
               <Input
                 type="number"
                 min={1}
                 max={200}
-                value={curCatalog.limit_max}
+                value={curCatalog.limit_max_guest ?? curCatalog.limit_max ?? 20}
+                onChange={(e) => {
+                  const val = Number(e.target.value)
+                  setCatalogDraft({
+                    ...curCatalog,
+                    limit_max_guest: val,
+                    limit_max: val,
+                  })
+                }}
+                disabled={!canEdit}
+              />
+              <span className="text-xs text-muted-foreground">
+                Для неавторизованных (дефолт: 20)
+              </span>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label className="text-xs text-muted-foreground">Макс. limit (авториз.)</Label>
+              <Input
+                type="number"
+                min={1}
+                max={200}
+                value={curCatalog.limit_max_auth ?? 100}
                 onChange={(e) =>
-                  setCatalogDraft({ ...curCatalog, limit_max: Number(e.target.value) })
+                  setCatalogDraft({ ...curCatalog, limit_max_auth: Number(e.target.value) })
                 }
                 disabled={!canEdit}
               />
               <span className="text-xs text-muted-foreground">
-                Округляется вниз кратно шагу (квантование)
+                Для авторизованных клиентов (дефолт: 100)
               </span>
             </div>
 

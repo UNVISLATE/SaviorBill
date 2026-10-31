@@ -11,7 +11,10 @@ from dependencies.catalog import (
     get_service_mngr,
     get_servicekeys_mngr,
 )
+import valkey.asyncio as valkey
 from dependencies.rbac import require_perm
+from dependencies.valkey import get_valkey_client
+from services.catalog_cache import invalidate_catalog_cache
 from models.service_catalogs import ServiceCatalogsModel
 from models.service import ServiceModel
 from models.service_keys import ServiceKeysModel
@@ -212,12 +215,14 @@ async def import_keys_globally(
     body: GlobalServiceKeysImportIn,
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
     mngr: ServiceKeysMngr = Depends(get_servicekeys_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> ServiceKeysImportOut:
     svc = await svc_mngr.by_id(body.service_id)
     if svc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
     created, skipped = await mngr.create_batch(body.service_id, body.values)
     await mngr.s.commit()
+    await invalidate_catalog_cache(vk)
     from schemas.service_keys import ServiceKeyOut
     return ServiceKeysImportOut(
         added=len(created),
@@ -269,6 +274,7 @@ async def delete_key_globally(
     key_id: int,
     mngr: ServiceKeysMngr = Depends(get_servicekeys_mngr),
     dispatcher: TriggerDispatcher = Depends(get_dispatcher),
+    vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> None:
     key = await mngr.by_id(key_id)
     if key is None:
@@ -276,6 +282,7 @@ async def delete_key_globally(
     service_id = key.service_id
     await mngr.delete(key_id)
     await mngr.s.commit()
+    await invalidate_catalog_cache(vk)
     service = await mngr.s.get(ServiceModel, service_id)
     if service is not None:
         await check_and_fire_key_stock_triggers(mngr.s, service, dispatcher)

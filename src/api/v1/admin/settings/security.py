@@ -29,7 +29,9 @@ class AutobanSettings(BaseModel):
 
 
 class CatalogPublicSettings(BaseModel):
-    limit_max: int = Field(default=20, ge=1, le=200)
+    limit_max_guest: int = Field(default=20, ge=1, le=200, description="Макс. limit для неавторизованных (по умолч. 20)")
+    limit_max_auth: int = Field(default=100, ge=1, le=200, description="Макс. limit для авторизованных (по умолч. 100)")
+    limit_max: int | None = Field(default=None, description="Legacy alias for limit_max_guest")
     limit_step: int = Field(default=10, description="Квантование: строго 5 или 10")
     cache_ttl_sec: int = Field(default=180, ge=10, le=86400)
 
@@ -92,11 +94,14 @@ async def get_security_settings(
 
     # 3. Public catalog pagination
     step_val = int(await settings.get("catalog.public.limit_step", "10"))
-    limit_max_val = int(await settings.get("catalog.public.limit_max", "20"))
+    guest_limit_val = int(await settings.get("catalog.limit_max_guest", await settings.get("catalog.public.limit_max", "20")))
+    auth_limit_val = int(await settings.get("catalog.limit_max_auth", "100"))
     ttl_val = int(await settings.get("cache.catalog.ttl_sec", "180"))
 
     catalog_public = CatalogPublicSettings(
-        limit_max=limit_max_val,
+        limit_max_guest=guest_limit_val,
+        limit_max_auth=auth_limit_val,
+        limit_max=guest_limit_val,
         limit_step=step_val if step_val in (5, 10) else 10,
         cache_ttl_sec=ttl_val,
     )
@@ -128,10 +133,17 @@ async def update_security_settings(
 
     if patch.catalog_public is not None:
         step = 5 if patch.catalog_public.limit_step == 5 else 10
-        # Округление limit_max по ТЗ
-        snapped_limit = snap_public_limit_setting(patch.catalog_public.limit_max, step)
+        raw_guest = patch.catalog_public.limit_max if patch.catalog_public.limit_max_guest is None else patch.catalog_public.limit_max_guest
+        if raw_guest is None:
+            raw_guest = 20
+        raw_auth = patch.catalog_public.limit_max_auth if patch.catalog_public.limit_max_auth is not None else 100
+        snapped_guest = snap_public_limit_setting(raw_guest, step)
+        snapped_auth = snap_public_limit_setting(raw_auth, step)
+
         await settings.set("catalog.public.limit_step", str(step))
-        await settings.set("catalog.public.limit_max", str(snapped_limit))
+        await settings.set("catalog.limit_max_guest", str(snapped_guest))
+        await settings.set("catalog.public.limit_max", str(snapped_guest))
+        await settings.set("catalog.limit_max_auth", str(snapped_auth))
         await settings.set("cache.catalog.ttl_sec", str(patch.catalog_public.cache_ttl_sec))
         # Инвалидация кэша каталога
         await invalidate_catalog_cache(vk)

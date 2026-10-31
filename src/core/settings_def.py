@@ -538,14 +538,28 @@ SETTINGS: tuple[SettingDef, ...] = (
         None,
         type="int",
         group="catalog",
-        desc="Максимальный размер страницы (limit) для публичных неавторизованных запросов",
+        desc="Максимальный размер страницы (limit) для публичных неавторизованных запросов (legacy)",
+    ),
+    SettingDef(
+        "catalog.limit_max_guest",
+        None,
+        type="int",
+        group="catalog",
+        desc="Максимальный размер страницы (limit) для гостей / неавторизованных запросов (по умолч. 20)",
+    ),
+    SettingDef(
+        "catalog.limit_max_auth",
+        None,
+        type="int",
+        group="catalog",
+        desc="Максимальный размер страницы (limit) для авторизованных клиентов (по умолч. 100)",
     ),
     SettingDef(
         "catalog.public.limit_step",
         None,
         type="int",
         group="catalog",
-        desc="Шаг квантования limit для неавторизованных запросов (5 или 10)",
+        desc="Шаг квантования limit для всех запросов (5 или 10)",
     ),
     # Кэширование каталога
     SettingDef(

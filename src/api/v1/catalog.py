@@ -77,10 +77,19 @@ async def list_services(
     keys_mngr: ServiceKeysMngr = Depends(get_servicekeys_mngr),
 ) -> Page[Service]:
     """Активные услуги каталога (опц. в рамках одного каталога), постранично."""
-    max_limit_raw = await settings.get("catalog.public.limit_max", "50")
     step_raw = await settings.get("catalog.public.limit_step", "10")
-    max_limit = int(max_limit_raw) if max_limit_raw and max_limit_raw.isdigit() else 50
     step = int(step_raw) if step_raw and step_raw.isdigit() else 10
+
+    if acc is None:
+        guest_raw = await settings.get(
+            "catalog.limit_max_guest",
+            await settings.get("catalog.public.limit_max", "20"),
+        )
+        max_limit = int(guest_raw) if guest_raw and guest_raw.isdigit() else 20
+    else:
+        auth_raw = await settings.get("catalog.limit_max_auth", "100")
+        max_limit = int(auth_raw) if auth_raw and auth_raw.isdigit() else 100
+
     effective_limit = normalize_public_limit(pp.limit, max_limit=max_limit, step=step)
 
     cached = await get_cached_services(vk, catalog_id, effective_limit, pp.offset)
