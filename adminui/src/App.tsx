@@ -23,11 +23,23 @@ import { OAuthProvidersPage } from "@/pages/oauth/OAuthProvidersPage"
 import { PaymentProvidersPage } from "@/pages/providers/PaymentProvidersPage"
 import { ProtectedRoute } from "@/routes/ProtectedRoute"
 import { NotFoundPage } from "@/pages/errors/NotFoundPage"
+import { useAuth } from "@/hooks/use-auth"
 import { ProfileDialogProvider } from "@/hooks/use-profile-dialog"
 import { ProfileDialogHost } from "@/components/profile/ProfileDialogHost"
 import { TooltipProvider } from "@/components/shadsnui/tooltip"
 import { Toaster } from "@/components/shadsnui/sonner"
 import { ErrorBoundary } from "@/components/common/ErrorBoundary"
+
+function ProvidersRedirect() {
+  const { can } = useAuth()
+  if (can("purchases.providers.read") || can("purchases.providers")) {
+    return <Navigate to="/providers/payment" replace />
+  }
+  if (can("oauth.read") || can("oauth")) {
+    return <Navigate to="/providers/oauth" replace />
+  }
+  return <Navigate to="/" replace />
+}
 
 export function App() {
   return (
@@ -61,11 +73,11 @@ export function App() {
               <Route path="/emailtemplate" element={<EmailTemplatesPage />} />
               <Route path="/emailtemplate/:templateId" element={<EmailTemplatesPage />} />
               <Route path="/email-templates" element={<Navigate to="/emailtemplate" replace />} />
-              <Route path="/providers" element={<Navigate to="/providers/payment" replace />} />
+              <Route path="/providers" element={<ProvidersRedirect />} />
               <Route path="/providers/payment" element={<PaymentProvidersPage />} />
               <Route path="/providers/oauth" element={<OAuthProvidersPage />} />
               <Route path="/oauth" element={<Navigate to="/providers/oauth" replace />} />
-              <Route path="/payment-providers" element={<Navigate to="/providers/payment" replace />} />
+              <Route path="/payment-providers" element={<ProvidersRedirect />} />
             </Route>
           </Route>
           <Route path="*" element={<NotFoundPage />} />
