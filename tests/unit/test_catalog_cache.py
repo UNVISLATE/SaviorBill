@@ -5,12 +5,15 @@ from unittest.mock import AsyncMock
 import pytest
 
 from services.catalog_cache import (
-    flush_cache_data,
     get_cached_catalogs,
-    get_cached_services,
+    get_cached_catalog_ids,
+    get_cached_service_entities,
     invalidate_catalog_cache,
+    invalidate_catalog_indexes,
+    invalidate_service_entity,
     set_cached_catalogs,
-    set_cached_services,
+    set_cached_catalog_ids,
+    set_cached_service_entities,
 )
 
 pytestmark = pytest.mark.unit
@@ -31,13 +34,30 @@ async def test_catalogs_cache_set_and_get():
 
 
 @pytest.mark.asyncio
-async def test_services_cache_miss():
+async def test_catalog_ids_cache():
     vk = AsyncMock()
-    vk.get.return_value = None
+    mock_ids = [1, 2, 3, 5]
+    vk.get.return_value = json.dumps(mock_ids)
 
-    cached = await get_cached_services(vk, catalog_id=1, limit=10, offset=0)
-    assert cached is None
-    vk.incr.assert_called_with("cache:stats:misses")
+    cached = await get_cached_catalog_ids(vk, catalog_id=10)
+    assert cached == mock_ids
+    vk.incr.assert_called_with("cache:stats:hits")
+
+    await set_cached_catalog_ids(vk, catalog_id=10, ids=mock_ids, ttl_sec=3600)
+    vk.set.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_service_entities_mget_cache():
+    vk = AsyncMock()
+    mock_svc = {"id": 1, "name": "VPN"}
+    # Returns 1 found, 1 missing
+    vk.mget.return_value = [json.dumps(mock_svc), None]
+
+    found, missing = await get_cached_service_entities(vk, [1, 2])
+    assert 1 in found
+    assert found[1] == mock_svc
+    assert missing == [2]
 
 
 @pytest.mark.asyncio
@@ -45,7 +65,7 @@ async def test_invalidate_catalog_cache():
     vk = AsyncMock()
 
     async def mock_scan_iter(match=None, count=None):
-        for k in ["cache:catalog:tree", "cache:catalog:services:1:10:0"]:
+        for k in ["cache:catalog:tree", "cache:catalog:ids:all"]:
             yield k
 
     vk.scan_iter = mock_scan_iter
