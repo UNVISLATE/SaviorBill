@@ -18,6 +18,7 @@ class AppToken(BaseModel):
     permissions: list[str] = Field(default_factory=list)
     ip_allowlist: list[str] | None = None
     created_by_account_id: int | None = None
+    created_by_login: str | None = None
     created_at: datetime
     expires_at: datetime | None = None
     last_used_at: datetime | None = None

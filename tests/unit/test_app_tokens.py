@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 from datetime import timedelta
+from unittest.mock import MagicMock
 import pytest
+from fastapi import HTTPException
 
+from api.v1.admin.app_tokens import _can_manage_any
 from models.app_tokens import AppTokenModel, generate_app_token, hash_app_token
+from models.roles import Role
+from models.user import UserModel
 from security.rbac import has_perm
 from utils.datetime_utils import utc_now
 
@@ -30,7 +35,7 @@ def test_generate_and_hash_app_token():
 def test_app_token_perms_tree():
     token = AppTokenModel(
         name="Bot",
-        token_prefix="sb_app_live_test",
+        token_prefix="sbapp_live_test_",
         token_hash="hash",
         permissions=["orders.read", "services.keys.read", "apptokens.*"],
     )
@@ -53,7 +58,7 @@ def test_app_token_ip_allowlist():
     # Без ограничений:
     token_any = AppTokenModel(
         name="Bot Any",
-        token_prefix="sb_app_live_any",
+        token_prefix="sbapp_live_any_",
         token_hash="hash",
         permissions=[],
         ip_allowlist=None,
@@ -64,7 +69,7 @@ def test_app_token_ip_allowlist():
     # С белым списком: точный IP и CIDR
     token_restricted = AppTokenModel(
         name="Bot Restricted",
-        token_prefix="sb_app_live_res",
+        token_prefix="sbapp_live_res_",
         token_hash="hash",
         permissions=[],
         ip_allowlist=["10.0.0.1", "192.168.1.0/24"],
@@ -83,7 +88,7 @@ def test_app_token_ip_allowlist():
 def test_app_token_expiration_and_revocation():
     token = AppTokenModel(
         name="Bot Exp",
-        token_prefix="sb_app_live_exp",
+        token_prefix="sbapp_live_exp_",
         token_hash="hash",
         permissions=[],
         is_revoked=False,
@@ -100,3 +105,29 @@ def test_app_token_expiration_and_revocation():
     # Отозванный токен:
     token.is_revoked = True
     assert token.is_revoked is True
+
+
+def test_can_manage_any_tokens():
+    mock_req = MagicMock()
+    mock_req.state.app_token = None
+
+    # 1. Owner can always manage any
+    owner_user = UserModel(id=1, login="owner", role=Role(key="owner", perms={}))
+    assert _can_manage_any(owner_user, mock_req) is True
+
+    # 2. Manager without apptokens.manage_any cannot
+    mgr_user = UserModel(id=2, login="mgr", role=Role(key="mgr", perms={"apptokens": {"read": True}}))
+    assert _can_manage_any(mgr_user, mock_req) is False
+
+    # 3. User with apptokens.manage_any can
+    admin_user = UserModel(
+        id=3,
+        login="admin",
+        role=Role(key="admin", perms={"apptokens": {"manage_any": True}}),
+    )
+    assert _can_manage_any(admin_user, mock_req) is True
+
+    # 4. App Token caller with apptokens.manage_any
+    app_tok = AppTokenModel(token_prefix="sbapp_live_tok_", permissions=["apptokens.manage_any"])
+    mock_req.state.app_token = app_tok
+    assert _can_manage_any(mgr_user, mock_req) is True

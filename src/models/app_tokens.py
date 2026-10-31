@@ -69,6 +69,10 @@ class AppTokenModel(Base):
     creator = relationship("UserModel", foreign_keys=[created_by_account_id], lazy="selectin")
 
     @property
+    def created_by_login(self) -> str | None:
+        return self.creator.login if self.creator else None
+
+    @property
     def perms_tree(self) -> dict:
         """Древовидная структура прав для быстрой проверки через has_perm()."""
         tree: dict = {}
@@ -111,8 +115,10 @@ class AppTokensMngr:
     def __init__(self, session: AsyncSession) -> None:
         self.s = session
 
-    async def list_tokens(self) -> Sequence[AppTokenModel]:
+    async def list_tokens(self, account_id: int | None = None) -> Sequence[AppTokenModel]:
         stmt = select(AppTokenModel).order_by(AppTokenModel.created_at.desc())
+        if account_id is not None:
+            stmt = stmt.where(AppTokenModel.created_by_account_id == account_id)
         res = await self.s.scalars(stmt)
         return res.all()
 

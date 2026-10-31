@@ -48,6 +48,7 @@ interface PermsPickerProps {
   onChange: (next: Set<string>) => void
   maxHeight?: string
   catalog?: PermsCatalog
+  availablePerms?: Set<string>
 }
 
 export function PermsPicker({
@@ -55,6 +56,7 @@ export function PermsPicker({
   onChange,
   maxHeight = "max-h-[350px]",
   catalog: propCatalog,
+  availablePerms,
 }: PermsPickerProps) {
   const [filter, setFilter] = useState("")
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
@@ -66,8 +68,17 @@ export function PermsPicker({
   })
 
   const catalog = propCatalog || fetchedCatalog
-  const flatPerms = catalog?.flat ?? []
-  const permissionTree = (catalog?.tree ?? {}) as PermTree
+  const rawFlat = catalog?.flat ?? []
+
+  const flatPerms = useMemo(() => {
+    if (!availablePerms) return rawFlat
+    return rawFlat.filter((p) => availablePerms.has(p))
+  }, [rawFlat, availablePerms])
+
+  const permissionTree = useMemo(() => {
+    if (!availablePerms) return (catalog?.tree ?? {}) as PermTree
+    return buildPermsTree(flatPerms) as PermTree
+  }, [catalog, availablePerms, flatPerms])
 
   const filteredFlat = useMemo(() => {
     if (!filter.trim()) return flatPerms

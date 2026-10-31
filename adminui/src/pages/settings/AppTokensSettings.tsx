@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlertTriangle,
@@ -12,9 +12,11 @@ import {
   Plus,
   Shield,
   Trash2,
+  User,
 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { useAuth } from "@/hooks/use-auth.tsx"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { Button } from "@/components/shadsnui/button"
 import { Badge } from "@/components/shadsnui/badge"
@@ -58,6 +60,7 @@ interface AppToken {
   permissions: string[]
   ip_allowlist: string[] | null
   created_by_account_id: number | null
+  created_by_login: string | null
   created_at: string
   expires_at: string | null
   last_used_at: string | null
@@ -72,6 +75,10 @@ interface AppTokenCreated extends AppToken {
 
 export function AppTokensSettings() {
   const qc = useQueryClient()
+  const { me, can } = useAuth()
+  const isOwner = me?.role === "owner"
+  const canManageAny = can("apptokens.manage_any")
+
   const [createOpen, setCreateOpen] = useState(false)
   const [revealedToken, setRevealedToken] = useState<AppTokenCreated | null>(null)
   const [copiedSecret, setCopiedSecret] = useState(false)
@@ -107,6 +114,18 @@ export function AppTokensSettings() {
     queryKey: ["admin-perms"],
     queryFn: async () => (await api.get<PermsCatalog>("/v1/admin/perms")).data,
   })
+
+  // Защита от эскалации привилегий: пользователь может делегировать только свои права
+  const availablePerms = useMemo(() => {
+    if (isOwner) return undefined
+    const flat = permsCatalog?.flat ?? []
+    return new Set(flat.filter((p) => can(p)))
+  }, [isOwner, permsCatalog, can])
+
+  const canManageToken = (token: AppToken) => {
+    if (isOwner || canManageAny) return true
+    return token.created_by_account_id === me?.id
+  }
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -170,7 +189,9 @@ export function AppTokensSettings() {
       }
       toastSuccess("Токен отозван")
     },
-    onError: () => toastError("Не удалось отозвать токен"),
+    onError: (err: any) => {
+      toastError(err?.response?.data?.detail || "Не удалось отозвать токен")
+    },
   })
 
   const deleteMutation = useMutation({
@@ -183,7 +204,9 @@ export function AppTokensSettings() {
       setViewingToken(null)
       toastSuccess("Токен удален")
     },
-    onError: () => toastError("Не удалось удалить токен"),
+    onError: (err: any) => {
+      toastError(err?.response?.data?.detail || "Не удалось удалить токен")
+    },
   })
 
   const resetForm = () => {
@@ -350,12 +373,20 @@ export function AppTokensSettings() {
       icon: Shield,
       badge: `${selectedPerms.size}`,
       content: (
-        <PermsPicker
-          selected={selectedPerms}
-          onChange={setSelectedPerms}
-          catalog={permsCatalog}
-          maxHeight="max-h-[360px]"
-        />
+        <div className="space-y-2">
+          {!isOwner && (
+            <p className="text-[11px] text-muted-foreground bg-muted/30 px-2.5 py-1.5 rounded border border-border/40">
+              Вам доступны для выдачи только те права, которыми обладает ваша учетная запись.
+            </p>
+          )}
+          <PermsPicker
+            selected={selectedPerms}
+            onChange={setSelectedPerms}
+            catalog={permsCatalog}
+            availablePerms={availablePerms}
+            maxHeight="max-h-[340px]"
+          />
+        </div>
       ),
     },
   ]
@@ -380,8 +411,9 @@ export function AppTokensSettings() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[200px]">Приложение / Название</TableHead>
+              <TableHead className="w-[180px]">Приложение / Название</TableHead>
               <TableHead>Префикс токена</TableHead>
+              {canManageAny && <TableHead>Создатель</TableHead>}
               <TableHead>Права (Scoped RBAC)</TableHead>
               <TableHead>IP доступ</TableHead>
               <TableHead>Срок действия</TableHead>
@@ -392,13 +424,13 @@ export function AppTokensSettings() {
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-8 text-xs text-muted-foreground">
+                <TableCell colSpan={canManageAny ? 8 : 7} className="text-center py-8 text-xs text-muted-foreground">
                   Загрузка токенов...
                 </TableCell>
               </TableRow>
             ) : tokens.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                <TableCell colSpan={canManageAny ? 8 : 7} className="text-center py-12 text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
                     <KeyRound className="size-8 text-muted-foreground/40" />
                     <p className="text-sm font-medium">Нет активных токенов приложений</p>
@@ -419,6 +451,8 @@ export function AppTokensSettings() {
             ) : (
               tokens.map((token) => {
                 const isExpired = token.expires_at && new Date(token.expires_at) < new Date()
+                const canManage = canManageToken(token)
+
                 return (
                   <TableRow
                     key={token.id}
@@ -448,8 +482,21 @@ export function AppTokensSettings() {
                         {token.token_prefix}
                       </Badge>
                     </TableCell>
+
+                    {canManageAny && (
+                      <TableCell className="text-xs">
+                        {token.created_by_login ? (
+                          <span className="font-medium text-foreground">@{token.created_by_login}</span>
+                        ) : token.created_by_account_id ? (
+                          <span className="text-muted-foreground">#{token.created_by_account_id}</span>
+                        ) : (
+                          <span className="text-muted-foreground">система</span>
+                        )}
+                      </TableCell>
+                    )}
+
                     <TableCell>
-                      <div className="flex flex-wrap gap-1 max-w-[240px]">
+                      <div className="flex flex-wrap gap-1 max-w-[220px]">
                         {token.permissions.length === 0 ? (
                           <span className="text-[11px] text-muted-foreground">Нет прав</span>
                         ) : (
@@ -509,24 +556,32 @@ export function AppTokensSettings() {
                         className="flex items-center justify-end gap-1"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {!token.is_revoked && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => setRevokingToken(token)}
-                            className="h-7 text-xs text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
-                          >
-                            Отозвать
-                          </Button>
+                        {canManage ? (
+                          <>
+                            {!token.is_revoked && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setRevokingToken(token)}
+                                className="h-7 text-xs text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
+                              >
+                                Отозвать
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => setDeletingToken(token)}
+                              className="size-7 text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          </>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground italic px-2">
+                            чужой токен
+                          </span>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => setDeletingToken(token)}
-                          className="size-7 text-destructive hover:bg-destructive/10"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -616,6 +671,22 @@ export function AppTokensSettings() {
 
                   <div className="p-3 rounded-lg border border-border/60 bg-muted/10 space-y-1.5">
                     <span className="text-[11px] text-muted-foreground font-medium block">
+                      Создатель токена
+                    </span>
+                    <div className="flex items-center gap-1.5 text-foreground font-medium">
+                      <User className="size-3.5 text-muted-foreground" />
+                      {viewingToken.created_by_login ? (
+                        <span>@{viewingToken.created_by_login} <span className="text-muted-foreground font-normal">(#{viewingToken.created_by_account_id})</span></span>
+                      ) : viewingToken.created_by_account_id ? (
+                        <span>Аккаунт #{viewingToken.created_by_account_id}</span>
+                      ) : (
+                        <span className="text-muted-foreground">Система</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-lg border border-border/60 bg-muted/10 space-y-1.5">
+                    <span className="text-[11px] text-muted-foreground font-medium block">
                       Срок действия
                     </span>
                     <div className="flex items-center gap-1.5 text-foreground font-medium">
@@ -637,7 +708,7 @@ export function AppTokensSettings() {
                     </div>
                   </div>
 
-                  <div className="p-3 rounded-lg border border-border/60 bg-muted/10 space-y-1.5">
+                  <div className="p-3 rounded-lg border border-border/60 bg-muted/10 space-y-1.5 col-span-2">
                     <span className="text-[11px] text-muted-foreground font-medium block">
                       Последняя активность
                     </span>
@@ -707,26 +778,34 @@ export function AppTokensSettings() {
 
               <DialogFooter className="flex items-center justify-between gap-2 pt-2 border-t border-border/40">
                 <div className="flex items-center gap-2">
-                  {!viewingToken.is_revoked && (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setRevokingToken(viewingToken)}
-                      className="text-xs text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
-                    >
-                      Отозвать токен
-                    </Button>
+                  {canManageToken(viewingToken) ? (
+                    <>
+                      {!viewingToken.is_revoked && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setRevokingToken(viewingToken)}
+                          className="text-xs text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
+                        >
+                          Отозвать токен
+                        </Button>
+                      )}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setDeletingToken(viewingToken)}
+                        className="text-xs text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="size-3.5 mr-1" /> Удалить токен
+                      </Button>
+                    </>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground italic">
+                      Управление этим токеном доступно только его создателю или администраторам.
+                    </span>
                   )}
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setDeletingToken(viewingToken)}
-                    className="text-xs text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="size-3.5 mr-1" /> Удалить токен
-                  </Button>
                 </div>
                 <Button
                   type="button"
