@@ -16,13 +16,22 @@ from dependencies.auth import get_current_acc_optional
 from dependencies.promo import PromoCodesMngr, get_promo_mngr
 from dependencies.ratelimit import LimitKind, authenticated_ident, enforce_rate_limit
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
+from dependencies.valkey import get_valkey_client
+import valkey.asyncio as valkey
 from enums import Delivery
 from models.user import UserModel
 from schemas.catalog import CatalogResponse
 from schemas.page import Page
 from schemas.promo import PromoQuote
 from schemas.service import Service
+from services.catalog_cache import (
+    get_cached_catalogs,
+    get_cached_services,
+    set_cached_catalogs,
+    set_cached_services,
+)
 from utils.pagination import PageParams, page_params, paginate
+from utils.public_pagination import normalize_public_limit
 
 router = APIRouter(prefix="/api/v1/catalog", tags=["catalog"])
 
@@ -40,31 +49,68 @@ async def _with_stock(
 @router.get("/catalogs", response_model=list[CatalogResponse], summary="Catalog tree")
 async def list_catalogs(
     mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> list[CatalogResponse]:
-    """Все активные каталоги (плоско; иерархия — через parent_id)."""
+    """Все активные каталоги (плоско; иерархия — через parent_id). Кешируется в Valkey."""
+    cached = await get_cached_catalogs(vk)
+    if cached is not None:
+        return [CatalogResponse.model_validate(c) for c in cached]
+
     rows = await mngr.list_all()
-    return [CatalogResponse.from_model(c) for c in rows if c.is_active]
+    result = [CatalogResponse.from_model(c) for c in rows if c.is_active]
+
+    ttl_raw = await settings.get("cache.catalog.ttl_sec", "180")
+    ttl = int(ttl_raw) if ttl_raw and ttl_raw.isdigit() else 180
+    await set_cached_catalogs(vk, [c.model_dump() for c in result], ttl_sec=ttl)
+    return result
 
 
 @router.get("/services", response_model=Page[Service], summary="Services")
 async def list_services(
     catalog_id: int | None = Query(default=None, description="filter by catalog"),
     pp: PageParams = Depends(page_params),
+    acc: UserModel | None = Depends(get_current_acc_optional),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
     mngr: ServiceMngr = Depends(get_service_mngr),
     keys_mngr: ServiceKeysMngr = Depends(get_servicekeys_mngr),
 ) -> Page[Service]:
     """Активные услуги каталога (опц. в рамках одного каталога), постранично."""
+    effective_limit = pp.limit
+
+    # Для неавторизованных клиентов квантуем limit и проверяем кэш
+    if acc is None:
+        max_limit_raw = await settings.get("catalog.public.limit_max", "50")
+        step_raw = await settings.get("catalog.public.limit_step", "10")
+        max_limit = int(max_limit_raw) if max_limit_raw and max_limit_raw.isdigit() else 50
+        step = int(step_raw) if step_raw and step_raw.isdigit() else 10
+        effective_limit = normalize_public_limit(pp.limit, max_limit=max_limit, step=step)
+
+        cached = await get_cached_services(vk, catalog_id, effective_limit, pp.offset)
+        if cached is not None:
+            return Page[Service].model_validate(cached)
+
     items, total, has_more = await paginate(
         mngr.s,
         mngr.stmt_active(catalog_id),
         Service.from_model,
-        limit=pp.limit,
+        limit=effective_limit,
         offset=pp.offset,
     )
     items = [await _with_stock(svc, svc.id, keys_mngr) for svc in items]
-    return Page(
-        items=items, total=total, limit=pp.limit, offset=pp.offset, has_more=has_more
+    page_res = Page(
+        items=items, total=total, limit=effective_limit, offset=pp.offset, has_more=has_more
     )
+
+    if acc is None:
+        ttl_raw = await settings.get("cache.catalog.ttl_sec", "180")
+        ttl = int(ttl_raw) if ttl_raw and ttl_raw.isdigit() else 180
+        await set_cached_services(
+            vk, catalog_id, effective_limit, pp.offset, page_res.model_dump(), ttl_sec=ttl
+        )
+
+    return page_res
 
 
 @router.get("/services/{service_id}", response_model=Service, summary="Service details")

@@ -11,6 +11,9 @@ from dependencies.catalog import (
     get_service_mngr,
 )
 from dependencies.rbac import require_perm
+from dependencies.valkey import get_valkey_client
+import valkey.asyncio as valkey
+from services.catalog_cache import invalidate_catalog_cache
 from models.service import ServiceModel
 from schemas.media import Attachment, AttachmentIn, AttachmentPatch
 from schemas.page import Page
@@ -88,10 +91,13 @@ async def get_service(
     description="Create a service.",
 )
 async def create_service(
-    body: ServiceCreate, mngr: ServiceMngr = Depends(get_service_mngr)
+    body: ServiceCreate,
+    mngr: ServiceMngr = Depends(get_service_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> ServiceAdmin:
     svc = await mngr.create(body.model_dump())
     await mngr.s.commit()
+    await invalidate_catalog_cache(vk)
     # commit истощает (expire) все атрибуты, включая attachments — их читает
     # ServiceAdmin.from_model синхронно; без явного refresh async-сессия не
     # может догрузить связь на лету (упало бы MissingGreenlet).
@@ -110,9 +116,11 @@ async def update_service(
     service_id: int,
     body: ServicePatch,
     mngr: ServiceMngr = Depends(get_service_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> ServiceAdmin:
     svc, warnings = await mngr.update(service_id, body.model_dump(exclude_unset=True))
     await mngr.s.commit()
+    await invalidate_catalog_cache(vk)
     await mngr.s.refresh(svc, attribute_names=["attachments"])
     return ServiceAdmin.from_model(svc, warnings=warnings)
 

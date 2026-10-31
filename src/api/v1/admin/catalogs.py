@@ -6,6 +6,9 @@ from fastapi import APIRouter, Depends, status
 
 from dependencies.catalog import ServiceCatalogsMngr, get_catalog_mngr
 from dependencies.rbac import require_perm
+from dependencies.valkey import get_valkey_client
+import valkey.asyncio as valkey
+from services.catalog_cache import invalidate_catalog_cache
 from schemas.catalog import CatalogRequest, CatalogResponse, CatalogPatch
 
 router = APIRouter()
@@ -33,10 +36,13 @@ async def list_catalogs(
     description="Create a service catalog.",
 )
 async def create_catalog(
-    body: CatalogRequest, mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr)
+    body: CatalogRequest,
+    mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> CatalogResponse:
     cat = await mngr.create(body.model_dump())
     await mngr.s.commit()
+    await invalidate_catalog_cache(vk)
     return CatalogResponse.from_model(cat)
 
 
@@ -51,9 +57,11 @@ async def update_catalog(
     catalog_id: int,
     body: CatalogPatch,
     mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> CatalogResponse:
     cat = await mngr.update(catalog_id, body.model_dump(exclude_unset=True))
     await mngr.s.commit()
+    await invalidate_catalog_cache(vk)
     return CatalogResponse.from_model(cat)
 
 
@@ -64,10 +72,13 @@ async def update_catalog(
     summary="Delete catalog",
 )
 async def delete_catalog(
-    catalog_id: int, mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr)
+    catalog_id: int,
+    mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> None:
     await mngr.delete(catalog_id)
     await mngr.s.commit()
+    await invalidate_catalog_cache(vk)
 
 
 __all__ = ["router"]
