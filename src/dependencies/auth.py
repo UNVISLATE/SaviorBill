@@ -61,7 +61,7 @@ async def get_current_acc(
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bearer required")
 
-    if token.startswith("sb_app_live_"):
+    if token.startswith("sbapp_live_") or token.startswith("sb_app_live_"):
         token_hash = hash_app_token(token)
         session = getattr(mngr, "s", None)
         if session is not None:

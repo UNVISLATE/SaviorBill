@@ -15,9 +15,14 @@ pytestmark = [pytest.mark.unit]
 def test_generate_and_hash_app_token():
     full_token, prefix, token_hash = generate_app_token()
 
-    assert full_token.startswith("sb_app_live_")
+    assert full_token.startswith("sbapp_live_")
     assert len(full_token) > 40
-    assert prefix == full_token[:16] + "..."
+    assert prefix == full_token[:16]
+    assert "..." not in prefix
+    assert prefix.startswith("sbapp_live_") and prefix.endswith("_")
+    tag = prefix[len("sbapp_live_"):-1]
+    assert len(tag) == 4
+    assert tag == tag.lower()
     assert len(token_hash) == 64
     assert hash_app_token(full_token) == token_hash
 

@@ -6,6 +6,7 @@ from datetime import datetime
 import hashlib
 import ipaddress
 import secrets
+import string
 from typing import Sequence
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, JSON, String, Text, func, select
@@ -19,14 +20,16 @@ from utils.datetime_utils import utc_now
 def generate_app_token() -> tuple[str, str, str]:
     """Генерирует новый App Token с криптостойкой энтропией.
 
+    Формат: sbapp_live_{tag}_{secret}, где tag — 4 случайных символа в нижнем регистре.
     Возвращает:
-      - secret_token: полный токен (например, "sb_app_live_...")
-      - token_prefix: безопасная маска для UI ("sb_app_live_9a8f...")
+      - secret_token: полный токен (например, "sbapp_live_a1b2_...")
+      - token_prefix: безопасный префикс для UI и идентификации ("sbapp_live_a1b2_")
       - token_hash: SHA-256 хэш полного токена для безопасного хранения в БД.
     """
+    tag = "".join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(4))
+    prefix = f"sbapp_live_{tag}_"
     raw_secret = secrets.token_urlsafe(32)
-    full_token = f"sb_app_live_{raw_secret}"
-    prefix = full_token[:16] + "..."
+    full_token = f"{prefix}{raw_secret}"
     token_hash = hash_app_token(full_token)
     return full_token, prefix, token_hash
 

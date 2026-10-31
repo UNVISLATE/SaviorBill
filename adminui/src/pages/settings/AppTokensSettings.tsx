@@ -1,15 +1,15 @@
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlertTriangle,
   Bot,
   Calendar,
   Check,
+  Clock,
   Copy,
   Globe,
   KeyRound,
   Plus,
-  Search,
   Shield,
   Trash2,
 } from "lucide-react"
@@ -21,7 +21,6 @@ import { Badge } from "@/components/shadsnui/badge"
 import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
 import { Textarea } from "@/components/shadsnui/textarea"
-import { Checkbox } from "@/components/shadsnui/checkbox"
 import {
   Table,
   TableBody,
@@ -49,6 +48,7 @@ import {
   AlertDialogTitle,
 } from "@/components/shadsnui/alert-dialog"
 import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
+import { PermsPicker, type PermsCatalog } from "@/components/common/PermsPicker"
 
 interface AppToken {
   id: number
@@ -70,24 +70,28 @@ interface AppTokenCreated extends AppToken {
   secret_token: string
 }
 
-interface PermsCatalog {
-  flat: string[]
-  tree: Record<string, unknown>
-}
-
 export function AppTokensSettings() {
   const qc = useQueryClient()
   const [createOpen, setCreateOpen] = useState(false)
   const [revealedToken, setRevealedToken] = useState<AppTokenCreated | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [copiedSecret, setCopiedSecret] = useState(false)
+
+  // Details Modal
+  const [viewingToken, setViewingToken] = useState<AppToken | null>(null)
+  const [copiedPrefix, setCopiedPrefix] = useState(false)
 
   // Creation form state
   const [name, setName] = useState("")
   const [description, setDescription] = useState("")
   const [ipAllowlistRaw, setIpAllowlistRaw] = useState("")
-  const [expiryDays, setExpiryDays] = useState<number | "never">("never")
+
+  // Flexible expiration: "never" | "days" | "date"
+  const [expiryType, setExpiryType] = useState<"never" | "days" | "date">("never")
+  const [expiryDaysInput, setExpiryDaysInput] = useState<string>("30")
+  const [expiryDateInput, setExpiryDateInput] = useState<string>("")
+
+  // RBAC permissions tree state
   const [selectedPerms, setSelectedPerms] = useState<Set<string>>(new Set())
-  const [permSearch, setPermSearch] = useState("")
 
   // Confirmations
   const [revokingToken, setRevokingToken] = useState<AppToken | null>(null)
@@ -107,9 +111,23 @@ export function AppTokensSettings() {
   const createMutation = useMutation({
     mutationFn: async () => {
       let expires_at: string | null = null
-      if (expiryDays !== "never") {
+
+      if (expiryType === "days") {
+        const days = parseInt(expiryDaysInput, 10)
+        if (isNaN(days) || days <= 0) {
+          throw new Error("Укажите корректное количество дней")
+        }
         const d = new Date()
-        d.setDate(d.getDate() + expiryDays)
+        d.setDate(d.getDate() + days)
+        expires_at = d.toISOString()
+      } else if (expiryType === "date") {
+        if (!expiryDateInput) {
+          throw new Error("Выберите дату окончания действия")
+        }
+        const d = new Date(expiryDateInput)
+        if (isNaN(d.getTime())) {
+          throw new Error("Некорректная дата окончания")
+        }
         expires_at = d.toISOString()
       }
 
@@ -136,7 +154,7 @@ export function AppTokensSettings() {
       toastSuccess("Токен приложения успешно выпущен")
     },
     onError: (err: any) => {
-      toastError(err?.response?.data?.detail || "Не удалось создать токен")
+      toastError(err?.response?.data?.detail || err?.message || "Не удалось создать токен")
     },
   })
 
@@ -147,6 +165,9 @@ export function AppTokensSettings() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-app-tokens"] })
       setRevokingToken(null)
+      if (viewingToken) {
+        setViewingToken((prev) => (prev ? { ...prev, is_revoked: true, revoked_at: new Date().toISOString() } : null))
+      }
       toastSuccess("Токен отозван")
     },
     onError: () => toastError("Не удалось отозвать токен"),
@@ -159,6 +180,7 @@ export function AppTokensSettings() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["admin-app-tokens"] })
       setDeletingToken(null)
+      setViewingToken(null)
       toastSuccess("Токен удален")
     },
     onError: () => toastError("Не удалось удалить токен"),
@@ -168,55 +190,26 @@ export function AppTokensSettings() {
     setName("")
     setDescription("")
     setIpAllowlistRaw("")
-    setExpiryDays("never")
+    setExpiryType("never")
+    setExpiryDaysInput("30")
+    setExpiryDateInput("")
     setSelectedPerms(new Set())
-    setPermSearch("")
   }
 
-  const handleCopy = () => {
+  const handleCopySecret = () => {
     if (!revealedToken) return
     navigator.clipboard.writeText(revealedToken.secret_token)
-    setCopied(true)
+    setCopiedSecret(true)
     toastSuccess("Секретный токен скопирован в буфер обмена")
-    setTimeout(() => setCopied(false), 3000)
+    setTimeout(() => setCopiedSecret(false), 3000)
   }
 
-  const togglePerm = (perm: string) => {
-    const next = new Set(selectedPerms)
-    if (next.has(perm)) {
-      next.delete(perm)
-    } else {
-      next.add(perm)
-    }
-    setSelectedPerms(next)
+  const handleCopyPrefix = (prefix: string) => {
+    navigator.clipboard.writeText(prefix)
+    setCopiedPrefix(true)
+    toastSuccess("Префикс токена скопирован")
+    setTimeout(() => setCopiedPrefix(false), 2000)
   }
-
-  const toggleAllCategory = (allInCat: string[]) => {
-    const next = new Set(selectedPerms)
-    const allSelected = allInCat.every((p) => next.has(p))
-    if (allSelected) {
-      allInCat.forEach((p) => next.delete(p))
-    } else {
-      allInCat.forEach((p) => next.add(p))
-    }
-    setSelectedPerms(next)
-  }
-
-  // Filtered perms
-  const allPermsList = useMemo(() => permsCatalog?.flat || [], [permsCatalog])
-
-  const categorizedPerms = useMemo(() => {
-    const groups: Record<string, string[]> = {}
-    for (const p of allPermsList) {
-      if (permSearch.trim() && !p.toLowerCase().includes(permSearch.toLowerCase())) {
-        continue
-      }
-      const cat = p.split(".")[0] || "other"
-      if (!groups[cat]) groups[cat] = []
-      groups[cat].push(p)
-    }
-    return groups
-  }, [allPermsList, permSearch])
 
   const createTabs: TabDefinition[] = [
     {
@@ -246,29 +239,91 @@ export function AppTokensSettings() {
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-xs flex items-center gap-1.5">
-              <Calendar className="size-3.5 text-muted-foreground" /> Срок действия
+          {/* Expiration Configuration */}
+          <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+            <Label className="text-xs flex items-center gap-1.5 font-medium">
+              <Calendar className="size-3.5 text-primary" /> Срок действия ключа
             </Label>
-            <div className="grid grid-cols-4 gap-2">
-              {[
-                { label: "Бессрочно", val: "never" as const },
-                { label: "30 дней", val: 30 },
-                { label: "90 дней", val: 90 },
-                { label: "1 год", val: 365 },
-              ].map((opt) => (
-                <Button
-                  key={String(opt.val)}
-                  type="button"
-                  variant={expiryDays === opt.val ? "default" : "outline"}
-                  size="sm"
-                  onClick={() => setExpiryDays(opt.val)}
-                  className="text-xs h-8"
-                >
-                  {opt.label}
-                </Button>
-              ))}
+
+            <div className="grid grid-cols-3 gap-2">
+              <Button
+                type="button"
+                variant={expiryType === "never" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setExpiryType("never")}
+                className="text-xs h-8"
+              >
+                Бессрочно
+              </Button>
+              <Button
+                type="button"
+                variant={expiryType === "days" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setExpiryType("days")}
+                className="text-xs h-8"
+              >
+                Количество дней
+              </Button>
+              <Button
+                type="button"
+                variant={expiryType === "date" ? "default" : "outline"}
+                size="sm"
+                onClick={() => setExpiryType("date")}
+                className="text-xs h-8"
+              >
+                Точная дата
+              </Button>
             </div>
+
+            {expiryType === "days" && (
+              <div className="pt-1.5 space-y-1">
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={3650}
+                    value={expiryDaysInput}
+                    onChange={(e) => setExpiryDaysInput(e.target.value)}
+                    placeholder="30"
+                    className="h-8 text-xs font-mono w-28"
+                  />
+                  <span className="text-xs text-muted-foreground">дней с момента создания</span>
+                </div>
+                <div className="flex gap-1.5 pt-1">
+                  {[7, 30, 90, 180, 365].map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      onClick={() => setExpiryDaysInput(String(d))}
+                      className="text-[10px] px-2 py-0.5 rounded bg-muted hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      +{d}д
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {expiryType === "date" && (
+              <div className="pt-1.5 space-y-1">
+                <Input
+                  type="datetime-local"
+                  min={new Date().toISOString().slice(0, 16)}
+                  value={expiryDateInput}
+                  onChange={(e) => setExpiryDateInput(e.target.value)}
+                  className="h-8 text-xs font-mono"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  Токен будет автоматически деактивирован в указанное время.
+                </p>
+              </div>
+            )}
+
+            {expiryType === "never" && (
+              <p className="text-[11px] text-muted-foreground pt-0.5">
+                Ключ будет оставаться активным бессрочно до ручного отзыва.
+              </p>
+            )}
           </div>
 
           <div className="space-y-1.5">
@@ -279,7 +334,7 @@ export function AppTokensSettings() {
               value={ipAllowlistRaw}
               onChange={(e) => setIpAllowlistRaw(e.target.value)}
               placeholder="192.168.1.10&#10;10.0.0.0/24&#10;(по одному на строку или через запятую; пусто = любые IP)"
-              rows={3}
+              rows={2}
               className="font-mono text-xs resize-none"
             />
             <p className="text-[10px] text-muted-foreground">
@@ -295,75 +350,12 @@ export function AppTokensSettings() {
       icon: Shield,
       badge: `${selectedPerms.size}`,
       content: (
-        <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-2.5 top-2.5 size-3.5 text-muted-foreground" />
-              <Input
-                value={permSearch}
-                onChange={(e) => setPermSearch(e.target.value)}
-                placeholder="Поиск по правам (например: orders, apptokens, services)..."
-                className="pl-8 h-8 text-xs"
-              />
-            </div>
-            {selectedPerms.size > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSelectedPerms(new Set())}
-                className="text-xs h-8"
-              >
-                Снять все ({selectedPerms.size})
-              </Button>
-            )}
-          </div>
-
-          <div className="max-h-[340px] overflow-y-auto rounded-lg border border-border/60 p-2.5 space-y-4 bg-background/50">
-            {Object.keys(categorizedPerms).length === 0 ? (
-              <div className="py-6 text-center text-xs text-muted-foreground">
-                Права не найдены
-              </div>
-            ) : (
-              Object.entries(categorizedPerms).map(([cat, perms]) => {
-                const allChecked = perms.every((p) => selectedPerms.has(p))
-                return (
-                  <div key={cat} className="space-y-1.5">
-                    <div className="flex items-center justify-between pb-1 border-b border-border/40">
-                      <span className="text-xs font-semibold capitalize tracking-wide text-foreground/90">
-                        {cat} ({perms.length})
-                      </span>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => toggleAllCategory(perms)}
-                        className="text-[10px] h-6 px-1.5 text-muted-foreground hover:text-foreground"
-                      >
-                        {allChecked ? "Снять все" : "Выбрать все"}
-                      </Button>
-                    </div>
-                    <div className="grid grid-cols-2 gap-1.5">
-                      {perms.map((p) => (
-                        <label
-                          key={p}
-                          className="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-muted/50 cursor-pointer border border-transparent hover:border-border/40 transition-colors"
-                        >
-                          <Checkbox
-                            checked={selectedPerms.has(p)}
-                            onCheckedChange={() => togglePerm(p)}
-                          />
-                          <span className="font-mono text-[11px] truncate" title={p}>
-                            {p}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  </div>
-                )
-              })
-            )}
-          </div>
-        </div>
+        <PermsPicker
+          selected={selectedPerms}
+          onChange={setSelectedPerms}
+          catalog={permsCatalog}
+          maxHeight="max-h-[360px]"
+        />
       ),
     },
   ]
@@ -389,7 +381,7 @@ export function AppTokensSettings() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-[200px]">Приложение / Название</TableHead>
-              <TableHead>Маска токена</TableHead>
+              <TableHead>Префикс токена</TableHead>
               <TableHead>Права (Scoped RBAC)</TableHead>
               <TableHead>IP доступ</TableHead>
               <TableHead>Срок действия</TableHead>
@@ -428,7 +420,13 @@ export function AppTokensSettings() {
               tokens.map((token) => {
                 const isExpired = token.expires_at && new Date(token.expires_at) < new Date()
                 return (
-                  <TableRow key={token.id} className={token.is_revoked ? "opacity-60 bg-muted/20" : ""}>
+                  <TableRow
+                    key={token.id}
+                    onClick={() => setViewingToken(token)}
+                    className={`cursor-pointer transition-colors hover:bg-muted/50 ${
+                      token.is_revoked ? "opacity-60 bg-muted/20" : ""
+                    }`}
+                  >
                     <TableCell>
                       <div className="space-y-0.5">
                         <div className="font-medium text-xs flex items-center gap-1.5">
@@ -443,7 +441,10 @@ export function AppTokensSettings() {
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="font-mono text-[11px]">
+                      <Badge
+                        variant="outline"
+                        className="font-mono text-xs font-semibold tracking-wider text-foreground bg-muted/30"
+                      >
                         {token.token_prefix}
                       </Badge>
                     </TableCell>
@@ -504,7 +505,10 @@ export function AppTokensSettings() {
                       </div>
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-1">
+                      <div
+                        className="flex items-center justify-end gap-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {!token.is_revoked && (
                           <Button
                             variant="ghost"
@@ -551,6 +555,194 @@ export function AppTokensSettings() {
         }}
       />
 
+      {/* Details View Modal */}
+      <Dialog open={viewingToken !== null} onOpenChange={(open) => !open && setViewingToken(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          {viewingToken && (
+            <>
+              <DialogHeader>
+                <div className="flex items-center justify-between gap-3 pr-6">
+                  <DialogTitle className="flex items-center gap-2 text-base font-semibold">
+                    <Bot className="size-5 text-primary" />
+                    {viewingToken.name}
+                  </DialogTitle>
+                  <div>
+                    {viewingToken.is_revoked ? (
+                      <Badge variant="destructive">Отозван</Badge>
+                    ) : viewingToken.expires_at && new Date(viewingToken.expires_at) < new Date() ? (
+                      <Badge variant="destructive">Срок истек</Badge>
+                    ) : (
+                      <Badge variant="default" className="bg-emerald-600 hover:bg-emerald-600 text-white">
+                        Активен
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                <DialogDescription>
+                  Информация о токене приложения, параметрах доступа и назначенных правах
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-2 text-xs">
+                {/* Description if present */}
+                {viewingToken.description && (
+                  <div className="p-3 rounded-lg border border-border/60 bg-muted/20 text-muted-foreground">
+                    {viewingToken.description}
+                  </div>
+                )}
+
+                {/* Key attributes grid */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg border border-border/60 bg-muted/10 space-y-1.5">
+                    <span className="text-[11px] text-muted-foreground font-medium block">
+                      Префикс идентификации
+                    </span>
+                    <div className="flex items-center justify-between gap-2">
+                      <code className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-muted/60 text-foreground">
+                        {viewingToken.token_prefix}
+                      </code>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-6 px-1.5 text-[11px]"
+                        onClick={() => handleCopyPrefix(viewingToken.token_prefix)}
+                      >
+                        {copiedPrefix ? <Check className="size-3 text-emerald-500 mr-1" /> : <Copy className="size-3 mr-1" />}
+                        {copiedPrefix ? "Скопировано" : "Копировать"}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-lg border border-border/60 bg-muted/10 space-y-1.5">
+                    <span className="text-[11px] text-muted-foreground font-medium block">
+                      Срок действия
+                    </span>
+                    <div className="flex items-center gap-1.5 text-foreground font-medium">
+                      <Clock className="size-3.5 text-muted-foreground" />
+                      {viewingToken.expires_at ? (
+                        <span>До {new Date(viewingToken.expires_at).toLocaleString()}</span>
+                      ) : (
+                        <span className="text-emerald-500">Бессрочный</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-lg border border-border/60 bg-muted/10 space-y-1.5">
+                    <span className="text-[11px] text-muted-foreground font-medium block">
+                      Создан в системе
+                    </span>
+                    <div className="text-foreground">
+                      {new Date(viewingToken.created_at).toLocaleString()}
+                    </div>
+                  </div>
+
+                  <div className="p-3 rounded-lg border border-border/60 bg-muted/10 space-y-1.5">
+                    <span className="text-[11px] text-muted-foreground font-medium block">
+                      Последняя активность
+                    </span>
+                    <div className="text-foreground">
+                      {viewingToken.last_used_at ? (
+                        <div>
+                          <span>{new Date(viewingToken.last_used_at).toLocaleString()}</span>
+                          <span className="text-muted-foreground ml-1 font-mono text-[11px]">
+                            ({viewingToken.last_used_ip || "неизвестно"})
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">Еще не использовался</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* IP Allowlist */}
+                <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/10 p-3">
+                  <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
+                    <Globe className="size-3.5 text-muted-foreground" />
+                    Ограничения по IP-адресам
+                  </span>
+                  {viewingToken.ip_allowlist && viewingToken.ip_allowlist.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      {viewingToken.ip_allowlist.map((ip) => (
+                        <Badge key={ip} variant="outline" className="font-mono text-xs">
+                          {ip}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-muted-foreground text-[11px] pt-0.5">
+                      Доступ открыт с любых IP-адресов (без ограничений).
+                    </p>
+                  )}
+                </div>
+
+                {/* Scoped RBAC Permissions */}
+                <div className="space-y-2 rounded-lg border border-border/60 bg-muted/10 p-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1.5">
+                      <Shield className="size-3.5 text-primary" />
+                      Назначенные права доступа (Scoped RBAC)
+                    </span>
+                    <Badge variant="secondary" className="text-[10px]">
+                      {viewingToken.permissions.length} прав
+                    </Badge>
+                  </div>
+
+                  {viewingToken.permissions.length === 0 ? (
+                    <p className="text-muted-foreground text-[11px] py-1">
+                      У данного токена нет активных разрешений.
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5 max-h-[180px] overflow-y-auto p-2 rounded border border-border/40 bg-background/60">
+                      {viewingToken.permissions.map((p) => (
+                        <Badge key={p} variant="secondary" className="font-mono text-[11px]">
+                          {p}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <DialogFooter className="flex items-center justify-between gap-2 pt-2 border-t border-border/40">
+                <div className="flex items-center gap-2">
+                  {!viewingToken.is_revoked && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRevokingToken(viewingToken)}
+                      className="text-xs text-amber-500 hover:text-amber-400 hover:bg-amber-500/10"
+                    >
+                      Отозвать токен
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setDeletingToken(viewingToken)}
+                    className="text-xs text-destructive hover:bg-destructive/10"
+                  >
+                    <Trash2 className="size-3.5 mr-1" /> Удалить токен
+                  </Button>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setViewingToken(null)}
+                  className="text-xs"
+                >
+                  Закрыть
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
       {/* One-Time Secret Reveal Dialog */}
       <Dialog open={revealedToken !== null} onOpenChange={() => setRevealedToken(null)}>
         <DialogContent className="max-w-xl">
@@ -578,7 +770,12 @@ export function AppTokensSettings() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs">Секретный ключ авторизации (Bearer Token)</Label>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Секретный ключ авторизации (Bearer Token)</Label>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  Идентификатор: {revealedToken?.token_prefix}
+                </span>
+              </div>
               <div className="flex items-center gap-2">
                 <Input
                   readOnly
@@ -586,12 +783,12 @@ export function AppTokensSettings() {
                   className="font-mono text-xs bg-muted/60 select-all"
                 />
                 <Button
-                  onClick={handleCopy}
-                  variant={copied ? "default" : "secondary"}
+                  onClick={handleCopySecret}
+                  variant={copiedSecret ? "default" : "secondary"}
                   className="shrink-0 gap-1.5 text-xs"
                 >
-                  {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
-                  {copied ? "Скопировано!" : "Копировать"}
+                  {copiedSecret ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+                  {copiedSecret ? "Скопировано!" : "Копировать"}
                 </Button>
               </div>
             </div>
@@ -618,8 +815,8 @@ export function AppTokensSettings() {
           <AlertDialogHeader>
             <AlertDialogTitle>Отозвать токен «{revokingToken?.name}»?</AlertDialogTitle>
             <AlertDialogDescription>
-              Все внешние сервисы, боты или скрипты, использующие этот ключ, мгновенно потеряют доступ
-              к API платформы. Это действие необратимо.
+              Все внешние сервисы, боты или скрипты, использующие ключ с префиксом «{revokingToken?.token_prefix}»,
+              мгновенно потеряют доступ к API платформы. Это действие необратимо.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
