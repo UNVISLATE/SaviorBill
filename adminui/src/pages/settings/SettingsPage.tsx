@@ -4,7 +4,6 @@ import {
   Ban,
   Coins,
   Film,
-  Gauge,
   Info,
   KeyRound,
   Mail,
@@ -19,7 +18,7 @@ import { SectionTabs } from "@/components/layout/SectionTabs"
 import { SettingsGeneral } from "./SettingsGeneral"
 import { CurrencySettings } from "./CurrencySettings"
 import { SettingsBranding } from "./SettingsBranding"
-import { RateLimitSettings } from "./RateLimitSettings"
+import { SecuritySettings } from "./SecuritySettings"
 import { RawSettingsEditor } from "./RawSettingsEditor"
 import { BannedDomainsSettings } from "./BannedDomainsSettings"
 import { RolesPage } from "@/pages/roles/RolesPage"
@@ -94,12 +93,14 @@ const SETTINGS_TABS: SettingsTabDef[] = [
     anyPerm: ["settings.read", "settings.edit", "settings.raw.read"],
   },
   {
-    path: "ratelimits",
-    title: "Rate limiting",
-    to: "/settings/ratelimits",
-    icon: <Gauge className="size-4" />,
-    element: <RateLimitSettings />,
+    path: "security",
+    title: "Безопасность",
+    to: "/settings/security",
+    icon: <ShieldCheck className="size-4" />,
+    element: <SecuritySettings />,
     anyPerm: [
+      "settings.security.read",
+      "settings.security.edit",
       "settings.ratelimits.read",
       "settings.ratelimits.edit",
       "settings.ratelimits",
@@ -180,6 +181,7 @@ export function SettingsPage() {
             <Route key={tab.path} path={tab.path} element={tab.element} />
           ))}
           {/* Устаревшие алиасы */}
+          <Route path="ratelimits" element={<Navigate to="/settings/security" replace />} />
           <Route path="adminui" element={<Navigate to="/settings/media" replace />} />
           <Route path="payment-providers" element={<Navigate to="/providers/payment" replace />} />
           {/* Защита: при попытке открыть недоступный подраздел редиректим на первый доступный */}

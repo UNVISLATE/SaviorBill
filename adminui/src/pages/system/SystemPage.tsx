@@ -1,6 +1,15 @@
 import { useMemo } from "react"
 import { Navigate, Route, Routes } from "react-router-dom"
-import { Activity, AlertTriangle, Clock, ListTodo, Server } from "lucide-react"
+import {
+  Activity,
+  AlertTriangle,
+  Bug,
+  Clock,
+  Database,
+  ListTodo,
+  Server,
+  ShieldAlert,
+} from "lucide-react"
 
 import { useAuth } from "@/hooks/use-auth"
 import { SectionTabs } from "@/components/layout/SectionTabs"
@@ -9,6 +18,9 @@ import { SystemInstances } from "./SystemInstances"
 import { SystemTasks } from "./SystemTasks"
 import { SystemTasksArchive } from "./SystemTasksArchive"
 import { SystemDlq } from "./SystemDlq"
+import { SystemCache } from "./SystemCache"
+import { SystemSecurityEvents } from "./SystemSecurityEvents"
+import { SystemErrorLogs } from "./SystemErrorLogs"
 
 interface SystemTabDef {
   path: string
@@ -37,6 +49,30 @@ const SYSTEM_TABS: SystemTabDef[] = [
     anyPerm: ["system.stats.read", "system.stats", "system"],
   },
   {
+    path: "cache",
+    title: "Кэш (Valkey)",
+    to: "/system/cache",
+    icon: <Database className="size-4" />,
+    element: <SystemCache />,
+    anyPerm: ["system.cache.read", "system.cache.manage", "system.cache", "system"],
+  },
+  {
+    path: "security-events",
+    title: "События безопасности",
+    to: "/system/security-events",
+    icon: <ShieldAlert className="size-4" />,
+    element: <SystemSecurityEvents />,
+    anyPerm: ["system.security.read", "system.security.manage", "system.security", "system"],
+  },
+  {
+    path: "error-logs",
+    title: "Журнал ошибок",
+    to: "/system/error-logs",
+    icon: <Bug className="size-4" />,
+    element: <SystemErrorLogs />,
+    anyPerm: ["system.errors.read", "system.errors", "system"],
+  },
+  {
     path: "tasks",
     title: "Задачи",
     to: "/system/tasks",
@@ -62,7 +98,7 @@ const SYSTEM_TABS: SystemTabDef[] = [
   },
 ]
 
-/** /system — мониторинг инстансов/потребления и фоновых очередей задач.
+/** /system — мониторинг инстансов/потребления, кэша, безопасности и фоновых очередей задач.
  * Вкладки фильтруются строго по правам пользователя, с автоматическим редиректом на первую доступную. */
 export function SystemPage() {
   const { can } = useAuth()
