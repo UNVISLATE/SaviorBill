@@ -532,6 +532,58 @@ SETTINGS: tuple[SettingDef, ...] = (
         group="session",
         desc="Максимальное количество активных refresh-сессий на аккаунт",
     ),
+    # Публичный каталог и пагинация
+    SettingDef(
+        "catalog.public.limit_max",
+        None,
+        type="int",
+        group="catalog",
+        desc="Максимальный размер страницы (limit) для публичных неавторизованных запросов",
+    ),
+    SettingDef(
+        "catalog.public.limit_step",
+        None,
+        type="int",
+        group="catalog",
+        desc="Шаг квантования limit для неавторизованных запросов (5 или 10)",
+    ),
+    # Кэширование каталога
+    SettingDef(
+        "cache.catalog.ttl_sec",
+        None,
+        type="int",
+        group="cache",
+        desc="TTL кэша публичного каталога в Valkey (секунды, по умолчанию 180)",
+    ),
+    # Защита от перебора и автоматический бан (Auto-Ban)
+    SettingDef(
+        "security.autoban.enabled",
+        None,
+        type="bool",
+        group="security",
+        desc="Автоматическая временная блокировка IP при превышении лимитов",
+    ),
+    SettingDef(
+        "security.autoban.threshold",
+        None,
+        type="int",
+        group="security",
+        desc="Количество нарушений лимитов для срабатывания автобана (по умолчанию 5)",
+    ),
+    SettingDef(
+        "security.autoban.window_sec",
+        None,
+        type="int",
+        group="security",
+        desc="Окно отслеживания нарушений лимитов в секундах (по умолчанию 60)",
+    ),
+    SettingDef(
+        "security.autoban.duration_sec",
+        None,
+        type="int",
+        group="security",
+        desc="Длительность блокировки IP в секундах (по умолчанию 900 — 15 минут)",
+    ),
 )
 
 _BY_KEY: dict[str, SettingDef] = {d.key: d for d in SETTINGS}
