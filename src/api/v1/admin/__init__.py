@@ -24,6 +24,7 @@ from .settings import router as settings_router
 from .tasks import router as tasks_router
 from .triggers import router as triggers_router
 from .users import router as users_router
+from .app_tokens import router as app_tokens_router
 
 router = APIRouter(prefix="/api/v1/admin", dependencies=[Depends(require_2fa)])
 # Каждый саброутер получает свой сегмент пути здесь, а не дублирует его в
@@ -45,6 +46,7 @@ router.include_router(lua_router, prefix="/lua", tags=["admin: lua"])
 router.include_router(email_router, prefix="/email/templates", tags=["admin: email"])
 router.include_router(triggers_router, prefix="/triggers", tags=["admin: triggers"])
 router.include_router(media_router, prefix="/media", tags=["admin: media"])
+router.include_router(app_tokens_router, prefix="/app-tokens", tags=["admin: app tokens"])
 router.include_router(settings_router, prefix="/settings", tags=["admin: settings"])
 router.include_router(
     email_domains_router,

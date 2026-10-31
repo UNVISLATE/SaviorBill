@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom"
-import { Ban, Coins, Film, Gauge, Info, Mail, Palette, Settings2, ShieldCheck, SlidersHorizontal } from "lucide-react"
+import { Ban, Coins, Film, Gauge, Info, KeyRound, Mail, Palette, Settings2, ShieldCheck, SlidersHorizontal } from "lucide-react"
 
 import { SectionTabs } from "@/components/layout/SectionTabs"
 import { SettingsGeneral } from "./SettingsGeneral"
@@ -12,6 +12,7 @@ import { RolesPage } from "@/pages/roles/RolesPage"
 import { AboutPage } from "./AboutPage"
 import { SmtpSettings } from "./SmtpSettings"
 import { MediaSettingsPage } from "./MediaSettingsPage"
+import { AppTokensSettings } from "./AppTokensSettings"
 
 /** /settings — раздел с редко изменяемыми системными настройками, поэтому
  * с собственной под-навигацией, а не в общем сайдбаре (см.
@@ -23,6 +24,7 @@ export function SettingsPage() {
       <SectionTabs
         items={[
           { title: "Основное", to: "/settings/general", icon: <Settings2 className="size-4" /> },
+          { title: "Токены API", to: "/settings/app-tokens", icon: <KeyRound className="size-4" /> },
           { title: "Медиа", to: "/settings/media", icon: <Film className="size-4" /> },
           { title: "Валюта и курсы", to: "/settings/currency", icon: <Coins className="size-4" /> },
           { title: "Брендирование", to: "/settings/branding", icon: <Palette className="size-4" /> },
@@ -37,6 +39,7 @@ export function SettingsPage() {
         <Routes>
           <Route index element={<Navigate to="general" replace />} />
           <Route path="general" element={<SettingsGeneral />} />
+          <Route path="app-tokens" element={<AppTokensSettings />} />
           <Route path="media" element={<MediaSettingsPage />} />
           <Route path="adminui" element={<Navigate to="/settings/media" replace />} />
           <Route path="currency" element={<CurrencySettings />} />

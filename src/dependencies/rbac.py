@@ -1,10 +1,8 @@
-"""DI-гейт прав доступа поверх RBAC."""
-
 from __future__ import annotations
 
 from typing import Callable
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 
 from dependencies.auth import get_current_acc
 from models.user import UserModel
@@ -20,7 +18,19 @@ def require_perm(path: str) -> Callable:
     """
     reg_perm(path)
 
-    async def _dep(acc: UserModel = Depends(get_current_acc)) -> UserModel:
+    async def _dep(
+        request: Request,
+        acc: UserModel = Depends(get_current_acc),
+    ) -> UserModel:
+        # Для App Token права проверяются строго по его собственному списку permissions
+        app_token = getattr(request.state, "app_token", None)
+        if app_token is not None:
+            if not has_perm(app_token.perms_tree, path):
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN, detail=f"insufficient permissions: {path}"
+                )
+            return acc
+
         # owner может ВСЁ, независимо от содержимого perms — единственная
         # неприкасаемая роль (см. IMPLEMENTATION_PLAN.md, "Решения по
         # открытым вопросам" п.1).

@@ -29,6 +29,7 @@ from .worker_jobs import WorkerJobModel, WorkerJobEventModel, WorkerJobsMngr
 from .banned_email_domains import BannedEmailDomainModel, BannedEmailDomainsMngr
 from .auth_sessions import AuthSessionModel
 from .fx_sources import FxSourcesModel, FxSourcesMngr
+from .app_tokens import AppTokenModel, AppTokensMngr
 
 __all__ = [
     "Base",
@@ -79,4 +80,6 @@ __all__ = [
     "AuthSessionModel",
     "FxSourcesModel",
     "FxSourcesMngr",
+    "AppTokenModel",
+    "AppTokensMngr",
 ]

@@ -10,6 +10,8 @@ from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
 from models.banned_email_domains import BannedEmailDomainsMngr
 from models.user import UserModel, UserMngr
+from models.app_tokens import AppTokensMngr, hash_app_token
+from utils.datetime_utils import utc_now
 from services.auth import TokenSvc
 from core.config import AppConfig
 from security.sec import jwt as jwtu
@@ -52,9 +54,43 @@ async def get_current_acc(
     если заголовка нет, httpOnly cookie ``sb_access`` (adminui, см.
     ``security/sec/cookies.py``) — заголовок в приоритете, если передан.
     """
-    token = cred.credentials if cred is not None else request.cookies.get(ACCESS_COOKIE)
+    headers = getattr(request, "headers", None)
+    app_token_header = headers.get("X-App-Token") if headers is not None else None
+    cookies = getattr(request, "cookies", {}) or {}
+    token = cred.credentials if cred is not None else (app_token_header or cookies.get(ACCESS_COOKIE))
     if not token:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "bearer required")
+
+    if token.startswith("sb_app_live_"):
+        token_hash = hash_app_token(token)
+        session = getattr(mngr, "s", None)
+        if session is not None:
+            app_tokens_mngr = AppTokensMngr(session)
+            app_token = await app_tokens_mngr.by_hash(token_hash)
+            if not app_token or app_token.is_revoked:
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or revoked app token")
+            if app_token.expires_at and app_token.expires_at < utc_now():
+                raise HTTPException(status.HTTP_401_UNAUTHORIZED, "app token expired")
+
+            client = getattr(request, "client", None)
+            client_ip = client.host if client else "unknown"
+            if not app_token.check_ip_allowed(client_ip):
+                raise HTTPException(status.HTTP_403_FORBIDDEN, "ip not allowed for this app token")
+
+            await app_tokens_mngr.touch(app_token.id, client_ip)
+            await session.commit()
+            request_state = getattr(request, "state", None)
+            if request_state is not None:
+                request_state.app_token = app_token
+
+            if app_token.creator:
+                return app_token.creator
+            return UserModel(
+                id=app_token.created_by_account_id or 0,
+                login=f"app:{app_token.name}",
+                role_id=None,
+            )
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or revoked app token")
     cfg = _cfg(request)
     try:
         claims = jwtu.decode_jwt(

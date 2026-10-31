@@ -26,6 +26,8 @@ async def require_2fa(
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> UserModel:
     """Не пускать админа без включённой 2FA, если она обязательна."""
+    if getattr(request.state, "app_token", None) is not None:
+        return acc
     if acc.totp_enabled:
         return acc
     if request.url.path.endswith(_EXEMPT_SUFFIXES):
