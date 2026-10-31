@@ -152,6 +152,7 @@ async def add_attachment(
     body: AttachmentIn,
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
     mngr: ServiceAttachmentMngr = Depends(get_attachment_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> Attachment:
     if await svc_mngr.by_id(service_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
@@ -159,6 +160,7 @@ async def add_attachment(
         service_id, body.media_id, tag=body.tag, position=body.position
     )
     await mngr.s.commit()
+    await invalidate_catalog_cache(vk)
     await mngr.s.refresh(att, attribute_names=["media"])
     return Attachment.from_model(att)
 
@@ -175,9 +177,11 @@ async def update_attachment(
     att_id: int,
     body: AttachmentPatch,
     mngr: ServiceAttachmentMngr = Depends(get_attachment_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> Attachment:
     att = await mngr.update(att_id, tag=body.tag, position=body.position)
     await mngr.s.commit()
+    await invalidate_catalog_cache(vk)
     await mngr.s.refresh(att, attribute_names=["media"])
     return Attachment.from_model(att)
 
@@ -192,9 +196,11 @@ async def remove_attachment(
     service_id: int,
     att_id: int,
     mngr: ServiceAttachmentMngr = Depends(get_attachment_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> None:
     await mngr.remove(att_id)
     await mngr.s.commit()
+    await invalidate_catalog_cache(vk)
 
 
 __all__ = ["router"]
