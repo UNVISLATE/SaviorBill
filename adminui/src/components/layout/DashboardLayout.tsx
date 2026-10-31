@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query"
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { useBranding } from "@/hooks/use-branding"
-import { footerNavItems, navGroups } from "@/components/layout/nav-config"
+import { footerNavItems, isNavItemVisible, navGroups } from "@/components/layout/nav-config"
 import { Logo } from "@/components/layout/Logo"
 import { NavMain } from "@/components/layout/NavMain"
 import { NavUser } from "@/components/layout/NavUser"
@@ -43,7 +43,7 @@ export function DashboardLayout() {
     health?.app_version || (typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0-dev")
   const displayVersion = rawVersion.startsWith("v") ? rawVersion : `v${rawVersion}`
 
-  const visibleFooterItems = footerNavItems.filter((i) => !i.perm || can(i.perm))
+  const visibleFooterItems = footerNavItems.filter((i) => isNavItemVisible(can, i))
 
   return (
     <SidebarProvider>

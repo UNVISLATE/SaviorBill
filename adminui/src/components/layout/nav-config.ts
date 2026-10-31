@@ -20,14 +20,25 @@ import {
 
 /**
  * Разделы навигации админки. `perm` — dot-path право (см. `lib/rbac.ts`),
- * пункт скрывается, если у текущей роли нет права (гейт только для UI —
- * реальная проверка всегда на backend через `require_perm`).
+ * `anyPerm` — набор прав, хотя бы одно из которых открывает доступ.
+ * Пункт скрывается, если у текущей роли нет ни одного требуемого права.
  */
 export interface NavItem {
   title: string
   url: string
   icon: typeof Gauge
   perm?: string
+  anyPerm?: string[]
+}
+
+export function isNavItemVisible(can: (p: string) => boolean, item: NavItem): boolean {
+  if (item.anyPerm && item.anyPerm.length > 0) {
+    return item.anyPerm.some((p) => can(p))
+  }
+  if (item.perm) {
+    return can(item.perm)
+  }
+  return true
 }
 
 export interface NavGroup {
@@ -49,37 +60,42 @@ export const navGroups: NavGroup[] = [
     title: "Пользователи",
     icon: Users,
     items: [
-      { title: "Пользователи", url: "/users", icon: Users, perm: "users.read" },
-      { title: "Заказы", url: "/orders", icon: ShoppingCart, perm: "orders.read" },
-      { title: "Платежи", url: "/purchases", icon: Receipt, perm: "purchases.read" },
-      { title: "Промокоды", url: "/promo", icon: Ticket, perm: "promo.catalogs.read" },
+      {
+        title: "Пользователи",
+        url: "/users",
+        icon: Users,
+        anyPerm: ["users.read", "users", "admin.user.create", "admin.user.edit", "admin.user.delete"],
+      },
+      { title: "Заказы", url: "/orders", icon: ShoppingCart, anyPerm: ["orders.read", "orders"] },
+      { title: "Платежи", url: "/purchases", icon: Receipt, anyPerm: ["purchases.read", "purchases"] },
+      { title: "Промокоды", url: "/promo", icon: Ticket, anyPerm: ["promo.catalogs.read", "promo.codes.read", "promo"] },
     ],
   },
   {
     title: "Каталог",
     icon: FolderTree,
     items: [
-      { title: "Каталоги", url: "/catalog", icon: FolderTree, perm: "catalogs.read" },
-      { title: "Услуги", url: "/services", icon: Package, perm: "services.read" },
-      { title: "Ключи", url: "/service-keys", icon: KeyRound, perm: "services.keys.read" },
-      { title: "Медиатека", url: "/media", icon: Images, perm: "media.read" },
+      { title: "Каталоги", url: "/catalog", icon: FolderTree, anyPerm: ["catalogs.read", "catalogs"] },
+      { title: "Услуги", url: "/services", icon: Package, anyPerm: ["services.read", "services"] },
+      { title: "Ключи", url: "/service-keys", icon: KeyRound, anyPerm: ["services.keys.read", "ownersec.servicekeys.read", "services.keys"] },
+      { title: "Медиатека", url: "/media", icon: Images, anyPerm: ["media.read", "media"] },
     ],
   },
   {
     title: "Автоматизация",
     icon: Zap,
     items: [
-      { title: "Скрипты", url: "/lua", icon: ScrollText, perm: "lua.read" },
-      { title: "Триггеры", url: "/triggers", icon: Zap, perm: "triggers.read" },
-      { title: "Email-шаблоны", url: "/emailtemplate", icon: Mail, perm: "email.read" },
+      { title: "Скрипты", url: "/lua", icon: ScrollText, anyPerm: ["lua.read", "lua"] },
+      { title: "Триггеры", url: "/triggers", icon: Zap, anyPerm: ["triggers.read", "triggers"] },
+      { title: "Email-шаблоны", url: "/emailtemplate", icon: Mail, anyPerm: ["email.read", "email"] },
     ],
   },
   {
     title: "Провайдеры",
     icon: Plug,
     items: [
-      { title: "Платежи", url: "/providers/payment", icon: CreditCard, perm: "purchases.providers.read" },
-      { title: "OAuth", url: "/providers/oauth", icon: KeyRound, perm: "oauth.read" },
+      { title: "Платежи", url: "/providers/payment", icon: CreditCard, anyPerm: ["purchases.providers.read", "purchases.providers"] },
+      { title: "OAuth", url: "/providers/oauth", icon: KeyRound, anyPerm: ["oauth.read", "oauth"] },
     ],
   },
 ]
@@ -90,7 +106,36 @@ export const navGroups: NavGroup[] = [
  * из общих групп навигации, как "Settings/Get Help/Search" в референсе.
  */
 export const footerNavItems: NavItem[] = [
-  { title: "Аудит", url: "/audit", icon: FileClock, perm: "audit.read" },
-  { title: "Система", url: "/system", icon: MonitorCog, perm: "system.stats.read" },
-  { title: "Настройки", url: "/settings", icon: Settings, perm: "settings.raw.read" },
+  { title: "Аудит", url: "/audit", icon: FileClock, anyPerm: ["audit.read", "audit"] },
+  {
+    title: "Система",
+    url: "/system",
+    icon: MonitorCog,
+    anyPerm: [
+      "system.stats.read",
+      "system.tasks.summary.read",
+      "system.tasks.tail.read",
+      "system.tasks.dlq.read",
+      "system",
+    ],
+  },
+  {
+    title: "Настройки",
+    url: "/settings",
+    icon: Settings,
+    anyPerm: [
+      "settings",
+      "apptokens",
+      "branding",
+      "roles",
+      "settings.raw.read",
+      "settings.read",
+      "settings.edit",
+      "settings.raw.edit",
+      "settings.ratelimits.read",
+      "settings.email_domains.read",
+      "apptokens.read",
+      "roles.read",
+    ],
+  },
 ]

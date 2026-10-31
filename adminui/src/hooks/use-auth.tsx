@@ -23,6 +23,7 @@ interface AuthContextValue {
   login: (login: string, password: string, totp?: string) => Promise<void>
   logout: () => Promise<void>
   can: (perm: string) => boolean
+  canAny: (...perms: string[]) => boolean
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -104,6 +105,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       can(perm: string) {
         return hasPerm(meQuery.data?.perms, perm)
+      },
+      canAny(...perms: string[]) {
+        return perms.some((p) => hasPerm(meQuery.data?.perms, p))
       },
     }),
     [meQuery, isBackendUnavailable, qc],

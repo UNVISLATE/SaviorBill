@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom"
 
 import { cn } from "@/lib/utils"
 import { useAuth } from "@/hooks/use-auth"
-import type { NavGroup } from "@/components/layout/nav-config"
+import { isNavItemVisible, type NavGroup } from "@/components/layout/nav-config"
 import {
   Collapsible,
   CollapsibleContent,
@@ -44,7 +44,7 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
     <SidebarGroup>
       <SidebarMenu>
         {groups.map((group) => {
-          const items = group.items.filter((i) => !i.perm || can(i.perm))
+          const items = group.items.filter((i) => isNavItemVisible(can, i))
           if (items.length === 0) return null
 
           if (items.length === 1) {
