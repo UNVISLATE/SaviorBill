@@ -4,8 +4,8 @@ import {
   Ban,
   Coins,
   Film,
-  Info,
   KeyRound,
+  Lock,
   Mail,
   Palette,
   Settings2,
@@ -16,16 +16,15 @@ import {
 import { useAuth } from "@/hooks/use-auth"
 import { SectionTabs } from "@/components/layout/SectionTabs"
 import { SettingsGeneral } from "./SettingsGeneral"
-import { CurrencySettings } from "./CurrencySettings"
 import { SettingsBranding } from "./SettingsBranding"
+import { CurrencySettings } from "./CurrencySettings"
+import { SmtpSettings } from "./SmtpSettings"
 import { SecuritySettings } from "./SecuritySettings"
 import { RawSettingsEditor } from "./RawSettingsEditor"
 import { BannedDomainsSettings } from "./BannedDomainsSettings"
-import { RolesPage } from "@/pages/roles/RolesPage"
-import { AboutPage } from "./AboutPage"
-import { SmtpSettings } from "./SmtpSettings"
-import { MediaSettingsPage } from "./MediaSettingsPage"
 import { AppTokensSettings } from "./AppTokensSettings"
+import { MediaSettingsPage } from "./MediaSettingsPage"
+import { RolesPage } from "@/pages/roles/RolesPage"
 
 interface SettingsTabDef {
   path: string
@@ -33,24 +32,76 @@ interface SettingsTabDef {
   to: string
   icon: React.ReactNode
   element: React.ReactNode
+  group?: string
+  hint?: string
   anyPerm?: string[]
 }
 
 const SETTINGS_TABS: SettingsTabDef[] = [
+  // Группа 1: Общее
   {
     path: "general",
     title: "Основное",
     to: "/settings/general",
     icon: <Settings2 className="size-4" />,
     element: <SettingsGeneral />,
+    group: "Общее",
     anyPerm: ["settings.raw.read", "settings.read", "settings.edit", "settings.raw.edit"],
   },
   {
+    path: "branding",
+    title: "Бренд",
+    to: "/settings/branding",
+    icon: <Palette className="size-4" />,
+    element: <SettingsBranding />,
+    group: "Общее",
+    anyPerm: ["settings.raw.edit", "settings.raw.read", "branding"],
+  },
+  {
+    path: "currency",
+    title: "Валюта",
+    to: "/settings/currency",
+    icon: <Coins className="size-4" />,
+    element: <CurrencySettings />,
+    group: "Общее",
+    anyPerm: ["settings.raw.read", "settings.raw.edit"],
+  },
+  {
+    path: "media",
+    title: "Медиа",
+    to: "/settings/media",
+    icon: <Film className="size-4" />,
+    element: <MediaSettingsPage />,
+    group: "Общее",
+    anyPerm: ["settings.raw.read", "settings.raw.edit", "media.read", "media"],
+  },
+  {
+    path: "smtp",
+    title: "Почта",
+    to: "/settings/smtp",
+    icon: <Mail className="size-4" />,
+    element: <SmtpSettings />,
+    group: "Общее",
+    anyPerm: ["settings.read", "settings.edit", "settings.raw.read"],
+  },
+
+  // Группа 2: Доступ
+  {
+    path: "roles",
+    title: "Роли",
+    to: "/settings/roles",
+    icon: <ShieldCheck className="size-4" />,
+    element: <RolesPage />,
+    group: "Доступ",
+    anyPerm: ["roles.read", "roles"],
+  },
+  {
     path: "app-tokens",
-    title: "Токены API",
+    title: "API Токены",
     to: "/settings/app-tokens",
     icon: <KeyRound className="size-4" />,
     element: <AppTokensSettings />,
+    group: "Доступ",
     anyPerm: [
       "apptokens",
       "apptokens.read",
@@ -60,44 +111,15 @@ const SETTINGS_TABS: SettingsTabDef[] = [
       "apptokens.manage_any",
     ],
   },
-  {
-    path: "media",
-    title: "Медиа",
-    to: "/settings/media",
-    icon: <Film className="size-4" />,
-    element: <MediaSettingsPage />,
-    anyPerm: ["settings.raw.read", "settings.raw.edit", "media.read", "media"],
-  },
-  {
-    path: "currency",
-    title: "Валюта и курсы",
-    to: "/settings/currency",
-    icon: <Coins className="size-4" />,
-    element: <CurrencySettings />,
-    anyPerm: ["settings.raw.read", "settings.raw.edit"],
-  },
-  {
-    path: "branding",
-    title: "Брендирование",
-    to: "/settings/branding",
-    icon: <Palette className="size-4" />,
-    element: <SettingsBranding />,
-    anyPerm: ["settings.raw.edit", "settings.raw.read", "branding"],
-  },
-  {
-    path: "smtp",
-    title: "Почта (SMTP)",
-    to: "/settings/smtp",
-    icon: <Mail className="size-4" />,
-    element: <SmtpSettings />,
-    anyPerm: ["settings.read", "settings.edit", "settings.raw.read"],
-  },
+
+  // Группа 3: Безопасность
   {
     path: "security",
     title: "Безопасность",
     to: "/settings/security",
-    icon: <ShieldCheck className="size-4" />,
+    icon: <Lock className="size-4" />,
     element: <SecuritySettings />,
+    group: "Безопасность",
     anyPerm: [
       "settings.security.read",
       "settings.security.edit",
@@ -109,10 +131,11 @@ const SETTINGS_TABS: SettingsTabDef[] = [
   },
   {
     path: "domains",
-    title: "Заблок. домены",
+    title: "Заблок. почта",
     to: "/settings/domains",
     icon: <Ban className="size-4" />,
     element: <BannedDomainsSettings />,
+    group: "Безопасность",
     anyPerm: [
       "settings.email_domains.read",
       "settings.email_domains.edit",
@@ -120,34 +143,20 @@ const SETTINGS_TABS: SettingsTabDef[] = [
       "settings.raw.read",
     ],
   },
+
+  // Группа 4: Другое
   {
     path: "raw",
-    title: "Raw settings",
+    title: "RAW Settings",
     to: "/settings/raw",
     icon: <SlidersHorizontal className="size-4" />,
     element: <RawSettingsEditor />,
+    group: "Другое",
     anyPerm: ["settings.raw.read", "settings.raw.edit"],
-  },
-  {
-    path: "roles",
-    title: "Роли",
-    to: "/settings/roles",
-    icon: <ShieldCheck className="size-4" />,
-    element: <RolesPage />,
-    anyPerm: ["roles.read", "roles"],
-  },
-  {
-    path: "about",
-    title: "О системе",
-    to: "/settings/about",
-    icon: <Info className="size-4" />,
-    element: <AboutPage />,
   },
 ]
 
-/** /settings — раздел с редко изменяемыми системными настройками, поэтому
- * с собственной под-навигацией, а не в общем сайдбаре. Вкладки фильтруются
- * строго по правам пользователя, с автоматическим редиректом на первую доступную. */
+/** /settings — раздел настроек с группированной структурой. */
 export function SettingsPage() {
   const { can } = useAuth()
 
@@ -157,6 +166,16 @@ export function SettingsPage() {
       return tab.anyPerm.some((p) => can(p))
     })
   }, [can])
+
+  const tabItems = useMemo(() => {
+    return visibleTabs.map((tab) => ({
+      title: tab.title,
+      to: tab.to,
+      icon: tab.icon,
+      group: tab.group,
+      hint: tab.hint,
+    }))
+  }, [visibleTabs])
 
   if (visibleTabs.length === 0) {
     return (
@@ -174,17 +193,17 @@ export function SettingsPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-xl font-semibold">Настройки</h1>
-      <SectionTabs items={visibleTabs}>
+      <SectionTabs items={tabItems}>
         <Routes>
           <Route index element={<Navigate to={defaultTo} replace />} />
           {visibleTabs.map((tab) => (
             <Route key={tab.path} path={tab.path} element={tab.element} />
           ))}
-          {/* Устаревшие алиасы */}
+          {/* Устаревшие алиасы и редиректы */}
+          <Route path="about" element={<Navigate to="/about" replace />} />
           <Route path="ratelimits" element={<Navigate to="/settings/security" replace />} />
           <Route path="adminui" element={<Navigate to="/settings/media" replace />} />
           <Route path="payment-providers" element={<Navigate to="/providers/payment" replace />} />
-          {/* Защита: при попытке открыть недоступный подраздел редиректим на первый доступный */}
           <Route path="*" element={<Navigate to={defaultTo} replace />} />
         </Routes>
       </SectionTabs>

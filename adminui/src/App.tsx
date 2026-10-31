@@ -23,6 +23,7 @@ import { OAuthProvidersPage } from "@/pages/oauth/OAuthProvidersPage"
 import { PaymentProvidersPage } from "@/pages/providers/PaymentProvidersPage"
 import { ProtectedRoute } from "@/routes/ProtectedRoute"
 import { NotFoundPage } from "@/pages/errors/NotFoundPage"
+import { AboutPage } from "@/pages/settings/AboutPage"
 import { useAuth } from "@/hooks/use-auth"
 import { ProfileDialogProvider } from "@/hooks/use-profile-dialog"
 import { ProfileDialogHost } from "@/components/profile/ProfileDialogHost"
@@ -56,6 +57,7 @@ export function App() {
               <Route path="/users" element={<UsersPage />} />
               <Route path="/users/:userId" element={<UsersPage />} />
               <Route path="/audit" element={<AuditPage />} />
+              <Route path="/about" element={<AboutPage />} />
               <Route path="/system/*" element={<SystemPage />} />
               <Route path="/settings/*" element={<SettingsPage />} />
               <Route path="/lua" element={<LuaScriptsPage />} />

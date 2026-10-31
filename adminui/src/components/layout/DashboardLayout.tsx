@@ -100,7 +100,7 @@ export function DashboardLayout() {
               <TooltipTrigger
                 render={
                   <Link
-                    to="/settings/about"
+                    to="/about"
                     className="flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/30 hover:bg-muted px-2.5 py-1 text-xs font-mono font-medium text-muted-foreground hover:text-foreground transition-all hover:border-primary/40 shadow-2xs"
                   >
                     <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />

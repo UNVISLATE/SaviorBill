@@ -53,6 +53,7 @@ export const routeMeta: RouteMeta[] = [
   { path: "/settings/raw", title: "Raw settings" },
   { path: "/settings/roles", title: "Роли" },
   { path: "/settings/about", title: "О системе" },
+  { path: "/about", title: "О системе" },
 ]
 
 /**
