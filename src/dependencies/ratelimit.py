@@ -15,6 +15,7 @@ from dependencies.settings import get_settings_mngr
 from models.system_settings import SystemSettingsMngr
 from models.user import UserModel
 from security.ratelimit import LimitRule, RateLimiter
+from services.security_monitor import check_and_apply_autoban, log_security_event
 from utils.degrade import VALKEY_ERRORS, note_degraded
 
 log = logging.getLogger("saviorbill.ratelimit")
@@ -201,6 +202,26 @@ async def _enforce(
             ) from None
         return
     if not res.allowed:
+        client_ip = request.client.host if request.client else "unknown"
+        vk = request.app.state.valkey
+        ray_id = getattr(getattr(request, "state", None), "ray_id", None)
+        await log_security_event(
+            vk,
+            ip=client_ip,
+            action="rate_limited",
+            reason=f"Превышен лимит {rule.max_hits} за {rule.window}с ({scope})",
+            scope=scope,
+            kind=kind.value,
+            details=f"Retry-After: {res.retry_after}s",
+            ray_id=ray_id,
+        )
+        was_banned = await check_and_apply_autoban(vk, client_ip, settings, ray_id=ray_id)
+        if was_banned:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                detail="too many rate limit violations: your IP has been temporarily blocked",
+                headers={"Retry-After": str(res.retry_after)},
+            )
         raise HTTPException(
             status.HTTP_429_TOO_MANY_REQUESTS,
             detail="too many requests, try again later",

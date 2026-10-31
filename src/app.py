@@ -6,6 +6,7 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from lifespan import lifespan
 from core.config import AppConfig, APP_NAME, APP_VERSION
+from middleware.request_tracker import RequestTrackerMiddleware
 from security.csrf import CookieCSRFMiddleware
 from telemetry.otel import install_access_log_filter, setup_observability
 
@@ -93,6 +94,9 @@ if settings.cors_origins_list:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+# Сквозной трекер запросов (Ray ID), защита от атак и логирование ошибок.
+app.add_middleware(RequestTrackerMiddleware)
 
 # Defense-in-depth поверх SameSite=Strict на auth-cookie (см. security/csrf.py).
 app.add_middleware(CookieCSRFMiddleware, cfg=settings)
