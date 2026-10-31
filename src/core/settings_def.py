@@ -563,11 +563,18 @@ SETTINGS: tuple[SettingDef, ...] = (
     ),
     # Кэширование каталога
     SettingDef(
+        "catalog.cache.enabled",
+        "1",
+        type="bool",
+        group="cache",
+        desc="Включить кэширование публичного каталога в Valkey (1 - включено, 0 - выключено)",
+    ),
+    SettingDef(
         "cache.catalog.ttl_sec",
-        None,
+        "3600",
         type="int",
         group="cache",
-        desc="TTL кэша публичного каталога в Valkey (секунды, по умолчанию 180)",
+        desc="TTL кэша публичного каталога в Valkey (секунды, по умолчанию 3600)",
     ),
     # Защита от перебора и автоматический бан (Auto-Ban)
     SettingDef(

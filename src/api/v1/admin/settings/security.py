@@ -1,5 +1,3 @@
-"""Админ: единый центр настроек безопасности (Rate Limits, Auto-Ban, Public Limits)."""
-
 from __future__ import annotations
 
 import json
@@ -10,7 +8,12 @@ from pydantic import BaseModel, Field
 import valkey.asyncio as valkey
 
 from core.config import AppConfig
-from dependencies.ratelimit import LimitKind, _kind_setting_key, _rule_for
+from dependencies.ratelimit import (
+    LimitKind,
+    _burst_rule_for,
+    _kind_setting_key,
+    _rule_for,
+)
 from dependencies.rbac import require_any_perm
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
@@ -22,18 +25,19 @@ router = APIRouter()
 
 
 class AutobanSettings(BaseModel):
-    enabled: bool = True
+    enabled: bool = Field(default=True)
     threshold: int = Field(default=5, ge=1, le=100)
     window_sec: int = Field(default=60, ge=5, le=3600)
     duration_sec: int = Field(default=900, ge=60, le=86400 * 30)
 
 
 class CatalogPublicSettings(BaseModel):
+    enabled: bool = Field(default=True, description="Включить кэширование каталога в Valkey")
     limit_max_guest: int = Field(default=20, ge=1, le=200, description="Макс. limit для неавторизованных (по умолч. 20)")
     limit_max_auth: int = Field(default=100, ge=1, le=200, description="Макс. limit для авторизованных (по умолч. 100)")
     limit_max: int | None = Field(default=None, description="Legacy alias for limit_max_guest")
     limit_step: int = Field(default=10, description="Квантование: строго 5 или 10")
-    cache_ttl_sec: int = Field(default=180, ge=10, le=86400)
+    cache_ttl_sec: int = Field(default=3600, ge=10, le=86400)
 
 
 class SecuritySettingsResponse(BaseModel):
@@ -63,17 +67,23 @@ async def get_security_settings(
     rules: list[RateLimitRule] = []
     for kind in LimitKind:
         base = _rule_for(cfg, kind)
+        burst_base = _burst_rule_for(kind)
         raw = await settings.get(_kind_setting_key(kind))
         if raw is not None:
             data = json.loads(raw)
             max_hits, window = int(data["max_hits"]), int(data["window"])
+            burst_hits = int(data.get("burst_hits", burst_base.max_hits))
+            burst_window = int(data.get("burst_window", burst_base.window))
         else:
             max_hits, window = base.max_hits, base.window
+            burst_hits, burst_window = burst_base.max_hits, burst_base.window
         rules.append(
             RateLimitRule(
                 kind=kind.value,
                 max_hits=max_hits,
                 window=window,
+                burst_hits=burst_hits,
+                burst_window=burst_window,
                 overridden=raw is not None,
             )
         )
@@ -92,13 +102,16 @@ async def get_security_settings(
         duration_sec=autoban_duration,
     )
 
-    # 3. Public catalog pagination
+    # 3. Public catalog pagination and cache
+    cache_enabled_raw = await settings.get("catalog.cache.enabled", "1")
+    cache_enabled = cache_enabled_raw.strip().lower() in ("1", "true", "yes", "on")
     step_val = int(await settings.get("catalog.public.limit_step", "10"))
     guest_limit_val = int(await settings.get("catalog.limit_max_guest", await settings.get("catalog.public.limit_max", "20")))
     auth_limit_val = int(await settings.get("catalog.limit_max_auth", "100"))
-    ttl_val = int(await settings.get("cache.catalog.ttl_sec", "180"))
+    ttl_val = int(await settings.get("cache.catalog.ttl_sec", "3600"))
 
     catalog_public = CatalogPublicSettings(
+        enabled=cache_enabled,
         limit_max_guest=guest_limit_val,
         limit_max_auth=auth_limit_val,
         limit_max=guest_limit_val,
@@ -140,12 +153,13 @@ async def update_security_settings(
         snapped_guest = snap_public_limit_setting(raw_guest, step)
         snapped_auth = snap_public_limit_setting(raw_auth, step)
 
+        await settings.set("catalog.cache.enabled", "1" if patch.catalog_public.enabled else "0")
         await settings.set("catalog.public.limit_step", str(step))
         await settings.set("catalog.limit_max_guest", str(snapped_guest))
         await settings.set("catalog.public.limit_max", str(snapped_guest))
         await settings.set("catalog.limit_max_auth", str(snapped_auth))
         await settings.set("cache.catalog.ttl_sec", str(patch.catalog_public.cache_ttl_sec))
-        # Инвалидация кэша каталога
+        # Немедленная инвалидация кэша каталога
         await invalidate_catalog_cache(vk)
 
     return await get_security_settings(request, settings)

@@ -1,11 +1,10 @@
-"""Публичный каталог: услуги и дерево каталогов."""
-
 from __future__ import annotations
 
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
-from sqlalchemy import select
-from models.service import ServiceModel
+from sqlalchemy import func, select
 
+from dependencies.auth import get_current_acc_optional
 from dependencies.catalog import (
     ServiceCatalogsMngr,
     ServiceKeysMngr,
@@ -14,13 +13,13 @@ from dependencies.catalog import (
     get_service_mngr,
     get_servicekeys_mngr,
 )
-from dependencies.auth import get_current_acc_optional
 from dependencies.promo import PromoCodesMngr, get_promo_mngr
 from dependencies.ratelimit import LimitKind, authenticated_ident, enforce_rate_limit
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
 import valkey.asyncio as valkey
 from enums import Delivery
+from models.service import ServiceModel
 from models.user import UserModel
 from schemas.catalog import CatalogResponse
 from schemas.page import Page
@@ -57,16 +56,22 @@ async def list_catalogs(
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> list[CatalogResponse]:
     """Все активные каталоги (плоско; иерархия — через parent_id). Кешируется в Valkey."""
-    cached = await get_cached_catalogs(vk)
-    if cached is not None:
-        return [CatalogResponse.model_validate(c) for c in cached]
+    cache_enabled_raw = await settings.get("catalog.cache.enabled", "1")
+    cache_enabled = cache_enabled_raw.strip().lower() in ("1", "true", "yes", "on")
+
+    if cache_enabled:
+        cached = await get_cached_catalogs(vk)
+        if cached is not None:
+            return [CatalogResponse.model_validate(c) for c in cached]
 
     rows = await mngr.list_all()
     result = [CatalogResponse.from_model(c) for c in rows if c.is_active]
 
-    ttl_raw = await settings.get("cache.catalog.ttl_sec", "180")
-    ttl = int(ttl_raw) if ttl_raw and ttl_raw.isdigit() else 180
-    await set_cached_catalogs(vk, [c.model_dump() for c in result], ttl_sec=ttl)
+    if cache_enabled:
+        ttl_raw = await settings.get("cache.catalog.ttl_sec", "3600")
+        ttl = int(ttl_raw) if ttl_raw and ttl_raw.isdigit() else 3600
+        await set_cached_catalogs(vk, [c.model_dump() for c in result], ttl_sec=ttl)
+
     return result
 
 
@@ -96,8 +101,36 @@ async def list_services(
 
     effective_limit = normalize_public_limit(pp.limit, max_limit=max_limit, step=step)
 
-    ttl_raw = await settings.get("cache.catalog.ttl_sec", "180")
-    ttl = int(ttl_raw) if ttl_raw and ttl_raw.isdigit() else 180
+    cache_enabled_raw = await settings.get("catalog.cache.enabled", "1")
+    cache_enabled = cache_enabled_raw.strip().lower() in ("1", "true", "yes", "on")
+
+    # Если кэширование выключено в настройках — идём напрямую в PostgreSQL
+    if not cache_enabled:
+        stmt = select(ServiceModel).where(ServiceModel.is_active.is_(True))
+        if catalog_id is not None:
+            stmt = stmt.where(ServiceModel.catalog_id == catalog_id)
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total = (await mngr.s.scalars(count_stmt)).one()
+        slice_stmt = (
+            stmt.order_by(ServiceModel.id).offset(pp.offset).limit(effective_limit)
+        )
+        models = (await mngr.s.scalars(slice_stmt)).all()
+        items = []
+        for m in models:
+            svc = Service.from_model(m)
+            svc = await _with_stock(svc, svc.id, keys_mngr)
+            items.append(svc)
+        has_more = (pp.offset + effective_limit) < total
+        return Page(
+            items=items,
+            total=total,
+            limit=effective_limit,
+            offset=pp.offset,
+            has_more=has_more,
+        )
+
+    ttl_raw = await settings.get("cache.catalog.ttl_sec", "3600")
+    ttl = int(ttl_raw) if ttl_raw and ttl_raw.isdigit() else 3600
 
     # 1. Уровень 1: Индекс ID активных услуг каталога (Valkey)
     ids = await get_cached_catalog_ids(vk, catalog_id)
@@ -116,7 +149,11 @@ async def list_services(
 
     if not slice_ids:
         return Page(
-            items=[], total=total, limit=effective_limit, offset=pp.offset, has_more=False
+            items=[],
+            total=total,
+            limit=effective_limit,
+            offset=pp.offset,
+            has_more=False,
         )
 
     # 2. Уровень 2: Пакетный MGET сущностей из Valkey
@@ -141,19 +178,24 @@ async def list_services(
         if missing_to_cache:
             await set_cached_service_entities(vk, missing_to_cache, ttl_sec=ttl)
 
-    # Сборка готовой страницы в точном порядке среза slice_ids
-    items: list[Service] = []
-    for sid in slice_ids:
-        raw_entity = cached_entities.get(sid)
-        if raw_entity is not None:
-            items.append(Service.model_validate(raw_entity))
+    items = [
+        Service.model_validate(cached_entities[sid])
+        for sid in slice_ids
+        if sid in cached_entities
+    ]
 
     return Page(
-        items=items, total=total, limit=effective_limit, offset=pp.offset, has_more=has_more
+        items=items,
+        total=total,
+        limit=effective_limit,
+        offset=pp.offset,
+        has_more=has_more,
     )
 
 
-@router.get("/services/{service_id}", response_model=Service, summary="Service details")
+@router.get(
+    "/services/{service_id}", response_model=Service, summary="Service details"
+)
 async def get_service(
     request: Request,
     response: Response,
@@ -168,25 +210,26 @@ async def get_service(
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
     vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> Service:
-    """Получить активную услугу по идентификатору.
+    """Получить активную услугу по идентификатору."""
+    cache_enabled_raw = await settings.get("catalog.cache.enabled", "1")
+    cache_enabled = cache_enabled_raw.strip().lower() in ("1", "true", "yes", "on")
 
-    ``?promo=CODE`` — превью скидки без побочных эффектов (см.
-    ``PromoCodesMngr.quote_for``); альтернатива отдельному
-    ``GET /promocodes/{code}/quote``. Требует авторизации и лимитируется
-    отдельно — анонимный перебор кодов через этот путь исключён так же, как
-    и через основной эндпоинт (см. AUDIT.md §2.3).
-    """
-    ttl_raw = await settings.get("cache.catalog.ttl_sec", "180")
-    ttl = int(ttl_raw) if ttl_raw and ttl_raw.isdigit() else 180
+    ttl_raw = await settings.get("cache.catalog.ttl_sec", "3600")
+    ttl = int(ttl_raw) if ttl_raw and ttl_raw.isdigit() else 3600
 
-    if not promo:
+    if cache_enabled and not promo:
         entities, missing = await get_cached_service_entities(vk, [service_id])
         if service_id in entities:
             return Service.model_validate(entities[service_id])
 
     svc = await mngr.get_active(service_id)
     result = await _with_stock(Service.from_model(svc), service_id, keys_mngr)
-    await set_cached_service_entities(vk, {service_id: result.model_dump()}, ttl_sec=ttl)
+
+    if cache_enabled:
+        await set_cached_service_entities(
+            vk, {service_id: result.model_dump()}, ttl_sec=ttl
+        )
+
     if promo:
         if acc is None:
             raise HTTPException(

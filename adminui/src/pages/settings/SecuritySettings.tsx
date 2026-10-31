@@ -1,13 +1,13 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { Ban, Clock, Gauge, Lock, RefreshCw, ShieldAlert, ShieldCheck } from "lucide-react"
+import { Gauge, Info, ShieldAlert, ShieldCheck, Zap } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/shadsnui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/shadsnui/card"
 import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
 import {
@@ -26,19 +26,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/shadsnui/table"
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/shadsnui/dialog"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/shadsnui/tooltip"
 
 interface RateLimitRule {
   kind: string
   max_hits: number
   window: number
+  burst_hits: number
+  burst_window: number
   overridden: boolean
 }
 
@@ -50,6 +45,7 @@ interface AutobanSettings {
 }
 
 interface CatalogPublicSettings {
+  enabled: boolean
   limit_max_guest?: number
   limit_max_auth?: number
   limit_max?: number
@@ -63,14 +59,6 @@ interface SecuritySettingsData {
   catalog_public: CatalogPublicSettings
 }
 
-interface BannedIpItem {
-  ip: string
-  banned_at?: string
-  reason?: string
-  duration_sec?: number
-  ttl_remaining_sec?: number
-}
-
 const KIND_LABEL: Record<string, string> = {
   default: "По умолчанию",
   auth: "Аутентификация",
@@ -79,13 +67,35 @@ const KIND_LABEL: Record<string, string> = {
   critical: "Критические мутации (платежи/баланс)",
 }
 
+function HintIcon({ text }: { text: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <button
+            type="button"
+            aria-label={text}
+            className="inline-flex text-muted-foreground/60 transition-colors hover:text-foreground cursor-help"
+          >
+            <Info className="size-3.5" />
+          </button>
+        }
+      />
+      <TooltipContent className="max-w-xs text-xs font-normal leading-relaxed">{text}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function SecuritySettings() {
   const { can } = useAuth()
   const qc = useQueryClient()
-  const canEdit = can("settings.security.edit") || can("settings.ratelimits.edit") || can("settings.edit")
+  const canEdit =
+    can("settings.security.edit") || can("settings.ratelimits.edit") || can("settings.edit")
 
   // State for rate limit edits
-  const [drafts, setDrafts] = useState<Record<string, { max_hits: string; window: string }>>({})
+  const [drafts, setDrafts] = useState<
+    Record<string, { max_hits: string; window: string; burst_hits: string }>
+  >({})
 
   // State for autoban edits
   const [autobanDraft, setAutobanDraft] = useState<AutobanSettings | null>(null)
@@ -93,23 +103,10 @@ export function SecuritySettings() {
   // State for catalog public edits
   const [catalogDraft, setCatalogDraft] = useState<CatalogPublicSettings | null>(null)
 
-  // State for manual IP ban dialog
-  const [isBanDialogOpen, setIsBanDialogOpen] = useState(false)
-  const [manualIp, setManualIp] = useState("")
-  const [manualDuration, setManualDuration] = useState("900")
-  const [manualReason, setManualReason] = useState("Ручная блокировка администратором")
-
   // 1. Fetch Security Settings
   const { data: secData, isLoading: isSecLoading } = useQuery({
     queryKey: ["admin-security-settings"],
     queryFn: async () => (await api.get<SecuritySettingsData>("/v1/admin/settings/security")).data,
-  })
-
-  // 2. Fetch Banned IPs
-  const { data: bannedIps, isLoading: isBansLoading, refetch: refetchBans } = useQuery({
-    queryKey: ["system-banned-ips"],
-    queryFn: async () => (await api.get<BannedIpItem[]>("/v1/system/security/banned-ips")).data,
-    refetchInterval: 10000,
   })
 
   // Mutations
@@ -120,6 +117,7 @@ export function SecuritySettings() {
       await api.put(`/v1/admin/settings/ratelimits/${kind}`, {
         max_hits: Number(d?.max_hits ?? rule?.max_hits),
         window: Number(d?.window ?? rule?.window),
+        burst_hits: Number(d?.burst_hits ?? rule?.burst_hits),
       })
     },
     onSuccess: () => {
@@ -135,7 +133,7 @@ export function SecuritySettings() {
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["admin-security-settings"] })
-      toastSuccess("Сброшено к значению из окружения")
+      toastSuccess("Сброшено к значению по умолчанию")
     },
     onError: () => toastError("Не удалось сбросить лимит"),
   })
@@ -165,48 +163,19 @@ export function SecuritySettings() {
     },
     onSuccess: (data) => {
       void qc.invalidateQueries({ queryKey: ["admin-security-settings"] })
+      void qc.invalidateQueries({ queryKey: ["system-cache-stats"] })
       setCatalogDraft(null)
       if (data) {
         const gMax = data.catalog_public.limit_max_guest ?? data.catalog_public.limit_max ?? 20
         const aMax = data.catalog_public.limit_max_auth ?? 100
         toastSuccess(
-          `Лимиты каталога обновлены. Гости: ${gMax}, Клиенты: ${aMax} (шаг ${data.catalog_public.limit_step})`
+          `Параметры каталога обновлены (кэш: ${data.catalog_public.enabled ? "вкл" : "выкл"}, гости: ${gMax}, клиенты: ${aMax})`
         )
       } else {
-        toastSuccess("Лимиты каталога обновлены")
+        toastSuccess("Параметры каталога обновлены")
       }
     },
     onError: () => toastError("Не удалось сохранить параметры каталога"),
-  })
-
-  const banIpMutation = useMutation({
-    mutationFn: async () => {
-      await api.post("/v1/system/security/banned-ips", {
-        ip: manualIp.trim(),
-        duration_sec: Number(manualDuration),
-        reason: manualReason.trim() || "Ручная блокировка",
-      })
-    },
-    onSuccess: () => {
-      setIsBanDialogOpen(false)
-      setManualIp("")
-      void qc.invalidateQueries({ queryKey: ["system-banned-ips"] })
-      void qc.invalidateQueries({ queryKey: ["system-security-events"] })
-      toastSuccess("IP-адрес успешно заблокирован")
-    },
-    onError: () => toastError("Не удалось заблокировать IP"),
-  })
-
-  const unbanIpMutation = useMutation({
-    mutationFn: async (ip: string) => {
-      await api.delete(`/v1/system/security/banned-ips/${encodeURIComponent(ip)}`)
-    },
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["system-banned-ips"] })
-      void qc.invalidateQueries({ queryKey: ["system-security-events"] })
-      toastSuccess("IP-адрес разблокирован")
-    },
-    onError: () => toastError("Не удалось разблокировать IP"),
   })
 
   const curAutoban = autobanDraft ?? secData?.autoban ?? {
@@ -217,11 +186,12 @@ export function SecuritySettings() {
   }
 
   const curCatalog = catalogDraft ?? secData?.catalog_public ?? {
+    enabled: true,
     limit_max_guest: 20,
     limit_max_auth: 100,
     limit_max: 20,
     limit_step: 10,
-    cache_ttl_sec: 180,
+    cache_ttl_sec: 3600,
   }
 
   return (
@@ -232,25 +202,19 @@ export function SecuritySettings() {
           Центр безопасности
         </h2>
         <p className="text-sm text-muted-foreground">
-          Управление лимитами частоты запросов, автоматическими блокировками (Auto-Ban), защитой
-          публичного каталога и списком заблокированных IP.
+          Управление лимитами частоты запросов, автоматическими блокировками и кэшированием каталога.
         </p>
       </div>
 
       {/* Раздел 1: Auto-Ban & Защита от скрапинга */}
       <Card>
-        <CardHeader>
+        <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <CardTitle className="text-base flex items-center gap-2">
-                <ShieldAlert className="size-4 text-amber-500" />
-                Автоматическая блокировка (Auto-Ban)
-              </CardTitle>
-              <CardDescription>
-                При частых превышениях лимитов (Rate Limit breach) или аномальном скрапинге IP
-                автоматически изолируется на заданное время.
-              </CardDescription>
-            </div>
+            <CardTitle className="text-base flex items-center gap-2">
+              <ShieldAlert className="size-4 text-amber-500" />
+              Автоматическая блокировка (Auto-Ban)
+              <HintIcon text="При серии частых превышений лимитов IP-адрес автоматически изолируется со статусом HTTP 403 Forbidden" />
+            </CardTitle>
             <div className="flex items-center gap-2">
               <Label htmlFor="autoban-toggle" className="text-sm cursor-pointer">
                 {curAutoban.enabled ? "Включено" : "Отключено"}
@@ -269,7 +233,10 @@ export function SecuritySettings() {
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Порог нарушений (штук)</Label>
+              <div className="flex items-center gap-1.5">
+                <Label className="text-xs text-muted-foreground">Порог нарушений (штук)</Label>
+                <HintIcon text="Количество превышений Rate Limit за контрольное окно, вызывающее временный бан IP" />
+              </div>
               <Input
                 type="number"
                 min={1}
@@ -280,13 +247,13 @@ export function SecuritySettings() {
                 }
                 disabled={!canEdit || !curAutoban.enabled}
               />
-              <span className="text-xs text-muted-foreground">
-                Количество превышений для активации бана
-              </span>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Окно нарушений (сек)</Label>
+              <div className="flex items-center gap-1.5">
+                <Label className="text-xs text-muted-foreground">Окно нарушений (сек)</Label>
+                <HintIcon text="Период в секундах, за который суммируются нарушения лимитов" />
+              </div>
               <Input
                 type="number"
                 min={5}
@@ -297,11 +264,13 @@ export function SecuritySettings() {
                 }
                 disabled={!canEdit || !curAutoban.enabled}
               />
-              <span className="text-xs text-muted-foreground">Период фиксации нарушений</span>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Длительность бана (сек)</Label>
+              <div className="flex items-center gap-1.5">
+                <Label className="text-xs text-muted-foreground">Длительность бана (сек)</Label>
+                <HintIcon text={`Время изоляции нарушившего IP-адреса (${Math.round(curAutoban.duration_sec / 60)} мин)`} />
+              </div>
               <Input
                 type="number"
                 min={60}
@@ -312,9 +281,6 @@ export function SecuritySettings() {
                 }
                 disabled={!canEdit || !curAutoban.enabled}
               />
-              <span className="text-xs text-muted-foreground">
-                Время изоляции IP ({Math.round(curAutoban.duration_sec / 60)} мин)
-              </span>
             </div>
           </div>
 
@@ -335,23 +301,37 @@ export function SecuritySettings() {
         </CardContent>
       </Card>
 
-      {/* Раздел 2: Квантование и защита публичного каталога */}
+      {/* Раздел 2: Квантование и кэш публичного каталога */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base flex items-center gap-2">
-            <Gauge className="size-4 text-blue-500" />
-            Пагинация и кэш публичного каталога
-          </CardTitle>
-          <CardDescription>
-            Защита базы данных от глубокого сканирования и DDoS. Лимиты страниц строго квантуются с
-            фиксированным шагом (5 или 10) для всех категорий клиентов для максимального
-            кэш-попадания (Cache Hit Rate).
-          </CardDescription>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Gauge className="size-4 text-blue-500" />
+              Пагинация и кэш каталога
+              <HintIcon text="Двухуровневый кэш в Valkey (индекс ID + сущности карточек) снижает нагрузку на базу до 0 запросов при просмотре страниц" />
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="cache-toggle" className="text-sm cursor-pointer">
+                {curCatalog.enabled ? "Кэш активен" : "Кэш отключен"}
+              </Label>
+              <Switch
+                id="cache-toggle"
+                checked={curCatalog.enabled}
+                onCheckedChange={(checked) =>
+                  setCatalogDraft({ ...curCatalog, enabled: !!checked })
+                }
+                disabled={!canEdit}
+              />
+            </div>
+          </div>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Макс. limit (гости)</Label>
+              <div className="flex items-center gap-1.5">
+                <Label className="text-xs text-muted-foreground">Макс. limit (гости)</Label>
+                <HintIcon text="Максимальный размер страницы товаров для анонимных посетителей (по умолчанию: 20)" />
+              </div>
               <Input
                 type="number"
                 min={1}
@@ -367,13 +347,13 @@ export function SecuritySettings() {
                 }}
                 disabled={!canEdit}
               />
-              <span className="text-xs text-muted-foreground">
-                Для неавторизованных (дефолт: 20)
-              </span>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Макс. limit (авториз.)</Label>
+              <div className="flex items-center gap-1.5">
+                <Label className="text-xs text-muted-foreground">Макс. limit (клиенты)</Label>
+                <HintIcon text="Максимальный размер страницы для авторизованных клиентов (по умолчанию: 100)" />
+              </div>
               <Input
                 type="number"
                 min={1}
@@ -384,13 +364,13 @@ export function SecuritySettings() {
                 }
                 disabled={!canEdit}
               />
-              <span className="text-xs text-muted-foreground">
-                Для авторизованных клиентов (дефолт: 100)
-              </span>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Шаг квантования</Label>
+              <div className="flex items-center gap-1.5">
+                <Label className="text-xs text-muted-foreground">Шаг квантования</Label>
+                <HintIcon text="Принудительное округление limit вниз до кратного шагу, предотвращает распыление кэш-ключей" />
+              </div>
               <Select
                 value={String(curCatalog.limit_step)}
                 onValueChange={(val) =>
@@ -402,28 +382,27 @@ export function SecuritySettings() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="5">Шаг 5 (порции по 5, 10, 15, 20...)</SelectItem>
-                  <SelectItem value="10">Шаг 10 (порции по 10, 20, 30, 40...)</SelectItem>
+                  <SelectItem value="5">Шаг 5 (порции: 5, 10, 15, 20...)</SelectItem>
+                  <SelectItem value="10">Шаг 10 (порции: 10, 20, 30, 40...)</SelectItem>
                 </SelectContent>
               </Select>
-              <span className="text-xs text-muted-foreground">Фиксирует разнообразие кэш-ключей</span>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">TTL кэша каталога (сек)</Label>
+              <div className="flex items-center gap-1.5">
+                <Label className="text-xs text-muted-foreground">TTL кэша каталога (сек)</Label>
+                <HintIcon text={`Время жизни кэша в Valkey (${Math.round(curCatalog.cache_ttl_sec / 60)} мин). При изменении или исчерпании товара кэш сбрасывается мгновенно.`} />
+              </div>
               <Input
                 type="number"
                 min={10}
-                max={86400}
+                max={86400 * 7}
                 value={curCatalog.cache_ttl_sec}
                 onChange={(e) =>
                   setCatalogDraft({ ...curCatalog, cache_ttl_sec: Number(e.target.value) })
                 }
                 disabled={!canEdit}
               />
-              <span className="text-xs text-muted-foreground">
-                Время жизни в Valkey ({Math.round(curCatalog.cache_ttl_sec / 60)} мин)
-              </span>
             </div>
           </div>
 
@@ -448,11 +427,11 @@ export function SecuritySettings() {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div>
-            <h3 className="text-base font-semibold">Категории Rate Limit</h3>
-            <p className="text-sm text-muted-foreground">
-              Действующие лимиты по областям API. Переопределения применяются немедленно без
-              перезапуска сервиса.
-            </p>
+            <h3 className="text-base font-semibold flex items-center gap-2">
+              <Zap className="size-4 text-emerald-500" />
+              Категории Rate Limit
+              <HintIcon text="Ограничивает интенсивность запросов (sliding window) и резкие всплески (burst 1с). Изменения вступают в силу мгновенно." />
+            </h3>
           </div>
         </div>
 
@@ -461,16 +440,22 @@ export function SecuritySettings() {
             <TableHeader>
               <TableRow>
                 <TableHead>Категория</TableHead>
-                <TableHead className="w-36">Запросов (max_hits)</TableHead>
-                <TableHead className="w-36">Окно (сек)</TableHead>
-                <TableHead className="w-36">Источник</TableHead>
+                <TableHead className="w-32">Лимит (max)</TableHead>
+                <TableHead className="w-32">Окно (сек)</TableHead>
+                <TableHead className="w-32">
+                  <span className="flex items-center gap-1">
+                    Всплеск (1с)
+                    <HintIcon text="Максимум запросов в секунду для сглаживания пиковых нагрузок (burst)" />
+                  </span>
+                </TableHead>
+                <TableHead className="w-32">Источник</TableHead>
                 <TableHead className="w-48 text-right" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {isSecLoading && (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                  <TableCell colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
                     Загрузка правил…
                   </TableCell>
                 </TableRow>
@@ -479,9 +464,12 @@ export function SecuritySettings() {
                 const draft = drafts[r.kind] ?? {
                   max_hits: String(r.max_hits),
                   window: String(r.window),
+                  burst_hits: String(r.burst_hits ?? 15),
                 }
                 const isChanged =
-                  draft.max_hits !== String(r.max_hits) || draft.window !== String(r.window)
+                  draft.max_hits !== String(r.max_hits) ||
+                  draft.window !== String(r.window) ||
+                  draft.burst_hits !== String(r.burst_hits ?? 15)
 
                 return (
                   <TableRow key={r.kind}>
@@ -501,7 +489,7 @@ export function SecuritySettings() {
                           }))
                         }
                         disabled={!canEdit}
-                        className="h-8 w-28"
+                        className="h-8 w-24"
                       />
                     </TableCell>
                     <TableCell>
@@ -516,14 +504,29 @@ export function SecuritySettings() {
                           }))
                         }
                         disabled={!canEdit}
-                        className="h-8 w-28"
+                        className="h-8 w-24"
+                      />
+                    </TableCell>
+                    <TableCell>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={draft.burst_hits}
+                        onChange={(e) =>
+                          setDrafts((prev) => ({
+                            ...prev,
+                            [r.kind]: { ...draft, burst_hits: e.target.value },
+                          }))
+                        }
+                        disabled={!canEdit}
+                        className="h-8 w-24"
                       />
                     </TableCell>
                     <TableCell>
                       {r.overridden ? (
                         <Badge variant="secondary">Настройки (DB)</Badge>
                       ) : (
-                        <Badge variant="outline">ENV по умолчанию</Badge>
+                        <Badge variant="outline">По умолчанию</Badge>
                       )}
                     </TableCell>
                     <TableCell className="text-right">
@@ -542,7 +545,7 @@ export function SecuritySettings() {
                               <Button
                                 size="sm"
                                 variant="ghost"
-                                title="Сбросить к ENV"
+                                title="Сбросить к дефолту"
                                 disabled={resetRateLimit.isPending}
                                 onClick={() => resetRateLimit.mutate(r.kind)}
                               >
@@ -552,173 +555,6 @@ export function SecuritySettings() {
                           </>
                         )}
                       </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      </div>
-
-      {/* Раздел 4: Активные блокировки IP */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div>
-            <h3 className="text-base font-semibold flex items-center gap-2">
-              <Ban className="size-4 text-destructive" />
-              Заблокированные IP-адреса
-              {bannedIps && bannedIps.length > 0 && (
-                <Badge variant="destructive" className="ml-1">
-                  {bannedIps.length}
-                </Badge>
-              )}
-            </h3>
-            <p className="text-sm text-muted-foreground">
-              Список адресов, изолированных вручную или системой Auto-Ban.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => refetchBans()}>
-              <RefreshCw className="size-3.5 mr-1" />
-              Обновить
-            </Button>
-            {canEdit && (
-              <>
-                <Button size="sm" variant="destructive" onClick={() => setIsBanDialogOpen(true)}>
-                  <Lock className="size-3.5 mr-1" />
-                  Заблокировать IP
-                </Button>
-                <Dialog open={isBanDialogOpen} onOpenChange={setIsBanDialogOpen}>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Блокировка IP-адреса</DialogTitle>
-                    <DialogDescription>
-                      Заблокированный IP будет немедленно отсекаться шлюзом со статусом HTTP 403
-                      Forbidden.
-                    </DialogDescription>
-                  </DialogHeader>
-
-                  <div className="space-y-4 py-2">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="ban-ip">IP-адрес</Label>
-                      <Input
-                        id="ban-ip"
-                        placeholder="например 198.51.100.42"
-                        value={manualIp}
-                        onChange={(e) => setManualIp(e.target.value)}
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="ban-duration">Длительность блокировки</Label>
-                      <Select value={manualDuration} onValueChange={(val) => val && setManualDuration(val)}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="300">5 минут (300 сек)</SelectItem>
-                          <SelectItem value="900">15 минут (900 сек)</SelectItem>
-                          <SelectItem value="3600">1 час (3600 сек)</SelectItem>
-                          <SelectItem value="86400">24 часа (1 день)</SelectItem>
-                          <SelectItem value="604800">7 дней</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <Label htmlFor="ban-reason">Причина блокировки</Label>
-                      <Input
-                        id="ban-reason"
-                        placeholder="Ручная блокировка администратором"
-                        value={manualReason}
-                        onChange={(e) => setManualReason(e.target.value)}
-                      />
-                    </div>
-                  </div>
-
-                  <DialogFooter>
-                    <Button variant="ghost" onClick={() => setIsBanDialogOpen(false)}>
-                      Отмена
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      disabled={!manualIp.trim() || banIpMutation.isPending}
-                      onClick={() => banIpMutation.mutate()}
-                    >
-                      Заблокировать
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="rounded-lg border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>IP-адрес</TableHead>
-                <TableHead>Причина</TableHead>
-                <TableHead>Заблокирован</TableHead>
-                <TableHead>Осталось времени</TableHead>
-                <TableHead className="w-32 text-right" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isBansLoading && (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
-                    Загрузка списка блокировок…
-                  </TableCell>
-                </TableRow>
-              )}
-              {bannedIps?.length === 0 && !isBansLoading && (
-                <TableRow>
-                  <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
-                    Активных блокировок нет. Все IP имеют стандартный доступ.
-                  </TableCell>
-                </TableRow>
-              )}
-              {bannedIps?.map((item) => {
-                const ttl = item.ttl_remaining_sec ?? 0
-                const mins = Math.floor(ttl / 60)
-                const secs = ttl % 60
-
-                return (
-                  <TableRow key={item.ip}>
-                    <TableCell>
-                      <span className="font-mono font-medium">{item.ip}</span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-sm">{item.reason || "—"}</span>
-                    </TableCell>
-                    <TableCell>
-                      <span className="text-xs text-muted-foreground">
-                        {item.banned_at ? new Date(item.banned_at).toLocaleString("ru-RU") : "—"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5 text-xs font-mono">
-                        <Clock className="size-3 text-muted-foreground" />
-                        {mins > 0 ? `${mins}м ${secs}с` : `${secs}с`}
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {canEdit && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8"
-                          onClick={() => unbanIpMutation.mutate(item.ip)}
-                          disabled={unbanIpMutation.isPending}
-                        >
-                          Разблокировать
-                        </Button>
-                      )}
                     </TableCell>
                   </TableRow>
                 )

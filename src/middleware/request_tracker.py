@@ -9,7 +9,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from services.error_logger import log_request_error
-from services.security_monitor import is_ip_banned
+from services.security_monitor import is_ip_banned, ban_ip
 from utils.request_context import current_trace_id_ctx, generate_trace_id
 
 log = logging.getLogger("saviorbill.tracker")
@@ -21,13 +21,13 @@ class RequestTrackerMiddleware(BaseHTTPMiddleware):
     1. Trace ID: гарантирует стандартный 32-hex идентификатор (W3C Trace Context) для каждого запроса.
     2. IP Ban Gate: пресекает запросы от заблокированных IP с кодом 403 Forbidden.
     3. Журнал ошибок: регистрирует ответы 4xx и 5xx с расширенной телеметрией (задержка, query-параметры, user-agent, referer).
+    4. Throttling сканирования (404 rate-limiting): пресекает агрессивный фаззинг и DirBuster.
     """
 
     async def dispatch(self, request: Request, call_next) -> Response:
         start_time = time.perf_counter()
 
         # 1. Извлечение или генерация стандартного 32-hex trace_id
-        # Поддерживаем стандартные заголовки: x-trace-id, traceparent (W3C), x-request-id
         trace_id: str | None = None
         raw_header = (
             request.headers.get("x-trace-id")
@@ -133,6 +133,25 @@ class RequestTrackerMiddleware(BaseHTTPMiddleware):
                     exception_type=exception_type,
                     trace_id=trace_id,
                 )
+
+                # 5. Защита от сканеров уязвимостей (404 Error-Rate Throttling)
+                # Обычный пользователь генерирует 0-2 ошибки 404; боты-сканеры (DirBuster, Nikto) генерируют 25+
+                if response.status_code == 404:
+                    try:
+                        scan_key = f"security:scan_404:{client_ip}"
+                        cnt = await vk.incr(scan_key)
+                        if cnt == 1:
+                            await vk.expire(scan_key, 60)
+                        if cnt >= 25:
+                            await ban_ip(
+                                vk,
+                                ip=client_ip,
+                                duration_sec=900,
+                                reason="Аномальное сканирование API: 25+ ошибок 404 за 60с (DirBuster/Bot scan)",
+                                trace_id=trace_id,
+                            )
+                    except Exception as err:
+                        log.warning("error tracking 404 scan counter: %s", err)
 
         current_trace_id_ctx.reset(token)
         return response

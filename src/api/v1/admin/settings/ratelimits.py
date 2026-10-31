@@ -4,7 +4,12 @@ import json
 
 from fastapi import APIRouter, Depends, Request
 
-from dependencies.ratelimit import LimitKind, _kind_setting_key, _rule_for
+from dependencies.ratelimit import (
+    LimitKind,
+    _burst_rule_for,
+    _kind_setting_key,
+    _rule_for,
+)
 from dependencies.rbac import require_perm
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from schemas.ratelimit import RateLimitPatch, RateLimitRule
@@ -28,17 +33,23 @@ async def list_rate_limits(
     out: list[RateLimitRule] = []
     for kind in LimitKind:
         base = _rule_for(cfg, kind)
+        burst_base = _burst_rule_for(kind)
         raw = await settings.get(_kind_setting_key(kind))
         if raw is not None:
             data = json.loads(raw)
             max_hits, window = int(data["max_hits"]), int(data["window"])
+            burst_hits = int(data.get("burst_hits", burst_base.max_hits))
+            burst_window = int(data.get("burst_window", burst_base.window))
         else:
             max_hits, window = base.max_hits, base.window
+            burst_hits, burst_window = burst_base.max_hits, burst_base.window
         out.append(
             RateLimitRule(
                 kind=kind.value,
                 max_hits=max_hits,
                 window=window,
+                burst_hits=burst_hits,
+                burst_window=burst_window,
                 overridden=raw is not None,
             )
         )
@@ -58,14 +69,21 @@ async def set_rate_limit(
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> RateLimitRule:
     """Записать переопределение правила категории в таблицу settings."""
-    await settings.set(
-        _kind_setting_key(kind),
-        json.dumps({"max_hits": body.max_hits, "window": body.window}),
-    )
+    burst_base = _burst_rule_for(kind)
+    burst_hits = body.burst_hits if body.burst_hits is not None else burst_base.max_hits
+    payload = {
+        "max_hits": body.max_hits,
+        "window": body.window,
+        "burst_hits": burst_hits,
+        "burst_window": burst_base.window,
+    }
+    await settings.set(_kind_setting_key(kind), json.dumps(payload))
     return RateLimitRule(
         kind=kind.value,
         max_hits=body.max_hits,
         window=body.window,
+        burst_hits=burst_hits,
+        burst_window=burst_base.window,
         overridden=True,
     )
 
@@ -84,11 +102,14 @@ async def reset_rate_limit(
     """Удалить переопределение — вернуться к значению из ENV."""
     cfg: AppConfig = request.app.state.settings
     base = _rule_for(cfg, kind)
+    burst_base = _burst_rule_for(kind)
     await settings.set(_kind_setting_key(kind), None)
     return RateLimitRule(
         kind=kind.value,
         max_hits=base.max_hits,
         window=base.window,
+        burst_hits=burst_base.max_hits,
+        burst_window=burst_base.window,
         overridden=False,
     )
 

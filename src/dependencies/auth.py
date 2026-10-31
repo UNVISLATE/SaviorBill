@@ -66,7 +66,10 @@ async def get_current_acc(
         token_hash = hash_app_token(token)
         session = getattr(mngr, "s", None)
         if session is not None:
+            app_state = getattr(getattr(request, "app", None), "state", None)
+            vk = getattr(app_state, "valkey", None) if app_state else None
             app_tokens_mngr = AppTokensMngr(session)
+
             app_token = await app_tokens_mngr.by_hash(token_hash)
             if not app_token or app_token.is_revoked:
                 raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or revoked app token")
@@ -78,8 +81,17 @@ async def get_current_acc(
             if not app_token.check_ip_allowed(client_ip):
                 raise HTTPException(status.HTTP_403_FORBIDDEN, "ip not allowed for this app token")
 
-            await app_tokens_mngr.touch(app_token.id, client_ip)
-            await session.commit()
+            # Троттлинг обновления last_used_at: не чаще 1 раза в 60 секунд (Valkey guard)
+            should_touch = True
+            if vk is not None:
+                touch_key = f"app_token:touch:{app_token.id}"
+                was_set = await vk.set(touch_key, "1", nx=True, ex=60)
+                should_touch = bool(was_set)
+
+            if should_touch:
+                await app_tokens_mngr.touch(app_token.id, client_ip)
+                await session.commit()
+
             current_app_token_ctx.set(app_token)
             current_client_ip_ctx.set(client_ip)
             request_state = getattr(request, "state", None)

@@ -13,11 +13,8 @@ export interface SectionTabItem {
  * компонент вместо отдельного велосипеда на каждую секцию (см.
  * IMPLEMENTATION_PLAN.md §0.4).
  *
- * Десктоп — обычная вертикальная колонка слева. Мобильный — не встроенная
- * колонка (расходует драгоценную ширину экрана и требует скролла страницы
- * до неё), а "плавающий остров": закреплённая внизу панель, по центру, НЕ
- * прижатая к краю экрана (похоже на bottom-nav многих мобильных веб-приложений,
- * но не примагничена вплотную к самому низу — см. PLAN.md Ф5, п.3).
+ * Десктоп — вертикальная колонка фиксированной ширины w-56, где все пункты
+ * строго умещаются в одну строку. Мобильный — плавающий остров.
  */
 export function SectionTabs({
   items,
@@ -28,11 +25,12 @@ export function SectionTabs({
 }) {
   return (
     <div className="flex gap-6">
-      <nav className="hidden w-48 shrink-0 space-y-1 md:block">
+      <nav className="hidden w-56 shrink-0 space-y-1 md:block">
         {items.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
+            title={item.title}
             end
             className={({ isActive }) =>
               cn(
@@ -43,8 +41,8 @@ export function SectionTabs({
               )
             }
           >
-            {item.icon}
-            <span>{item.title}</span>
+            <span className="shrink-0">{item.icon}</span>
+            <span className="truncate whitespace-nowrap">{item.title}</span>
           </NavLink>
         ))}
       </nav>
@@ -60,12 +58,14 @@ export function SectionTabs({
             key={item.to}
             to={item.to}
             end
+            aria-label={item.title}
+            title={item.title}
             className={({ isActive }) =>
               cn(
-                "flex items-center gap-1.5 rounded-full px-3 py-2 text-xs font-medium whitespace-nowrap transition-colors",
+                "flex size-10 items-center justify-center rounded-full text-sm transition-colors",
                 isActive
-                  ? "bg-[#009080] text-white"
-                  : "text-white/70 hover:text-white"
+                  ? "bg-white/20 text-white font-medium shadow-inner"
+                  : "text-white/70 hover:bg-white/10 hover:text-white"
               )
             }
           >
@@ -74,10 +74,7 @@ export function SectionTabs({
         ))}
       </nav>
 
-      {/* Отступ снизу на мобильном, чтобы плавающий остров не перекрывал
-          последний контент страницы. */}
-      <div className="min-w-0 flex-1 pb-20 md:pb-0">{children}</div>
+      <div className="min-w-0 flex-1">{children}</div>
     </div>
   )
 }
-

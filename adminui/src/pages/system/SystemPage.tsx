@@ -41,24 +41,8 @@ const SYSTEM_TABS: SystemTabDef[] = [
     anyPerm: ["system.stats.read", "system.stats", "system"],
   },
   {
-    path: "instances",
-    title: "Инстансы",
-    to: "/system/instances",
-    icon: <Server className="size-4" />,
-    element: <SystemInstances />,
-    anyPerm: ["system.stats.read", "system.stats", "system"],
-  },
-  {
-    path: "cache",
-    title: "Кэш (Valkey)",
-    to: "/system/cache",
-    icon: <Database className="size-4" />,
-    element: <SystemCache />,
-    anyPerm: ["system.cache.read", "system.cache.manage", "system.cache", "system"],
-  },
-  {
     path: "security-events",
-    title: "События безопасности",
+    title: "Безопасность",
     to: "/system/security-events",
     icon: <ShieldAlert className="size-4" />,
     element: <SystemSecurityEvents />,
@@ -71,6 +55,22 @@ const SYSTEM_TABS: SystemTabDef[] = [
     icon: <Bug className="size-4" />,
     element: <SystemErrorLogs />,
     anyPerm: ["system.errors.read", "system.errors", "system"],
+  },
+  {
+    path: "instances",
+    title: "Инстансы",
+    to: "/system/instances",
+    icon: <Server className="size-4" />,
+    element: <SystemInstances />,
+    anyPerm: ["system.stats.read", "system.stats", "system"],
+  },
+  {
+    path: "cache",
+    title: "Кэш Valkey",
+    to: "/system/cache",
+    icon: <Database className="size-4" />,
+    element: <SystemCache />,
+    anyPerm: ["system.cache.read", "system.cache.manage", "system.cache", "system"],
   },
   {
     path: "tasks",
@@ -90,7 +90,7 @@ const SYSTEM_TABS: SystemTabDef[] = [
   },
   {
     path: "dlq",
-    title: "DLQ",
+    title: "Очередь DLQ",
     to: "/system/dlq",
     icon: <AlertTriangle className="size-4" />,
     element: <SystemDlq />,
@@ -110,29 +110,40 @@ export function SystemPage() {
     })
   }, [can])
 
+  const tabItems = useMemo(() => {
+    return visibleTabs.map((tab) => ({
+      title: tab.title,
+      to: tab.to,
+      icon: tab.icon,
+    }))
+  }, [visibleTabs])
+
   if (visibleTabs.length === 0) {
     return (
-      <div className="space-y-4">
-        <h1 className="text-xl font-semibold">Система</h1>
-        <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground">
-          Недостаточно прав для просмотра раздела системы.
-        </div>
+      <div className="py-12 text-center text-muted-foreground">
+        У вас нет прав для просмотра разделов мониторинга системы.
       </div>
     )
   }
 
-  const defaultTo = visibleTabs[0].to
+  const defaultRedirect = visibleTabs[0]?.path ?? "overview"
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-semibold">Система</h1>
-      <SectionTabs items={visibleTabs}>
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Система</h1>
+        <p className="text-sm text-muted-foreground">
+          Управление инстансами, мониторинг кэша Valkey, журнал безопасности и фоновые очереди задач.
+        </p>
+      </div>
+
+      <SectionTabs items={tabItems}>
         <Routes>
-          <Route index element={<Navigate to={defaultTo} replace />} />
+          <Route path="/" element={<Navigate to={defaultRedirect} replace />} />
           {visibleTabs.map((tab) => (
             <Route key={tab.path} path={tab.path} element={tab.element} />
           ))}
-          <Route path="*" element={<Navigate to={defaultTo} replace />} />
+          <Route path="*" element={<Navigate to={defaultRedirect} replace />} />
         </Routes>
       </SectionTabs>
     </div>
