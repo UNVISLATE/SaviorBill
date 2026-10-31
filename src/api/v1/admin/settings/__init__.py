@@ -1,6 +1,7 @@
 """Админ: настройки системы (/api/v1/admin/settings).
 
 Модуль объединяет:
+- ``security`` — единый центр безопасности (Rate Limits, Auto-Ban, публичные лимиты);
 - ``ratelimits`` — управление лимитами частоты запросов (Valkey-оверрайды);
 - ``raw`` — ручное (raw) управление строками таблицы ``settings``;
 - ``ui`` — эргономичная запись ``ui.*`` (брендинг админки/клиента) поверх той
@@ -16,9 +17,11 @@ from .fx import router as fx_router
 from .ratelimits import router as ratelimits_router
 from .raw import router as raw_router
 from .secrets import router as secrets_router
+from .security import router as security_router
 from .smtp import router as smtp_router
 
 router = APIRouter()
+router.include_router(security_router, prefix="/security")
 router.include_router(ratelimits_router, prefix="/ratelimits")
 router.include_router(raw_router, prefix="/raw")
 router.include_router(secrets_router, prefix="/secrets")
