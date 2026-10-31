@@ -219,7 +219,7 @@ async def _enforce(
                     )
                 raise HTTPException(
                     status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="burst rate limit exceeded, please slow down",
+                    detail="too many requests, try again later",
                     headers={"Retry-After": str(burst_res.retry_after)},
                 )
 
