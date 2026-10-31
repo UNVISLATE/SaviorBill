@@ -11,6 +11,7 @@ from dependencies.valkey import get_valkey_client
 from models.banned_email_domains import BannedEmailDomainsMngr
 from models.user import UserModel, UserMngr
 from models.app_tokens import AppTokensMngr, hash_app_token
+from services.audit import current_app_token_ctx, current_client_ip_ctx
 from utils.datetime_utils import utc_now
 from services.auth import TokenSvc
 from core.config import AppConfig
@@ -79,6 +80,8 @@ async def get_current_acc(
 
             await app_tokens_mngr.touch(app_token.id, client_ip)
             await session.commit()
+            current_app_token_ctx.set(app_token)
+            current_client_ip_ctx.set(client_ip)
             request_state = getattr(request, "state", None)
             if request_state is not None:
                 request_state.app_token = app_token
