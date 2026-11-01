@@ -85,7 +85,7 @@ async def test_critical_rate_limit_fails_closed_on_valkey(monkeypatch):
     async def unavailable(*_args, **_kwargs):
         raise ValkeyConnectionError("down")
 
-    monkeypatch.setattr("dependencies.ratelimit._resolve_rule", unavailable)
+    monkeypatch.setattr("dependencies.ratelimit._resolve_rules", unavailable)
     request = SimpleNamespace(
         app=SimpleNamespace(
             state=SimpleNamespace(
