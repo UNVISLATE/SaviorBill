@@ -605,6 +605,37 @@ SETTINGS: tuple[SettingDef, ...] = (
         group="security",
         desc="Длительность блокировки IP в секундах (по умолчанию 900 — 15 минут)",
     ),
+    # Гостевой чекаут и магазин
+    SettingDef(
+        "shop.guest_checkout.enabled",
+        "1",
+        type="bool",
+        group="shop",
+        desc="Разрешить гостевой чекаут без авторизации",
+    ),
+    SettingDef(
+        "shop.guest_checkout.existing_user_policy",
+        "allow_require_auth_to_view",
+        type="str",
+        group="shop",
+        desc="Политика при заказе на email существующего пользователя: "
+        "allow_require_auth_to_view (разрешить создание, но скрыть чувствительные данные до авторизации) или "
+        "require_login (запретить покупку без входа в аккаунт)",
+    ),
+    SettingDef(
+        "shop.guest.claim_code_ttl",
+        "600",
+        type="int",
+        group="shop",
+        desc="Время жизни OTP-кода подтверждения гостевого аккаунта в секундах (по умолчанию 600 — 10 минут)",
+    ),
+    SettingDef(
+        "shop.guest.order_token_ttl",
+        "86400",
+        type="int",
+        group="shop",
+        desc="Время жизни токена просмотра заказа гостем в секундах (по умолчанию 86400 — 24 часа)",
+    ),
 )
 
 _BY_KEY: dict[str, SettingDef] = {d.key: d for d in SETTINGS}

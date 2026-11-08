@@ -290,6 +290,26 @@ class OAuthSvc:
                     select(UserModel).where(UserModel.email == user.email)
                 )
                 if existing is not None:
+                    from models.user import UserMngr
+                    from enums import BaseRole
+
+                    if existing.role and existing.role.key == BaseRole.GUEST:
+                        user_role = await UserMngr(self.s).role_by_key(BaseRole.USER)
+                        if user_role:
+                            existing.role_id = user_role.id
+                            existing.role = user_role
+                        self.s.add(
+                            UserOauthModel(
+                                account_id=existing.id,
+                                provider=slug,
+                                subject=user.sub,
+                                email=user.email,
+                                raw=user.raw,
+                            )
+                        )
+                        await self.s.flush()
+                        return existing, None
+
                     pending = await self._start_pending_link(slug, user, existing)
                     return None, pending
             if user.email and await BannedEmailDomainsMngr(self.s).is_banned(user.email):

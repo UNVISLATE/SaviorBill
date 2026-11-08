@@ -80,7 +80,7 @@ def resolve_service_order(
         return ResolvedOrder(
             price=service.price,
             duration=service.duration,
-            effective_settings=dict(service.settings or {}),
+            effective_settings=dict(getattr(service, "settings", None) or {}),
             order_config={},
         )
 
@@ -141,7 +141,7 @@ def resolve_service_order(
         return ResolvedOrder(
             price=custom_amount,
             duration=service.duration,
-            effective_settings=dict(service.settings or {}),
+            effective_settings=dict(getattr(service, "settings", None) or {}),
             order_config=order_config,
         )
 
@@ -217,7 +217,7 @@ def resolve_service_order(
     elif price_type == PriceType.CONFIGURABLE:
         components_input = components or {}
         total_price = service.price
-        effective_settings = copy.deepcopy(service.settings or {})
+        effective_settings = copy.deepcopy(getattr(service, "settings", None) or {})
         resolved_components: dict[str, Any] = {}
 
         for comp in pricing_config.get("components", []):

@@ -11,6 +11,7 @@ from .catalog import router as catalog_router
 from .media import router as media_router
 from .oauth import router as oauth_router
 from .promocodes import router as promocodes_router
+from .public import router as public_router
 from .system import router as system_router
 from .user import router as user_router
 
@@ -20,6 +21,7 @@ for _r in (
     oauth_router,
     catalog_router,
     branding_router,
+    public_router,
     user_router,
     promocodes_router,
     callback_router,
