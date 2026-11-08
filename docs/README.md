@@ -4,6 +4,7 @@
 
 ## Подсистемы
 
+- [`services.md`](services.md) — каталог услуг, модели ценообразования (Service Engine 2.0), валидация и контекст заказа.
 - [`payments.md`](payments.md) — платёжный поток, провайдеры и callback API.
 - [`media.md`](media.md) — загрузка и обработка медиафайлов.
 - [`security.md`](security.md) — границы доверия, подписи, SSRF и секреты.
@@ -13,6 +14,7 @@
 ## Источники истины
 
 - Контракт API и модели — код рядом с соответствующей подсистемой.
+- Модели ценообразования — [`services.md`](services.md) и `src/services/pricing.py`.
 - Lua script contract — [`lua/scripts.md`](lua/scripts.md).
 - LuaWorker runtime — [`../luaworker/README.md`](../luaworker/README.md).
 - Краткие правила для генерации Lua — [`lua/llms.txt`](lua/llms.txt).
