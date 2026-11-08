@@ -49,6 +49,56 @@ def unflatten_dot_dict(flat: dict) -> dict:
     return res
 
 
+def validate_order_form(
+    pricing_config: dict[str, Any], client_form: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Валидация формы заказа покупателя по манифесту SDUI или списку полей."""
+    manifest_data = pricing_config.get("manifest")
+    if manifest_data:
+        from schemas.manifest import ScriptManifest
+        from services.manifest import validate_client_order_form
+
+        manifest = (
+            ScriptManifest.model_validate(manifest_data)
+            if isinstance(manifest_data, dict)
+            else manifest_data
+        )
+        return validate_client_order_form(manifest, client_form)
+
+    # Валидация по полям legacy-конфигурации формы
+    form_defs = pricing_config.get("form")
+    if not form_defs:
+        return {}
+
+    validated_form: dict[str, Any] = {}
+    c_form = client_form or {}
+    for fld in form_defs:
+        fld_key = fld.get("key") or fld.get("id")
+        if not fld_key:
+            continue
+        val = c_form.get(fld_key)
+        if fld.get("required") and (val is None or not str(val).strip()):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"form field {fld_key!r} ({fld.get('label') or fld_key}) is required",
+            )
+        if val is not None:
+            val_str = str(val).strip()
+            regex_pat = fld.get("regex")
+            if regex_pat:
+                try:
+                    if not re.match(regex_pat, val_str):
+                        raise HTTPException(
+                            status.HTTP_400_BAD_REQUEST,
+                            fld.get("regex_error")
+                            or f"field {fld_key!r} does not match required format",
+                        )
+                except re.error:
+                    pass
+            validated_form[fld_key] = val_str
+    return validated_form
+
+
 @dataclass
 class ResolvedOrder:
     """Результат авторитарного расчёта заказа сервером."""
@@ -77,11 +127,13 @@ def resolve_service_order(
 
     # 1. FIXED
     if price_type == PriceType.FIXED:
+        validated_form = validate_order_form(pricing_config, form)
+        order_config = {"form": validated_form} if validated_form else {}
         return ResolvedOrder(
             price=service.price,
             duration=service.duration,
             effective_settings=dict(getattr(service, "settings", None) or {}),
-            order_config={},
+            order_config=order_config,
         )
 
     # 2. CUSTOM (Steam-пополнения, донаты, произвольные суммы)
@@ -107,33 +159,7 @@ def resolve_service_order(
                     f"custom_amount must be a multiple of {step_dec} starting from {min_amt}",
                 )
 
-        validated_form: dict[str, Any] = {}
-        client_form = form or {}
-        for fld in pricing_config.get("form", []):
-            fld_key = fld.get("key")
-            if not fld_key:
-                continue
-            val = client_form.get(fld_key)
-            if fld.get("required") and (val is None or not str(val).strip()):
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    f"form field {fld_key!r} ({fld.get('label') or fld_key}) is required",
-                )
-            if val is not None:
-                val_str = str(val).strip()
-                regex_pat = fld.get("regex")
-                if regex_pat:
-                    try:
-                        if not re.match(regex_pat, val_str):
-                            raise HTTPException(
-                                status.HTTP_400_BAD_REQUEST,
-                                fld.get("regex_error")
-                                or f"field {fld_key!r} does not match required format",
-                            )
-                    except re.error:
-                        pass
-                validated_form[fld_key] = val_str
-
+        validated_form = validate_order_form(pricing_config, form)
         order_config = {
             "amount": str(custom_amount),
             "form": validated_form,
@@ -206,6 +232,9 @@ def resolve_service_order(
         if matched_group:
             order_config["group"] = matched_group
             tier_dict["group"] = matched_group.get("title")
+        validated_form = validate_order_form(pricing_config, form)
+        if validated_form:
+            order_config["form"] = validated_form
         return ResolvedOrder(
             price=tier_price,
             duration=duration_sec,
@@ -292,9 +321,12 @@ def resolve_service_order(
                     "price_delta": str(delta),
                 }
 
+        validated_form = validate_order_form(pricing_config, form)
         order_config = {
             "components": resolved_components,
         }
+        if validated_form:
+            order_config["form"] = validated_form
         return ResolvedOrder(
             price=total_price,
             duration=service.duration,

@@ -245,3 +245,60 @@ def test_validate_client_order_form_number_bounds_and_step():
     # Валидное число
     res = validate_client_order_form(manifest, {"ram": 8})
     assert res["ram"] == 8
+
+
+def test_resolve_service_order_with_manifest_integration():
+    """Интеграция resolve_service_order с ScriptManifest в pricing_config."""
+    from models.service import ServiceModel
+    from enums import PriceType
+    from services.pricing import resolve_service_order
+
+    manifest_dict = {
+        "name": "Cloud VPS",
+        "slug": "cloud-vps",
+        "client_order_form": [
+            {
+                "id": "os",
+                "type": "select",
+                "label": "OS",
+                "required": True,
+                "options": [
+                    {"value": "ubuntu", "label": "Ubuntu 24.04"},
+                    {"value": "debian", "label": "Debian 12"},
+                ],
+            },
+            {
+                "id": "hostname",
+                "type": "text",
+                "label": "Server Hostname",
+                "required": True,
+                "regex": r"^[a-z0-9.-]+$",
+            },
+        ],
+    }
+
+    service = ServiceModel(
+        id=77,
+        price=Decimal("500.00"),
+        currency="RUB",
+        price_type=PriceType.FIXED,
+        pricing_config={"manifest": manifest_dict},
+    )
+
+    # 1. Ошибка: отсутствует обязательное поле hostname
+    with pytest.raises(HTTPException) as exc_info:
+        resolve_service_order(service, form={"os": "ubuntu"})
+    assert exc_info.value.status_code == 400
+
+    # 2. Успешный расчет и изоляция формы в order_config
+    resolved = resolve_service_order(
+        service,
+        form={"os": "ubuntu", "hostname": "node1.cloud", "injected_field": "bad"},
+    )
+    assert resolved.price == Decimal("500.00")
+    assert resolved.order_config["form"] == {
+        "os": "ubuntu",
+        "hostname": "node1.cloud",
+    }
+    assert "injected_field" not in resolved.order_config["form"]
+
