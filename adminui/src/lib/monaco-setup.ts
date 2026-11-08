@@ -5,9 +5,10 @@
  * `monaco-editor`) и без отдельного vite-plugin-monaco-editor.
  *
  * Импортировать один раз до первого использования `monaco-editor` (см.
- * `LuaEditor.tsx`).
+ * `LuaEditor.tsx` и `LuaManifestPage.tsx`).
  */
 import editorWorkerUrl from "monaco-editor/editor/editor.worker.js?url"
+import jsonWorkerUrl from "monaco-editor/language/json/json.worker.js?url"
 
 declare global {
   interface Window {
@@ -23,10 +24,10 @@ export function ensureMonacoWorkers(): void {
   if (configured) return
   configured = true
   self.MonacoEnvironment = {
-    // Lua не требует отдельного языкового воркера (нет встроенного
-    // language-service, только TextMate-подобная подсветка синтаксиса) —
-    // всем языкам без спец-воркера достаточно базового editor.worker.
-    getWorker(_moduleId: string, _label: string) {
+    getWorker(_moduleId: string, label: string) {
+      if (label === "json") {
+        return new Worker(jsonWorkerUrl, { type: "module" })
+      }
       return new Worker(editorWorkerUrl, { type: "module" })
     },
   }

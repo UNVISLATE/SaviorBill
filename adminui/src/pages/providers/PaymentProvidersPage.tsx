@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useSearchParams } from "react-router-dom"
 import {
   CreditCard,
   ExternalLink,
@@ -47,11 +48,13 @@ function ProviderFormDialog({
   onOpenChange,
   provider,
   paymentScripts,
+  initialScriptId,
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
   provider: Provider | null
   paymentScripts: LuaScriptOption[] | undefined
+  initialScriptId?: string | null
 }) {
   const isEdit = !!provider
   const [slug, setSlug] = useState("")
@@ -69,18 +72,34 @@ function ProviderFormDialog({
 
   useEffect(() => {
     if (open) {
-      setSlug(provider?.slug ?? "")
-      setTitle(provider?.title ?? "")
-      setCurrency(provider?.currency ?? instanceCurrency ?? "RUB")
-      setOptionalCurrencies(provider?.currencies ?? [])
-      setFeeEnabled(provider?.fee_enabled ?? false)
-      setFeePercent(String(provider?.fee_percent ?? 0))
-      setAddFeeToAmount(provider?.add_fee_to_amount ?? true)
-      setScriptId(provider?.script_id ? String(provider.script_id) : "")
-      setEnabled(provider?.enabled ?? false)
-      setSecretsText("{}")
+      if (provider) {
+        setSlug(provider.slug ?? "")
+        setTitle(provider.title ?? "")
+        setCurrency(provider.currency ?? instanceCurrency ?? "RUB")
+        setOptionalCurrencies(provider.currencies ?? [])
+        setFeeEnabled(provider.fee_enabled ?? false)
+        setFeePercent(String(provider.fee_percent ?? 0))
+        setAddFeeToAmount(provider.add_fee_to_amount ?? true)
+        setScriptId(provider.script_id ? String(provider.script_id) : "")
+        setEnabled(provider.enabled ?? false)
+        setSecretsText("{}")
+      } else {
+        const matched = initialScriptId && paymentScripts ? paymentScripts.find((s) => String(s.id) === String(initialScriptId)) : null
+        const m = ((matched?.settings as any)?.manifest as any) || ((matched?.settings as any) || {})
+        const pref = m.prefill || {}
+        setSlug(pref.slug || matched?.slug || "")
+        setTitle(pref.name || matched?.name || matched?.slug || "")
+        setCurrency(instanceCurrency || "RUB")
+        setOptionalCurrencies([])
+        setFeeEnabled(false)
+        setFeePercent("0")
+        setAddFeeToAmount(true)
+        setScriptId(matched ? String(matched.id) : "")
+        setEnabled(true)
+        setSecretsText("{}")
+      }
     }
-  }, [open, provider, instanceCurrency])
+  }, [open, provider, instanceCurrency, initialScriptId, paymentScripts])
 
   const save = useMutation({
     mutationFn: async () => {
@@ -289,6 +308,8 @@ function ProviderFormDialog({
 
 export function PaymentProvidersPage() {
   const { can } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const createScriptId = searchParams.get("create_from_script")
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Provider | null>(null)
   const canCreate = can("purchases.providers.create")
@@ -313,6 +334,12 @@ export function PaymentProvidersPage() {
     () => allScripts?.filter((s) => s.kind === "payment") ?? [],
     [allScripts]
   )
+
+  useEffect(() => {
+    if (createScriptId && allScripts) {
+      setCreating(true)
+    }
+  }, [createScriptId, allScripts])
 
   const toggle = useMutation({
     mutationFn: async ({ id, enabled }: { id: number; enabled: boolean }) =>
@@ -437,10 +464,14 @@ export function PaymentProvidersPage() {
           if (!v) {
             setCreating(false)
             setEditing(null)
+            if (createScriptId) {
+              setSearchParams({})
+            }
           }
         }}
         provider={editing}
         paymentScripts={paymentScripts}
+        initialScriptId={createScriptId}
       />
     </div>
   )

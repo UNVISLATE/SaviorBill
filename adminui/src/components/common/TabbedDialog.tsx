@@ -68,8 +68,8 @@ export function TabbedDialog({
   footer,
   primaryAction,
   secondaryAction,
-  maxWidth = "w-full max-w-3xl sm:max-w-3xl",
-  height = "h-[640px]",
+  maxWidth = "w-full max-w-4xl sm:max-w-4xl",
+  height = "h-[680px] max-h-[90vh]",
   disablePointerDismissal,
   className,
 }: TabbedDialogProps) {
