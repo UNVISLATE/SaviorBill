@@ -1,0 +1,3 @@
+[submodule "vendor/sbuiSDK"]
+	path = vendor/sbuiSDK
+	url = https://github.com/UNVISLATE/sbuiSDK

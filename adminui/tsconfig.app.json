@@ -22,6 +22,8 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
     "paths": {
+      "@unvislate/sbui-sdk": ["../vendor/sbuiSDK/src"],
+      "@unvislate/sbui-sdk/*": ["../vendor/sbuiSDK/src/*"],
       "@/components/ui/*": ["./src/components/shadsnui/*"],
       "@/*": ["./src/*"]
     }
