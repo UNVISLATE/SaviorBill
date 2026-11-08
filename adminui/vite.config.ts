@@ -38,10 +38,13 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      react: path.resolve(__dirname, "./node_modules/react"),
+      "react-dom": path.resolve(__dirname, "./node_modules/react-dom"),
       "@unvislate/sbui-sdk": path.resolve(__dirname, "../vendor/sbuiSDK/src"),
       "@/components/ui": path.resolve(__dirname, "./src/components/shadsnui"),
       "@": path.resolve(__dirname, "./src"),
     },
+    dedupe: ["react", "react-dom"],
   },
   server: {
     port: 5173,

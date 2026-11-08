@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { useNavigate, useParams, Link } from "react-router-dom"
+import { useNavigate, useParams, Link, useSearchParams } from "react-router-dom"
+import { MarkdownEditor } from "@/components/common/MarkdownEditor"
+import { ManifestLivePreview } from "@unvislate/sbui-sdk"
 import {
   ArrowLeft,
   Check,
@@ -120,6 +122,8 @@ interface ServiceAdmin {
 interface LuaScript {
   id: number
   name: string
+  slug?: string
+  settings?: Record<string, unknown>
 }
 
 interface Attachment {
@@ -242,6 +246,7 @@ function buildServiceSnapshot(data: {
   isActive: boolean
   paramsText?: string | null
   settingsText?: string | null
+  instructionsMd?: string | null
 }) {
   const pType = data.priceType || "fixed"
   const delivery = data.delivery || "key"
@@ -275,11 +280,13 @@ function buildServiceSnapshot(data: {
     isActive: Boolean(data.isActive),
     paramsText: normalizeJson(data.paramsText),
     settingsText: normalizeJson(data.settingsText),
+    instructionsMd: (data.instructionsMd || "").trim(),
   })
 }
 
 export function ServiceEditorPage() {
   const { id } = useParams()
+  const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const { can } = useAuth()
   const qc = useQueryClient()
@@ -352,8 +359,22 @@ export function ServiceEditorPage() {
   const [isActive, setIsActive] = useState(true)
   const [paramsText, setParamsText] = useState("{}")
   const [settingsText, setSettingsText] = useState("{}")
+  const [instructionsMd, setInstructionsMd] = useState("")
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false)
   const [hasSubmitted, setHasSubmitted] = useState(false)
+
+  const selectedLuaScript = useMemo(() => {
+    if (!luaScriptId || !luaScripts) return null
+    return luaScripts.find((s) => String(s.id) === String(luaScriptId)) || null
+  }, [luaScriptId, luaScripts])
+
+  const selectedScriptManifest = useMemo(() => {
+    if (!selectedLuaScript?.settings) return null
+    const s = selectedLuaScript.settings
+    if (s.manifest && typeof s.manifest === "object") return s.manifest
+    if (s.client_order_form || s.settings_form || s.layout) return s
+    return null
+  }, [selectedLuaScript])
 
   // Модальные окна
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false)
@@ -412,6 +433,10 @@ export function ServiceEditorPage() {
       const sText = JSON.stringify(service.settings || {}, null, 2)
       setParamsText(pText)
       setSettingsText(sText)
+      const svcSettings = (service.settings || {}) as Record<string, unknown>
+      const svcParams = (service.params || {}) as Record<string, unknown>
+      const loadedInst = String(svcSettings.instructions_md || svcParams.instructions_md || "")
+      setInstructionsMd(loadedInst)
       setSlugManuallyEdited(true)
 
       let loadedMin = "100"
@@ -492,14 +517,40 @@ export function ServiceEditorPage() {
         isActive: service.is_active,
         paramsText: pText,
         settingsText: sText,
+        instructionsMd: loadedInst,
       })
 
       setInitialSnapshot(initial)
     } else if (isNew && !initialSnapshot) {
+      let initName = ""
+      let initSlug = ""
+      let initDesc = ""
+      let initDelivery: "key" | "lua" = "key"
+      let initLuaId = ""
+      const fromScript = searchParams.get("from_script")
+      if (fromScript && luaScripts) {
+        const found = luaScripts.find((s) => String(s.id) === String(fromScript))
+        if (found) {
+          initDelivery = "lua"
+          initLuaId = String(found.id)
+          const m = ((found.settings as any)?.manifest as any) || (found.settings as any) || {}
+          const pref = m.prefill || {}
+          initName = pref.name || found.name || found.slug || ""
+          initSlug = pref.slug || found.slug || ""
+          initDesc = pref.description || m.description || ""
+          setName(initName)
+          setSlug(initSlug)
+          setDescription(initDesc)
+          setDelivery("lua")
+          setLuaScriptId(initLuaId)
+          setSlugManuallyEdited(true)
+        }
+      }
+
       const initial = buildServiceSnapshot({
-        name: "",
-        slug: "",
-        description: "",
+        name: initName,
+        slug: initSlug,
+        description: initDesc,
         catalogId: null,
         price: "0",
         currency: instanceCurrency || "RUB",
@@ -509,15 +560,16 @@ export function ServiceEditorPage() {
         customStep: "1",
         tierPlans: [],
         compList: [],
-        delivery: "key",
-        luaScriptId: "",
+        delivery: initDelivery,
+        luaScriptId: initLuaId,
         isActive: true,
         paramsText: "{}",
         settingsText: "{}",
+        instructionsMd: "",
       })
       setInitialSnapshot(initial)
     }
-  }, [service, isNew, instanceCurrency, initialSnapshot])
+  }, [service, isNew, instanceCurrency, initialSnapshot, searchParams, luaScripts])
 
   // Автоматический пересчет цены в зависимости от режима
   const calculatedBasePrice = useMemo(() => {
@@ -561,6 +613,7 @@ export function ServiceEditorPage() {
       isActive,
       paramsText,
       settingsText,
+      instructionsMd,
     })
   }, [
     name,
@@ -581,6 +634,7 @@ export function ServiceEditorPage() {
     isActive,
     paramsText,
     settingsText,
+    instructionsMd,
   ])
 
   const isDirty = useMemo(() => {
@@ -711,13 +765,19 @@ export function ServiceEditorPage() {
         throw new Error(`Проверьте форму: ${firstErr}`)
       }
 
-      let params: unknown = {}
-      let settings: unknown = {}
+      let params: Record<string, unknown> = {}
+      let settings: Record<string, unknown> = {}
       try {
         params = JSON.parse(paramsText || "{}")
         settings = JSON.parse(settingsText || "{}")
       } catch {
         throw new Error("Некорректный JSON в параметрах или настройках")
+      }
+
+      if (instructionsMd.trim()) {
+        settings.instructions_md = instructionsMd.trim()
+      } else {
+        delete settings.instructions_md
       }
 
       let pricingConfig: Record<string, unknown> = {}
@@ -2066,8 +2126,48 @@ export function ServiceEditorPage() {
                       </Button>
                     </div>
                   </div>
+
+                  {selectedScriptManifest && (
+                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-3.5 space-y-2 mt-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Sparkles className="size-3.5 text-primary" />
+                          <span className="text-xs font-semibold text-foreground">
+                            Витринный предпросмотр заказа (Server-Driven UI)
+                          </span>
+                        </div>
+                        <Badge variant="outline" className="text-[10px] text-primary border-primary/40">
+                          {selectedLuaScript?.slug}
+                        </Badge>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        Поля заказа, которые будут динамически отрендерены покупателю в модальном окне перед оплатой:
+                      </p>
+                      <div className="rounded-lg border border-border/60 bg-card/90 overflow-hidden">
+                        <ManifestLivePreview manifest={selectedScriptManifest} previewType="client_order_form" />
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* 3.1 Инструкция к товару (Markdown) */}
+              <div className="pt-2 border-t border-border/40">
+                <MarkdownEditor
+                  value={instructionsMd}
+                  onChange={setInstructionsMd}
+                  label={
+                    delivery === "key"
+                      ? "Инструкция по активации ключа (Markdown)"
+                      : "Инструкция к товару (Markdown)"
+                  }
+                  description={
+                    delivery === "key"
+                      ? "Отображается покупателю в окне выдачи ключа после успешной оплаты"
+                      : "Отображается покупателю в деталях заказа и чеке после активации"
+                  }
+                />
+              </div>
             </CardContent>
           </Card>
 

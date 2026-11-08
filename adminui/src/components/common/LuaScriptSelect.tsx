@@ -32,6 +32,7 @@ export interface LuaScriptOption {
   kind?: LuaScriptKind | null
   is_active?: boolean
   filename?: string | null
+  settings?: Record<string, unknown>
 }
 
 export interface LuaScriptSelectProps {

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import * as monaco from "monaco-editor"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertTriangle, Check, Copy, History, MoreVertical, Settings2, X } from "lucide-react"
+import { AlertTriangle, Check, Copy, History, Layers, MoreVertical, Settings2, Sparkles, X } from "lucide-react"
 import {
   Tooltip,
   TooltipContent,
@@ -40,6 +40,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/shadsnui/dropdown-menu"
 import { LuaSettingsDialog } from "@/components/lua/LuaSettingsDialog"
+import { LuaManifestDialog } from "@/components/lua/LuaManifestDialog"
+import { CreateFromManifestDialog } from "@/components/lua/CreateFromManifestDialog"
 
 export interface LuaScriptVersion {
   version: number
@@ -121,6 +123,8 @@ export function LuaEditor({
     JSON.stringify(initialSettings, null, 2),
   )
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [manifestOpen, setManifestOpen] = useState(false)
+  const [createDialogOpen, setCreateDialogOpen] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [ready, setReady] = useState(false)
   const [conflict, setConflict] = useState(false)
@@ -475,6 +479,28 @@ export function LuaEditor({
             )}
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs gap-1.5"
+              onClick={() => setManifestOpen(true)}
+              title="SDUI Манифест скрипта (manifest.json)"
+            >
+              <Layers className="size-3.5 text-primary" />
+              <span className="hidden sm:inline">Манифест</span>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="default"
+              className="h-8 text-xs gap-1.5 bg-primary text-primary-foreground hover:bg-primary/90 shadow-2xs"
+              onClick={() => setCreateDialogOpen(true)}
+              title="Создать услугу или шлюз с предустановками из манифеста"
+            >
+              <Sparkles className="size-3.5" />
+              <span>Создать {isPaymentScript ? "шлюз" : "услугу"}</span>
+            </Button>
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
@@ -504,6 +530,12 @@ export function LuaEditor({
                     <Settings2 className="size-4" /> Настройки скрипта
                   </DropdownMenuItem>
                 )}
+                <DropdownMenuItem className="whitespace-nowrap" onClick={() => setManifestOpen(true)}>
+                  <Layers className="size-4" /> Манифест SDUI
+                </DropdownMenuItem>
+                <DropdownMenuItem className="whitespace-nowrap" onClick={() => setCreateDialogOpen(true)}>
+                  <Sparkles className="size-4" /> Создать {isPaymentScript ? "шлюз" : "услугу"} из манифеста
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             {diffAgainst !== null && (
@@ -654,6 +686,29 @@ export function LuaEditor({
             style={{ display: diffAgainst !== null ? "block" : "none" }}
           />
         </div>
+
+        <LuaManifestDialog
+          open={manifestOpen}
+          onOpenChange={setManifestOpen}
+          settingsText={settingsText}
+          onSaveSettings={(next) => {
+            setSettingsText(next)
+            setDirty(true)
+          }}
+          scriptKind={scriptKind}
+        />
+
+        <CreateFromManifestDialog
+          open={createDialogOpen}
+          onOpenChange={setCreateDialogOpen}
+          script={{
+            id: scriptId,
+            slug: scriptName || `script-${scriptId}`,
+            name: scriptName,
+            kind: scriptKind || "service",
+            settings: initialSettings,
+          }}
+        />
 
         <LuaSettingsDialog
           open={settingsOpen}

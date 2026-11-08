@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, MoreVertical, Plus, Trash2 } from "lucide-react"
+import { ArrowLeft, MoreVertical, Plus, Sparkles, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -12,6 +12,7 @@ import { toastError, toastSuccess } from "@/lib/toast"
 import { cn } from "@/lib/utils"
 import { LuaEditor } from "@/components/lua/LuaEditor"
 import { CreateLuaScriptDialog } from "@/components/lua/CreateLuaScriptDialog"
+import { CreateFromManifestDialog } from "@/components/lua/CreateFromManifestDialog"
 import { Badge } from "@/components/shadsnui/badge"
 import { Button } from "@/components/shadsnui/button"
 import { Skeleton } from "@/components/shadsnui/skeleton"
@@ -72,6 +73,7 @@ export function LuaScriptsPage() {
   const [search, setSearch] = useState("")
   const [creating, setCreating] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<LuaScript | null>(null)
+  const [prefillScript, setPrefillScript] = useState<LuaScript | null>(null)
 
   const canRead = can("lua.read")
   const canEdit = can("lua.edit")
@@ -185,7 +187,7 @@ export function LuaScriptsPage() {
                 )}
               </div>
               <p className="font-mono text-[10px] text-muted-foreground">{s.slug}</p>
-              <div className="mt-1 flex flex-wrap gap-1">
+              <div className="mt-1 flex flex-wrap items-center gap-1">
                 <Badge variant="secondary" className="text-[10px]">
                   {s.kind}
                 </Badge>
@@ -194,6 +196,22 @@ export function LuaScriptsPage() {
                     {a}
                   </Badge>
                 ))}
+                {(Boolean(s.settings?.manifest) || Boolean(s.settings?.prefill) || Boolean(s.settings?.client_order_form)) && (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-5 px-1.5 text-[9px] gap-1 text-primary border-primary/30 hover:bg-primary/10 hover:border-primary/60 ml-0.5"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setPrefillScript(s)
+                    }}
+                    title="Создать услугу или шлюз из манифеста"
+                  >
+                    <Sparkles className="size-2.5" />
+                    {s.kind === "payment" ? "Создать шлюз" : "Создать товар"}
+                  </Button>
+                )}
               </div>
             </div>
 
@@ -310,6 +328,12 @@ export function LuaScriptsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CreateFromManifestDialog
+        open={Boolean(prefillScript)}
+        onOpenChange={(open) => !open && setPrefillScript(null)}
+        script={prefillScript}
+      />
     </div>
   )
 }
