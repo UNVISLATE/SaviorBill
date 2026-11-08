@@ -202,6 +202,13 @@ class ServiceMngr:
         svc = await self.by_id(service_id)
         if svc is None or not svc.is_active:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
+        if svc.delivery == Delivery.LUA and svc.lua_script_id:
+            script = await self.s.get(SystemScriptsModel, svc.lua_script_id)
+            if script is None or not script.is_active:
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT,
+                    "service fulfillment script is not available",
+                )
         return svc
 
     async def _validate_catalog(self, catalog_id: int | None) -> None:

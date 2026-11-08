@@ -196,7 +196,7 @@ export function LuaScriptsPage() {
                     {a}
                   </Badge>
                 ))}
-                {(Boolean(s.settings?.manifest) || Boolean(s.settings?.prefill) || Boolean(s.settings?.client_order_form)) && (
+                {s.artifact_status === "ready" && (Boolean(s.settings?.manifest) || Boolean(s.settings?.prefill) || Boolean(s.settings?.client_order_form)) && (
                   <Button
                     type="button"
                     size="sm"

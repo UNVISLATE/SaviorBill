@@ -7,12 +7,10 @@ import { Button } from "@/components/shadsnui/button"
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/shadsnui/dialog"
-import { Badge } from "@/components/shadsnui/badge"
 import { ManifestLivePreview } from "@unvislate/sbui-sdk"
 
 interface LuaManifestDialogProps {
@@ -119,19 +117,27 @@ export function LuaManifestDialog({
   const [manifestJson, setManifestJson] = useState("{}")
   const [parseError, setParseError] = useState<string | null>(null)
 
-  // Extract manifest on open
+  // Extract manifest on open (strictly from settings, zero magic fallbacks)
   useEffect(() => {
     if (open) {
       try {
         const s = JSON.parse(settingsText || "{}")
-        const m = s.manifest || (s.client_order_form || s.settings_form ? s : TEMPLATES[scriptKind === "payment" ? "payment" : "vps"])
-        setManifestJson(JSON.stringify(m, null, 2))
+        const m = s.manifest || (s.client_order_form || s.settings_form ? s : null)
+        const text = m ? JSON.stringify(m, null, 2) : "{\n  \n}"
+        setManifestJson(text)
         setParseError(null)
+        if (editorRef.current) {
+          editorRef.current.setValue(text)
+        }
       } catch {
-        setManifestJson(JSON.stringify(TEMPLATES[scriptKind === "payment" ? "payment" : "vps"], null, 2))
+        const text = "{\n  \n}"
+        setManifestJson(text)
+        if (editorRef.current) {
+          editorRef.current.setValue(text)
+        }
       }
     }
-  }, [open, settingsText, scriptKind])
+  }, [open, settingsText])
 
   // Initialize Monaco Editor
   useEffect(() => {
@@ -202,66 +208,55 @@ export function LuaManifestDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[92vh] flex flex-col p-4 sm:p-6 overflow-hidden">
-        <DialogHeader className="pb-2">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col p-4 sm:p-5 overflow-hidden">
+        <DialogHeader className="pb-1">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <div className="flex items-center gap-2">
-              <div className="size-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+              <div className="size-7 rounded-md bg-primary/10 text-primary flex items-center justify-center">
                 <Layers className="size-4" />
               </div>
-              <div>
-                <DialogTitle className="text-base font-semibold flex items-center gap-2">
-                  SDUI Манифест скрипта (manifest.json)
-                  <Badge variant="outline" className="text-[10px] text-primary border-primary/40">
-                    Server-Driven UI
-                  </Badge>
-                </DialogTitle>
-                <DialogDescription className="text-xs">
-                  Декларативное описание полей формы заказа, настроек интеграции и метаданных prefill
-                </DialogDescription>
-              </div>
+              <DialogTitle className="text-sm font-semibold">
+                Манифест формы
+              </DialogTitle>
             </div>
 
-            <div className="flex items-center gap-1.5">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-7 text-xs gap-1"
-                onClick={() => handleApplyTemplate(scriptKind === "payment" ? "payment" : "vps")}
-              >
-                <Sparkles className="size-3" /> Шаблон: {scriptKind === "payment" ? "Платёж" : "VPS"}
-              </Button>
-            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs gap-1"
+              onClick={() => handleApplyTemplate(scriptKind === "payment" ? "payment" : "vps")}
+            >
+              <Sparkles className="size-3" /> Шаблон: {scriptKind === "payment" ? "Платёж" : "VPS"}
+            </Button>
           </div>
         </DialogHeader>
 
-        {/* Two-column layout: Monaco JSON on the left, Live Preview on the right */}
+        {/* Two-column layout: Editor on left, Preview on right */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 flex-1 min-h-[380px] overflow-hidden py-1">
           {/* Left: JSON Editor */}
           <div className="flex flex-col rounded-lg border border-border/80 overflow-hidden bg-background">
-            <div className="px-3 py-1.5 bg-muted/40 border-b border-border/60 flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Code2 className="size-3 text-primary" /> Monaco JSON Editor
+            <div className="px-3 py-1.5 bg-muted/40 border-b border-border/60 flex items-center justify-between text-[11px] font-medium text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <Code2 className="size-3 text-primary" /> Редактор
               </span>
               {parseError ? (
-                <span className="text-red-500 text-[10px]">Синтаксическая ошибка</span>
+                <span className="text-red-500 text-[10px]">Ошибка синтаксиса</span>
               ) : (
                 <span className="text-emerald-500 text-[10px] flex items-center gap-1">
-                  <Check className="size-2.5" /> Валидный JSON
+                  <Check className="size-2.5" /> JSON OK
                 </span>
               )}
             </div>
             <div ref={editorHostRef} className="flex-1 w-full min-h-[320px]" />
           </div>
 
-          {/* Right: Live SDUI Preview */}
+          {/* Right: Preview */}
           <div className="flex flex-col rounded-lg border border-border/80 overflow-hidden bg-zinc-950/40">
-            <div className="px-3 py-1.5 bg-muted/40 border-b border-border/60 flex items-center justify-between text-[11px] font-semibold text-muted-foreground">
-              <span className="flex items-center gap-1">
-                <Eye className="size-3 text-primary" /> Live SDUI Preview (Витрина)
+            <div className="px-3 py-1.5 bg-muted/40 border-b border-border/60 flex items-center justify-between text-[11px] font-medium text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <Eye className="size-3 text-primary" /> Превью
               </span>
-              <span className="text-[10px] text-muted-foreground">@unvislate/sbui-sdk</span>
             </div>
             <div className="flex-1 overflow-y-auto p-2">
               <ManifestLivePreview manifest={manifestJson} previewType="client_order_form" />
@@ -279,7 +274,7 @@ export function LuaManifestDialog({
             onClick={handleSave}
             className="bg-primary text-primary-foreground hover:bg-primary/90"
           >
-            Сохранить манифест
+            Сохранить
           </Button>
         </DialogFooter>
       </DialogContent>

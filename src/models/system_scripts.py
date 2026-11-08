@@ -347,15 +347,21 @@ class SystemScriptsMngr:
                 status.HTTP_404_NOT_FOUND, "script body file is missing"
             )
         try:
-            code = target.read_text(encoding="utf-8")
+            raw = target.read_bytes()
+        except OSError as exc:
+            raise HTTPException(
+                status.HTTP_500_INTERNAL_SERVER_ERROR, "failed to read script file"
+            ) from exc
+        if expected_sha256 and hashlib.sha256(raw).hexdigest() != expected_sha256:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "script body integrity check failed"
+            )
+        try:
+            code = raw.decode("utf-8")
         except UnicodeDecodeError as exc:
             raise HTTPException(
                 status.HTTP_409_CONFLICT, "script body is not valid UTF-8"
             ) from exc
-        if expected_sha256 and hashlib.sha256(code.encode("utf-8")).hexdigest() != expected_sha256:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT, "script body integrity check failed"
-            )
         return code
 
     def _safe_target(self, filename: str) -> Path:

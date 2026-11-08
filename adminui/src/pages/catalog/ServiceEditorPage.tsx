@@ -21,6 +21,7 @@ import {
   Trash2,
   XCircle,
   SlidersHorizontal,
+  AlertTriangle,
   Code2,
 } from "lucide-react"
 
@@ -124,6 +125,7 @@ interface LuaScript {
   name: string
   slug?: string
   settings?: Record<string, unknown>
+  artifact_status?: "ready" | "missing" | "corrupt" | "unknown"
 }
 
 interface Attachment {
@@ -2127,25 +2129,62 @@ export function ServiceEditorPage() {
                     </div>
                   </div>
 
-                  {selectedScriptManifest && (
-                    <div className="rounded-xl border border-primary/30 bg-primary/5 p-3.5 space-y-2 mt-3">
+                  {selectedLuaScript?.artifact_status && selectedLuaScript.artifact_status !== "ready" && (
+                    <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-3 text-xs text-destructive flex items-center gap-2 mt-3">
+                      <AlertTriangle className="size-4 shrink-0" />
+                      <span>
+                        Файл скрипта автоматизации недоступен на сервере ({selectedLuaScript.artifact_status === "missing" ? "файл отсутствует" : "файл повреждён"}). Услуга не сможет выполнять выдачу заказов.
+                      </span>
+                    </div>
+                  )}
+
+                  {(selectedScriptManifest || (priceType === "configurable" && compList.length > 0)) && (
+                    <div className="rounded-xl border border-border/80 bg-muted/20 p-3.5 space-y-3 mt-3">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <Sparkles className="size-3.5 text-primary" />
-                          <span className="text-xs font-semibold text-foreground">
-                            Витринный предпросмотр заказа (Server-Driven UI)
-                          </span>
+                        <span className="text-xs font-semibold text-foreground">
+                          Витринный предпросмотр заказа
+                        </span>
+                        {selectedLuaScript?.slug && (
+                          <Badge variant="outline" className="text-[10px] text-muted-foreground font-mono">
+                            {selectedLuaScript.slug}
+                          </Badge>
+                        )}
+                      </div>
+
+                      {priceType === "configurable" && compList.length > 0 && (
+                        <div className="space-y-3 p-3 rounded-lg border border-border/60 bg-card/60">
+                          <div className="flex items-center justify-between text-xs text-muted-foreground font-medium">
+                            <span>Калькулятор ресурсов</span>
+                            <span className="text-primary font-semibold">
+                              Расчёт: {(
+                                (Number(price) || 0) +
+                                compList.reduce((acc, c) => acc + (Number(c.default || c.min || 0) * (Number(c.unit_price) || 0)), 0)
+                              ).toLocaleString("ru-RU")} {currency}
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                            {compList.filter((c) => c.name).map((c, idx) => (
+                              <div key={c.code || idx} className="space-y-1 p-2 rounded-md bg-background/50 border border-border/40 text-xs">
+                                <div className="flex justify-between">
+                                  <span className="font-medium">{c.name}</span>
+                                  <span className="font-mono text-primary font-semibold">
+                                    {c.default || c.min || 0} {c.unit}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-muted-foreground">
+                                  {c.unit_price ? `+${c.unit_price} ${currency} за ${c.unit || "ед."}` : "без доплаты"}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                        <Badge variant="outline" className="text-[10px] text-primary border-primary/40">
-                          {selectedLuaScript?.slug}
-                        </Badge>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground">
-                        Поля заказа, которые будут динамически отрендерены покупателю в модальном окне перед оплатой:
-                      </p>
-                      <div className="rounded-lg border border-border/60 bg-card/90 overflow-hidden">
-                        <ManifestLivePreview manifest={selectedScriptManifest} previewType="client_order_form" />
-                      </div>
+                      )}
+
+                      {selectedScriptManifest && (
+                        <div className="rounded-lg border border-border/60 bg-card/90 overflow-hidden p-2">
+                          <ManifestLivePreview manifest={selectedScriptManifest} previewType="client_order_form" />
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

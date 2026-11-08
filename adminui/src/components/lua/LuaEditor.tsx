@@ -530,12 +530,6 @@ export function LuaEditor({
                     <Settings2 className="size-4" /> Настройки скрипта
                   </DropdownMenuItem>
                 )}
-                <DropdownMenuItem className="whitespace-nowrap" onClick={() => setManifestOpen(true)}>
-                  <Layers className="size-4" /> Манифест SDUI
-                </DropdownMenuItem>
-                <DropdownMenuItem className="whitespace-nowrap" onClick={() => setCreateDialogOpen(true)}>
-                  <Sparkles className="size-4" /> Создать {isPaymentScript ? "шлюз" : "услугу"} из манифеста
-                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
             {diffAgainst !== null && (
