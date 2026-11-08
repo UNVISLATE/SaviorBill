@@ -297,6 +297,12 @@ async def get_public_order_status(
                 extracted_keys.extend(str(k) for k in items)
         keys = extracted_keys if extracted_keys else None
 
+    instructions_md: str | None = None
+    if not requires_auth and service:
+        svc_settings = getattr(service, "settings", None) or {}
+        svc_params = getattr(service, "params", None) or {}
+        instructions_md = svc_settings.get("instructions_md") or svc_params.get("instructions_md")
+
     return PublicOrderView(
         order_id=usvc.id,
         service_id=usvc.service_id,
@@ -307,6 +313,7 @@ async def get_public_order_status(
         currency=payment.currency if payment else "USD",
         created_at=usvc.created_at,
         keys=keys,
+        instructions_md=instructions_md,
         public_data=public_data,
         requires_auth=requires_auth,
         buyer_email_masked=masked_email,

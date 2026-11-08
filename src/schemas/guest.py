@@ -84,6 +84,7 @@ class PublicOrderView(BaseModel):
     currency: str
     created_at: datetime
     keys: list[str] | None = None
+    instructions_md: str | None = Field(default=None, description="Инструкция по активации в формате Markdown")
     public_data: dict[str, Any] | None = None
     requires_auth: bool = False
     buyer_email_masked: str
