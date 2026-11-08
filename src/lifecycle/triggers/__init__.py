@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import contextvars
 import logging
+import re
+from decimal import Decimal
+from typing import Any
 
 from models.system_settings import SystemSettingsMngr
 from models.triggers import TriggerMngr
@@ -10,7 +14,6 @@ from telemetry.metrics import trigger_failures_total
 
 from .base import BaseAction, dig
 from .email_action import EmailAction
-import contextvars
 from .events import ALL_EVENTS, TriggerEvent
 
 log = logging.getLogger("saviorbill.triggers")
@@ -25,6 +28,95 @@ _DEFAULT_MAX_FIRES_PER_MINUTE = 60
 _TRIGGER_MAX_DEPTH = 5
 _trigger_depth: contextvars.ContextVar[int] = contextvars.ContextVar("trigger_depth", default=0)
 
+_KNOWN_OPERATORS = {"eq", "ne", "gt", "gte", "lt", "lte", "in", "not_in", "contains", "regex"}
+
+
+def _match_single(actual: Any, expected: Any) -> bool:
+    """Сопоставление фактического значения контекста с ожидаемым (Triggers 2.0).
+
+    Поддерживает:
+    - Простое равенство: {"status": "paid"}
+    - Словарь операторов: {"amount": {"gt": 500, "lte": 5000}}
+      Доступные операторы: eq, ne, gt, gte, lt, lte, in, not_in, contains, regex.
+    """
+    if isinstance(expected, dict):
+        # Если ни один ключ не является оператором, считаем это точным совпадением словарей
+        if not any(k in _KNOWN_OPERATORS for k in expected):
+            return actual == expected
+
+        for op, target in expected.items():
+            if op == "eq":
+                if actual != target:
+                    return False
+            elif op == "ne":
+                if actual == target:
+                    return False
+            elif op in ("gt", "gte", "lt", "lte"):
+                if actual is None or target is None:
+                    return False
+                try:
+                    # Попытка численного приведения для безопасного сравнения int/float/Decimal/str
+                    act_num = Decimal(str(actual))
+                    tgt_num = Decimal(str(target))
+                    if op == "gt" and not (act_num > tgt_num):
+                        return False
+                    if op == "gte" and not (act_num >= tgt_num):
+                        return False
+                    if op == "lt" and not (act_num < tgt_num):
+                        return False
+                    if op == "lte" and not (act_num <= tgt_num):
+                        return False
+                except (Exception, ArithmeticError):
+                    # Fallback к обычному сравнению типов
+                    try:
+                        if op == "gt" and not (actual > target):
+                            return False
+                        if op == "gte" and not (actual >= target):
+                            return False
+                        if op == "lt" and not (actual < target):
+                            return False
+                        if op == "lte" and not (actual <= target):
+                            return False
+                    except TypeError:
+                        return False
+            elif op == "in":
+                if isinstance(target, (list, tuple, set)):
+                    if actual not in target:
+                        return False
+                elif isinstance(target, str):
+                    if str(actual) not in target:
+                        return False
+                else:
+                    return False
+            elif op == "not_in":
+                if isinstance(target, (list, tuple, set)):
+                    if actual in target:
+                        return False
+                elif isinstance(target, str):
+                    if str(actual) in target:
+                        return False
+            elif op == "contains":
+                if actual is None:
+                    return False
+                if isinstance(actual, (list, tuple, set)):
+                    if target not in actual:
+                        return False
+                elif isinstance(actual, str):
+                    if str(target) not in actual:
+                        return False
+                else:
+                    return False
+            elif op == "regex":
+                if actual is None:
+                    return False
+                try:
+                    if not re.search(str(target), str(actual)):
+                        return False
+                except re.error:
+                    return False
+        return True
+
+    return actual == expected
 
 
 class TriggerDispatcher:
@@ -42,15 +134,15 @@ class TriggerDispatcher:
 
     @staticmethod
     def _match(cond: dict, ctx: dict) -> bool:
-        """Все пары ``{path: value}`` условия должны совпасть с контекстом.
+        """Все пары ``{path: value/operators}`` условия должны совпасть с контекстом.
 
-        :arg cond: условие триггера.
+        :arg cond: условие триггера (поддерживает операторы Triggers 2.0).
         :arg ctx: контекст события.
         :return: ``True`` если условие выполнено (или пустое).
         """
         if not cond:
             return True
-        return all(dig(ctx, path) == expected for path, expected in cond.items())
+        return all(_match_single(dig(ctx, path), expected) for path, expected in cond.items())
 
     async def _allow_event(self, event: str) -> bool:
         """Анти-петля: не более N срабатываний события в минуту (Valkey-счётчик).
@@ -166,14 +258,6 @@ class TriggerDispatcher:
             if ok:
                 done += 1
             else:
-                # Раньше провал терялся в логах отдельными строками попыток:
-                # ни итогового события, ни метрики — недоставленные письма
-                # замечали постфактум (см. AUDIT.md §3.3).
-                #
-                # В аудит-журнал это не пишется намеренно: fire() вызывается и
-                # до, и после commit() вызывающей транзакции, поэтому запись
-                # либо потерялась бы, либо преждевременно закоммитила чужую
-                # работу. Сигнал для оператора — метрика.
                 trigger_failures_total.labels(event=event, action=trig.action).inc()
                 log.error(
                     "триггер #%s (%s/%s): исчерпаны все %s попыток: %s",
