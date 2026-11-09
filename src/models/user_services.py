@@ -16,6 +16,8 @@ from sqlalchemy import (
     Numeric,
     String,
 )
+from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -113,6 +115,13 @@ class UserServicesModel(Base):
     # Тип отображения продукта для фронтенда (напр. "text"/"url"). Свободный
     # текст — бэкенд его не интерпретирует, набор типов задаёт фронтенд.
     product_kind: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Расширяемые JSONB-атрибуты плагинов (Core Plugins Engine)
+    custom_public: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
+    custom_private: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
 
     delivered_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

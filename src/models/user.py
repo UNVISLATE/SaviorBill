@@ -20,6 +20,7 @@ from sqlalchemy import (
     String,
     select,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -104,6 +105,13 @@ class UserModel(Base):
     # Собственный реферальный код (для приглашения других пользователей).
     ref_code: Mapped[str | None] = mapped_column(
         String(16), unique=True, index=True, nullable=True
+    )
+    # Расширяемые JSONB-атрибуты плагинов (Core Plugins Engine)
+    custom_public: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
+    custom_private: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
     )
     # Пригласивший пользователь (реферер). NULL — регистрация без реферала.
     referred_by: Mapped[int | None] = mapped_column(

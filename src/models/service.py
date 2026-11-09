@@ -20,6 +20,8 @@ from sqlalchemy import (
     Text,
     select,
 )
+from sqlalchemy import text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -122,6 +124,13 @@ class ServiceModel(Base):
     duration: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Расширяемые JSONB-атрибуты плагинов (Core Plugins Engine)
+    custom_public: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
+    custom_private: Mapped[dict] = mapped_column(
+        JSONB, default=dict, server_default=text("'{}'::jsonb"), nullable=False
+    )
 
     # Вложения товара (фото/видео), см. ServiceAttachmentModel.
     attachments: Mapped[list["ServiceAttachmentModel"]] = relationship(  # noqa: F821
