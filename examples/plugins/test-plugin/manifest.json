@@ -1,0 +1,52 @@
+{
+  "$schema": "https://saviorbill.com/schemas/plugin.v1.json",
+  "slug": "test-plugin",
+  "name": "Тестовый плагин",
+  "version": "1.0.0",
+  "description": "Тестовый демонстрационный плагин для проверки движка расширений",
+  "icon": "Plug",
+  "author": "UNVI.XYZ",
+  "permissions": [
+    { "key": "view", "name": "Просмотр тестового плагина" },
+    { "key": "manage", "name": "Управление тестовым плагином" }
+  ],
+  "settings_schema": {
+    "title": "Параметры тестового плагина",
+    "description": "Тестовая конфигурация для демонстрации формы настроек",
+    "fields": [
+      {
+        "key": "test_mode",
+        "type": "boolean",
+        "label": "Тестовый режим",
+        "default": true
+      },
+      {
+        "key": "api_endpoint",
+        "type": "text",
+        "label": "Тестовый адрес API",
+        "default": "https://api.unvi.xyz/test"
+      },
+      {
+        "key": "log_level",
+        "type": "select",
+        "label": "Уровень логирования",
+        "default": "info",
+        "options": [
+          { "value": "debug", "label": "Debug" },
+          { "value": "info", "label": "Info" },
+          { "value": "warn", "label": "Warning" }
+        ]
+      }
+    ]
+  },
+  "admin_ui": {
+    "entry": "dist/index.js",
+    "nav": {
+      "title": "Тест-плагин",
+      "icon": "Plug",
+      "category": "other",
+      "order": 99,
+      "required_perm": "plugins.test-plugin.view"
+    }
+  }
+}
