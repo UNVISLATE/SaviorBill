@@ -1,10 +1,22 @@
+import { useMemo } from "react"
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 
 import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { useBranding } from "@/hooks/use-branding"
-import { footerNavItems, isNavItemVisible, navGroups } from "@/components/layout/nav-config"
+import { footerNavItems, isNavItemVisible, navGroups, type NavItem } from "@/components/layout/nav-config"
+import { Plug, MessageSquare, Gift, Users as UsersIcon, Shield, Database, Layers } from "lucide-react"
+
+const PLUGIN_ICONS: Record<string, React.ElementType> = {
+  Plug,
+  MessageSquare,
+  Gift,
+  Users: UsersIcon,
+  Shield,
+  Database,
+  Layers,
+}
 import { Logo } from "@/components/layout/Logo"
 import { NavMain } from "@/components/layout/NavMain"
 import { NavUser } from "@/components/layout/NavUser"
@@ -43,6 +55,41 @@ export function DashboardLayout() {
     health?.app_version || (typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0-dev")
   const displayVersion = rawVersion.startsWith("v") ? rawVersion : `v${rawVersion}`
 
+  const { data: plugins = [] } = useQuery<any[]>({
+    queryKey: ["admin", "plugins"],
+    queryFn: async () => (await api.get("/v1/admin/plugins")).data,
+    staleTime: 60_000,
+  })
+
+  const dynamicNavGroups = useMemo(() => {
+    if (!plugins || plugins.length === 0) return navGroups
+
+    const pluginNavItems: NavItem[] = []
+    for (const p of plugins) {
+      if (p.status === "active" && p.admin_ui?.nav) {
+        const nav = p.admin_ui.nav
+        const IconComp = (PLUGIN_ICONS[nav.icon] || Plug) as any
+        pluginNavItems.push({
+          title: nav.title || p.name,
+          url: `/plugins/${p.slug}`,
+          icon: IconComp,
+          perm: nav.required_perm,
+        })
+      }
+    }
+
+    if (pluginNavItems.length === 0) return navGroups
+
+    return [
+      ...navGroups,
+      {
+        title: "Расширения",
+        icon: Plug as any,
+        items: pluginNavItems,
+      },
+    ]
+  }, [plugins])
+
   const visibleFooterItems = footerNavItems.filter((i) => isNavItemVisible(can, i))
 
   return (
@@ -58,7 +105,7 @@ export function DashboardLayout() {
           </div>
         </SidebarHeader>
         <SidebarContent>
-          <NavMain groups={navGroups} />
+          <NavMain groups={dynamicNavGroups} />
         </SidebarContent>
         <SidebarFooter>
           {visibleFooterItems.length > 0 && (

@@ -25,6 +25,7 @@ import { OAuthProvidersPage } from "@/pages/oauth/OAuthProvidersPage"
 import { PaymentProvidersPage } from "@/pages/providers/PaymentProvidersPage"
 import { ProtectedRoute } from "@/routes/ProtectedRoute"
 import { NotFoundPage } from "@/pages/errors/NotFoundPage"
+import { PluginHostPage } from "@/pages/plugins/PluginHostPage"
 import { AboutPage } from "@/pages/settings/AboutPage"
 import { useAuth } from "@/hooks/use-auth"
 import { ProfileDialogProvider } from "@/hooks/use-profile-dialog"
@@ -65,6 +66,8 @@ export function App() {
               <Route path="/lua" element={<LuaScriptsPage />} />
               <Route path="/lua/:scriptId" element={<LuaScriptsPage />} />
               <Route path="/lua/:scriptId/manifest" element={<LuaManifestPage />} />
+              <Route path="/plugins/:slug/*" element={<PluginHostPage />} />
+              <Route path="/plugins/:slug" element={<PluginHostPage />} />
               <Route path="/catalog" element={<CatalogsPage />} />
               <Route path="/services" element={<ServicesPage />} />
               <Route path="/services/new" element={<ServiceEditorPage />} />

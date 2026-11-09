@@ -25,6 +25,8 @@ import { BannedDomainsSettings } from "./BannedDomainsSettings"
 import { AppTokensSettings } from "./AppTokensSettings"
 import { MediaSettingsPage } from "./MediaSettingsPage"
 import { RolesPage } from "@/pages/roles/RolesPage"
+import { PluginsSettingsPage } from "./PluginsSettingsPage"
+import { Plug } from "lucide-react"
 
 interface SettingsTabDef {
   path: string
@@ -145,6 +147,15 @@ const SETTINGS_TABS: SettingsTabDef[] = [
   },
 
   // Группа 4: Другое
+  {
+    path: "plugins",
+    title: "Плагины",
+    to: "/settings/plugins",
+    icon: <Plug className="size-4" />,
+    element: <PluginsSettingsPage />,
+    group: "Другое",
+    anyPerm: ["plugins.manage", "settings.read", "settings.edit", "settings.raw.read"],
+  },
   {
     path: "raw",
     title: "RAW Settings",
