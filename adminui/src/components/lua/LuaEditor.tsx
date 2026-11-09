@@ -13,6 +13,7 @@ import { api } from "@/api/api.ts"
 import { getErrorDetail, getErrorStatus } from "@/lib/api-error.ts"
 import { ensureMonacoWorkers } from "@/lib/monaco-setup"
 import { toastError, toastSuccess } from "@/lib/toast"
+import { hasScriptManifest } from "@/lib/script-manifest"
 import { Button } from "@/components/shadsnui/button"
 import { Textarea } from "@/components/shadsnui/textarea"
 import { Badge } from "@/components/shadsnui/badge"
@@ -130,13 +131,7 @@ export function LuaEditor({
   const hasManifest = useMemo(() => {
     try {
       const s = JSON.parse(settingsText || "{}")
-      const m = s.manifest || s
-      return Boolean(
-        (Array.isArray(m.client_order_form) && m.client_order_form.length > 0) ||
-        (Array.isArray(m.settings_form) && m.settings_form.length > 0) ||
-        m.prefill?.name ||
-        m.prefill?.slug
-      )
+      return hasScriptManifest(s)
     } catch {
       return false
     }

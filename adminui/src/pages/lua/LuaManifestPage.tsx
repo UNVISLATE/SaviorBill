@@ -197,7 +197,17 @@ export function LuaManifestPage() {
       if (!scriptId) throw new Error("ID скрипта не определён")
       const parsed = JSON.parse(manifestJson)
       const currentSettings = { ...(script?.settings || {}) }
-      currentSettings.manifest = parsed
+      const isEmpty =
+        !parsed ||
+        typeof parsed !== "object" ||
+        Object.keys(parsed).length === 0 ||
+        (!parsed.client_order_form?.length && !parsed.settings_form?.length && !parsed.prefill)
+
+      if (isEmpty) {
+        delete currentSettings.manifest
+      } else {
+        currentSettings.manifest = parsed
+      }
 
       return (
         await api.patch(`/v1/admin/lua/${scriptId}`, {

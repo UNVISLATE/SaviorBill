@@ -10,6 +10,7 @@ import { useIsMobile } from "@/hooks/use-mobile"
 import { useBreadcrumbExtra } from "@/hooks/use-breadcrumb"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { cn } from "@/lib/utils"
+import { hasScriptManifest } from "@/lib/script-manifest"
 import { LuaEditor } from "@/components/lua/LuaEditor"
 import { CreateLuaScriptDialog } from "@/components/lua/CreateLuaScriptDialog"
 import { Badge } from "@/components/shadsnui/badge"
@@ -210,13 +211,7 @@ export function LuaScriptsPage() {
             </div>
 
             {(() => {
-              const sSettings = (s.settings || {}) as Record<string, any>
-              const hasManifest = Boolean(
-                sSettings.manifest ||
-                sSettings.client_order_form ||
-                sSettings.settings_form ||
-                sSettings.prefill
-              )
+              const hasManifest = hasScriptManifest(s.settings)
 
               return (
                 <DropdownMenu>
