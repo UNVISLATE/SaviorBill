@@ -14,6 +14,7 @@ import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
 import { toastError, toastSuccess } from "@/lib/toast.ts"
 import { useInstanceCurrency } from "@/lib/currency"
+import { cn } from "@/lib/utils"
 import { useAuth } from "@/hooks/use-auth.tsx"
 import { useProfileDialog } from "@/hooks/use-profile-dialog"
 import {
@@ -365,8 +366,9 @@ export function ProfileOverviewSection({
     }
   }
 
-  function handleDrop(e: DragEvent<HTMLDivElement>) {
+  function handleDrop(e: DragEvent<HTMLDivElement | HTMLButtonElement>) {
     e.preventDefault()
+    e.stopPropagation()
     setDragOver(false)
     const file = e.dataTransfer.files?.[0]
     if (file) {
@@ -503,22 +505,30 @@ export function ProfileOverviewSection({
         ref={fileInputRef}
         type="file"
         accept="image/*"
-        className="hidden"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
         onChange={handleFileChange}
       />
 
       {/* Верхняя плашка: Аватар + Никнейм, ID, Роль + Баланс */}
       <div className="flex items-center gap-4">
-        <div
-          className={`group relative size-16 shrink-0 rounded-full transition-all ${
-            (isOwn || canManageAvatar) ? "cursor-pointer" : ""
+        <button
+          type="button"
+          className={`group relative size-16 shrink-0 rounded-full text-left p-0 border-0 bg-transparent transition-all outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+            (isOwn || canManageAvatar) ? "cursor-pointer" : "cursor-default"
           } ${dragOver ? "ring-2 ring-primary" : ""}`}
           onDragOver={(e) => {
             if (!isOwn && !canManageAvatar) return
             e.preventDefault()
+            e.stopPropagation()
             setDragOver(true)
           }}
-          onDragLeave={() => setDragOver(false)}
+          onDragLeave={(e) => {
+            e.preventDefault()
+            e.stopPropagation()
+            setDragOver(false)
+          }}
           onDrop={handleDrop}
           onClick={() => {
             if ((isOwn || canManageAvatar) && !avatarUploading) fileInputRef.current?.click()
@@ -549,6 +559,18 @@ export function ProfileOverviewSection({
             </div>
           )}
 
+          {(isOwn || canManageAvatar) && !avatarUploading && (
+            <div
+              className={cn(
+                "absolute -bottom-1 size-5 rounded-full shadow-sm flex items-center justify-center bg-primary text-primary-foreground transition-transform group-hover:scale-110",
+                profile.avatar_url ? "-left-1" : "-right-1"
+              )}
+              title="Загрузить аватар"
+            >
+              <Camera className="size-3" />
+            </div>
+          )}
+
           {canManageAvatar && profile.avatar_url && (
             <Button
               type="button"
@@ -564,7 +586,7 @@ export function ProfileOverviewSection({
               <Trash2 className="size-3" />
             </Button>
           )}
-        </div>
+        </button>
 
         <div className="min-w-0 flex-1 space-y-2">
           {/* Строка 1: Логин + ID + Роль + Статус */}
@@ -583,6 +605,20 @@ export function ProfileOverviewSection({
               <Copy className="size-3" />
               {idCopied && <span className="text-[10px] text-emerald-500">скопировано</span>}
             </button>
+
+            {(isOwn || canManageAvatar) && (
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                className="h-6 gap-1 px-2 text-xs"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={avatarUploading}
+              >
+                <Camera className="size-3" />
+                <span>{profile.avatar_url ? "Сменить фото" : "Загрузить фото"}</span>
+              </Button>
+            )}
 
             {canEditRole ? (
               <Select

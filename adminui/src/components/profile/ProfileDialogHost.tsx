@@ -298,15 +298,16 @@ export function ProfileDialogHost() {
   const canDropFiles = section === "media" && mode === "own"
 
   function onDragOver(e: DragEvent<HTMLDivElement>) {
-    if (!canDropFiles) return
     if (!e.dataTransfer.types.includes("Files")) return
     e.preventDefault()
     e.stopPropagation()
-    setDragActive(true)
+    if (canDropFiles) {
+      setDragActive(true)
+    }
   }
 
   function onDragLeave(e: DragEvent<HTMLDivElement>) {
-    if (!canDropFiles) return
+    if (!e.dataTransfer.types.includes("Files")) return
     e.preventDefault()
     e.stopPropagation()
     const targetEl = e.currentTarget
@@ -316,14 +317,15 @@ export function ProfileDialogHost() {
   }
 
   function onDrop(e: DragEvent<HTMLDivElement>) {
-    if (!canDropFiles) return
     if (!e.dataTransfer.types.includes("Files")) return
     e.preventDefault()
     e.stopPropagation()
     setDragActive(false)
-    const files = Array.from(e.dataTransfer.files)
-    if (files.length > 0) {
-      mediaRef.current?.startUploads(files)
+    if (canDropFiles) {
+      const files = Array.from(e.dataTransfer.files)
+      if (files.length > 0) {
+        mediaRef.current?.startUploads(files)
+      }
     }
   }
 

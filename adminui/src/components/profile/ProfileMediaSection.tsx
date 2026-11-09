@@ -487,15 +487,16 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
   const previewItem = previewIndex != null ? readyItems[previewIndex] : null
 
   const uploadTile = isOwn ? (
-    <label
-      htmlFor="profile-media-file-input"
+    <button
+      type="button"
       className={cn(
         "group relative flex aspect-square cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed text-muted-foreground transition-colors hover:border-foreground/40 hover:text-foreground",
         quotaReached && "pointer-events-none cursor-not-allowed opacity-50",
       )}
       onClick={(e) => {
+        e.preventDefault()
+        e.stopPropagation()
         if (quotaReached) {
-          e.preventDefault()
           return
         }
         fileInputRef.current?.click()
@@ -503,7 +504,7 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
     >
       <Plus className="size-5" />
       <span className="text-[10px]">Загрузить</span>
-    </label>
+    </button>
   ) : null
 
   const hasAnything = cells.length > 0
@@ -533,6 +534,8 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
           accept="image/*,video/*"
           multiple
           className="sr-only"
+          tabIndex={-1}
+          aria-hidden="true"
           onChange={(e) => {
             if (e.target.files?.length) startUploads(e.target.files)
             e.target.value = ""

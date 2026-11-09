@@ -241,7 +241,9 @@ export function MediaPreviewGallery({
               ref={thumbInputRef}
               type="file"
               accept="image/*"
-              className="hidden"
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden="true"
               onChange={(e) => {
                 const f = e.target.files?.[0]
                 if (f) replaceThumb.mutate(f)
@@ -287,7 +289,9 @@ export function MediaPreviewGallery({
               ref={previewInputRef}
               type="file"
               accept="image/*"
-              className="hidden"
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden="true"
               onChange={(e) => {
                 const f = e.target.files?.[0]
                 if (f) addPreview.mutate(f)

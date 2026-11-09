@@ -289,7 +289,16 @@ export function MediaLibraryPage() {
   // Full-window drag & drop overlay listener
   useEffect(() => {
     let dragCounter = 0
+
+    const isModalOpen = () =>
+      Boolean(
+        document.querySelector(
+          '[role="dialog"], [data-slot="dialog-content"], [data-slot="drawer-content"], [data-slot="alert-dialog-content"]',
+        ),
+      )
+
     const handleDragEnter = (e: DragEvent) => {
+      if (isModalOpen()) return
       e.preventDefault()
       dragCounter++
       if (e.dataTransfer?.types?.includes("Files")) {
@@ -297,9 +306,15 @@ export function MediaLibraryPage() {
       }
     }
     const handleDragOver = (e: DragEvent) => {
+      if (isModalOpen()) return
       e.preventDefault()
     }
     const handleDragLeave = (e: DragEvent) => {
+      if (isModalOpen()) {
+        dragCounter = 0
+        setIsDragOver(false)
+        return
+      }
       e.preventDefault()
       dragCounter--
       if (dragCounter <= 0) {
@@ -308,6 +323,11 @@ export function MediaLibraryPage() {
       }
     }
     const handleDrop = (e: DragEvent) => {
+      if (isModalOpen()) {
+        dragCounter = 0
+        setIsDragOver(false)
+        return
+      }
       e.preventDefault()
       dragCounter = 0
       setIsDragOver(false)
@@ -644,7 +664,9 @@ export function MediaLibraryPage() {
         ref={fileInputRef}
         type="file"
         multiple
-        className="hidden"
+        className="sr-only"
+        tabIndex={-1}
+        aria-hidden="true"
         accept="image/*,video/*,.svg"
         onChange={(e) => {
           if (e.target.files && e.target.files.length > 0) {
@@ -667,7 +689,6 @@ export function MediaLibraryPage() {
             <Button
               size="sm"
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploading}
               className="gap-1.5 shadow-xs"
             >
               {uploading ? (
