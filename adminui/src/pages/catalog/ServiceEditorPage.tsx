@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams, Link, useSearchParams } from "react-router-dom"
-import { MarkdownEditor } from "@/components/common/MarkdownEditor"
 import { ManifestLivePreview } from "@unvislate/sbui-sdk"
 import {
   ArrowLeft,
@@ -23,6 +22,7 @@ import {
   SlidersHorizontal,
   AlertTriangle,
   Code2,
+  ExternalLink,
 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
@@ -401,6 +401,7 @@ export function ServiceEditorPage() {
   })
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const instructionFileInputRef = useRef<HTMLInputElement>(null)
   const [initialSnapshot, setInitialSnapshot] = useState<string>("")
   const initializedServiceIdRef = useRef<number | null>(null)
 
@@ -2191,21 +2192,89 @@ export function ServiceEditorPage() {
               )}
 
               {/* 3.1 Инструкция к товару (Markdown) */}
-              <div className="pt-2 border-t border-border/40">
-                <MarkdownEditor
-                  value={instructionsMd}
-                  onChange={setInstructionsMd}
-                  label={
-                    delivery === "key"
-                      ? "Инструкция по активации ключа (Markdown)"
-                      : "Инструкция к товару (Markdown)"
-                  }
-                  description={
-                    delivery === "key"
-                      ? "Отображается покупателю в окне выдачи ключа после успешной оплаты"
-                      : "Отображается покупателю в деталях заказа и чеке после активации"
-                  }
+              <div className="pt-3 border-t border-border/40">
+                <input
+                  type="file"
+                  ref={instructionFileInputRef}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    const reader = new FileReader()
+                    reader.onload = (event) => {
+                      setInstructionsMd(String(event.target?.result || ""))
+                    }
+                    reader.readAsText(file)
+                    e.target.value = ""
+                  }}
+                  accept=".md,.markdown,.txt,text/markdown,text/plain"
+                  className="hidden"
                 />
+
+                <div className="rounded-xl border border-border/70 bg-muted/20 p-4">
+                  <div className="flex items-start justify-between gap-4 flex-wrap sm:flex-nowrap">
+                    <div className="space-y-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs font-semibold text-foreground">
+                          {delivery === "key"
+                            ? "Инструкция по активации ключа (Markdown)"
+                            : "Инструкция к товару (Markdown)"}
+                        </Label>
+                        {instructionsMd.trim() ? (
+                          <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/30 bg-emerald-500/10">
+                            Загружена ({instructionsMd.length} симв.)
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-[10px] text-muted-foreground">
+                            Не загружена
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        {delivery === "key"
+                          ? "Отображается покупателю в окне выдачи ключа после успешной оплаты."
+                          : "Отображается покупателю в деталях заказа и чеке после активации."}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-8 text-xs gap-1.5"
+                        onClick={() => instructionFileInputRef.current?.click()}
+                      >
+                        <FileUp className="size-3.5" />
+                        <span>{instructionsMd.trim() ? "Заменить .md" : "Загрузить .md"}</span>
+                      </Button>
+
+                      {!isNew && serviceId && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 text-xs gap-1.5"
+                          onClick={() => navigate(`/services/${serviceId}/instruction`)}
+                        >
+                          <ExternalLink className="size-3.5" />
+                          <span>Редактор на отдельной странице</span>
+                        </Button>
+                      )}
+
+                      {instructionsMd.trim() && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 text-xs text-destructive hover:text-destructive hover:bg-destructive/10"
+                          onClick={() => setInstructionsMd("")}
+                        >
+                          <Trash2 className="size-3.5 mr-1" /> Очистить
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             </CardContent>
           </Card>

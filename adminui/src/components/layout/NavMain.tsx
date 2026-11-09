@@ -119,10 +119,13 @@ export function NavMain({ groups }: { groups: NavGroup[] }) {
                   nativeButton={true}
                   render={
                     <SidebarMenuButton
-                      isActive={isActiveGroup}
-                      className="group"
+                      isActive={false}
+                      className={cn(
+                        "group",
+                        isActiveGroup ? "text-foreground font-medium" : "text-muted-foreground"
+                      )}
                     >
-                      <GroupIcon />
+                      <GroupIcon className={isActiveGroup ? "text-primary" : ""} />
                       <span>{group.title}</span>
                       <ChevronRight className="ml-auto size-3.5 shrink-0 transition-transform group-data-[panel-open]:rotate-90" />
                     </SidebarMenuButton>

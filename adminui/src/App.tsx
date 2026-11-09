@@ -13,6 +13,7 @@ import { LuaManifestPage } from "@/pages/lua/LuaManifestPage"
 import { CatalogsPage } from "@/pages/catalog/CatalogsPage"
 import { ServicesPage } from "@/pages/catalog/ServicesPage"
 import { ServiceEditorPage } from "@/pages/catalog/ServiceEditorPage"
+import { ServiceInstructionPage } from "@/pages/catalog/ServiceInstructionPage"
 import { ServiceKeysPage } from "@/pages/catalog/ServiceKeysPage"
 import { MediaLibraryPage } from "@/pages/media/MediaLibraryPage"
 import { OrdersPage } from "@/pages/orders/OrdersPage"
@@ -68,6 +69,7 @@ export function App() {
               <Route path="/services" element={<ServicesPage />} />
               <Route path="/services/new" element={<ServiceEditorPage />} />
               <Route path="/services/:id" element={<ServiceEditorPage />} />
+              <Route path="/services/:id/instruction" element={<ServiceInstructionPage />} />
               <Route path="/service-keys" element={<ServiceKeysPage />} />
               <Route path="/media" element={<MediaLibraryPage />} />
               <Route path="/orders" element={<OrdersPage />} />

@@ -1,7 +1,7 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams } from "react-router-dom"
-import { ArrowLeft, MoreVertical, Plus, Trash2 } from "lucide-react"
+import { ArrowLeft, Code2, MoreVertical, Plus, Sparkles, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -20,6 +20,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/shadsnui/dropdown-menu"
 import {
@@ -208,32 +209,76 @@ export function LuaScriptsPage() {
               </div>
             </div>
 
-            {canDelete && (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="size-7 shrink-0 text-muted-foreground"
-                      aria-label={`Дополнительные действия для ${s.name ?? s.slug}`}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  }
-                >
-                  <MoreVertical className="size-3.5" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-max min-w-[200px]">
-                  <DropdownMenuItem
-                    className="whitespace-nowrap"
-                    variant="destructive"
-                    onClick={() => setDeleteTarget(s)}
+            {(() => {
+              const sSettings = (s.settings || {}) as Record<string, any>
+              const hasManifest = Boolean(
+                sSettings.manifest ||
+                sSettings.client_order_form ||
+                sSettings.settings_form ||
+                sSettings.prefill
+              )
+
+              return (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 shrink-0 text-muted-foreground"
+                        aria-label={`Дополнительные действия для ${s.name ?? s.slug}`}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    }
                   >
-                    <Trash2 className="size-4" /> Удалить скрипт
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
+                    <MoreVertical className="size-3.5" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-max min-w-[200px]">
+                    {hasManifest && (
+                      <DropdownMenuItem
+                        className="whitespace-nowrap text-emerald-500 hover:text-emerald-400 focus:text-emerald-400 focus:bg-emerald-500/10 cursor-pointer"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (s.kind === "payment") {
+                            navigate(`/providers/payment?create_from_script=${s.id}`)
+                          } else {
+                            navigate(`/services/new?from_script=${s.id}`)
+                          }
+                        }}
+                      >
+                        <Sparkles className="size-4 mr-2" />
+                        Создать {s.kind === "payment" ? "шлюз" : "услугу"}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      className="whitespace-nowrap cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        navigate(`/lua/${s.id}/manifest`)
+                      }}
+                    >
+                      <Code2 className="size-4 mr-2" />
+                      Манифест
+                    </DropdownMenuItem>
+                    {canDelete && (
+                      <>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="whitespace-nowrap text-red-500 hover:text-red-400 focus:text-red-400 focus:bg-red-500/10 cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setDeleteTarget(s)
+                          }}
+                        >
+                          <Trash2 className="size-4 mr-2" />
+                          Удалить скрипт
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )
+            })()}
           </div>
         ))}
       </div>
