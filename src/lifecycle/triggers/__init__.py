@@ -14,6 +14,7 @@ from telemetry.metrics import trigger_failures_total
 
 from .base import BaseAction, dig
 from .email_action import EmailAction
+import inspect
 from .events import ALL_EVENTS, TriggerEvent
 
 log = logging.getLogger("saviorbill.triggers")
@@ -27,6 +28,20 @@ _DEFAULT_MAX_RETRIES = 3
 _DEFAULT_MAX_FIRES_PER_MINUTE = 60
 _TRIGGER_MAX_DEPTH = 5
 _trigger_depth: contextvars.ContextVar[int] = contextvars.ContextVar("trigger_depth", default=0)
+
+_IN_PROCESS_SUBSCRIBERS: dict[str, list[Any]] = {}
+
+
+def register_in_process_subscriber(event: str, handler: Any) -> None:
+    """Зарегистрировать in-process подписчик плагина на доменное событие."""
+    _IN_PROCESS_SUBSCRIBERS.setdefault(event, []).append(handler)
+
+
+def unregister_in_process_subscribers(handlers: list[Any]) -> None:
+    """Удалить подписчики плагина при выгрузке."""
+    for ev in list(_IN_PROCESS_SUBSCRIBERS.keys()):
+        _IN_PROCESS_SUBSCRIBERS[ev] = [h for h in _IN_PROCESS_SUBSCRIBERS[ev] if h not in handlers]
+
 
 _KNOWN_OPERATORS = {"eq", "ne", "gt", "gte", "lt", "lte", "in", "not_in", "contains", "regex"}
 
@@ -227,6 +242,16 @@ class TriggerDispatcher:
             except Exception:  # noqa: BLE001
                 log.exception("триггеры: ошибка чтения triggers.max_retries")
 
+        # In-process подписчики плагинов (Zero-Impact изоляция)
+        in_process = list(_IN_PROCESS_SUBSCRIBERS.get(event, []))
+        for sub_handler in in_process:
+            try:
+                res = sub_handler(ctx)
+                if inspect.isawaitable(res):
+                    await res
+            except Exception as exc:  # noqa: BLE001
+                log.exception("триггеры: ошибка in-process подписчика %r для %s: %s", sub_handler, event, exc)
+
         done = 0
         for trig in rows:
             if not self._match(trig.cond or {}, ctx):
@@ -278,4 +303,6 @@ __all__ = [
     "BaseAction",
     "EmailAction",
     "dig",
+    "register_in_process_subscriber",
+    "unregister_in_process_subscribers",
 ]

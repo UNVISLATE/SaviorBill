@@ -149,6 +149,8 @@ class AppConfig(BaseSettings):
     LUA_SCRIPTS_DIR: str | None = Field(default=None)
     # Папка email-шаблонов (jinja2). Если не задана явно - DATA_DIR/email.
     EMAIL_TEMPLATES_DIR: str | None = Field(default=None)
+    # Папка плагинов ядра. Если не задана явно - DATA_DIR/plugins.
+    PLUGINS_DIR: str | None = Field(default=None)
 
     # LuaWorker (шина Redis Streams)
     LUA_TASK_STREAM: str = Field(default="lua:tasks")
@@ -389,6 +391,8 @@ class AppConfig(BaseSettings):
             self.LUA_SCRIPTS_DIR = str(Path(self.DATA_DIR) / "lua")
         if not self.EMAIL_TEMPLATES_DIR:
             self.EMAIL_TEMPLATES_DIR = str(Path(self.DATA_DIR) / "email")
+        if not self.PLUGINS_DIR:
+            self.PLUGINS_DIR = str(Path(self.DATA_DIR) / "plugins")
         if not self.SECRETS_KEY_PATH:
             self.SECRETS_KEY_PATH = str(Path(self.DATA_DIR) / "keys" / "secret.key")
         if not self.AUTH_SESSION_HASH_KEY_FILE:
@@ -536,6 +540,11 @@ class AppConfig(BaseSettings):
         import socket
 
         return f"{socket.gethostname()}-{os.getpid()}"
+
+    @property
+    def plugins_dir(self) -> Path:
+        """Папка плагинов ядра."""
+        return Path(self.PLUGINS_DIR)
 
     @property
     def uploads_dir(self) -> Path:

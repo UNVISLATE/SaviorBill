@@ -18,6 +18,7 @@ from telemetry.task_log import TaskLog
 from telemetry.otel import instrument_sqlalchemy, instrument_valkey
 from telemetry.instance_metrics import LuaMetricsCollector, SelfMetricsPusher
 
+from plugins.manager import PluginMngr
 from api import api_router
 from apiws import apiws_router
 
@@ -104,6 +105,16 @@ async def lifespan(app: FastAPI):
     # отдельного Valkey-запроса на каждого клиента (см. AUDIT.md §3.5).
     app.state.stats_broadcaster = StatsBroadcaster(app.state.valkey, config)
     await app.state.stats_broadcaster.start()
+
+    # Менеджер плагинов ядра (Core Plugins Engine)
+    app.state.plugin_mngr = PluginMngr(
+        app,
+        config.plugins_dir,
+        app.state.db_sessionmaker,
+        app.state.valkey,
+        config,
+    )
+    await app.state.plugin_mngr.initialize()
 
     app.include_router(api_router)
     app.include_router(apiws_router)
