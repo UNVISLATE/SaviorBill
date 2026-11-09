@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useNavigate, useParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as monaco from "monaco-editor"
@@ -9,6 +9,7 @@ import { getErrorDetail } from "@/lib/api-error.ts"
 import { ensureMonacoWorkers } from "@/lib/monaco-setup"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { Button } from "@/components/shadsnui/button"
+import { KeySecretEditor } from "@/components/common/forms/KeySecretEditor"
 import { ManifestLivePreview } from "@unvislate/sbui-sdk"
 
 interface LuaScriptDetail {
@@ -115,6 +116,43 @@ export function LuaManifestPage() {
   const [manifestJson, setManifestJson] = useState("{\n  \n}")
   const [parseError, setParseError] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
+  const [activeTab, setActiveTab] = useState<string>("")
+  const [previewSettingsData, setPreviewSettingsData] = useState<Record<string, unknown>>({})
+
+  const parsedManifest = useMemo(() => {
+    try {
+      return JSON.parse(manifestJson)
+    } catch {
+      return null
+    }
+  }, [manifestJson])
+
+  const availablePreviewTabs = useMemo(() => {
+    if (!parsedManifest || typeof parsedManifest !== "object") return []
+    const m = parsedManifest.manifest || parsedManifest
+    const tabs: Array<{ id: "client_order_form" | "settings_form" | "client_view_form"; label: string }> = []
+
+    if (Array.isArray(m.client_order_form) && m.client_order_form.length > 0) {
+      tabs.push({ id: "client_order_form", label: "Витрина (заказ)" })
+    }
+    if (Array.isArray(m.settings_form) && m.settings_form.length > 0) {
+      tabs.push({ id: "settings_form", label: "Настройки админки" })
+    }
+    if (Array.isArray(m.client_view_form) && m.client_view_form.length > 0) {
+      tabs.push({ id: "client_view_form", label: "Виджет в ЛК" })
+    }
+    return tabs
+  }, [parsedManifest])
+
+  useEffect(() => {
+    if (availablePreviewTabs.length === 0) {
+      setActiveTab("")
+      return
+    }
+    if (!availablePreviewTabs.some((t) => t.id === activeTab)) {
+      setActiveTab(availablePreviewTabs[0].id)
+    }
+  }, [availablePreviewTabs, activeTab])
 
   // Fetch script details
   const { data: script } = useQuery({
@@ -298,13 +336,62 @@ export function LuaManifestPage() {
             <span className="flex items-center gap-1.5 font-medium">
               <Eye className="size-3.5 text-primary" /> Превью
             </span>
+
+            {/* Вкладки форм — отображаются ТОЛЬКО если они есть в самом манифесте */}
+            {availablePreviewTabs.length > 1 && (
+              <div className="flex items-center rounded-lg border border-border/80 bg-muted/40 p-0.5">
+                {availablePreviewTabs.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setActiveTab(t.id)}
+                    className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-all cursor-pointer ${
+                      activeTab === t.id
+                        ? "bg-background text-foreground shadow-2xs"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {availablePreviewTabs.length === 1 && (
+              <span className="text-[11px] text-muted-foreground font-medium">
+                {availablePreviewTabs[0].label}
+              </span>
+            )}
           </div>
+
           <div className="flex-1 overflow-y-auto p-6">
-            <div className="max-w-xl mx-auto rounded-xl border border-border/60 bg-card/60 p-4">
-              <ManifestLivePreview
-                manifest={manifestJson}
-                previewType={script?.kind === "payment" ? "settings_form" : "client_order_form"}
-              />
+            <div className="max-w-xl mx-auto">
+              {activeTab === "settings_form" ? (
+                /* Настройки для админки — чистые нативные поля админки без Card обёртки */
+                <KeySecretEditor
+                  title="Настройки интеграции"
+                  description="Сгенерированная форма параметров интеграции для администратора"
+                  value={previewSettingsData}
+                  schema={(parsedManifest?.manifest || parsedManifest)?.settings_form}
+                  variant="flat"
+                  onChange={(parsed) => setPreviewSettingsData(parsed)}
+                />
+              ) : activeTab === "client_order_form" ? (
+                /* Форма заказа на витрине */
+                <ManifestLivePreview
+                  manifest={manifestJson}
+                  previewType="client_order_form"
+                />
+              ) : activeTab === "client_view_form" ? (
+                /* Виджет в личном кабинете */
+                <ManifestLivePreview
+                  manifest={manifestJson}
+                  previewType="client_order_form"
+                />
+              ) : (
+                <div className="py-12 text-center text-xs text-muted-foreground">
+                  Формы не описаны в манифесте
+                </div>
+              )}
             </div>
           </div>
         </div>

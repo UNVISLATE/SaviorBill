@@ -137,6 +137,19 @@ function ProviderFormDialog({
       ),
   })
 
+  const selectedScript = useMemo(() => {
+    if (!scriptId || !paymentScripts) return null
+    return paymentScripts.find((s) => String(s.id) === String(scriptId)) ?? null
+  }, [scriptId, paymentScripts])
+
+  const scriptSettingsSchema = useMemo(() => {
+    if (!selectedScript?.settings) return undefined
+    const set = selectedScript.settings as Record<string, any>
+    const m = set.manifest || set
+    const fields = m.settings_form || m.client_order_form
+    return Array.isArray(fields) && fields.length > 0 ? fields : undefined
+  }, [selectedScript])
+
   const tabs: TabDefinition[] = [
     {
       id: "general",
@@ -275,9 +288,13 @@ function ProviderFormDialog({
             description={
               isEdit
                 ? "Оставьте значения пустыми или {}, если не хотите менять сохранённые секреты"
+                : selectedScript
+                ? `Параметры интеграции для скрипта «${selectedScript.name || selectedScript.slug}»`
                 : "Укажите параметры и секретные ключи API платёжного шлюза"
             }
             value={secretsText}
+            schema={scriptSettingsSchema}
+            variant="flat"
             onChange={(_, text) => setSecretsText(text)}
           />
         </div>

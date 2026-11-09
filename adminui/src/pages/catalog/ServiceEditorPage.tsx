@@ -386,7 +386,6 @@ export function ServiceEditorPage() {
   const [deleteConfirmSlug, setDeleteConfirmSlug] = useState("")
   const [leaveConfirmOpen, setLeaveConfirmOpen] = useState(false)
 
-  // Графические диалоги редактора JSON (на базе KeySecretEditor)
   const [jsonModalConfig, setJsonModalConfig] = useState<{
     open: boolean
     title: string
@@ -399,6 +398,14 @@ export function ServiceEditorPage() {
     text: "{}",
     target: "params",
   })
+
+  const scriptSettingsSchema = useMemo(() => {
+    if (jsonModalConfig.target !== "settings" || !selectedLuaScript?.settings) return undefined
+    const set = selectedLuaScript.settings as Record<string, any>
+    const m = set.manifest || set
+    const fields = m.settings_form
+    return Array.isArray(fields) && fields.length > 0 ? fields : undefined
+  }, [jsonModalConfig.target, selectedLuaScript])
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const instructionFileInputRef = useRef<HTMLInputElement>(null)
@@ -2551,8 +2558,14 @@ export function ServiceEditorPage() {
           <div className="py-2">
             <KeySecretEditor
               title="Параметры конфигурации"
-              description="Редактируйте параметры по строкам или переключитесь в режим JSON"
+              description={
+                scriptSettingsSchema
+                  ? `Параметры интеграции для скрипта «${selectedLuaScript?.name || selectedLuaScript?.slug}»`
+                  : "Редактируйте параметры по строкам или переключитесь в режим JSON"
+              }
               value={jsonModalConfig.text}
+              schema={scriptSettingsSchema}
+              variant="flat"
               onChange={(_, text) => {
                 setJsonModalConfig((prev) => ({ ...prev, text }))
               }}
