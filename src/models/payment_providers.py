@@ -17,7 +17,7 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
 from utils.datetime_utils import utc_now
@@ -80,9 +80,21 @@ class PaymentProvidersModel(Base):
     fee_percent: Mapped[float] = mapped_column(Numeric(5, 2), default=0.00, server_default="0.00", nullable=False)
     add_fee_to_amount: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true", nullable=False)
 
+    # Иконка платёжного провайдера (аналогично OAuthProvidersModel) и рекомендация
+    icon_media_id: Mapped[int | None] = mapped_column(
+        ForeignKey("system_media.id", ondelete="SET NULL"), nullable=True
+    )
+    is_recommended: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+
     # Несекретные дополнительные настройки провайдера.
     extra: Mapped[dict] = mapped_column(
         JSON, default=dict, server_default="{}", nullable=False
+    )
+
+    icon: Mapped["SystemMediaModel | None"] = relationship(  # noqa: F821
+        "SystemMediaModel", lazy="joined"
     )
 
 

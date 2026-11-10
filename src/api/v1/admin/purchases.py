@@ -9,11 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
+from dependencies.media import get_media_mngr
 from dependencies.oauth import get_secbox
 from dependencies.payment import PayMngr, get_pay_mngr
 from dependencies.rbac import require_perm
 from enums import PayStatus
 from models.payment_providers import PaymentProvidersModel
+from models.system_media import SystemMediaMngr
 from models.user_payments import UserPaymentsModel
 from schemas.payment_provider import PayProviderCreate, PayProvider, PayProviderPatch
 from schemas.payments import PaymentAdmin
@@ -90,6 +92,12 @@ async def list_providers(
     return [PayProvider.from_model(r) for r in rows]
 
 
+async def _require_media(mngr: SystemMediaMngr, media_id: int) -> None:
+    """Проверить, что медиа для иконки провайдера существует."""
+    if await mngr.by_id(media_id) is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "media not found")
+
+
 # --- провайдеры ----------------------------------------------------------
 @router.post(
     "/providers",
@@ -103,15 +111,19 @@ async def create_provider(
     body: PayProviderCreate,
     session: AsyncSession = Depends(get_db_session),
     box: SecBox = Depends(get_secbox),
+    media: SystemMediaMngr = Depends(get_media_mngr),
 ) -> PayProvider:
     if await session.scalar(
         select(PaymentProvidersModel).where(PaymentProvidersModel.slug == body.slug)
     ):
         raise HTTPException(status.HTTP_409_CONFLICT, "provider slug already exists")
+    if body.icon_media_id is not None:
+        await _require_media(media, body.icon_media_id)
     prov = PaymentProvidersModel(
         slug=body.slug,
         title=body.title,
         enabled=body.enabled,
+        is_recommended=body.is_recommended,
         currency=body.currency,
         currencies=body.currencies,
         fee_enabled=body.fee_enabled,
@@ -120,10 +132,12 @@ async def create_provider(
         secrets_enc=box.seal(json.dumps(body.secrets)),
         script_id=body.script_id,
         script_version=body.script_version,
+        icon_media_id=body.icon_media_id,
         extra=body.extra,
     )
     session.add(prov)
     await session.commit()
+    await session.refresh(prov, attribute_names=["icon"])
     return PayProvider.from_model(prov)
 
 
@@ -139,16 +153,20 @@ async def update_provider(
     body: PayProviderPatch,
     session: AsyncSession = Depends(get_db_session),
     box: SecBox = Depends(get_secbox),
+    media: SystemMediaMngr = Depends(get_media_mngr),
 ) -> PayProvider:
     prov = await session.get(PaymentProvidersModel, provider_id)
     if prov is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "provider not found")
     data = body.model_dump(exclude_unset=True)
+    if data.get("icon_media_id") is not None:
+        await _require_media(media, data["icon_media_id"])
     if "secrets" in data:
         prov.secrets_enc = box.seal(json.dumps(data.pop("secrets")))
     for field, value in data.items():
         setattr(prov, field, value)
     await session.commit()
+    await session.refresh(prov, attribute_names=["icon"])
     return PayProvider.from_model(prov)
 
 

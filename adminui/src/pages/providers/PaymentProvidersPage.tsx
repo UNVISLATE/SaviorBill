@@ -16,6 +16,7 @@ import { useAuth } from "@/hooks/use-auth"
 import { useInstanceCurrency } from "@/lib/currency"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
+import { MediaPickerDialog } from "@/components/media/MediaPickerDialog"
 import { KeySecretEditor } from "@/components/common/forms/KeySecretEditor"
 import { CurrencySelect } from "@/components/common/CurrencySelect"
 import { CurrencyTagSelect } from "@/components/common/CurrencyTagSelect"
@@ -32,6 +33,7 @@ interface Provider {
   slug: string
   title: string | null
   enabled: boolean
+  is_recommended?: boolean
   currency: string
   currencies: string[]
   fee_enabled?: boolean
@@ -39,6 +41,8 @@ interface Provider {
   add_fee_to_amount?: boolean
   script_id: number | null
   script_version: number | null
+  icon_media_id?: number | null
+  icon_url?: string | null
   extra: Record<string, unknown>
 }
 
@@ -67,6 +71,10 @@ function ProviderFormDialog({
   const [addFeeToAmount, setAddFeeToAmount] = useState(true)
   const [scriptId, setScriptId] = useState("")
   const [enabled, setEnabled] = useState(false)
+  const [isRecommended, setIsRecommended] = useState(false)
+  const [iconMediaId, setIconMediaId] = useState<number | null>(null)
+  const [iconUrl, setIconUrl] = useState<string | null>(null)
+  const [pickerOpen, setPickerOpen] = useState(false)
   const [secretsText, setSecretsText] = useState("{}")
   const qc = useQueryClient()
 
@@ -82,6 +90,9 @@ function ProviderFormDialog({
         setAddFeeToAmount(provider.add_fee_to_amount ?? true)
         setScriptId(provider.script_id ? String(provider.script_id) : "")
         setEnabled(provider.enabled ?? false)
+        setIsRecommended(Boolean(provider.is_recommended))
+        setIconMediaId(provider.icon_media_id ?? null)
+        setIconUrl(provider.icon_url ?? null)
         setSecretsText("{}")
       } else {
         const matched = initialScriptId && paymentScripts ? paymentScripts.find((s) => String(s.id) === String(initialScriptId)) : null
@@ -96,6 +107,9 @@ function ProviderFormDialog({
         setAddFeeToAmount(true)
         setScriptId(matched ? String(matched.id) : "")
         setEnabled(true)
+        setIsRecommended(false)
+        setIconMediaId(null)
+        setIconUrl(null)
         setSecretsText("{}")
       }
     }
@@ -114,12 +128,14 @@ function ProviderFormDialog({
       const body = {
         title: title || null,
         enabled,
+        is_recommended: isRecommended,
         currency,
         currencies: optionalCurrencies,
         fee_enabled: feeEnabled,
         fee_percent: Number(feePercent) || 0,
         add_fee_to_amount: addFeeToAmount,
         script_id: scriptId ? Number(scriptId) : null,
+        icon_media_id: iconMediaId,
         secrets,
       }
       if (isEdit) return api.patch(`/v1/admin/purchases/providers/${provider!.id}`, body)
@@ -157,6 +173,39 @@ function ProviderFormDialog({
       icon: CreditCard,
       content: (
         <div className="space-y-4 text-xs">
+          <div className="flex items-center gap-3 rounded-lg border border-border/60 bg-muted/20 p-2.5">
+            <button
+              type="button"
+              onClick={() => setPickerOpen(true)}
+              className="flex size-12 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-background hover:border-primary transition-colors cursor-pointer"
+              title="Выбрать иконку из медиаархива"
+            >
+              {iconUrl ? (
+                <img src={iconUrl} alt="" className="size-full object-cover" />
+              ) : (
+                <CreditCard className="size-5 text-muted-foreground" />
+              )}
+            </button>
+            <div className="space-y-0.5">
+              <p className="text-xs font-medium">Иконка платёжного провайдера</p>
+              <p className="text-[10px] text-muted-foreground">
+                Отображается в окне выбора оплаты для покупателей
+              </p>
+              {iconUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIconMediaId(null)
+                    setIconUrl(null)
+                  }}
+                  className="text-[10px] text-destructive hover:underline cursor-pointer"
+                >
+                  Удалить иконку
+                </button>
+              )}
+            </div>
+          </div>
+
           {!isEdit && (
             <div className="space-y-1.5">
               <Label className="text-xs">Слаг провайдера (уникальный ключ)</Label>
@@ -195,6 +244,16 @@ function ProviderFormDialog({
                 <Switch checked={enabled} onCheckedChange={setEnabled} />
               </div>
             </div>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-3 bg-muted/20">
+            <div className="space-y-0.5">
+              <Label className="text-xs">Рекомендуем</Label>
+              <p className="text-[10px] text-muted-foreground">
+                Выделять способ оплаты бейджем «Рекомендуем» и поднимать вверх списка при оформлении заказа
+              </p>
+            </div>
+            <Switch checked={isRecommended} onCheckedChange={setIsRecommended} />
           </div>
 
           <div className="space-y-1.5">
@@ -303,23 +362,34 @@ function ProviderFormDialog({
   ]
 
   return (
-    <TabbedDialog
-      open={open}
-      onOpenChange={onOpenChange}
-      title={isEdit ? `Провайдер «${provider?.title || provider?.slug}»` : "Новый платёжный провайдер"}
-      description="Настройка шлюза приёма платежей и интеграции с платёжной системой"
-      tabs={tabs}
-      primaryAction={{
-        label: isEdit ? "Сохранить изменения" : "Создать провайдера",
-        onClick: () => save.mutate(),
-        disabled: (!isEdit && slug.trim().length < 2) || save.isPending,
-        loading: save.isPending,
-      }}
-      secondaryAction={{
-        label: "Отмена",
-        onClick: () => onOpenChange(false),
-      }}
-    />
+    <>
+      <TabbedDialog
+        open={open}
+        onOpenChange={onOpenChange}
+        title={isEdit ? `Провайдер «${provider?.title || provider?.slug}»` : "Новый платёжный провайдер"}
+        description="Настройка шлюза приёма платежей и интеграции с платёжной системой"
+        tabs={tabs}
+        primaryAction={{
+          label: isEdit ? "Сохранить изменения" : "Создать провайдера",
+          onClick: () => save.mutate(),
+          disabled: (!isEdit && slug.trim().length < 2) || save.isPending,
+          loading: save.isPending,
+        }}
+        secondaryAction={{
+          label: "Отмена",
+          onClick: () => onOpenChange(false),
+        }}
+      />
+
+      <MediaPickerDialog
+        open={pickerOpen}
+        onOpenChange={setPickerOpen}
+        onSelect={(m) => {
+          setIconMediaId(m.id)
+          setIconUrl(m.url)
+        }}
+      />
+    </>
   )
 }
 
@@ -412,9 +482,23 @@ export function PaymentProvidersPage() {
             >
               <CardHeader className="space-y-1">
                 <div className="flex items-start justify-between">
-                  <div className="space-y-0.5 min-w-0 pr-2">
-                    <CardTitle className="text-base truncate">{p.title || p.slug}</CardTitle>
-                    <p className="font-mono text-xs text-muted-foreground">{p.slug}</p>
+                  <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                    <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/40">
+                      {p.icon_url ? (
+                        <img src={p.icon_url} alt="" className="size-full object-cover" />
+                      ) : (
+                        <CreditCard className="size-4 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className="space-y-0.5 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <CardTitle className="text-base truncate">{p.title || p.slug}</CardTitle>
+                        {p.is_recommended && (
+                          <Badge className="text-[10px] shrink-0">Рекомендуем</Badge>
+                        )}
+                      </div>
+                      <p className="font-mono text-xs text-muted-foreground">{p.slug}</p>
+                    </div>
                   </div>
                   <Switch
                     checked={p.enabled}
