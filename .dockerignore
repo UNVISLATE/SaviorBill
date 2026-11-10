@@ -29,6 +29,9 @@ mediaworker
 
 # Документация и деплой-обвязка (кроме нужного pytest.ini) не нужны в образе.
 docs
+.playwright-mcp
+**/node_modules
+**/dist
 deploy/dev
 deploy/README.md
 deploy/Caddyfile

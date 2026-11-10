@@ -3,7 +3,7 @@
 # ── 1. Сборка React SPA фронтенда ─────────────────────────────────────────────
 FROM node:22-alpine AS builder
 
-WORKDIR /app
+WORKDIR /app/adminui
 
 # Аргументы сборки для динамической информации в About ("О системе")
 ARG VITE_GIT_COMMIT=""
@@ -14,10 +14,11 @@ ENV VITE_GIT_COMMIT=$VITE_GIT_COMMIT \
     VITE_GIT_COMMIT_DATE=$VITE_GIT_COMMIT_DATE \
     VITE_APP_VERSION=$VITE_APP_VERSION
 
-COPY package*.json ./
+COPY adminui/package*.json ./
+COPY vendor/sbuiSDK /app/vendor/sbuiSDK
 RUN npm ci
 
-COPY . .
+COPY adminui/ ./
 
 RUN npm run build
 
@@ -26,8 +27,8 @@ FROM nginx:alpine AS runtime
 
 RUN rm -rf /usr/share/nginx/html/*
 
-COPY --from=builder /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/adminui/dist /usr/share/nginx/html
+COPY adminui/nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 

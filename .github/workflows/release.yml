@@ -39,7 +39,7 @@ jobs:
             file: ./mediaworker/Dockerfile
             target: runtime
           - name: adminui
-            context: ./adminui
+            context: .
             file: ./adminui/Dockerfile
             target: runtime
     steps:
@@ -49,6 +49,7 @@ jobs:
           # shallow-чекаут Actions (depth=1, без тегов) их не увидит.
           fetch-depth: 0
           fetch-tags: true
+          submodules: recursive
 
       - uses: docker/setup-buildx-action@v4
 
