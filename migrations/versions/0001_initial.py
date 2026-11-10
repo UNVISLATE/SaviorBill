@@ -7,6 +7,7 @@ Create Date: 2026-10-20 22:41:14.468575
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = '0001_initial'
@@ -204,12 +205,15 @@ def upgrade() -> None:
     sa.Column('totp_recovery', sa.JSON(), server_default='[]', nullable=False),
     sa.Column('balance', sa.Numeric(precision=18, scale=2), server_default='0', nullable=False),
     sa.Column('bonus_balance', sa.Numeric(precision=18, scale=2), server_default='0', nullable=False),
+    sa.Column('referral_bonus_earned', sa.Numeric(precision=18, scale=2), server_default='0', nullable=False),
     sa.Column('role_id', sa.Integer(), nullable=True),
     sa.Column('last_login', sa.DateTime(timezone=True), nullable=True),
     sa.Column('auth_session_version', sa.Integer(), server_default='0', nullable=False),
     sa.Column('avatar_media_id', sa.Integer(), nullable=True),
     sa.Column('ref_code', sa.String(length=16), nullable=True),
     sa.Column('referred_by', sa.Integer(), nullable=True),
+    sa.Column('custom_public', postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'::jsonb"), nullable=False),
+    sa.Column('custom_private', postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'::jsonb"), nullable=False),
     sa.ForeignKeyConstraint(['avatar_media_id'], ['system_media.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['referred_by'], ['accounts.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['role_id'], ['roles.id'], ondelete='SET NULL'),
@@ -249,11 +253,18 @@ def upgrade() -> None:
     sa.Column('slug', sa.String(length=64), nullable=False),
     sa.Column('title', sa.String(length=128), nullable=True),
     sa.Column('enabled', sa.Boolean(), nullable=False),
+    sa.Column('is_recommended', sa.Boolean(), server_default=sa.text('false'), nullable=False),
     sa.Column('secrets_enc', sa.Text(), nullable=False),
     sa.Column('currency', sa.String(length=8), nullable=False),
+    sa.Column('currencies', sa.JSON(), server_default='[]', nullable=False),
+    sa.Column('fee_enabled', sa.Boolean(), server_default='false', nullable=False),
+    sa.Column('fee_percent', sa.Numeric(precision=5, scale=2), server_default='0.00', nullable=False),
+    sa.Column('add_fee_to_amount', sa.Boolean(), server_default='true', nullable=False),
     sa.Column('script_id', sa.Integer(), nullable=True),
     sa.Column('script_version', sa.Integer(), nullable=True),
+    sa.Column('icon_media_id', sa.Integer(), nullable=True),
     sa.Column('extra', sa.JSON(), server_default='{}', nullable=False),
+    sa.ForeignKeyConstraint(['icon_media_id'], ['system_media.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['script_id'], ['lua_scripts.id'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -269,6 +280,8 @@ def upgrade() -> None:
     sa.Column('catalog_id', sa.Integer(), nullable=True),
     sa.Column('price', sa.Numeric(precision=18, scale=2), server_default='0', nullable=False),
     sa.Column('currency', sa.String(length=8), nullable=False),
+    sa.Column('price_type', sa.String(length=16), server_default='fixed', nullable=False),
+    sa.Column('pricing_config', sa.JSON(), server_default='{}', nullable=False),
     sa.Column('delivery', sa.String(length=8), nullable=False),
     sa.Column('lua_script_id', sa.Integer(), nullable=True),
     sa.Column('lua_script_version', sa.Integer(), nullable=True),
@@ -277,6 +290,8 @@ def upgrade() -> None:
     sa.Column('actions', sa.JSON(), server_default='[]', nullable=False),
     sa.Column('duration', sa.Integer(), nullable=True),
     sa.Column('is_active', sa.Boolean(), nullable=False),
+    sa.Column('custom_public', postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'::jsonb"), nullable=False),
+    sa.Column('custom_private', postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'::jsonb"), nullable=False),
     sa.ForeignKeyConstraint(['catalog_id'], ['svc_catalogs.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['lua_script_id'], ['lua_scripts.id'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id')
@@ -433,6 +448,9 @@ def upgrade() -> None:
     sa.Column('digikey_id', sa.Integer(), nullable=True),
     sa.Column('public_data', sa.JSON(), server_default='{}', nullable=False),
     sa.Column('private_data', sa.JSON(), server_default='{}', nullable=False),
+    sa.Column('order_config', sa.JSON(), server_default='{}', nullable=False),
+    sa.Column('custom_public', postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'::jsonb"), nullable=False),
+    sa.Column('custom_private', postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'::jsonb"), nullable=False),
     sa.Column('product_key', sa.String(length=64), nullable=True),
     sa.Column('product_kind', sa.String(length=32), nullable=True),
     sa.Column('delivered_at', sa.DateTime(timezone=True), nullable=True),
@@ -476,11 +494,72 @@ def upgrade() -> None:
     )
     op.create_index(op.f('ix_promo_uses_account_id'), 'promo_uses', ['account_id'], unique=False)
     op.create_index(op.f('ix_promo_uses_promocode_id'), 'promo_uses', ['promocode_id'], unique=False)
+    op.create_table(
+        'fx_sources',
+        sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column('type', sa.String(length=16), nullable=False),
+        sa.Column('name', sa.String(length=128), server_default='', nullable=False),
+        sa.Column('priority', sa.Integer(), server_default='0', nullable=False),
+        sa.Column('enabled', sa.Boolean(), server_default='true', nullable=False),
+        sa.Column('provider', sa.String(length=64), nullable=True),
+        sa.Column('api_key_enc', sa.Text(), server_default='', nullable=False),
+        sa.Column('script_id', sa.Integer(), nullable=True),
+        sa.Column('lua_slug', sa.String(length=64), nullable=True),
+        sa.Column('rates', sa.JSON(), server_default='{}', nullable=False),
+        sa.Column('last_rates', sa.JSON(), server_default='{}', nullable=False),
+        sa.Column('last_fetched_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('last_error', sa.Text(), nullable=True),
+        sa.Column('last_error_at', sa.DateTime(timezone=True), nullable=True),
+        sa.ForeignKeyConstraint(['script_id'], ['lua_scripts.id'], ondelete='RESTRICT'),
+        sa.PrimaryKeyConstraint('id'),
+    )
+    op.create_index(op.f('ix_fx_sources_priority'), 'fx_sources', ['priority'], unique=False)
+    op.create_index(op.f('ix_fx_sources_enabled'), 'fx_sources', ['enabled'], unique=False)
+    op.create_index(op.f('ix_fx_sources_script_id'), 'fx_sources', ['script_id'], unique=False)
+    op.create_table(
+        'app_tokens',
+        sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column('name', sa.String(length=128), nullable=False),
+        sa.Column('description', sa.Text(), nullable=True),
+        sa.Column('token_prefix', sa.String(length=24), nullable=False),
+        sa.Column('token_hash', sa.String(length=64), nullable=False),
+        sa.Column('permissions', sa.JSON(), nullable=False, server_default='[]'),
+        sa.Column('ip_allowlist', sa.JSON(), nullable=True),
+        sa.Column('created_by_account_id', sa.Integer(), sa.ForeignKey('accounts.id', ondelete='SET NULL'), nullable=True),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column('expires_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('last_used_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('last_used_ip', sa.String(length=64), nullable=True),
+        sa.Column('is_revoked', sa.Boolean(), server_default='false', nullable=False),
+        sa.Column('revoked_at', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('revoked_by_account_id', sa.Integer(), sa.ForeignKey('accounts.id', ondelete='SET NULL'), nullable=True),
+    )
+    op.create_index('ix_app_tokens_token_hash', 'app_tokens', ['token_hash'], unique=True)
+    op.create_index(op.f('ix_app_tokens_created_by_account_id'), 'app_tokens', ['created_by_account_id'])
+    op.create_table(
+        'plugin_migrations',
+        sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column('plugin_slug', sa.String(length=64), nullable=False),
+        sa.Column('migration_file', sa.String(length=255), nullable=False),
+        sa.Column('checksum', sa.String(length=64), nullable=False),
+        sa.Column('applied_at', sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.UniqueConstraint('plugin_slug', 'migration_file', name='uq_plugin_migrations_slug_file'),
+    )
     # ### end Alembic commands ###
 
 
 def downgrade() -> None:
     # ### commands auto generated by Alembic - please adjust! ###
+    op.drop_table('plugin_migrations')
+    op.drop_index(op.f('ix_app_tokens_created_by_account_id'), table_name='app_tokens')
+    op.drop_index('ix_app_tokens_token_hash', table_name='app_tokens')
+    op.drop_table('app_tokens')
+    op.drop_index(op.f('ix_fx_sources_script_id'), table_name='fx_sources')
+    op.drop_index(op.f('ix_fx_sources_enabled'), table_name='fx_sources')
+    op.drop_index(op.f('ix_fx_sources_priority'), table_name='fx_sources')
+    op.drop_table('fx_sources')
     op.drop_index(op.f('ix_promo_uses_promocode_id'), table_name='promo_uses')
     op.drop_index(op.f('ix_promo_uses_account_id'), table_name='promo_uses')
     op.drop_table('promo_uses')
