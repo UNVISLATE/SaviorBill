@@ -1,0 +1,28 @@
+{$CLIENT_DOMAIN:shop.localhost} {
+	encode zstd gzip
+
+	# /metrics — служебный эндпоинт для Prometheus
+	handle /metrics {
+		respond "not found" 404
+	}
+
+	# Маршрутизация загрузки медиа в mediaworker
+	handle /api/media/* {
+		reverse_proxy mediaworker:8001
+	}
+
+	# Маршрутизация REST API в Billing Engine
+	handle /api/* {
+		reverse_proxy billing:8000
+	}
+
+	# Маршрутизация WebSocket в Billing Engine
+	handle /ws/* {
+		reverse_proxy billing:8000
+	}
+
+	# Раздача SPA интерфейса Личного Кабинета
+	handle {
+		reverse_proxy clientui:80
+	}
+}

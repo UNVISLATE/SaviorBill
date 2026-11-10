@@ -39,3 +39,5 @@
 		reverse_proxy mediaworker:8001
 	}
 }
+
+import /etc/caddy/caddy.d/*.caddy

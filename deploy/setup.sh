@@ -15,6 +15,16 @@ set -euo pipefail
 
 RAW="https://raw.githubusercontent.com/UNVISLATE/SaviorBill/master/deploy"
 
+set_env_var() {
+  local key="$1"
+  local val="$2"
+  if grep -q "^${key}=" .env 2>/dev/null; then
+    sed -i "s|^${key}=.*|${key}=${val}|" .env
+  else
+    printf '\n%s=%s\n' "$key" "$val" >> .env
+  fi
+}
+
 # ── 1. Docker ────────────────────────────────────────────────────────────────
 if ! command -v docker >/dev/null 2>&1; then
   echo ">> Docker не найден — устанавливаю..."
@@ -43,12 +53,45 @@ if [ ! -f .env ]; then
   curl -fsSL "$RAW/.env.example" -o .env
   if command -v openssl >/dev/null 2>&1; then
     bus_key="$(openssl rand -hex 32)"
-    sed -i "s|^BUS_SIGNING_KEY=.*|BUS_SIGNING_KEY=${bus_key}|" .env
+    set_env_var "BUS_SIGNING_KEY" "$bus_key"
   fi
   echo ">> Создан .env (BUS_SIGNING_KEY сгенерирован автоматически)."
 else
   echo ">> .env уже существует — оставляю как есть."
 fi
+
+# ── 2.1. Клиентский фронтенд ─────────────────────────────────────────────────
+mkdir -p caddy.d
+echo ""
+echo ">> Выберите клиентский фронтенд для установки:"
+echo "   0) Не устанавливать (только API + Admin UI)"
+echo "   1) Личный Кабинет (https://github.com/UNVISLATE/SBPersonalAccountClient)"
+client_choice="0"
+while true; do
+  read -r -p ">> Выберите вариант [0/1] (по умолчанию 0): " raw_choice
+  raw_choice="${raw_choice:-0}"
+  case "$raw_choice" in
+    0)
+      client_choice="0"
+      set_env_var "COMPOSE_PROFILES" ""
+      rm -f caddy.d/client.caddy
+      echo ">> Выбрано: 0 — клиентский фронтенд не устанавливается."
+      break
+      ;;
+    1)
+      client_choice="1"
+      set_env_var "COMPOSE_PROFILES" "client"
+      set_env_var "CLIENT_IMAGE" "ghcr.io/unvislate/sbpersonalaccountclient"
+      set_env_var "CLIENT_TAG" "latest"
+      curl -fsSL "$RAW/client.caddy.example" -o caddy.d/client.caddy
+      echo ">> Выбрано: 1 — Личный Кабинет будет установлен вместе со стеком."
+      break
+      ;;
+    *)
+      echo "!! Пожалуйста, введите 0 или 1."
+      ;;
+  esac
+done
 
 # ── 3. Редактирование .env ───────────────────────────────────────────────────
 editor="${VISUAL:-${EDITOR:-}}"
@@ -61,18 +104,26 @@ fi
 if [ -n "$editor" ]; then
   echo ""
   echo ">> Открываю $editor — ОБЯЗАТЕЛЬНО задайте:"
-  echo "     DB_PASS, DOMAIN, MEDIA_DOMAIN, OWNER_LOGIN, OWNER_PASS, OWNER_EMAIL"
+  if [ "$client_choice" = "1" ]; then
+    echo "     DB_PASS, DOMAIN, MEDIA_DOMAIN, CLIENT_DOMAIN, OWNER_LOGIN, OWNER_PASS, OWNER_EMAIL"
+  else
+    echo "     DB_PASS, DOMAIN, MEDIA_DOMAIN, OWNER_LOGIN, OWNER_PASS, OWNER_EMAIL"
+  fi
   echo ""
   "$editor" .env
 else
   echo ""
   echo "!! Редактор не найден. Отредактируйте .env вручную перед запуском."
-  echo "   Обязательные поля: DB_PASS, DOMAIN, MEDIA_DOMAIN, OWNER_*"
+  if [ "$client_choice" = "1" ]; then
+    echo "   Обязательные поля: DB_PASS, DOMAIN, MEDIA_DOMAIN, CLIENT_DOMAIN, OWNER_*"
+  else
+    echo "   Обязательные поля: DB_PASS, DOMAIN, MEDIA_DOMAIN, OWNER_*"
+  fi
   echo ""
 fi
 
 # ── 4. Инструкции ────────────────────────────────────────────────────────────
-cat <<'EOF'
+cat <<EOF
 
 ============================================================================
  Запуск стека (из текущей директории):
@@ -90,6 +141,11 @@ cat <<'EOF'
 
  После запуска:
    Панель управления (Admin UI):  https://<DOMAIN>/
+EOF
+if [ "$client_choice" = "1" ]; then
+  echo "   Личный Кабинет (Client UI):    https://<CLIENT_DOMAIN>/"
+fi
+cat <<'EOF'
    REST API billing:             https://<DOMAIN>/api/v1/
    Swagger billing:              https://<DOMAIN>/api/docs
    Swagger media:                https://<MEDIA_DOMAIN>/docs
