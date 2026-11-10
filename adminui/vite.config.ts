@@ -40,6 +40,7 @@ export default defineConfig({
     alias: {
       react: path.resolve(__dirname, "./node_modules/react"),
       "react-dom": path.resolve(__dirname, "./node_modules/react-dom"),
+      qrcode: path.resolve(__dirname, "./node_modules/qrcode"),
       "@unvislate/sbui-sdk": path.resolve(__dirname, "../vendor/sbuiSDK/src"),
       "@/components/ui": path.resolve(__dirname, "./src/components/shadsnui"),
       "@": path.resolve(__dirname, "./src"),
