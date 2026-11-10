@@ -23,7 +23,7 @@ from dependencies.rbac import require_perm
 from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
-from enums import PayTarget, PromoKind
+from enums import PayStatus, PayTarget, PromoKind
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
@@ -53,9 +53,17 @@ async def list_pay_providers(
     """Включённые провайдеры (без секретов и служебных полей)."""
     rows = await mngr.list_enabled()
     available_fx: set[str] | None = None
+    base_currency = "RUB"
+    markup_percent = 0.0
+    rate_cache: dict[str, float] = {}
     if pay_mngr.fx is not None:
         try:
             available_fx = await pay_mngr.fx.get_available_currencies()
+            base_currency = await pay_mngr.fx.base_currency()
+            markup_percent = float(
+                await pay_mngr.fx.settings.get_int("billing.fx.markup_percent", 0) or 0
+            )
+            rate_cache[base_currency] = 1.0
         except Exception:
             available_fx = None
 
@@ -66,7 +74,26 @@ async def list_pay_providers(
             filtered = [c for c in supported if c.upper() in available_fx]
         else:
             filtered = supported
-        res.append(PayProviderPublic.from_model(p, available_currencies=filtered))
+
+        prov_rates: dict[str, float] = {}
+        for cur in filtered:
+            cur_u = cur.strip().upper()
+            if cur_u not in rate_cache and pay_mngr.fx is not None:
+                try:
+                    rate_cache[cur_u] = float(await pay_mngr.fx.rate_to_base(cur_u))
+                except Exception:
+                    continue
+            if cur_u in rate_cache:
+                prov_rates[cur_u] = rate_cache[cur_u]
+
+        res.append(
+            PayProviderPublic.from_model(
+                p,
+                available_currencies=filtered,
+                fx_rates=prov_rates,
+                fx_markup_percent=markup_percent,
+            )
+        )
     return res
 
 
@@ -212,6 +239,7 @@ async def create_purchase(
         target=body.target,
         user_svc_id=user_svc_id,
         currency=body.currency,
+        amount_in_payment_currency=body.amount_in_payment_currency,
         return_url=body.return_url,
     )
     await pay_mngr.s.commit()

@@ -27,6 +27,10 @@ class PaymentCreate(BaseModel):
     currency: str | None = Field(
         default=None, max_length=8, description="Desired payment currency (optional)"
     )
+    amount_in_payment_currency: bool = Field(
+        default=False,
+        description="When true (target=balance only), amount is specified in selected payment currency",
+    )
     target: str = Field(
         default=PayTarget.BALANCE,
         description="Target: balance | service",
@@ -76,6 +80,10 @@ class PaymentCreate(BaseModel):
                 raise ValueError(
                     "amount must not be supplied for target=service; "
                     "price is taken from the service or custom_amount"
+                )
+            if self.amount_in_payment_currency:
+                raise ValueError(
+                    "amount_in_payment_currency is only valid for target=balance"
                 )
         return self
 

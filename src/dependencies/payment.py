@@ -8,7 +8,9 @@
 from __future__ import annotations
 
 import json
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
+
+_CENT = Decimal("0.01")
 
 from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -122,6 +124,7 @@ class PayMngr:
         target: str = PayTarget.BALANCE,
         user_svc_id: int | None = None,
         currency: str | None = None,
+        amount_in_payment_currency: bool = False,
         return_url: str | None = None,
     ) -> UserPaymentsModel:
         """Создать платёж и запустить скрипт (action=create) за ссылкой оплаты."""
@@ -167,7 +170,8 @@ class PayMngr:
                 )
 
         if chosen_currency == base_currency:
-            pay_amount = amount
+            base_amount = amount.quantize(_CENT, rounding=ROUND_HALF_UP)
+            pay_amount = base_amount
             fx_rate = Decimal(1)
         else:
             if self.fx is None:
@@ -175,7 +179,23 @@ class PayMngr:
                     status.HTTP_500_INTERNAL_SERVER_ERROR, "FX service is unavailable"
                 )
             try:
-                pay_amount, fx_rate = await self.fx.from_base(amount, chosen_currency)
+                if amount_in_payment_currency and target == PayTarget.BALANCE:
+                    base_amount, fx_rate, _ = await self.fx.to_base(
+                        amount, chosen_currency
+                    )
+                    if base_amount <= Decimal("0"):
+                        raise HTTPException(
+                            status.HTTP_400_BAD_REQUEST,
+                            "converted balance amount must be greater than zero",
+                        )
+                    pay_amount = amount.quantize(_CENT, rounding=ROUND_HALF_UP)
+                else:
+                    base_amount = amount
+                    pay_amount, fx_rate = await self.fx.from_base(
+                        amount, chosen_currency
+                    )
+            except HTTPException:
+                raise
             except Exception as exc:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST, f"currency conversion failed: {exc}"
@@ -192,7 +212,7 @@ class PayMngr:
             provider=prov.slug,
             amount=pay_amount,
             currency=chosen_currency,
-            base_amount=amount,
+            base_amount=base_amount,
             base_currency=base_currency,
             fx_rate=fx_rate,
             status=PayStatus.PENDING,
@@ -547,9 +567,13 @@ class PayMngr:
     ) -> Decimal:
         """Сумма зачисления в базовой валюте инстанса.
 
-        Конвертирует фактически оплаченную сумму обратно в базовую валюту
-        по зафиксированному в платеже курсу `payment.fx_rate` (Rate Lock).
+        Если шлюз не прислал отдельную ``actual_paid`` и ``base_amount`` уже
+        зафиксирован при создании платежа (до комиссии шлюза), возвращаем его,
+        иначе пересчитываем фактически оплаченную сумму по ``payment.fx_rate``.
         """
+        if actual_paid is None and payment.base_amount is not None and payment.fx_rate is not None:
+            return payment.base_amount.quantize(_CENT, rounding=ROUND_HALF_UP)
+
         paid = actual_paid if actual_paid is not None else payment.amount
         if self.fx is None:
             return paid
