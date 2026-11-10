@@ -99,8 +99,10 @@ class MediaJobEvents:
             except (valkey.TimeoutError, asyncio.TimeoutError):
                 await self._maybe_sweep()
                 continue
-            except Exception:  # noqa: BLE001 — цикл не должен падать
+            except Exception as exc:  # noqa: BLE001 — цикл не должен падать
                 log.exception("media-job-events: reading error")
+                if "NOGROUP" in str(exc):
+                    await self._ensure_group()
                 await asyncio.sleep(2)
                 continue
             for _stream, entries in resp or []:

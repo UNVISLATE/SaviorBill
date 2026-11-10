@@ -99,8 +99,10 @@ class MediaResults:
                 # Блокирующее чтение истекло без сообщений (гонка block-таймаута
                 # сервера и read-таймаута клиента) — это штатная пауза, не ошибка.
                 continue
-            except Exception:  # noqa: BLE001 — цикл не должен падать
+            except Exception as exc:  # noqa: BLE001 — цикл не должен падать
                 log.exception("media-results: reading error")
+                if "NOGROUP" in str(exc):
+                    await self._ensure_group()
                 await asyncio.sleep(2)
                 continue
             for _stream, entries in resp or []:

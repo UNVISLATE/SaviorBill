@@ -296,24 +296,58 @@ class SystemMediaMngr:
         await self.s.flush()
         return True
 
-    async def preview_orphans(
-        self, grace_sec: int = 3600, limit: int = 50, offset: int = 0
-    ) -> tuple[list[SystemMediaModel], int]:
-        """Недеструктивный предпросмотр медиа-сирот для отчёта администратора."""
+    def _orphans_stmt(self, grace_sec: int) -> Select:
+        """Базовый SELECT «осиротевших» медиа (используется и для preview, и для cleanup)."""
+        from models.oauth_providers import OAuthProvidersModel
+        from models.payment_providers import PaymentProvidersModel
         from models.service_attachment import ServiceAttachmentModel
+        from models.system_settings import SystemSettingsModel
         from models.user import UserModel
+
+        branding_keys = (
+            "ui.client.logo",
+            "ui.client.favicon",
+            "ui.client.mascot",
+            "ui.client.mascot_not_found",
+            "ui.client.catalog_banner",
+            "ui.admin.logo",
+            "ui.admin.favicon",
+            "ui.admin.mascot",
+            "ui.admin.mascot_not_found",
+            "ui.admin.catalog_banner",
+        )
 
         used_att = select(ServiceAttachmentModel.media_id)
         used_avatar = select(UserModel.avatar_media_id).where(
             UserModel.avatar_media_id.is_not(None)
         )
+        used_oauth_icons = select(OAuthProvidersModel.icon_media_id).where(
+            OAuthProvidersModel.icon_media_id.is_not(None)
+        )
+        used_pay_icons = select(PaymentProvidersModel.icon_media_id).where(
+            PaymentProvidersModel.icon_media_id.is_not(None)
+        )
+        used_branding_tokens = select(SystemSettingsModel.value).where(
+            SystemSettingsModel.key.in_(branding_keys),
+            SystemSettingsModel.value.is_not(None),
+            SystemSettingsModel.value != "",
+        )
         cutoff = utc_now() - timedelta(seconds=grace_sec)
-        base_stmt = (
+        return (
             select(SystemMediaModel)
             .where(SystemMediaModel.id.not_in(used_att))
             .where(SystemMediaModel.id.not_in(used_avatar))
+            .where(SystemMediaModel.id.not_in(used_oauth_icons))
+            .where(SystemMediaModel.id.not_in(used_pay_icons))
+            .where(SystemMediaModel.token.not_in(used_branding_tokens))
             .where(SystemMediaModel.created_at < cutoff)
         )
+
+    async def preview_orphans(
+        self, grace_sec: int = 3600, limit: int = 50, offset: int = 0
+    ) -> tuple[list[SystemMediaModel], int]:
+        """Недеструктивный предпросмотр медиа-сирот для отчёта администратора."""
+        base_stmt = self._orphans_stmt(grace_sec)
         total = (
             await self.s.scalar(select(func.count()).select_from(base_stmt.subquery()))
             or 0
@@ -324,30 +358,11 @@ class SystemMediaMngr:
         return list(rows), total
 
     async def orphans(self, grace_sec: int = 3600) -> list[SystemMediaModel]:
-        """Медиа, не привязанные ни к товарам (attachments), ни к аватаркам.
-
-        :arg grace_sec: не рассматривать кандидатами записи младше этого
-            порога (секунды от создания) — грейс-период против TOCTOU: файл,
-            только что загруженный и ещё не успевший привязаться к сущности
-            (или ещё обрабатываемый mediaworker'ом), не удаляется в текущем
-            проходе, будет учтён в следующем, если действительно осиротел
-            (см. IMPLEMENTATION_PLAN §11.3).
-        :return: список «осиротевших» записей для чистки.
+        """Медиа, не привязанные ни к товарам (attachments), ни к аватаркам,
+        ни к иконкам провайдеров, ни к брендингу.
         """
-        from models.service_attachment import ServiceAttachmentModel
-        from models.user import UserModel
-
-        used_att = select(ServiceAttachmentModel.media_id)
-        used_avatar = select(UserModel.avatar_media_id).where(
-            UserModel.avatar_media_id.is_not(None)
-        )
-        cutoff = utc_now() - timedelta(seconds=grace_sec)
         rows = await self.s.scalars(
-            select(SystemMediaModel)
-            .where(SystemMediaModel.id.not_in(used_att))
-            .where(SystemMediaModel.id.not_in(used_avatar))
-            .where(SystemMediaModel.created_at < cutoff)
-            .order_by(SystemMediaModel.id)
+            self._orphans_stmt(grace_sec).order_by(SystemMediaModel.id)
         )
         return list(rows)
 

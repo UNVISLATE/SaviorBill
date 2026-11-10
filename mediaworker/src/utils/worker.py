@@ -170,6 +170,8 @@ class Worker:
                 resp = None
             except Exception as exc:  # noqa: BLE001
                 print(f"[mediaworker] read error: {exc}", flush=True)
+                if "NOGROUP" in str(exc):
+                    await self._ensure_group()
                 await asyncio.sleep(2)
                 resp = None
             if resp:
