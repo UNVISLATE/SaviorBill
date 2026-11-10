@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from secrets import token_urlsafe
+import string
+from secrets import choice, token_urlsafe
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -84,6 +85,9 @@ class UserModel(Base):
         Numeric(18, 2), default=Decimal("0"), server_default="0", nullable=False
     )
     bonus_balance: Mapped[Decimal] = mapped_column(
+        Numeric(18, 2), default=Decimal("0"), server_default="0", nullable=False
+    )
+    referral_bonus_earned: Mapped[Decimal] = mapped_column(
         Numeric(18, 2), default=Decimal("0"), server_default="0", nullable=False
     )
 
@@ -196,12 +200,13 @@ class UserMngr:
         return await self.s.scalar(select(UserModel).where(UserModel.ref_code == code))
 
     async def _gen_ref_code(self) -> str:
-        """Сгенерировать уникальный реферальный код."""
-        for _ in range(8):
-            code = token_urlsafe(6)[:12]
+        """Сгенерировать уникальный 10-значный реферальный код из заглавных букв и цифр."""
+        chars = string.ascii_uppercase + string.digits
+        for _ in range(32):
+            code = "".join(choice(chars) for _ in range(10))
             if await self.by_ref_code(code) is None:
                 return code
-        return token_urlsafe(9)[:16]
+        return "".join(choice(chars) for _ in range(10))
 
     async def role_by_key(self, key: str) -> Role | None:
         """Найти системную роль по стабильному ключу (см. :class:`enums.BaseRole`)."""

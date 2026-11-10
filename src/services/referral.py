@@ -83,6 +83,7 @@ class ReferralMngr:
         if referrer is None:
             return None
         referrer.bonus_balance += bonus
+        referrer.referral_bonus_earned += bonus
         await self.s.flush()
         return bonus
 

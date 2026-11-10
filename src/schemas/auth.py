@@ -172,6 +172,7 @@ class Account(BaseModel):
     last_login: datetime | None = None
     balance: Decimal
     bonus_balance: Decimal
+    referral_bonus_earned: Decimal = Decimal("0")
     avatar_media_id: int | None = None
     avatar_url: str | None = None
     referred_by_login: str | None = Field(
@@ -221,6 +222,7 @@ class Account(BaseModel):
             last_login=acc.last_login,
             balance=acc.balance,
             bonus_balance=acc.bonus_balance,
+            referral_bonus_earned=getattr(acc, "referral_bonus_earned", Decimal("0")),
             avatar_media_id=acc.avatar_media_id,
             avatar_url=_media_url(acc.avatar_media.token if acc.avatar_media else None),
             referred_by_login=referred_by_login,
