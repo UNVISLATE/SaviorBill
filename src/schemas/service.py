@@ -31,6 +31,7 @@ class CustomPricingConfig(BaseModel):
     max: Decimal = Field(gt=0, description="Maximum allowed amount")
     step: Decimal | None = Field(default=None, gt=0, description="Amount step (multiple)")
     form: list[CustomFormField] = Field(default_factory=list, description="Client form fields")
+    manifest: dict | None = Field(default=None, description="SDUI manifest (client_order_form, layout)")
 
     @model_validator(mode="after")
     def _check_bounds(self) -> "CustomPricingConfig":
@@ -66,6 +67,8 @@ class TieredPricingConfig(BaseModel):
     """Configuration for tiered subscription/pricing services."""
 
     tiers: list[TierPlan | TierGroup] = Field(default_factory=list, description="List of plans or plan groups")
+    form: list[CustomFormField] = Field(default_factory=list, description="Client form fields")
+    manifest: dict | None = Field(default=None, description="SDUI manifest (client_order_form, layout)")
 
 
 class ComponentOption(BaseModel):
@@ -96,6 +99,8 @@ class ConfigurablePricingConfig(BaseModel):
     """Configuration for configurable calculator services."""
 
     components: list[ConfigurableComponent] = Field(default_factory=list, description="Components")
+    form: list[CustomFormField] = Field(default_factory=list, description="Client form fields")
+    manifest: dict | None = Field(default=None, description="SDUI manifest (client_order_form, layout)")
 
 
 def validate_pricing_config(price_type: str, config: dict | None) -> dict:
@@ -147,6 +152,7 @@ class Service(BaseModel):
         default_factory=list, description="Product media attachments"
     )
     is_active: bool
+    is_recommended: bool = False
     out_of_stock: bool | None = Field(
         default=None,
         description="Out of stock for key delivery; null = lua delivery",
@@ -176,6 +182,7 @@ class Service(BaseModel):
             delivery=m.delivery,
             attachments=[Attachment.from_model(a) for a in m.attachments],
             is_active=m.is_active,
+            is_recommended=bool((getattr(m, "settings", {}) or {}).get("is_recommended", False)),
         )
 
     def with_stock(self, out_of_stock: bool | None) -> "Service":

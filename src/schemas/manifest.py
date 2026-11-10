@@ -12,8 +12,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 from enum import StrEnum
-from typing import Any, Literal
-from pydantic import BaseModel, Field, field_validator, model_validator
+from typing import Any
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class FieldType(StrEnum):
@@ -107,15 +107,17 @@ class MediaDownloadItem(BaseModel):
 class SchemaNode(BaseModel):
     """Узел абстрактного синтаксического дерева интерфейса (Server-Driven UI)."""
 
+    model_config = ConfigDict(extra="allow")
+
     type: str = Field(
         min_length=1,
         max_length=64,
-        description="Тип узла: card, row, column, grid, text, badge, divider, field, qr",
+        description="Тип узла: card, row, column, grid, text, badge, divider, field, qr, copy_field, markdown",
     )
     variant: str | None = Field(default=None, max_length=64, description="Стилевой вариант (e.g. primary, success, h1)")
     content: str | None = Field(default=None, description="Текстовое содержимое узла")
     field_id: str | None = Field(default=None, max_length=64, description="Ссылка на поле из формы (если type=field)")
-    gap: int | None = Field(default=None, ge=0, le=128, description="Отступ между дочерними элементами в px")
+    gap: int | str | None = Field(default=None, description="Отступ между дочерними элементами")
     align: str | None = Field(default=None, max_length=32, description="Выравнивание (start, center, end, stretch)")
     children: list[SchemaNode] = Field(default_factory=list, description="Дочерние узлы интерфейса")
     props: dict[str, Any] = Field(default_factory=dict, description="Дополнительные свойства узла")
@@ -123,6 +125,8 @@ class SchemaNode(BaseModel):
 
 class ScriptManifest(BaseModel):
     """Корневой манифест скрипта интеграции Lua (manifest.json)."""
+
+    model_config = ConfigDict(extra="allow")
 
     version: str = Field(default="1.0", description="Версия формата манифеста")
     name: str = Field(min_length=1, max_length=128, description="Имя интеграции")
@@ -146,6 +150,19 @@ class ScriptManifest(BaseModel):
     layout: SchemaNode | None = Field(
         default=None,
         description="Кастомный Server-Driven UI макет для рендера в витрине",
+    )
+    view_layout: SchemaNode | None = Field(
+        default=None,
+        description="Server-Driven UI форма просмотра выданной услуги в профиле покупателя",
+    )
+    view_trigger_label: str | None = Field(
+        default=None,
+        max_length=128,
+        description="Текст кнопки открытия формы просмотра услуги в профиле",
+    )
+    hide_key: bool | None = Field(
+        default=None,
+        description="Скрыть стандартный блок key в карточке услуги (когда используется только форма просмотра)",
     )
 
 

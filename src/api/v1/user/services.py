@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from sqlalchemy import Text, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.auth import get_current_acc
@@ -18,6 +18,7 @@ from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
 from enums import UsvcStatus, PromoKind
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
+from models.service import ServiceModel
 from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderCreate, Order
@@ -36,15 +37,28 @@ router = APIRouter()
 )
 async def my_services(
     pp: PageParams = Depends(page_params),
+    q: str | None = Query(
+        default=None,
+        max_length=128,
+        description="Search by service name, order ID, or issued content",
+    ),
     acc: UserModel = Depends(get_current_acc),
     session: AsyncSession = Depends(get_db_session),
 ) -> Page[Order]:
-    """Список выданных пользователю услуг (постранично)."""
-    stmt = (
-        select(UserServicesModel)
-        .where(UserServicesModel.account_id == acc.id)
-        .order_by(UserServicesModel.id.desc())
-    )
+    """Список выданных пользователю услуг (постранично, с опциональным поиском)."""
+    stmt = select(UserServicesModel).where(UserServicesModel.account_id == acc.id)
+    search = q.strip() if q else ""
+    if search:
+        pattern = f"%{search}%"
+        conditions = [
+            UserServicesModel.service.has(ServiceModel.name.ilike(pattern)),
+            cast(UserServicesModel.public_data, Text).ilike(pattern),
+            cast(UserServicesModel.order_config, Text).ilike(pattern),
+        ]
+        if search.isdigit():
+            conditions.append(UserServicesModel.id == int(search))
+        stmt = stmt.where(or_(*conditions))
+    stmt = stmt.order_by(UserServicesModel.id.desc())
     items, total, has_more = await paginate(
         session, stmt, Order.from_model, limit=pp.limit, offset=pp.offset
     )
