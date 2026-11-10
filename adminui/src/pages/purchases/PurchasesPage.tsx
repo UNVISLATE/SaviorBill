@@ -25,6 +25,9 @@ interface Payment {
   provider: string
   amount: string
   currency: string
+  base_amount: string | null
+  base_currency: string | null
+  fx_rate: string | null
   status: string
   target: string
   external_id: string | null
@@ -32,6 +35,21 @@ interface Payment {
   private_data: Record<string, unknown>
   payment_url: string | null
   created_at: string
+}
+
+function isConvertedPayment(p: Payment): boolean {
+  return Boolean(
+    p.base_amount != null &&
+      p.base_currency &&
+      p.base_currency.toUpperCase() !== p.currency.toUpperCase(),
+  )
+}
+
+function formatFxRate(rate: string | null): string {
+  if (!rate) return "—"
+  const num = Number(rate)
+  if (!Number.isFinite(num) || num <= 0) return rate
+  return num.toFixed(6).replace(/\.?0+$/, "")
 }
 
 interface Page<T> {
@@ -94,12 +112,31 @@ function PaymentDetailDialog({ payment, onOpenChange }: { payment: Payment; onOp
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Сумма</p>
-              <p>{payment.amount} {payment.currency}</p>
+              {isConvertedPayment(payment) ? (
+                <p className="tabular-nums">
+                  {payment.base_amount} {payment.base_currency}{" "}
+                  <span className="text-muted-foreground text-xs">
+                    ({payment.amount} {payment.currency})
+                  </span>
+                </p>
+              ) : (
+                <p className="tabular-nums">{payment.amount} {payment.currency}</p>
+              )}
             </div>
             <div>
               <p className="text-xs text-muted-foreground">Статус</p>
               <Badge variant={STATUS_VARIANT[payment.status] ?? "outline"}>{payment.status}</Badge>
             </div>
+            {isConvertedPayment(payment) && (
+              <div>
+                <p className="text-xs text-muted-foreground">Курс конвертации</p>
+                <p className="font-mono text-xs tabular-nums">
+                  {payment.fx_rate
+                    ? `1 ${payment.currency} = ${formatFxRate(payment.fx_rate)} ${payment.base_currency}`
+                    : "—"}
+                </p>
+              </div>
+            )}
             <div>
               <p className="text-xs text-muted-foreground">Назначение</p>
               <p>{payment.target === "balance" ? "пополнение баланса" : "оплата услуги"}</p>
@@ -182,7 +219,19 @@ export function PurchasesPage() {
     { key: "id", header: "ID", render: (p) => <span className="font-mono text-xs">{p.id}</span> },
     { header: "Пользователь", render: (p) => <span className="font-mono text-xs">#{p.account_id}</span> },
     { key: "provider", header: "Провайдер", render: (p) => p.provider },
-    { key: "amount", header: "Сумма", render: (p) => `${p.amount} ${p.currency}` },
+    {
+      key: "amount",
+      header: "Сумма",
+      render: (p) =>
+        isConvertedPayment(p) ? (
+          <span className="tabular-nums">
+            {p.base_amount} {p.base_currency}{" "}
+            <span className="text-xs text-muted-foreground">({p.amount} {p.currency})</span>
+          </span>
+        ) : (
+          <span className="tabular-nums">{p.amount} {p.currency}</span>
+        ),
+    },
     {
       header: "Статус",
       render: (p) => (
