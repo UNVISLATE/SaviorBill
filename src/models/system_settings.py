@@ -168,9 +168,15 @@ class SystemSettingsMngr:
         """
         seeded: list[str] = []
         for spec in seed_defs():
-            if await self.s.get(SystemSettingsModel, spec.key) is not None:
+            existing = await self.s.get(SystemSettingsModel, spec.key)
+            if existing is not None:
+                if existing.value is None and spec.default is not None:
+                    await self.set(spec.key, spec.default, is_secret=spec.secret)
+                    seeded.append(spec.key)
                 continue
             value = self._env_value(cfg, spec)
+            if value is None:
+                value = spec.default
             if value is None:
                 continue
             await self.set(spec.key, value, is_secret=spec.secret)

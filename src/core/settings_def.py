@@ -46,10 +46,31 @@ class SettingDef:
     protected: bool = False
     group: str = "general"
     desc: str = ""
+    default: str | None = None
 
     def cast(self, raw: str) -> Any:
         """Привести строковое значение из БД к типу настройки."""
         return _CASTERS[self.type](raw)
+
+
+DEFAULT_ADMIN_THEME: dict[str, str] = {
+    "primary": "#009080",
+    "primaryDark": "#0C5E53",
+    "surface": "#0D504B",
+}
+
+DEFAULT_CLIENT_THEME: dict[str, str] = {
+    "primary": "#009080",
+    "accentHover": "#00A896",
+    "primaryDark": "#0C5E53",
+    "background": "#0A0A0B",
+    "surface": "#171719",
+}
+
+DEFAULT_THEMES: dict[str, dict[str, str]] = {
+    "admin": DEFAULT_ADMIN_THEME,
+    "client": DEFAULT_CLIENT_THEME,
+}
 
 
 # --- Каталог настроек --------------------------------------------------------
@@ -397,6 +418,7 @@ SETTINGS: tuple[SettingDef, ...] = (
         type="json",
         group="ui",
         desc="Произвольная JSON-тема admin UI",
+        default=json.dumps(DEFAULT_ADMIN_THEME),
     ),
     # Настройки frontend админ-панели (ui.admin.settings.*)
     SettingDef(
@@ -473,11 +495,51 @@ SETTINGS: tuple[SettingDef, ...] = (
         "ui.client.favicon", None, group="ui", desc="Токен медиа favicon клиента"
     ),
     SettingDef(
+        "ui.client.mascot", None, group="ui", desc="Токен медиа маскота входа клиента"
+    ),
+    SettingDef(
+        "ui.client.mascot_not_found",
+        None,
+        group="ui",
+        desc="Токен медиа маскота страницы 404 клиента",
+    ),
+    SettingDef(
+        "ui.client.catalog_banner",
+        None,
+        group="ui",
+        desc="Токен медиа баннера каталога клиента",
+    ),
+    SettingDef(
         "ui.client.theme",
         None,
         type="json",
         group="ui",
         desc="Произвольная JSON-тема клиента",
+        default=json.dumps(DEFAULT_CLIENT_THEME),
+    ),
+    SettingDef(
+        "ui.client.settings.support_link",
+        None,
+        group="ui",
+        desc="Ссылка на поддержку в клиентском UI",
+    ),
+    SettingDef(
+        "ui.client.settings.telegram_channel",
+        None,
+        group="ui",
+        desc="Ссылка на Telegram-канал в клиентском UI",
+    ),
+    SettingDef(
+        "ui.client.settings.telegram_chat",
+        None,
+        group="ui",
+        desc="Ссылка на Telegram-чат в клиентском UI",
+    ),
+    SettingDef(
+        "ui.client.settings.discord_link",
+        None,
+        group="ui",
+        desc="Ссылка на Discord в клиентском UI",
     ),
     # Rate limiting: переопределения правил по категории (см.
     # dependencies/ratelimit.py). Значение — JSON {"max_hits": N, "window": N}.
@@ -647,8 +709,8 @@ def by_key(key: str) -> SettingDef | None:
 
 
 def seed_defs() -> tuple[SettingDef, ...]:
-    """Настройки, подлежащие сидингу из окружения (у которых задан ``source``)."""
-    return tuple(d for d in SETTINGS if d.source is not None)
+    """Настройки, подлежащие первичному сидингу (из окружения или по умолчанию)."""
+    return tuple(d for d in SETTINGS if d.source is not None or d.default is not None)
 
 
 def group_keys(group: str) -> tuple[str, ...]:
@@ -656,4 +718,13 @@ def group_keys(group: str) -> tuple[str, ...]:
     return tuple(d.key for d in SETTINGS if d.group == group)
 
 
-__all__ = ["SettingDef", "SETTINGS", "by_key", "seed_defs", "group_keys"]
+__all__ = [
+    "SettingDef",
+    "SETTINGS",
+    "DEFAULT_ADMIN_THEME",
+    "DEFAULT_CLIENT_THEME",
+    "DEFAULT_THEMES",
+    "by_key",
+    "seed_defs",
+    "group_keys",
+]

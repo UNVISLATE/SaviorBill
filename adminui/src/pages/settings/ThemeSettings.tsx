@@ -24,10 +24,18 @@ import {
 import { Skeleton } from "@/components/shadsnui/skeleton"
 
 /** Роли цветов темы — ключи внутри JSON-настройки `ui.{scope}.theme`. */
-const THEME_COLORS = [
+const ADMIN_THEME_COLORS = [
   { key: "primary", label: "Акцент", fallback: "#009080" },
   { key: "primaryDark", label: "Акцент тёмный", fallback: "#0C5E53" },
   { key: "surface", label: "Подложка", fallback: "#0D504B" },
+] as const
+
+const CLIENT_THEME_COLORS = [
+  { key: "primary", label: "Основной акцент", fallback: "#009080" },
+  { key: "accentHover", label: "Акцент при наведении", fallback: "#00A896" },
+  { key: "primaryDark", label: "Тёмный оттенок акцента", fallback: "#0C5E53" },
+  { key: "background", label: "Фон холста", fallback: "#0A0A0B" },
+  { key: "surface", label: "Фон карточек", fallback: "#171719" },
 ] as const
 
 function ColorField({
@@ -92,13 +100,18 @@ export function ThemeSettings({ scope }: { scope: "admin" | "client" }) {
     }
   })()
 
+  const colors = scope === "client" ? CLIENT_THEME_COLORS : ADMIN_THEME_COLORS
+  const defaults = Object.fromEntries(colors.map((c) => [c.key, c.fallback]))
+  const effectiveSaved = { ...defaults, ...saved }
+
   const [draft, setDraft] = useState<Record<string, string> | null>(null)
-  const current = draft ?? saved
-  const dirty = JSON.stringify(current) !== JSON.stringify(saved)
+  const current = draft ?? effectiveSaved
+  const dirty = JSON.stringify(current) !== JSON.stringify(effectiveSaved)
+  const isDefaults = JSON.stringify(current) === JSON.stringify(defaults)
 
   const save = useMutation({
     mutationFn: async (value: string) =>
-      api.put(`/v1/branding/${scope}`, { theme: value ? JSON.parse(value) : {} }),
+      api.put(`/v1/branding/${scope}`, { theme: value ? JSON.parse(value) : defaults }),
     onSuccess: () => {
       toastSuccess("Тема сохранена")
       setDraft(null)
@@ -130,7 +143,7 @@ export function ThemeSettings({ scope }: { scope: "admin" | "client" }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
-        {THEME_COLORS.map((c) => (
+        {colors.map((c) => (
           <ColorField
             key={c.key}
             label={c.label}
@@ -143,9 +156,9 @@ export function ThemeSettings({ scope }: { scope: "admin" | "client" }) {
         <Button
           size="sm"
           variant="ghost"
-          disabled={save.isPending || Object.keys(current).length === 0}
+          disabled={save.isPending || isDefaults}
           onClick={() => {
-            setDraft({})
+            setDraft(defaults)
             save.mutate("")
           }}
         >

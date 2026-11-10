@@ -23,7 +23,15 @@ import { Label } from "@/components/shadsnui/label"
 import { Skeleton } from "@/components/shadsnui/skeleton"
 
 type Scope = "admin" | "client"
-type Asset = "logo" | "favicon"
+type Asset = "logo" | "favicon" | "mascot" | "mascot_not_found" | "catalog_banner"
+
+const ASSET_TAG_MAP: Record<Asset, string> = {
+  logo: "logo",
+  favicon: "favicon",
+  mascot: "mascot",
+  mascot_not_found: "mnf",
+  catalog_banner: "banner",
+}
 
 function mediaUrl(token: string | undefined | null): string | null {
   return token ? `/api/media/${token}` : null
@@ -64,7 +72,9 @@ function AssetSlot({
     mutationFn: async (file: File) => {
       // tag — метка для админки; сервер требует до 16 символов, только
       // латиница и цифры (никаких дефисов, см. mediaworker _TAG_RE).
-      const { token: uploaded } = await uploadOwnMedia(file, { tag: `${scope}${asset}` })
+      const { token: uploaded } = await uploadOwnMedia(file, {
+        tag: `${scope}${ASSET_TAG_MAP[asset]}`,
+      })
       await api.put(`/v1/branding/${scope}`, { [asset]: uploaded })
     },
     onSuccess: () => {
@@ -223,6 +233,34 @@ function ScopeCard({
             token={map.get(`ui.${scope}.favicon`) ?? ""}
             onDone={refresh}
           />
+          {scope === "client" && (
+            <>
+              <AssetSlot
+                scope={scope}
+                asset="mascot"
+                label="Маскот экрана входа"
+                note="Персонаж на левой части страницы авторизации. Рекомендуется PNG/WebP с прозрачным фоном."
+                token={map.get("ui.client.mascot") ?? ""}
+                onDone={refresh}
+              />
+              <AssetSlot
+                scope={scope}
+                asset="mascot_not_found"
+                label="Маскот страницы 404"
+                note="Иллюстрация на экране ошибки 404. PNG или WebP."
+                token={map.get("ui.client.mascot_not_found") ?? ""}
+                onDone={refresh}
+              />
+              <AssetSlot
+                scope={scope}
+                asset="catalog_banner"
+                label="Баннер каталога"
+                note="Фоновое изображение Hero-блока каталога в клиентском кабинете. Широкоформатный PNG/WebP/JPG."
+                token={map.get("ui.client.catalog_banner") ?? ""}
+                onDone={refresh}
+              />
+            </>
+          )}
         </div>
       </CardContent>
       {dirty && (
@@ -232,6 +270,89 @@ function ScopeCard({
           </Button>
           <Button size="sm" onClick={() => saveName.mutate()} disabled={saveName.isPending}>
             {saveName.isPending && <Loader2 className="size-4 animate-spin" />}
+            Сохранить
+          </Button>
+        </CardFooter>
+      )}
+    </Card>
+  )
+}
+
+const CLIENT_LINKS = [
+  { key: "support_link", label: "Поддержка", placeholder: "https://t.me/support" },
+  { key: "telegram_channel", label: "Telegram канал", placeholder: "https://t.me/channel" },
+  { key: "telegram_chat", label: "Telegram чат", placeholder: "https://t.me/chat" },
+  { key: "discord_link", label: "Discord", placeholder: "https://discord.gg/..." },
+] as const
+
+function ClientLinksCard() {
+  const qc = useQueryClient()
+  const { map, isLoading } = useSettingsMap()
+  const [draft, setDraft] = useState<Record<string, string> | null>(null)
+
+  const saved: Record<string, string> = {}
+  for (const l of CLIENT_LINKS) {
+    saved[l.key] = map.get(`ui.client.settings.${l.key}`) ?? ""
+  }
+
+  const current = draft ?? saved
+  const dirty = CLIENT_LINKS.some((l) => (current[l.key] ?? "") !== (saved[l.key] ?? ""))
+
+  const save = useMutation({
+    mutationFn: async () =>
+      api.put("/v1/branding/client", { settings: current }),
+    onSuccess: () => {
+      toastSuccess("Ссылки сообщества сохранены")
+      setDraft(null)
+      void qc.invalidateQueries({ queryKey: ["admin-settings-all"] })
+    },
+    onError: () => toastError("Не удалось сохранить ссылки"),
+  })
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Ссылки и сообщество клиента</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Skeleton className="h-32 w-full" />
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Ссылки и сообщество клиента</CardTitle>
+        <CardDescription>
+          Отображаются в подвале личного кабинета и на экране поддержки.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {CLIENT_LINKS.map((item) => (
+          <div key={item.key} className="flex items-center justify-between gap-6">
+            <Label htmlFor={`client-link-${item.key}`} className="font-normal">
+              {item.label}
+            </Label>
+            <Input
+              id={`client-link-${item.key}`}
+              value={current[item.key] ?? ""}
+              placeholder={item.placeholder}
+              onChange={(e) => setDraft({ ...current, [item.key]: e.target.value })}
+              className="max-w-72"
+            />
+          </div>
+        ))}
+      </CardContent>
+      {dirty && (
+        <CardFooter className="justify-end gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setDraft(null)} disabled={save.isPending}>
+            Отменить
+          </Button>
+          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
+            {save.isPending && <Loader2 className="size-4 animate-spin" />}
             Сохранить
           </Button>
         </CardFooter>
@@ -257,9 +378,10 @@ export function SettingsBranding() {
       <ScopeCard
         scope="client"
         title="Клиентское приложение"
-        description="То же для витрины: клиент читает эти значения через публичный эндпоинт брендинга."
+        description="Название, ассеты и персонажи витрины: клиент читает эти значения через публичный эндпоинт брендинга."
       />
       <ThemeSettings scope="client" />
+      <ClientLinksCard />
     </div>
   )
 }

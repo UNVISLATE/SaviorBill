@@ -9,12 +9,14 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.settings_def import by_key
+from core.settings_def import DEFAULT_THEMES, by_key
 from dependencies.db import get_db_session
 from dependencies.rbac import require_perm
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
+from models.system_media import SystemMediaModel
 from models.user import UserModel
 from services.audit import audit
 from services.fx import DEFAULT_CURRENCY
@@ -64,16 +66,71 @@ def _serialize(value: Any) -> str | None:
     return json.dumps(value)
 
 
+def _clean_media_token(raw_val: str | None) -> str | None:
+    """Извлечь чистый token медиа из значения настройки (срезая `/api/media/` и `?v=...`)."""
+    if not raw_val:
+        return None
+    clean = raw_val.strip()
+    if not clean:
+        return None
+    clean = clean.split("?", 1)[0].strip()
+    if clean.startswith("/api/media/"):
+        clean = clean[len("/api/media/"):]
+    clean = clean.strip("/")
+    return clean or None
+
+
 def _media_url(token: str) -> str:
     """Относительный URL отдачи медиа (обслуживает Caddy/mediaworker)."""
     return f"/api/media/{token}"
 
 
-def _build_body(scope: str, raw: dict[str, str]) -> dict:
+async def _existing_ready_tokens(
+    session: AsyncSession, tokens: list[str | None]
+) -> set[str]:
+    """Вернуть множество токенов, реально существующих и готовых (``ready``) в ``system_media``."""
+    unique = {t for t in tokens if t}
+    if not unique:
+        return set()
+    rows = await session.scalars(
+        select(SystemMediaModel.token).where(
+            SystemMediaModel.token.in_(unique),
+            SystemMediaModel.status == "ready",
+        )
+    )
+    return set(rows)
+
+
+def _build_body(
+    scope: str,
+    raw: dict[str, str],
+    ready_tokens: set[str] | None = None,
+) -> dict:
     """Собрать тело ответа брендинга и настроек UI из сырых записей settings."""
-    logo = raw.get(f"ui.{scope}.logo")
-    favicon = raw.get(f"ui.{scope}.favicon")
+    logo = _clean_media_token(raw.get(f"ui.{scope}.logo"))
+    favicon = _clean_media_token(raw.get(f"ui.{scope}.favicon"))
+    mascot = _clean_media_token(raw.get(f"ui.{scope}.mascot"))
+    mascot_not_found = _clean_media_token(raw.get(f"ui.{scope}.mascot_not_found"))
+    catalog_banner = _clean_media_token(raw.get(f"ui.{scope}.catalog_banner"))
+    if ready_tokens is not None:
+        logo = logo if logo in ready_tokens else None
+        favicon = favicon if favicon in ready_tokens else None
+        mascot = mascot if mascot in ready_tokens else None
+        mascot_not_found = mascot_not_found if mascot_not_found in ready_tokens else None
+        catalog_banner = catalog_banner if catalog_banner in ready_tokens else None
     theme_raw = raw.get(f"ui.{scope}.theme")
+    default_theme = DEFAULT_THEMES.get(scope, {})
+    parsed_theme: dict[str, Any] = {}
+    if theme_raw:
+        try:
+            decoded = json.loads(theme_raw)
+            if isinstance(decoded, dict):
+                parsed_theme = {
+                    k: v for k, v in decoded.items() if v is not None and v != ""
+                }
+        except Exception:
+            parsed_theme = {}
+    merged_theme = {**default_theme, **parsed_theme}
 
     prefix = f"ui.{scope}.settings."
     flat_settings: dict[str, Any] = {}
@@ -92,14 +149,17 @@ def _build_body(scope: str, raw: dict[str, str]) -> dict:
     settings_tree = _unflatten_dict(flat_settings)
 
     ver = hashlib.md5(
-        f"{logo}:{favicon}:{raw.get(f'ui.{scope}.name')}:{theme_raw}:{json.dumps(settings_tree, sort_keys=True)}".encode()
+        f"{logo}:{favicon}:{mascot}:{mascot_not_found}:{catalog_banner}:{raw.get(f'ui.{scope}.name')}:{json.dumps(merged_theme, sort_keys=True)}:{json.dumps(settings_tree, sort_keys=True)}".encode()
     ).hexdigest()[:8]
 
     return {
         "name": raw.get(f"ui.{scope}.name"),
         "logo_url": f"{_media_url(logo)}?v={ver}" if logo else None,
         "favicon_url": f"{_media_url(favicon)}?v={ver}" if favicon else None,
-        "theme": json.loads(theme_raw) if theme_raw else {},
+        "mascot_url": f"{_media_url(mascot)}?v={ver}" if mascot else None,
+        "mascot_not_found_url": f"{_media_url(mascot_not_found)}?v={ver}" if mascot_not_found else None,
+        "catalog_banner_url": f"{_media_url(catalog_banner)}?v={ver}" if catalog_banner else None,
+        "theme": merged_theme,
         "settings": settings_tree,
         "version": ver,
     }
@@ -109,6 +169,9 @@ class BrandingUpdateIn(BaseModel):
     name: str | None = None
     logo: str | None = None
     favicon: str | None = None
+    mascot: str | None = None
+    mascot_not_found: str | None = None
+    catalog_banner: str | None = None
     theme: dict[str, Any] | None = None
     settings: dict[str, Any] | None = None
 
@@ -123,10 +186,16 @@ async def get_branding(
     scope: Literal["admin", "client"],
     request: Request,
     response: Response,
+    session: AsyncSession = Depends(get_db_session),
     mngr: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> dict | None:
     raw = await mngr.get_group(f"ui.{scope}.")
-    body = _build_body(scope, raw)
+    candidate_tokens = [
+        _clean_media_token(raw.get(f"ui.{scope}.{a}"))
+        for a in ("logo", "favicon", "mascot", "mascot_not_found", "catalog_banner")
+    ]
+    ready_tokens = await _existing_ready_tokens(session, candidate_tokens)
+    body = _build_body(scope, raw, ready_tokens=ready_tokens)
     body["currency"] = (await mngr.get("billing.currency")) or DEFAULT_CURRENCY
     etag = f'W/"{hashlib.md5(json.dumps(body, sort_keys=True).encode()).hexdigest()}"'
 
@@ -161,16 +230,20 @@ async def update_branding(
         await mngr.set(f"ui.{scope}.name", body.name, is_secret=False)
         updated_fields.append("name")
 
-    if body.logo is not None:
-        await mngr.set(f"ui.{scope}.logo", body.logo if body.logo else None, is_secret=False)
-        updated_fields.append("logo")
-
-    if body.favicon is not None:
-        await mngr.set(f"ui.{scope}.favicon", body.favicon if body.favicon else None, is_secret=False)
-        updated_fields.append("favicon")
+    for asset in ("logo", "favicon", "mascot", "mascot_not_found", "catalog_banner"):
+        val = getattr(body, asset)
+        if val is not None:
+            clean_val = _clean_media_token(val)
+            await mngr.set(f"ui.{scope}.{asset}", clean_val, is_secret=False)
+            updated_fields.append(asset)
 
     if body.theme is not None:
-        theme_str = json.dumps(body.theme) if body.theme else None
+        default_theme = DEFAULT_THEMES.get(scope, {})
+        cleaned_theme = {
+            k: v for k, v in body.theme.items() if v is not None and v != ""
+        }
+        next_theme = {**default_theme, **cleaned_theme} if cleaned_theme else default_theme
+        theme_str = json.dumps(next_theme) if next_theme else None
         await mngr.set(f"ui.{scope}.theme", theme_str, is_secret=False)
         updated_fields.append("theme")
 
@@ -227,7 +300,12 @@ async def update_branding(
     await session.commit()
 
     raw = await mngr.get_group(f"ui.{scope}.")
-    out = _build_body(scope, raw)
+    candidate_tokens = [
+        _clean_media_token(raw.get(f"ui.{scope}.{a}"))
+        for a in ("logo", "favicon", "mascot", "mascot_not_found", "catalog_banner")
+    ]
+    ready_tokens = await _existing_ready_tokens(session, candidate_tokens)
+    out = _build_body(scope, raw, ready_tokens=ready_tokens)
     out["currency"] = (await mngr.get("billing.currency")) or DEFAULT_CURRENCY
     return out
 
