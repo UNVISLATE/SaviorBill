@@ -13,7 +13,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from models import Base
 from utils.datetime_utils import utc_now
 from security.sec.box import SecBox
-from core.settings_def import SettingDef, by_key, seed_defs
+from core.settings_def import SettingDef, by_key, default_defs, seed_defs
 
 # Префикс ключей кэша настроек в Valkey.
 _CACHE = "settings:"
@@ -167,7 +167,8 @@ class SystemSettingsMngr:
         присутствующие в БД, не трогаются.
         """
         seeded: list[str] = []
-        for spec in seed_defs():
+        candidates = list(dict.fromkeys([*seed_defs(), *default_defs()]))
+        for spec in candidates:
             existing = await self.s.get(SystemSettingsModel, spec.key)
             if existing is not None:
                 if existing.value is None and spec.default is not None:

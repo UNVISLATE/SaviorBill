@@ -2,7 +2,7 @@
 
 import pytest
 
-from core.settings_def import SETTINGS, by_key, group_keys, seed_defs
+from core.settings_def import SETTINGS, by_key, default_defs, group_keys, seed_defs
 
 pytestmark = pytest.mark.unit
 
@@ -78,3 +78,9 @@ def test_ui_name_protected_but_editable():
         assert spec.protected is True
         assert spec.secret is False
         assert spec.source is not None  # сидится при первом запуске
+
+
+def test_default_defs_include_themes():
+    keys = {d.key for d in default_defs()}
+    assert "ui.admin.theme" in keys
+    assert "ui.client.theme" in keys

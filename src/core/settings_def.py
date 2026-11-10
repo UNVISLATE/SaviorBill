@@ -709,8 +709,13 @@ def by_key(key: str) -> SettingDef | None:
 
 
 def seed_defs() -> tuple[SettingDef, ...]:
-    """Настройки, подлежащие первичному сидингу (из окружения или по умолчанию)."""
-    return tuple(d for d in SETTINGS if d.source is not None or d.default is not None)
+    """Настройки, подлежащие сидингу из окружения (у которых задан ``source``)."""
+    return tuple(d for d in SETTINGS if d.source is not None)
+
+
+def default_defs() -> tuple[SettingDef, ...]:
+    """Настройки с явным значением по умолчанию (сидятся при отсутствии в БД)."""
+    return tuple(d for d in SETTINGS if d.default is not None)
 
 
 def group_keys(group: str) -> tuple[str, ...]:
@@ -726,5 +731,6 @@ __all__ = [
     "DEFAULT_THEMES",
     "by_key",
     "seed_defs",
+    "default_defs",
     "group_keys",
 ]
