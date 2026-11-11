@@ -119,13 +119,6 @@ class BillingLoop:
             signing_key=self.cfg.BUS_SIGNING_KEY,
         )
 
-    async def _pay_mngr(self, session: AsyncSession) -> PayMngr:
-        """`PayMngr` с диспетчером триггеров.
-
-        Раньше диспетчер не передавался вовсе, из-за чего фоновые события
-        биллинга не порождали уведомлений, а анти-петля триггеров была
-        отключена (`settings is None`, см. AUDIT.md §3.2).
-        """
     async def _dispatcher(self, session: AsyncSession) -> TriggerDispatcher:
         settings = SystemSettingsMngr(
             session, self.vk, make_secbox(self.cfg), self.cfg.SETTINGS_CACHE_TTL
@@ -136,17 +129,24 @@ class BillingLoop:
         )
 
     async def _pay_mngr(self, session: AsyncSession) -> PayMngr:
+        """`PayMngr` с диспетчером триггеров.
+
+        Раньше диспетчер не передавался вовсе, из-за чего фоновые события
+        биллинга не порождали уведомлений, а анти-петля триггеров была
+        отключена (`settings is None`, см. AUDIT.md §3.2).
+        """
+        box = make_secbox(self.cfg)
         settings = SystemSettingsMngr(
-            session, self.vk, make_secbox(self.cfg), self.cfg.SETTINGS_CACHE_TTL
+            session, self.vk, box, self.cfg.SETTINGS_CACHE_TTL
         )
         bus = await self._bus(session)
         dispatcher = await self._dispatcher(session)
         return PayMngr(
             session,
             bus,
-            make_secbox(self.cfg),
+            box,
             dispatcher,
-            FxRates(settings, self.vk),
+            FxRates(settings, self.vk, bus=bus, session=session, box=box),
         )
 
     async def _usvc_mngr(self, session: AsyncSession) -> UserServicesMngr:
@@ -267,7 +267,8 @@ class BillingLoop:
         )
         now = _score(utc_now())
         for pay in rows:
-            await self.vk.zadd(self._qkey, {f"{_PAY}{pay.id}": now})
+            # nx=True: не сбрасывать уже назначенный интервал перепроверки.
+            await self.vk.zadd(self._qkey, {f"{_PAY}{pay.id}": now}, nx=True)
 
     async def enqueue_service(self, usvc_id: int, run_at: datetime) -> None:
         """Поставить истечение услуги в очередь (при создании/продлении).
@@ -303,6 +304,7 @@ class BillingLoop:
                 seed_lock = True
             if seed_lock:
                 await self._refill(session)
+                await self._seed_pending_payments(session)
                 await self._seed_failed_deliveries(session)
             await self._maybe_auto_cleanup_media(session)
         await self._dlq.refresh_metrics()

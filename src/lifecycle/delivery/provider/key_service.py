@@ -33,7 +33,7 @@ class KeyService(BaseIssuer):
         usvc.digikey_id = key.id
         value = self.box.open(key.value) if self.box is not None else key.value
         usvc.public_data = {"key": value}
-        usvc.private_data = {"digikey_id": key.id}
+        usvc.private_data = {**(usvc.private_data or {}), "digikey_id": key.id}
 
         if self.dispatcher is not None:
             from lifecycle.triggers.stock import check_and_fire_key_stock_triggers

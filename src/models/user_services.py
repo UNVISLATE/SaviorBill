@@ -168,7 +168,7 @@ class UserServicesMngr:
         покупки прочитают один и тот же баланс.
         """
         if amount <= 0:
-            return
+            return Decimal("0"), Decimal("0")
         amount = amount.quantize(_CENT, rounding=ROUND_HALF_UP)
         if acc.bonus_balance + acc.balance < amount:
             raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "insufficient funds")
@@ -260,7 +260,6 @@ class UserServicesMngr:
             await self.deliver(
                 usvc, service, acc, refund_on_fail=price if charge else Decimal("0")
             )
-            self._apply_default_expiry(usvc)
 
         return usvc
 
@@ -295,6 +294,7 @@ class UserServicesMngr:
             usvc.status = UsvcStatus.ACTIVE
             usvc.delivered_at = utc_now()
             usvc.error = None
+            self._apply_default_expiry(usvc)
             await self._credit_referral(acc, service, usvc.price)
         except Exception as exc:  # noqa: BLE001 — любая ошибка доставки -> возврат
             usvc.status = UsvcStatus.FAILED

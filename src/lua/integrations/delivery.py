@@ -65,8 +65,8 @@ class LuaService(BaseIssuer):
             version=resolved_version,
             requested_version=service.lua_script_version,
         )
-        usvc.public_data = res.get("public") or {}
-        usvc.private_data = res.get("private") or {}
+        usvc.public_data = {**(usvc.public_data or {}), **(res.get("public") or {})}
+        usvc.private_data = {**(usvc.private_data or {}), **(res.get("private") or {})}
         # Провенанс: какая именно версия скрипта реально выполнила это
         # действие (пин на услуге мог измениться/сброситься между выдачами).
         usvc.lua_script_version = resolved_version

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
@@ -197,20 +197,38 @@ async def create_purchase(
                 "service is fully discounted by promo code, order it via /api/v1/user/services/create",
             )
 
-        # Если уже есть неоплаченный счёт на эту услугу с такой же суммой — возвращаем его
-        existing_pending = await pay_mngr.s.scalar(
-            select(UserPaymentsModel)
+        # Если уже есть неоплаченный счёт на эту услугу с тем же провайдером, валютой и конфигурацией — возвращаем его
+        expected_base_amount = amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        expected_order_config = dict(resolved.order_config)
+        expected_order_config["settings"] = resolved.effective_settings
+
+        stmt = (
+            select(UserPaymentsModel, UserServicesModel)
             .join(UserServicesModel, UserPaymentsModel.user_svc_id == UserServicesModel.id)
             .where(
                 UserPaymentsModel.account_id == acc.id,
                 UserPaymentsModel.status == PayStatus.PENDING,
-                UserPaymentsModel.amount == amount,
+                UserPaymentsModel.target == PayTarget.SERVICE,
+                UserPaymentsModel.provider == body.provider,
+                UserPaymentsModel.base_amount == expected_base_amount,
                 UserServicesModel.service_id == service.id,
             )
             .order_by(UserPaymentsModel.id.desc())
-            .limit(1)
+            .limit(10)
         )
-        if existing_pending is not None and existing_pending.payment_url:
+        if body.currency:
+            stmt = stmt.where(UserPaymentsModel.currency == body.currency.strip().upper())
+
+        existing_pending = None
+        for cand_pay, cand_usvc in (await pay_mngr.s.execute(stmt)).all():
+            if (
+                cand_usvc.order_config == expected_order_config
+                and (cand_usvc.private_data or {}).get("promocode_id") == promo_id
+                and cand_pay.payment_url
+            ):
+                existing_pending = cand_pay
+                break
+        if existing_pending is not None:
             return Payment.from_model(existing_pending)
 
         # Создаём отложенную выдачу (без списания/доставки — доставит колбэк).

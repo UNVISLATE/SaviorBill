@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import json
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 _CENT = Decimal("0.01")
 
@@ -292,13 +292,15 @@ class PayMngr:
         payment = await self._locate(priv, provider_slug, for_update=True)
         if payment is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "payment not found")
-        if payment.status in (PayStatus.PAID, PayStatus.REFUNDED):
+        if payment.status == PayStatus.REFUNDED:
             return payment  # идемпотентность
-
-        if priv.get("paid"):
+        if payment.status == PayStatus.PAID:
+            if priv.get("refunded"):
+                await self._apply_refund(payment, priv)
+            else:
+                return payment  # идемпотентность
+        elif priv.get("paid"):
             await self._settle(payment, priv)
-        elif priv.get("refunded") and payment.status == PayStatus.PAID:
-            await self._apply_refund(payment, priv)
         elif priv.get("failed"):
             payment.status = PayStatus.FAILED
             await self._fire_payment_trigger(payment, TriggerEvent.PAYMENT_FAILED)
@@ -462,7 +464,7 @@ class PayMngr:
                 # Списываем ровно то, что было зачислено (с учётом конвертации),
                 # не больше остатка на балансе — старые/чужие средства не
                 # трогаем и в минус не уходим.
-                credited = payment.base_amount or payment.amount
+                credited = payment.base_amount if payment.base_amount is not None else payment.amount
                 deduct = min(acc.balance, credited)
                 acc.balance -= deduct
                 shortfall = credited - deduct
@@ -544,7 +546,12 @@ class PayMngr:
             }
 
         raw_paid = priv.get("paid_amount")
-        actual_paid = Decimal(str(raw_paid)) if raw_paid is not None else None
+        actual_paid: Decimal | None = None
+        if raw_paid is not None and str(raw_paid).strip() != "":
+            try:
+                actual_paid = Decimal(str(raw_paid).strip())
+            except InvalidOperation:
+                actual_paid = None
         credited = await self._credited_amount(payment, actual_paid=actual_paid)
 
         if payment.target == PayTarget.SERVICE and payment.user_svc_id:
@@ -552,10 +559,10 @@ class PayMngr:
             if usvc is not None:
                 service = await self.s.get(ServiceModel, usvc.service_id)
                 usvc.payment_id = payment.id
+                promo_id = (usvc.private_data or {}).get("promocode_id")
                 await UserServicesMngr(self.s, self.bus, self.box, dispatcher=self.dispatcher).deliver(
                     usvc, service, acc
                 )
-                promo_id = (usvc.private_data or {}).get("promocode_id")
                 if promo_id:
                     await self._redeem_promo(promo_id, payment, usvc)
         else:  # пополнение баланса
@@ -571,8 +578,17 @@ class PayMngr:
         зафиксирован при создании платежа (до комиссии шлюза), возвращаем его,
         иначе пересчитываем фактически оплаченную сумму по ``payment.fx_rate``.
         """
-        if actual_paid is None and payment.base_amount is not None and payment.fx_rate is not None:
-            return payment.base_amount.quantize(_CENT, rounding=ROUND_HALF_UP)
+        if payment.base_amount is not None:
+            expected_paid = payment.amount
+            if actual_paid is None or actual_paid == expected_paid:
+                return payment.base_amount.quantize(_CENT, rounding=ROUND_HALF_UP)
+            if expected_paid > Decimal("0"):
+                ratio = actual_paid / expected_paid
+                credited = (payment.base_amount * ratio).quantize(
+                    _CENT, rounding=ROUND_HALF_UP
+                )
+                payment.base_amount = credited
+                return credited
 
         paid = actual_paid if actual_paid is not None else payment.amount
         if self.fx is None:
