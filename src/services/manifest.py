@@ -41,6 +41,34 @@ def parse_manifest(raw: str | dict[str, Any]) -> ScriptManifest:
         ) from e
 
 
+def _cond_values_match(actual: Any, expected: Any) -> bool:
+    """Сравнить значение родительского поля с ожидаемым в условии ``depends_on``.
+
+    Нормализует bool vs ``"true"``/``"false"`` без учёта регистра (так как в
+    Python ``str(True) == "True"``, а в JSON-манифестах часто пишут ``"true"``).
+    """
+    if actual is None:
+        return expected is None
+    if isinstance(actual, bool) or isinstance(expected, bool):
+        def _to_bool(v: Any) -> bool | None:
+            if isinstance(v, bool):
+                return v
+            if isinstance(v, str):
+                low = v.strip().lower()
+                if low == "true":
+                    return True
+                if low == "false":
+                    return False
+            return None
+
+        b_actual = _to_bool(actual)
+        b_expected = _to_bool(expected)
+        if b_actual is not None and b_expected is not None:
+            return b_actual is b_expected
+        return False
+    return actual == expected or str(actual) == str(expected)
+
+
 def _is_field_active(field_def: FieldDefinition, form_values: dict[str, Any]) -> bool:
     """Проверка условия активности/видимости поля (depends_on)."""
     cond = field_def.depends_on
@@ -48,9 +76,17 @@ def _is_field_active(field_def: FieldDefinition, form_values: dict[str, Any]) ->
         return True
 
     parent_val = form_values.get(cond.field)
-    if cond.equals is not None and str(parent_val) != str(cond.equals):
+    if cond.equals is not None and not _cond_values_match(parent_val, cond.equals):
         return False
-    if cond.not_equals is not None and str(parent_val) == str(cond.not_equals):
+    if cond.not_equals is not None and _cond_values_match(parent_val, cond.not_equals):
+        return False
+    if cond.in_values is not None and not any(
+        _cond_values_match(parent_val, candidate) for candidate in cond.in_values
+    ):
+        return False
+    if cond.not_in_values is not None and any(
+        _cond_values_match(parent_val, candidate) for candidate in cond.not_in_values
+    ):
         return False
     return True
 

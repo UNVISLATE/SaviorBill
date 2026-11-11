@@ -92,6 +92,18 @@ class OrderGrant(BaseModel):
         default=False,
         description="Charge user balance (optional)",
     )
+    custom_amount: Decimal | None = Field(
+        default=None, gt=0, description="Arbitrary sum for price_type=custom"
+    )
+    tier_code: str | None = Field(
+        default=None, max_length=64, description="Subtier code for price_type=tiered"
+    )
+    components: dict[str, Any] | None = Field(
+        default=None, description="Component quantities for price_type=configurable"
+    )
+    form: dict[str, Any] | None = Field(
+        default=None, description="Client form values"
+    )
 
 
 __all__ = ["OrderCreate", "Order", "OrderAdmin", "OrderGrant"]

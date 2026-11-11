@@ -13,6 +13,100 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 logger = logging.getLogger("plugins.migrator")
 
 SLUG_PATTERN = re.compile(r"^[a-z0-9_-]{2,64}$")
+_DOLLAR_TAG_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
+
+
+def split_sql_statements(sql: str) -> list[str]:
+    """Разбить SQL-скрипт по top-level `;` (учитывая строки, комментарии и `$tag$...$tag$`).
+
+    Корректно сохраняет тела функций/триггеров PL/pgSQL и строковые литералы,
+    содержащие `;`, без преждевременного разрезания.
+    """
+    statements: list[str] = []
+    n = len(sql)
+    i = 0
+    start = 0
+    has_code = False
+
+    while i < n:
+        ch = sql[i]
+
+        # Однострочный комментарий -- ... \n
+        if ch == "-" and i + 1 < n and sql[i + 1] == "-":
+            newline = sql.find("\n", i + 2)
+            i = n if newline == -1 else newline + 1
+            continue
+
+        # Блочный комментарий /* ... */ (поддержка вложенности PostgreSQL)
+        if ch == "/" and i + 1 < n and sql[i + 1] == "*":
+            depth = 1
+            i += 2
+            while i < n and depth > 0:
+                if sql[i] == "/" and i + 1 < n and sql[i + 1] == "*":
+                    depth += 1
+                    i += 2
+                elif sql[i] == "*" and i + 1 < n and sql[i + 1] == "/":
+                    depth -= 1
+                    i += 2
+                else:
+                    i += 1
+            continue
+
+        # Строковый литерал '...'
+        if ch == "'":
+            has_code = True
+            i += 1
+            while i < n:
+                if sql[i] == "'":
+                    if i + 1 < n and sql[i + 1] == "'":
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            continue
+
+        # Двойные кавычки "..."
+        if ch == '"':
+            has_code = True
+            i += 1
+            while i < n:
+                if sql[i] == '"':
+                    if i + 1 < n and sql[i + 1] == '"':
+                        i += 2
+                        continue
+                    i += 1
+                    break
+                i += 1
+            continue
+
+        # Dollar-quoted блок $$...$$ или $tag$...$tag$
+        if ch == "$":
+            m = _DOLLAR_TAG_RE.match(sql, i)
+            if m:
+                has_code = True
+                tag = m.group(0)
+                end_pos = sql.find(tag, m.end())
+                i = n if end_pos == -1 else end_pos + len(tag)
+                continue
+
+        if ch == ";":
+            stmt = sql[start:i].strip()
+            if stmt and has_code:
+                statements.append(stmt)
+            i += 1
+            start = i
+            has_code = False
+            continue
+
+        if not ch.isspace():
+            has_code = True
+        i += 1
+
+    tail = sql[start:].strip()
+    if tail and has_code:
+        statements.append(tail)
+    return statements
 
 
 class PluginMigrator:
@@ -99,9 +193,9 @@ class PluginMigrator:
                 # Устанавливаем search_path на схему плагина с fallback на public
                 await session.execute(text(f'SET LOCAL search_path TO "{schema_name}", public;'))
 
-                # Исполняем SQL файл миграции по отдельным выражениям (для совместимости с asyncpg)
-                statements = [s.strip() for s in content.split(";") if s.strip()]
-                for stmt in statements:
+                # Исполняем SQL файл миграции по отдельным top-level выражениям
+                # (сохраняя PL/pgSQL-блоки $$...$$ и совместимость с asyncpg)
+                for stmt in split_sql_statements(content):
                     await session.execute(text(stmt))
 
                 # Записываем в реестр применённых миграций

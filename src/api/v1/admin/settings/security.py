@@ -162,6 +162,7 @@ async def update_security_settings(
         # Немедленная инвалидация кэша каталога
         await invalidate_catalog_cache(vk)
 
+    await settings.s.commit()
     return await get_security_settings(request, settings)
 
 

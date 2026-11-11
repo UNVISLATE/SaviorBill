@@ -78,6 +78,7 @@ async def set_rate_limit(
         "burst_window": burst_base.window,
     }
     await settings.set(_kind_setting_key(kind), json.dumps(payload))
+    await settings.s.commit()
     return RateLimitRule(
         kind=kind.value,
         max_hits=body.max_hits,
@@ -104,6 +105,7 @@ async def reset_rate_limit(
     base = _rule_for(cfg, kind)
     burst_base = _burst_rule_for(kind)
     await settings.set(_kind_setting_key(kind), None)
+    await settings.s.commit()
     return RateLimitRule(
         kind=kind.value,
         max_hits=base.max_hits,

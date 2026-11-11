@@ -261,6 +261,7 @@ async def update_keys_threshold(
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> dict:
     await settings.set("service.keys_low_threshold", str(body.threshold))
+    await settings.s.commit()
     return {"ok": True, "threshold": body.threshold}
 
 

@@ -9,7 +9,7 @@ from httpx import AsyncClient, ASGITransport
 
 from plugins.base import BasePlugin, PluginContext
 from plugins.manager import PluginMngr, PluginManifestSchema
-from plugins.migrator import PluginMigrator, SLUG_PATTERN
+from plugins.migrator import PluginMigrator, SLUG_PATTERN, split_sql_statements
 from security.rbac import all_perms, has_perm
 
 pytestmark = [pytest.mark.unit]
@@ -183,6 +183,45 @@ class SamplePlugin(BasePlugin):
         assert resp.status_code == 200
         assert resp.json() == {"status": "ok"}
 
-    # Проверяем выгрузку
+    # Проверяем выгрузку и удаление маршрутов из app
     await mngr.unload_plugin("sample_plugin")
     assert "sample_plugin" not in mngr.active_plugins
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/api/v1/plugin/sample_plugin/api/status")
+        assert resp.status_code == 404
+
+    # Проверяем hot-reload с обновлённым маршрутом
+    updated_code = code.replace('"/status"', '"/status-v2"')
+    (plugin_dir / "plugin.py").write_text(updated_code, encoding="utf-8")
+    count = await mngr.reload_all()
+    assert count == 1
+
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        old_resp = await client.get("/api/v1/plugin/sample_plugin/api/status")
+        assert old_resp.status_code == 404
+        new_resp = await client.get("/api/v1/plugin/sample_plugin/api/status-v2")
+        assert new_resp.status_code == 200
+        assert new_resp.json() == {"status": "ok"}
+
+
+def test_split_sql_statements_preserves_plpgsql_and_quotes():
+    sql = """
+    -- Comment with semicolon; should be ignored when standalone
+    CREATE TABLE items (id INT, note TEXT DEFAULT 'a;b');
+    CREATE OR REPLACE FUNCTION inc(x INT) RETURNS INT AS $$
+    BEGIN
+        RETURN x + 1;
+    END;
+    $$ LANGUAGE plpgsql;
+    $body$
+    SELECT 'semi;colon';
+    $body$;
+    -- Trailing comment;
+    """
+    stmts = split_sql_statements(sql)
+    assert len(stmts) == 3
+    assert "DEFAULT 'a;b'" in stmts[0]
+    assert "RETURN x + 1;" in stmts[1]
+    assert "END;" in stmts[1]
+    assert "SELECT 'semi;colon';" in stmts[2]

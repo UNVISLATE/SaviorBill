@@ -67,10 +67,11 @@ class PluginMngr:
         self.active_plugins: dict[str, BasePlugin] = {}
         self.manifests: dict[str, PluginManifestSchema] = {}
         self.plugin_errors: dict[str, str] = {}
-        # Зарегистрированные хэндлеры событий по каждому плагину (для аккуратной выгрузки)
+        # Зарегистрированные хэндлеры событий и роуты по каждому плагину (для аккуратной выгрузки)
         self._plugin_subscribers: dict[str, list[Any]] = {}
+        self._plugin_app_routes: dict[str, list[Any]] = {}
 
-        # Базовый роутер для динамического добавления маршрутов плагинов
+        # Базовый префикс для динамического добавления маршрутов плагинов
         self.root_router = APIRouter(prefix="/api/v1/plugin")
 
     async def initialize(self) -> None:
@@ -78,7 +79,6 @@ class PluginMngr:
         self.plugins_dir.mkdir(parents=True, exist_ok=True)
         await self.migrator.init_migration_table()
         await self.load_all()
-        self.app.include_router(self.root_router)
         logger.info("PluginMngr initialized with %d active plugins", len(self.active_plugins))
 
     async def load_all(self) -> None:
@@ -195,14 +195,18 @@ class PluginMngr:
             await instance.on_load()
             self.active_plugins[slug] = instance
 
-            # Монтируем зарегистрированные роутеры плагина
+            # Монтируем зарегистрированные роутеры плагина напрямую в app.router,
+            # чтобы hot-reload и unload могли чисто удалять/обновлять маршруты.
+            before_len = len(self.app.router.routes)
             for router, prefix, tags in instance._routers:
                 # Маршрут станет: /api/v1/plugin/{slug}{prefix}
-                self.root_router.include_router(
+                self.app.include_router(
                     router,
-                    prefix=f"/{slug}{prefix}",
+                    prefix=f"{self.root_router.prefix}/{slug}{prefix}",
                     tags=tags or [f"plugin: {slug}"],
                 )
+            self._plugin_app_routes[slug] = list(self.app.router.routes[before_len:])
+            self.app.openapi_schema = None
 
             # Подписываем обработчики на шину событий
             for event_name, handler in instance._subscriptions:
@@ -227,6 +231,23 @@ class PluginMngr:
         subs = self._plugin_subscribers.pop(slug, [])
         if subs:
             unregister_in_process_subscribers(subs)
+
+        # Удаляем маршруты плагина из FastAPI app.router
+        plugin_routes = self._plugin_app_routes.pop(slug, [])
+        if plugin_routes:
+            route_ids = {id(r) for r in plugin_routes}
+            self.app.router.routes[:] = [
+                r for r in self.app.router.routes if id(r) not in route_ids
+            ]
+            self.app.openapi_schema = None
+
+        # Сбрасываем модули плагина из sys.modules для корректного hot-reload кода
+        clean_pkg_slug = slug.replace("-", "_")
+        pkg_prefix = f"saviorbill_plugin_{clean_pkg_slug}"
+        for mod_name in [
+            m for m in sys.modules if m == pkg_prefix or m.startswith(f"{pkg_prefix}.")
+        ]:
+            sys.modules.pop(mod_name, None)
 
         self.manifests.pop(slug, None)
         logger.info(f"Plugin '{slug}' unloaded")

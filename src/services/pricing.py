@@ -279,6 +279,42 @@ def resolve_service_order(
                     "label": opt_match.get("label", opt_match["value"]),
                     "price_delta": str(delta),
                 }
+            elif comp_type == "switch":
+                if isinstance(user_val, bool):
+                    bool_val = user_val
+                elif isinstance(user_val, (int, Decimal)) and user_val in (0, 1):
+                    bool_val = bool(user_val)
+                elif isinstance(user_val, str) and user_val.strip().lower() in (
+                    "true",
+                    "1",
+                    "yes",
+                    "on",
+                ):
+                    bool_val = True
+                elif isinstance(user_val, str) and user_val.strip().lower() in (
+                    "false",
+                    "0",
+                    "no",
+                    "off",
+                    "",
+                ):
+                    bool_val = False
+                else:
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        f"component {comp_code!r} must be a boolean",
+                    )
+                unit_price = Decimal(str(comp.get("unit_price", "0")))
+                delta = unit_price if bool_val else Decimal("0")
+                total_price += delta
+                if path:
+                    set_dot_path(effective_settings, path, bool_val)
+                resolved_components[comp_code] = {
+                    "value": bool_val,
+                    "unit": comp.get("unit", ""),
+                    "unit_price": str(unit_price),
+                    "price_delta": str(delta),
+                }
             else:
                 try:
                     num_val = Decimal(str(user_val))

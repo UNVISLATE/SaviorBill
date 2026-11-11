@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -94,6 +94,7 @@ async def get_order(
 )
 async def grant(
     body: OrderGrant,
+    request: Request,
     session: AsyncSession = Depends(get_db_session),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
     usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
@@ -103,8 +104,20 @@ async def grant(
     if acc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "user not found")
     service = await svc_mngr.get_active(body.service_id)
-    usvc = await usvc_mngr.create(acc, service, params=body.params, charge=body.charge)
+    usvc = await usvc_mngr.create(
+        acc,
+        service,
+        params=body.params,
+        custom_amount=body.custom_amount,
+        tier_code=body.tier_code,
+        components=body.components,
+        form=body.form,
+        charge=body.charge,
+    )
     await usvc_mngr.s.commit()
+    loop = getattr(request.app.state, "billing_loop", None)
+    if loop is not None and usvc.expires_at is not None:
+        await loop.enqueue_service(usvc.id, usvc.expires_at)
     await triggers.fire(
         TriggerEvent.ORDER_CREATED,
         {

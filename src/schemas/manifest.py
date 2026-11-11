@@ -40,9 +40,21 @@ class FieldOption(BaseModel):
 class FieldCondition(BaseModel):
     """Условие видимости/активности поля (depends_on)."""
 
+    model_config = ConfigDict(populate_by_name=True)
+
     field: str = Field(min_length=1, max_length=128, description="Идентификатор родительского поля")
     equals: Any = Field(default=None, description="Ожидаемое значение")
     not_equals: Any = Field(default=None, description="Значение не должно быть равно")
+    in_values: list[Any] | None = Field(
+        default=None,
+        alias="in",
+        description="Значение должно входить в список",
+    )
+    not_in_values: list[Any] | None = Field(
+        default=None,
+        alias="not_in",
+        description="Значение не должно входить в список",
+    )
 
 
 class FieldDefinition(BaseModel):
