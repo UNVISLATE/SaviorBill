@@ -37,4 +37,18 @@ case("httpc: кастомный таймаут отрабатывает быст
   assert(dt < 3, "таймаут должен сработать за ~1-2 сек, а не висеть минуту: " .. tostring(dt))
 end)
 
+case("httpc: входная таблица headers не мутируется и Content-Length case-insensitive", function()
+  local orig_headers = { ["Content-Length"] = "4", ["X-Test"] = "1" }
+  local res = httpc.request({
+    url = "http://192.0.2.1:81",
+    method = "POST",
+    headers = orig_headers,
+    body = "abcd",
+    timeout = 1,
+  })
+  assert(res.ok == false)
+  assert(orig_headers["content-length"] == nil, "входная таблица headers не должна мутироваться")
+  assert(orig_headers["Content-Length"] == "4", "существующий Content-Length должен сохраниться")
+end)
+
 print("ALL LUA HTTPC TESTS PASSED")

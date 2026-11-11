@@ -68,7 +68,8 @@ function M.lint(payload)
     type = type,
     error = error,
     assert = assert,
-    pcall = pcall,
+    pcall = sbox.safe_pcall,
+    xpcall = sbox.safe_xpcall,
     string = sbox.limited_string(),
     table = table,
     math = math,
@@ -78,7 +79,7 @@ function M.lint(payload)
   if not chunk then
     return { ok = false, error = tostring(err) }
   end
-  local ok, mod = pcall(chunk)
+  local ok, mod = pcall(sbox.with_limits, chunk)
   if not ok then
     return { ok = false, error = "runtime error while loading module: " .. tostring(mod) }
   end
@@ -161,7 +162,8 @@ function M.run_script(payload)
     type = type,
     error = error,
     assert = assert,
-    pcall = pcall,
+    pcall = sbox.safe_pcall,
+    xpcall = sbox.safe_xpcall,
     string = sbox.limited_string(),
     table = table,
     math = math,
@@ -233,7 +235,8 @@ function M.run_script_sandbox(payload)
     type = type,
     error = error,
     assert = assert,
-    pcall = pcall,
+    pcall = sbox.safe_pcall,
+    xpcall = sbox.safe_xpcall,
     string = sbox.limited_string(),
     table = table,
     math = math,

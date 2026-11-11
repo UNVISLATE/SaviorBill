@@ -239,6 +239,34 @@ M.decode_json = cjson.decode
 
 local DEFAULT_MAX_INSTRUCTIONS = 50000000
 local DEFAULT_MAX_STRING_BYTES = 1048576
+local LIMIT_SENTINEL = {}
+
+--- Безопасный pcall для песочницы: не перехватывает ошибку превышения лимита инструкций.
+function M.safe_pcall(fn, ...)
+  local res = table.pack(pcall(fn, ...))
+  if not res[1] and res[2] == LIMIT_SENTINEL then
+    error(LIMIT_SENTINEL, 0)
+  end
+  return table.unpack(res, 1, res.n)
+end
+
+--- Безопасный xpcall для песочницы: не позволяет скрыть превышение лимита инструкций.
+function M.safe_xpcall(fn, msgh, ...)
+  local function wrapped_msgh(err)
+    if err == LIMIT_SENTINEL then
+      return LIMIT_SENTINEL
+    end
+    if type(msgh) == "function" then
+      return msgh(err)
+    end
+    return err
+  end
+  local res = table.pack(xpcall(fn, wrapped_msgh, ...))
+  if not res[1] and res[2] == LIMIT_SENTINEL then
+    error(LIMIT_SENTINEL, 0)
+  end
+  return table.unpack(res, 1, res.n)
+end
 
 --- Копия стандартного `string` с ограниченным `rep`.
 function M.limited_string()
@@ -263,18 +291,23 @@ end
 function M.with_limits(fn, ...)
   local budget = tonumber(env("LUA_MAX_INSTRUCTIONS", tostring(DEFAULT_MAX_INSTRUCTIONS)))
   -- Считаем пачками: хук на каждую инструкцию сам по себе дорог.
-  local step = 1000000
+  local step = math.min(1000000, math.max(1000, math.floor(budget / 10)))
   local used = 0
   debug.sethook(function()
     used = used + step
     if used >= budget then
-      debug.sethook()
-      error("превышен лимит в " .. budget .. " инструкций", 2)
+      -- Намеренно НЕ сбрасываем хук внутри обработчика лимита: даже если
+      -- скрипт попытается поймать ошибку (например, через кастомную обёртку),
+      -- лимит продолжит прерывать выполнение, а снимет хук только внешний with_limits.
+      error(LIMIT_SENTINEL, 0)
     end
   end, "", step)
   local res = table.pack(pcall(fn, ...))
   debug.sethook()
   if not res[1] then
+    if res[2] == LIMIT_SENTINEL then
+      error("превышен лимит в " .. budget .. " инструкций", 0)
+    end
     error(res[2], 0)
   end
   return table.unpack(res, 2, res.n)

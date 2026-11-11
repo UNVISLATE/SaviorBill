@@ -14,6 +14,31 @@ local function env(key, default)
   return v
 end
 
+local function read_service_token()
+  local token = env("LUA_SERVICE_TOKEN")
+  if token then
+    return token
+  end
+  local token_file = env(
+    "LUA_SERVICE_TOKEN_FILE",
+    env("DATA_DIR", "/app/data") .. "/keys/lua_service.token"
+  )
+  local f = io.open(token_file, "r")
+  if f then
+    local raw = f:read("*a")
+    f:close()
+    if raw then
+      local trimmed = raw:match("^%s*(.-)%s*$")
+      if trimmed and trimmed ~= "" then
+        return trimmed
+      end
+    end
+  end
+  return "dev-service-token"
+end
+
+M._read_service_token = read_service_token
+
 --- import_keys: импорт списка цифровых ключей в указанную услугу.
 -- @param service: число (service_id) или строка (slug услуги)
 -- @param keys: таблица-массив строк-ключей
@@ -39,7 +64,7 @@ function M.import_keys(service, keys)
   end
 
   local billing_url = env("BILLING_URL", "http://billing:8000")
-  local token = env("LUA_SERVICE_TOKEN", "dev-service-token")
+  local token = read_service_token()
 
   local payload = {
     service = service,

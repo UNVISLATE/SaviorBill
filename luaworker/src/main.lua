@@ -218,8 +218,12 @@ local function verify_signed(map)
   if not sig or not ts then
     return false
   end
-  local skew = math.abs(socket.gettime() - tonumber(ts))
-  if not tonumber(ts) or skew > MAX_SKEW_SEC then
+  local ts_num = tonumber(ts)
+  if not ts_num then
+    return false
+  end
+  local skew = math.abs(socket.gettime() - ts_num)
+  if skew > MAX_SKEW_SEC then
     return false
   end
   local expected = sbox.hmac_sha256_hex(SIGNING_KEY, canonical_fields(map))
@@ -287,7 +291,8 @@ local function handle(client, entry_id, map)
   -- не обязан понимать формат W3C traceparent.
   local traceparent = map.traceparent
 
-  if not verify_signed(map) then
+  local ok_sig, sig_valid = pcall(verify_signed, map)
+  if not ok_sig or not sig_valid then
     -- Задача с неверной/отсутствующей подписью — не исполняем, сразу ack
     -- (не через reclaim — иначе честно повторяли бы заведомо поддельное
     -- сообщение бесконечно).
@@ -299,7 +304,13 @@ local function handle(client, entry_id, map)
   end
 
   local t0 = socket.gettime()
-  local ok, result = pcall(handlers.dispatch, map.kind, cjson.decode(map.payload or "{}"))
+  local ok_dec, payload_tbl = pcall(cjson.decode, map.payload or "{}")
+  local ok, result
+  if not ok_dec then
+    ok, result = false, "invalid json payload: " .. tostring(payload_tbl)
+  else
+    ok, result = pcall(handlers.dispatch, map.kind, payload_tbl)
+  end
   metrics.processed_total = metrics.processed_total + 1
   metrics.exec_ms_sum = metrics.exec_ms_sum + (socket.gettime() - t0) * 1000
   if not ok then

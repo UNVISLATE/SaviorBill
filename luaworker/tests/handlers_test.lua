@@ -27,6 +27,14 @@ case("lint: скрипт без handle() отклоняется", function()
   assert(res.ok == false, "скрипт без handle должен быть отклонён")
 end)
 
+case("lint: бесконечный цикл при загрузке модуля прерывается лимитом инструкций", function()
+  local res = handlers.lint({
+    code = "while true do end return { handle = function(ctx) return { public = {} } end }",
+  })
+  assert(res.ok == false, "lint должен прерывать бесконечный цикл")
+  assert(tostring(res.error):find("инструкц"), "ожидалась ошибка лимита: " .. tostring(res.error))
+end)
+
 case("lint: http helpers доступны при компиляции-проверке", function()
   local res = handlers.lint({
     code = [[
