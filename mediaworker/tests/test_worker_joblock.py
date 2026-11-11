@@ -63,7 +63,7 @@ async def test_duplicate_in_flight_task_is_skipped_not_handled(monkeypatch):
     await worker._process_one("1-1", signed)
 
     assert handled == []  # дубликат не обработан
-    assert vk.acked == ["1-1"]  # но эта доставка подтверждена
+    assert vk.acked == []  # чужой активный лок: сообщение не ack'ается преждевременно
     assert vk.deleted == []  # чужой лок не тронут
 
 

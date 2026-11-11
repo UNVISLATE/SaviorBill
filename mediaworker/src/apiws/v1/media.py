@@ -103,15 +103,16 @@ async def my_media_status(ws: WebSocket) -> None:
             try:
                 raw = await asyncio.wait_for(ws.receive_text(), timeout=_POLL_INTERVAL)
                 msg = json.loads(raw)
-                new_tokens = [
-                    t for t in (msg.get("watch") or []) if isinstance(t, str)
-                ][:_MAX_WATCH_PER_FRAME]
-                # Не даём суммарному watch расти без ограничения серией
-                # мелких фреймов — превышение общего лимита просто отбрасывает
-                # излишек новых токенов этого фрейма.
-                room = max(0, _MAX_WATCH_TOTAL - len(watch))
-                if room:
-                    watch |= await _owned_tokens(ws, acc_id, new_tokens[:room])
+                if isinstance(msg, dict):
+                    new_tokens = [
+                        t for t in (msg.get("watch") or []) if isinstance(t, str)
+                    ][:_MAX_WATCH_PER_FRAME]
+                    # Не даём суммарному watch расти без ограничения серией
+                    # мелких фреймов — превышение общего лимита просто отбрасывает
+                    # излишек новых токенов этого фрейма.
+                    room = max(0, _MAX_WATCH_TOTAL - len(watch))
+                    if room:
+                        watch |= await _owned_tokens(ws, acc_id, new_tokens[:room])
             except asyncio.TimeoutError:
                 pass
             except json.JSONDecodeError:

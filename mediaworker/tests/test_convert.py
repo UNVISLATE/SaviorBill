@@ -137,3 +137,54 @@ def test_sanitize_paths_ignores_empty_dirs():
     from utils.convert import sanitize_paths
 
     assert sanitize_paths("hello", "", None) == "hello"
+
+
+def test_is_svg_requires_svg_tag_not_plain_xml():
+    from utils.convert import is_svg
+
+    assert is_svg(b'<svg xmlns="http://www.w3.org/2000/svg"></svg>') is True
+    assert is_svg(b'<?xml version="1.0"?><svg width="10" height="10"></svg>') is True
+    assert is_svg(b'<?xml version="1.0"?><root><item>1</item></root>') is False
+    assert is_svg(b"<html><body>hello</body></html>") is False
+
+
+@pytest.mark.asyncio
+async def test_convert_video_libx264_switches_webm_to_mp4(tmp_path, monkeypatch):
+    import utils.convert as convert_mod
+    from utils.convert import Variant, convert_video
+
+    src = tmp_path / "in.mp4"
+    src.write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 16)
+    cfg = type("Cfg", (), {"webm_crf": 32})()
+    cmds: list[list[str]] = []
+
+    async def fake_run(cmd, **_kw):
+        cmds.append(cmd)
+
+    monkeypatch.setattr(convert_mod, "_run", fake_run)
+    monkeypatch.setattr(
+        convert_mod,
+        "make_thumb",
+        lambda *_a, **_kw: _async_val(Variant("thumb", "tok.thumb.webp", "image/webp")),
+    )
+    monkeypatch.setattr(
+        convert_mod,
+        "make_preview",
+        lambda *_a, **_kw: _async_val(Variant("preview.1", "tok.preview.1.webp", "image/webp")),
+    )
+
+    variants = await convert_video(
+        cfg,
+        str(src),
+        str(tmp_path),
+        "tok",
+        video_codec="libx264",
+        format_choice="webm",
+    )
+    assert variants[0].key == "tok.mp4"
+    assert variants[0].mime == "video/mp4"
+    assert cmds[0][-1].endswith("tok.mp4")
+
+
+async def _async_val(val):
+    return val

@@ -54,6 +54,10 @@ async def serve_plugin_static(slug: str, filepath: str, request: Request) -> Res
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, OPTIONS",
     }
+    if suffix == ".svg":
+        headers["Content-Security-Policy"] = "default-src 'none'"
+        headers["Content-Disposition"] = f'attachment; filename="{target_file.name}"'
+        headers["X-Content-Type-Options"] = "nosniff"
 
     # Cache-Busting: если передан v=... в параметрах — агрессивный immutable кэш
     if request.query_params.get("v"):

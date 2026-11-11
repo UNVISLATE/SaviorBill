@@ -92,6 +92,7 @@ class Worker:
         # и тот же op+token не может обрабатываться этим же процессом
         # параллельно (см. job_lock_key), но msg_id уникален всегда.
         self._active_jobs: dict[str, dict] = {}
+        self._in_flight_msgs: set[str] = set()
 
     async def _set_status(self, token: str, **fields: str) -> None:
         key = status_key(token)
@@ -144,18 +145,27 @@ class Worker:
         """
         await self._ensure_group()
         running: set[asyncio.Task] = set()
+        max_in_flight = max(
+            1,
+            self.cfg.task_concurrency_image
+            + self.cfg.task_concurrency_video
+            + self.cfg.task_concurrency,
+        )
         while True:
-            # Читаем не больше, чем есть свободных слотов суммарно по всем
-            # пулам (backpressure) — какой именно пул займёт конкретная
-            # задача, решится по её виду медиа уже в `_process_one`. Если
-            # слотов сейчас 0 (все пулы заняты) — читаем всё равно 1: заявка
-            # просто подождёт своей очереди на `async with sem`, но не
-            # оставит стрим совсем без чтения (например, при появлении
-            # незанятого пула у другого вида медиа между двумя итерациями).
-            count = max(
-                1,
-                self._sem_image._value + self._sem_video._value + self._sem_other._value,
+            if len(running) >= max_in_flight:
+                done, running = await asyncio.wait(
+                    running, timeout=1.0, return_when=asyncio.FIRST_COMPLETED
+                )
+                for t in done:
+                    exc = t.exception()
+                    if exc is not None:
+                        print(f"[mediaworker] task crashed: {exc!r}", flush=True)
+                continue
+
+            free_slots = (
+                self._sem_image._value + self._sem_video._value + self._sem_other._value
             )
+            count = min(max(1, free_slots), max(1, max_in_flight - len(running)))
             try:
                 resp = await self.vk.xreadgroup(
                     self.cfg.group,
@@ -221,54 +231,64 @@ class Worker:
         op = data.get("op", "?")
         token = data.get("token", "unknown")
         sem = self._pick_semaphore(op, token)
-        async with sem:
-            lock_key = None
-            try:
-                if not verify_fields(self.cfg.BUS_SIGNING_KEY, data):
-                    # Задача с неверной/отсутствующей подписью — не исполняем:
-                    # подделка или рассинхронизация BUS_SIGNING_KEY между
-                    # сервисами. Ack без повтора (не через _on_failure/reclaim —
-                    # иначе честно повторяли бы заведомо поддельное сообщение).
-                    print(
-                        f"[mediaworker] task {msg_id} rejected: invalid signature",
-                        flush=True,
+        self._in_flight_msgs.add(msg_id)
+        try:
+            async with sem:
+                lock_key = None
+                should_ack = False
+                try:
+                    if not verify_fields(self.cfg.BUS_SIGNING_KEY, data):
+                        # Задача с неверной/отсутствующей подписью — не исполняем:
+                        # подделка или рассинхронизация BUS_SIGNING_KEY между
+                        # сервисами. Ack без повтора (не через _on_failure/reclaim —
+                        # иначе честно повторяли бы заведомо поддельное сообщение).
+                        print(
+                            f"[mediaworker] task {msg_id} rejected: invalid signature",
+                            flush=True,
+                        )
+                        should_ack = True
+                        return
+                    lock_key = job_lock_key(op, token)
+                    got_lock = bool(
+                        await self.vk.set(
+                            lock_key, self.cfg.consumer, nx=True, ex=self.cfg.job_lock_ttl_sec
+                        )
                     )
-                    return
-                lock_key = job_lock_key(op, token)
-                got_lock = bool(
-                    await self.vk.set(
-                        lock_key, self.cfg.consumer, nx=True, ex=self.cfg.job_lock_ttl_sec
-                    )
-                )
-                if not got_lock:
-                    # Уже в обработке (этим же воркером после self-reclaim,
-                    # либо другой репликой) — не трогаем, держатель лока сам
-                    # доведёт задачу до конца и опубликует результат/статус.
-                    print(
-                        f"[mediaworker] task {msg_id} skipped: {op}:{token} already in flight",
-                        flush=True,
-                    )
-                    lock_key = None  # не наш — не освобождать в finally
-                    return
-                with span_from_carrier(f"media.task.{op}", data):
-                    self._active_jobs[msg_id] = {
-                        "token": token,
-                        "op": op,
-                        "started_at": time.time(),
-                    }
-                    heartbeat = asyncio.create_task(self._lock_heartbeat(lock_key))
-                    try:
-                        await self._handle(data)
-                    finally:
-                        heartbeat.cancel()
-                        self._active_jobs.pop(msg_id, None)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[mediaworker] task error: {exc}", flush=True)
-                await self._on_failure(data)
-            finally:
-                if lock_key is not None:
-                    await self.vk.delete(lock_key)
-                await self.vk.xack(self.cfg.task_stream, self.cfg.group, msg_id)
+                    if not got_lock:
+                        # Уже в обработке (этим же воркером после self-reclaim,
+                        # либо другой репликой) — не трогаем и НЕ ack'аем:
+                        # держатель лока сам подтвердит (или задача вернётся на
+                        # reclaim, если держатель упадёт).
+                        print(
+                            f"[mediaworker] task {msg_id} skipped: {op}:{token} already in flight",
+                            flush=True,
+                        )
+                        lock_key = None  # не наш — не освобождать в finally
+                        return
+                    with span_from_carrier(f"media.task.{op}", data):
+                        self._active_jobs[msg_id] = {
+                            "token": token,
+                            "op": op,
+                            "started_at": time.time(),
+                        }
+                        heartbeat = asyncio.create_task(self._lock_heartbeat(lock_key))
+                        try:
+                            await self._handle(data)
+                        finally:
+                            heartbeat.cancel()
+                            self._active_jobs.pop(msg_id, None)
+                    should_ack = True
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[mediaworker] task error: {exc}", flush=True)
+                    await self._on_failure(data)
+                    should_ack = True
+                finally:
+                    if lock_key is not None:
+                        await self.vk.delete(lock_key)
+                    if should_ack:
+                        await self.vk.xack(self.cfg.task_stream, self.cfg.group, msg_id)
+        finally:
+            self._in_flight_msgs.discard(msg_id)
 
     async def _lock_heartbeat(self, lock_key: str) -> None:
         """Продлевать job-лок, пока обработка ещё идёт.
@@ -356,6 +376,8 @@ class Worker:
         reclaimed: list[asyncio.Task] = []
         for item in pending or []:
             msg_id = item["message_id"]
+            if msg_id in self._in_flight_msgs:
+                continue
             delivery_count = int(item.get("times_delivered", 1))
             if delivery_count > self.cfg.task_max_attempts:
                 rows = await self.vk.xrange(self.cfg.task_stream, msg_id, msg_id)
@@ -710,9 +732,9 @@ class Worker:
             # Кэш ключей вариантов для serve() — как для s3, так и для fs.
             await self.vk.hset(file_key(token), mapping={v.name: v.key})
 
-        # Фото тумбим только если результат больше media.small_max_bytes —
-        # маленькое фото и так уже лёгкий webp, отдельный обрезанный thumb избыточен
-        if kind == "image":
+        # Фото тумбим только если результат больше media.small_max_bytes И thumb
+        # ещё не создан конвертером (например, анимированный GIF уже получил thumb).
+        if kind == "image" and not any(v.name == "thumb" for v in variants):
             main = variants[0]
             small_max = await self.settings.small_max_bytes()
             if sizes.get(main.key, 0) > small_max:
@@ -746,6 +768,7 @@ class Worker:
             new_total = sum(sizes.values())
             if used_before + new_total > quota:
                 await self.storage.delete(list(sizes.keys()))
+                await self.vk.delete(file_key(token))
                 await self._set_status(
                     token, state="failed", error="storage quota exceeded"
                 )
@@ -810,6 +833,7 @@ class Worker:
                 job_id, sanitize_paths(chunk, self.cfg.uploads_dir, self.cfg.media_dir)
             )
 
+        tmp_downloaded: str | None = None
         try:
             if source == "upload":
                 src = self.storage.orig_path(f"{token}.preview_src")
@@ -824,9 +848,30 @@ class Worker:
                     raise ConvertError("исходный кадр для превью не является изображением")
                 at = None
             else:
-                src = os.path.join(self.cfg.media_dir, f"{token}.webm")
-                if not os.path.exists(src):
+                main_key = await self.vk.hget(file_key(token), "main")
+                if not main_key and self.db is not None:
+                    row = await self.db.media_variants(token)
+                    if row:
+                        media_var = (row.get("variants") or {}).get("media") or {}
+                        main_key = media_var.get("key") or row.get("path")
+                if not main_key:
                     raise ConvertError("main-файл недоступен для случайного кадра")
+
+                if self.cfg.backend == "s3":
+                    ext = os.path.splitext(main_key)[1] or ".mp4"
+                    tmp_downloaded = os.path.join(
+                        self.cfg.uploads_dir, f"{token}.preview_main{ext}"
+                    )
+                    try:
+                        await self.storage.download(main_key, tmp_downloaded)
+                    except Exception as exc:  # noqa: BLE001
+                        raise ConvertError(f"не удалось скачать main-файл: {exc}") from exc
+                    src = tmp_downloaded
+                else:
+                    src = self.storage.media_fs_path(main_key)
+                    if not os.path.exists(src):
+                        raise ConvertError("main-файл недоступен для случайного кадра")
+
                 duration = await probe_duration(src)
                 at = random.uniform(0, duration) if duration else None
 
@@ -846,6 +891,9 @@ class Worker:
             if source == "upload":
                 self.storage._safe_unlink(self.storage.orig_path(f"{token}.preview_src"))
             return
+        finally:
+            if tmp_downloaded:
+                self.storage._safe_unlink(tmp_downloaded)
 
         key, size = await self._publish(preview)
         await self.vk.hset(file_key(token), mapping={preview.name: preview.key})

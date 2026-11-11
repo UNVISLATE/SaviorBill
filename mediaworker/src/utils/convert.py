@@ -105,8 +105,12 @@ async def sniff_and_rewind(stream, want: int = SIGNATURE_READ_BYTES):  # noqa: A
 
 
 def is_svg(header: bytes) -> bool:
-    h = header.strip()
-    return h.startswith(b"<svg") or h.startswith(b"<?xml") or b"<svg" in h[:256]
+    h = header.lstrip().lower()
+    if h.startswith(b"<svg"):
+        return True
+    if h.startswith(b"<?xml") and b"<svg" in h[:1024]:
+        return True
+    return b"<svg" in h[:512] and (h.startswith(b"<") or b"xmlns" in h[:1024])
 
 
 def is_gif(header: bytes) -> bool:
@@ -473,8 +477,9 @@ async def convert_video(
         preview = await make_preview(cfg, src, out_dir, token, vf=vf_poster, on_output=on_output)
         return [main, thumb, preview]
 
-    target_ext = "mp4" if format_choice == "mp4" else "webm"
-    target_mime = "video/mp4" if format_choice == "mp4" else "video/webm"
+    use_h264 = format_choice == "mp4" or video_codec == "libx264"
+    target_ext = "mp4" if use_h264 else "webm"
+    target_mime = "video/mp4" if use_h264 else "video/webm"
     main = Variant("main", f"{token}.{target_ext}", target_mime)
 
     vf_filters = []

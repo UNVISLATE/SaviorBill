@@ -136,12 +136,27 @@ async def serve(request: Request, token: str):
         raise HTTPException(status.HTTP_409_CONFLICT, "media artifact integrity check failed")
 
     if cfg.backend == "s3":
-        url = await storage.presign(key)
+        is_svg_obj = (
+            key.lower().endswith(".svg")
+            or mime_from_db == "image/svg+xml"
+            or (variant_name == "main" and st and st.get("mime") == "image/svg+xml")
+        )
+        url = await storage.presign(
+            key,
+            response_content_disposition="attachment" if is_svg_obj else None,
+        )
         if not url:
             raise HTTPException(
                 status.HTTP_503_SERVICE_UNAVAILABLE, "media storage unavailable"
             )
-        return RedirectResponse(url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+        redirect_headers = (
+            {"Content-Security-Policy": "default-src 'none'"} if is_svg_obj else None
+        )
+        return RedirectResponse(
+            url,
+            status_code=status.HTTP_307_TEMPORARY_REDIRECT,
+            headers=redirect_headers,
+        )
 
     try:
         file_path = storage.media_fs_path(key)
@@ -194,6 +209,8 @@ async def serve(request: Request, token: str):
     }
     if mime == "image/svg+xml":
         resp_headers["Content-Security-Policy"] = "default-src 'none'"
+        resp_headers["Content-Disposition"] = f'attachment; filename="{download_name}"'
+        resp_headers["X-Content-Type-Options"] = "nosniff"
     return FileResponse(
         file_path,
         media_type=mime or "application/octet-stream",
@@ -267,13 +284,12 @@ async def add_preview(
 
     _acc_id, is_large, max_bytes = await _authorize_media_owner(request, token)
 
-    clen = request.headers.get("content-length")
-    has_body = bool(clen) and clen.isdigit() and int(clen) > 0
+    header, body = await sniff_and_rewind(request.stream(), SIGNATURE_READ_BYTES)
+    has_body = len(header) > 0
     source = "upload" if has_body else "random"
 
     if has_body:
         ip = client_ip(request)
-        header, body = await sniff_and_rewind(request.stream(), SIGNATURE_READ_BYTES)
         # Загружаемый кадр должен быть изображением — ffmpeg одинаково легко
         # "декодирует" видео как источник кадра, что подтверждало бы риск
         # "видео вместо аватара/превью" (см. AUDIT.md §4.2) без явной проверки.

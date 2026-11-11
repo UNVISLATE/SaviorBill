@@ -11,6 +11,7 @@ import hashlib
 import mimetypes
 import os
 import asyncio
+import shutil
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -266,7 +267,13 @@ class Storage:
             for key in paths:
                 self._safe_unlink(self.media_fs_path(key))
 
-    async def presign(self, key: str, expires: int = 3600) -> str | None:
+    async def presign(
+        self,
+        key: str,
+        expires: int = 3600,
+        *,
+        response_content_disposition: str | None = None,
+    ) -> str | None:
         """Сгенерировать временную ссылку S3 (для отдачи файла)."""
         if self.cfg.backend != "s3":
             return None
@@ -278,11 +285,36 @@ class Storage:
             aws_access_key_id=self.cfg.s3_key,
             aws_secret_access_key=self.cfg.s3_secret,
         ) as client:
+            params: dict = {"Bucket": self.cfg.s3_bucket, "Key": key}
+            if response_content_disposition:
+                params["ResponseContentDisposition"] = response_content_disposition
             return await client.generate_presigned_url(
                 "get_object",
-                Params={"Bucket": self.cfg.s3_bucket, "Key": key},
+                Params=params,
                 ExpiresIn=expires,
             )
+
+    async def download(self, key: str, dst_path: str) -> None:
+        """Скачать/скопировать итоговый файл из хранилища во временный локальный путь."""
+        if self.cfg.backend == "s3":
+            session = self._s3_session()
+            async with session.client(
+                "s3",
+                endpoint_url=self.cfg.s3_endpoint,
+                region_name=self.cfg.s3_region,
+                aws_access_key_id=self.cfg.s3_key,
+                aws_secret_access_key=self.cfg.s3_secret,
+            ) as client:
+                resp = await client.get_object(Bucket=self.cfg.s3_bucket, Key=key)
+                async with resp["Body"] as stream:
+                    with open(dst_path, "wb") as f:
+                        while True:
+                            chunk = await stream.read(65536)
+                            if not chunk:
+                                break
+                            f.write(chunk)
+        else:
+            shutil.copyfile(self.media_fs_path(key), dst_path)
 
     # ---- S3 helpers ----
 
