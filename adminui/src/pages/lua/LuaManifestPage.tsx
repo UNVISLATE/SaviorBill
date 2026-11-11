@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react"
-import { useNavigate, useParams } from "react-router-dom"
+import { Link, useNavigate, useParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as monaco from "monaco-editor"
 import { ArrowLeft, Check, Code2, Eye, Save, Sparkles } from "lucide-react"
@@ -7,6 +7,8 @@ import { ArrowLeft, Check, Code2, Eye, Save, Sparkles } from "lucide-react"
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
 import { ensureMonacoWorkers } from "@/lib/monaco-setup"
+import { extractScriptManifest } from "@/lib/script-manifest"
+import { useBreadcrumbExtra } from "@/hooks/use-breadcrumb"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { Button } from "@/components/shadsnui/button"
 import { KeySecretEditor } from "@/components/common/forms/KeySecretEditor"
@@ -21,7 +23,7 @@ interface LuaScriptDetail {
   lock_version: number
 }
 
-const TEMPLATES: Record<string, any> = {
+const TEMPLATES: Record<string, Record<string, unknown>> = {
   vps: {
     version: "1.0",
     name: "Облачный VPS сервер",
@@ -161,13 +163,40 @@ export function LuaManifestPage() {
     enabled: Boolean(scriptId),
   })
 
-  // Initialize Monaco Editor once
+  const scriptTitle = script
+    ? (script.name ?? script.slug)
+    : scriptId
+      ? `#${scriptId}`
+      : null
+
+  const breadcrumbSegments = useMemo(
+    () =>
+      scriptTitle
+        ? [
+            { title: scriptTitle, path: scriptId ? `/lua/${scriptId}` : "/lua" },
+            { title: "Манифест" },
+          ]
+        : [{ title: "Манифест" }],
+    [scriptTitle, scriptId],
+  )
+  useBreadcrumbExtra(breadcrumbSegments)
+
+  const initialManifestText = useMemo(() => {
+    if (!script) return "{\n  \n}"
+    const manifestObj = extractScriptManifest(script.settings)
+    return manifestObj ? JSON.stringify(manifestObj, null, 2) : "{\n  \n}"
+  }, [script])
+
+  const latestManifestRef = useRef("{\n  \n}")
+
+  // Initialize Monaco Editor once (reading ref inside effect so StrictMode & cached queries work cleanly)
   useEffect(() => {
     ensureMonacoWorkers()
     if (!editorHostRef.current) return
 
+    const initialValue = latestManifestRef.current
     const editor = monaco.editor.create(editorHostRef.current, {
-      value: manifestJson,
+      value: initialValue,
       language: "json",
       theme: "vs-dark",
       automaticLayout: true,
@@ -198,23 +227,20 @@ export function LuaManifestPage() {
     }
   }, [])
 
-  // Sync script data into Monaco editor when loaded
+  // Sync script data into Monaco editor when loaded or changed
   useEffect(() => {
     if (!script) return
-    const s = script.settings || {}
-    const m = (s as any).manifest || ((s as any).client_order_form || (s as any).settings_form ? s : null)
-    const text = m ? JSON.stringify(m, null, 2) : "{\n  \n}"
-
-    setManifestJson(text)
+    latestManifestRef.current = initialManifestText
+    setManifestJson(initialManifestText)
     setParseError(null)
     setDirty(false)
 
-    if (editorRef.current) {
+    if (editorRef.current && editorRef.current.getValue() !== initialManifestText) {
       isUpdatingFromCode.current = true
-      editorRef.current.setValue(text)
+      editorRef.current.setValue(initialManifestText)
       isUpdatingFromCode.current = false
     }
-  }, [script])
+  }, [script, initialManifestText])
 
   const handleApplyTemplate = (key: string) => {
     const tmpl = TEMPLATES[key]
@@ -238,8 +264,8 @@ export function LuaManifestPage() {
       const isEmpty =
         !parsed ||
         typeof parsed !== "object" ||
-        Object.keys(parsed).length === 0 ||
-        (!parsed.client_order_form?.length && !parsed.settings_form?.length && !parsed.prefill)
+        Array.isArray(parsed) ||
+        Object.keys(parsed).length === 0
 
       if (isEmpty) {
         delete currentSettings.manifest
@@ -280,9 +306,16 @@ export function LuaManifestPage() {
           </Button>
           <div className="h-4 w-px bg-border/60" />
           <div className="flex items-center gap-1.5 text-xs truncate">
-            <span className="text-muted-foreground">Скрипты</span>
+            <Link to="/lua" className="text-muted-foreground hover:text-foreground transition-colors">
+              Скрипты
+            </Link>
             <span className="text-muted-foreground">/</span>
-            <span className="font-mono text-muted-foreground truncate">{script?.slug}</span>
+            <Link
+              to={scriptId ? `/lua/${scriptId}` : "/lua"}
+              className="text-muted-foreground hover:text-foreground transition-colors truncate max-w-[16rem]"
+            >
+              {scriptTitle}
+            </Link>
             <span className="text-muted-foreground">/</span>
             <span className="font-semibold text-foreground">Манифест</span>
           </div>
