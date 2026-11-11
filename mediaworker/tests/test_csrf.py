@@ -67,3 +67,20 @@ def test_empty_cors_origins_allows_same_host_and_media_public_url():
         headers={"Origin": "https://media.example.com"},
     )
     assert resp_media.status_code == 200
+
+
+def test_dev_loopback_proxy_allows_loopback_origin_and_blocks_external():
+    client = TestClient(_make_app([]))
+    resp_ok = client.post(
+        "/api/media/upload",
+        cookies={ACCESS_COOKIE: "tok"},
+        headers={"Origin": "http://127.0.0.1:5173", "Host": "127.0.0.1:8001"},
+    )
+    assert resp_ok.status_code == 200
+
+    resp_evil = client.post(
+        "/api/media/upload",
+        cookies={ACCESS_COOKIE: "tok"},
+        headers={"Origin": "https://evil.com", "Host": "127.0.0.1:8001"},
+    )
+    assert resp_evil.status_code == 403

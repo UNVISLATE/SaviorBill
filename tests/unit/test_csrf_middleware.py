@@ -145,6 +145,22 @@ def test_empty_cors_origins_rejects_foreign_origin_and_allows_same_origin():
     )
     assert resp.status_code == 200
 
+    # Dev Vite proxy (Origin: localhost:5173 -> Host: 127.0.0.1:8000): оба loopback — разрешён,
+    # но внешний origin на loopback Host всё равно отклоняется.
+    resp_dev = client.post(
+        "/x",
+        cookies={ACCESS_COOKIE: "tok"},
+        headers={"Origin": "http://localhost:5173", "Host": "127.0.0.1:8000"},
+    )
+    assert resp_dev.status_code == 200
+
+    resp_dev_evil = client.post(
+        "/x",
+        cookies={ACCESS_COOKIE: "tok"},
+        headers={"Origin": "https://evil.com", "Host": "127.0.0.1:8000"},
+    )
+    assert resp_dev_evil.status_code == 403
+
 
 def test_exempt_endpoints_allowed_even_with_cookie_and_no_origin():
     """Эндпоинты входа и вебхуков не должны блокироваться из-за остаточных кук."""

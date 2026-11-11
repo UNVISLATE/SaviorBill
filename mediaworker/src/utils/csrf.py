@@ -25,6 +25,25 @@ def _origin_of(url: str) -> str:
     return f"{parts.scheme}://{parts.netloc}" if parts.scheme else url
 
 
+_LOOPBACK_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "[::1]"})
+
+
+def _host_of(url_or_host: str) -> str:
+    val = url_or_host.strip().lower()
+    if "://" in val:
+        return (urlsplit(val).hostname or "").lower()
+    if val.startswith("["):
+        end = val.find("]")
+        return val[1:end] if end != -1 else val
+    return val.split(":", 1)[0]
+
+
+def _is_loopback(url_or_host: str | None) -> bool:
+    if not url_or_host:
+        return False
+    return _host_of(url_or_host) in _LOOPBACK_HOSTS
+
+
 def _origin_allowed(origin: str, allowed: list[str]) -> bool:
     norm = _origin_of(origin).rstrip("/").lower()
     return norm in {_origin_of(o).rstrip("/").lower() for o in allowed if o}
@@ -50,6 +69,20 @@ def _fallback_origins(request: Request, cfg: object) -> list[str]:
     return origins
 
 
+def _request_origin_allowed(request: Request, cfg: object, origin: str) -> bool:
+    allowed = [
+        *cfg.cors_origins_list,
+        *_fallback_origins(request, cfg),
+    ]
+    if allowed and _origin_allowed(origin, allowed):
+        return True
+    if _is_loopback(origin) and (
+        _is_loopback(request.headers.get("host")) or bool(getattr(cfg, "DEBUG", False))
+    ):
+        return True
+    return False
+
+
 class CookieCSRFMiddleware(BaseHTTPMiddleware):
     """Отклонить небезопасный запрос с чужим ``Origin``, если auth — по cookie."""
 
@@ -66,11 +99,7 @@ class CookieCSRFMiddleware(BaseHTTPMiddleware):
             and request.cookies.get(ACCESS_COOKIE)
         ):
             origin = request.headers.get("origin") or request.headers.get("referer")
-            allowed = [
-                *self._cfg.cors_origins_list,
-                *_fallback_origins(request, self._cfg),
-            ]
-            if not origin or not allowed or not _origin_allowed(origin, allowed):
+            if not origin or not _request_origin_allowed(request, self._cfg, origin):
                 return JSONResponse(
                     {"detail": "cross-origin request rejected"}, status_code=403
                 )
