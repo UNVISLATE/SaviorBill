@@ -56,7 +56,11 @@ async def verify_claim_code(
         acc, ip=client_ip(request), user_agent=request.headers.get("user-agent")
     )
     set_auth_cookies(
-        response, tokens.cfg, access_token=pair.access_token, refresh_token=pair.refresh_token
+        response,
+        tokens.cfg,
+        access_token=pair.access_token,
+        refresh_token=pair.refresh_token,
+        request=request,
     )
     return pair
 

@@ -91,3 +91,27 @@ def test_clear_auth_cookies_deletes_both():
     resp = _FakeResponse()
     clear_auth_cookies(resp, cfg)
     assert {c["key"] for c in resp.delete_calls} == {ACCESS_COOKIE, REFRESH_COOKIE}
+
+
+class _FakeRequest:
+    def __init__(self, headers: dict[str, str]) -> None:
+        self.headers = headers
+
+
+def test_set_auth_cookies_uses_root_domain_for_matching_subdomain():
+    cfg = AppConfig(DOMAIN="admin.example.com", MEDIA_DOMAIN="media.example.com")
+    resp = _FakeResponse()
+    req = _FakeRequest({"host": "admin.example.com"})
+    set_auth_cookies(resp, cfg, access_token="a", refresh_token="r", request=req)
+    assert all(call["domain"] == "example.com" for call in resp.set_calls)
+
+
+def test_set_auth_cookies_falls_back_to_host_only_for_separate_client_domain():
+    cfg = AppConfig(DOMAIN="admin.example.com", MEDIA_DOMAIN="media.example.com")
+    resp = _FakeResponse()
+    req = _FakeRequest({"host": "shop.otherbrand.io"})
+    set_auth_cookies(resp, cfg, access_token="a", refresh_token="r", request=req)
+    assert all(call["domain"] is None for call in resp.set_calls)
+
+    clear_auth_cookies(resp, cfg, request=req)
+    assert all(call["domain"] is None for call in resp.delete_calls)

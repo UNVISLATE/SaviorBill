@@ -100,7 +100,11 @@ async def register(
     except AuthSessionLimitError:
         raise HTTPException(status.HTTP_409_CONFLICT, "active session limit reached") from None
     set_auth_cookies(
-        response, tokens.cfg, access_token=pair.access_token, refresh_token=pair.refresh_token
+        response,
+        tokens.cfg,
+        access_token=pair.access_token,
+        refresh_token=pair.refresh_token,
+        request=request,
     )
     return pair
 
@@ -167,7 +171,11 @@ async def login(
     except AuthSessionLimitError:
         raise HTTPException(status.HTTP_409_CONFLICT, "active session limit reached") from None
     set_auth_cookies(
-        response, tokens.cfg, access_token=pair.access_token, refresh_token=pair.refresh_token
+        response,
+        tokens.cfg,
+        access_token=pair.access_token,
+        refresh_token=pair.refresh_token,
+        request=request,
     )
     return pair
 
@@ -203,7 +211,11 @@ async def refresh(
             headers={"Retry-After": "5"},
         ) from None
     set_auth_cookies(
-        response, tokens.cfg, access_token=pair.access_token, refresh_token=pair.refresh_token
+        response,
+        tokens.cfg,
+        access_token=pair.access_token,
+        refresh_token=pair.refresh_token,
+        request=request,
     )
     return pair
 
@@ -221,7 +233,7 @@ async def logout(
     tokens: TokenSvc = Depends(get_token_svc),
 ) -> None:
     """Отозвать refresh-токен и снять auth-cookie."""
-    clear_auth_cookies(response, tokens.cfg)
+    clear_auth_cookies(response, tokens.cfg, request=request)
     refresh_token = body.refresh_token if body else None
     refresh_token = refresh_token or request.cookies.get(REFRESH_COOKIE)
     if not refresh_token:
