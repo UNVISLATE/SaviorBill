@@ -48,10 +48,10 @@ services:
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:?TRUSTED_PROXIES is required in .env (IP/CIDR of the caddy service, never "*")}
       PRIVATE_DATA_DIR: /app/private
     volumes:
-      - ../data:/app/data:rw
+      - ${DATA_HOST_DIR:-../data}:/app/data:rw
       # Приватный ключ подписи JWT (RS256) — билинг-only, НЕ монтируется в
       # mediaworker/luaworker (см. AUDIT.md, Phase 1).
-      - ../data-private:/app/private:rw
+      - ${PRIVATE_DATA_HOST_DIR:-../data-private}:/app/private:rw
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')\""]
       interval: 10s
@@ -66,6 +66,8 @@ services:
     depends_on:
       valkey:
         condition: service_healthy
+      billing:
+        condition: service_healthy
     env_file:
       - path: .env
         required: false
@@ -75,7 +77,7 @@ services:
       VALKEY_DB: 0
       BILLING_URL: http://billing:8000
     volumes:
-      - ../data:/app/data:ro
+      - ${DATA_HOST_DIR:-../data}:/app/data:ro
     healthcheck:
       # У luaworker нет HTTP-поверхности — проверяем только, что процесс жив
       # (liveness, не readiness: не гарантирует, что consumer-group реально
@@ -95,6 +97,8 @@ services:
         condition: service_healthy
       valkey:
         condition: service_healthy
+      billing:
+        condition: service_healthy
     env_file:
       - path: .env
         required: false
@@ -106,9 +110,9 @@ services:
       VALKEY_DB: 0
       DATA_DIR: /app/data
     volumes:
-      - ../data:/app/data:rw
+      - ${DATA_HOST_DIR:-../data}:/app/data:rw
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/api/media/health')\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/api/media/health')\""]
       interval: 10s
       timeout: 3s
       retries: 10
@@ -163,7 +167,7 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy.d:/etc/caddy/caddy.d:ro
-      - ../data/media:/srv/media:ro
+      - ${DATA_HOST_DIR:-../data}/media:/srv/media:ro
       - caddy_data:/data
       - caddy_config:/config
 

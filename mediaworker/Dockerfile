@@ -63,7 +63,7 @@ ENV VALKEY_HOST=valkey \
     MEDIA_GROUP=mediaworkers \
     STORAGE_BACKEND=fs
 
-EXPOSE 8080
+EXPOSE 8001
 
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh

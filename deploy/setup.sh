@@ -51,14 +51,18 @@ curl -fsSL "$RAW/Caddyfile" -o Caddyfile
 if [ ! -f .env ]; then
   echo ">> Скачиваю .env из .env.example..."
   curl -fsSL "$RAW/.env.example" -o .env
+  set_env_var "DATA_HOST_DIR" "./data"
+  set_env_var "PRIVATE_DATA_HOST_DIR" "./data-private"
   if command -v openssl >/dev/null 2>&1; then
     bus_key="$(openssl rand -hex 32)"
     set_env_var "BUS_SIGNING_KEY" "$bus_key"
   fi
-  echo ">> Создан .env (BUS_SIGNING_KEY сгенерирован автоматически)."
+  echo ">> Создан .env (BUS_SIGNING_KEY сгенерирован автоматически, данные: ./data и ./data-private)."
 else
   echo ">> .env уже существует — оставляю как есть."
 fi
+mkdir -p data data-private
+chmod 700 data-private || true
 
 # ── 2.1. Клиентский фронтенд ─────────────────────────────────────────────────
 mkdir -p caddy.d
@@ -105,9 +109,9 @@ if [ -n "$editor" ]; then
   echo ""
   echo ">> Открываю $editor — ОБЯЗАТЕЛЬНО задайте:"
   if [ "$client_choice" = "1" ]; then
-    echo "     DB_PASS, DOMAIN, MEDIA_DOMAIN, CLIENT_DOMAIN, OWNER_LOGIN, OWNER_PASS, OWNER_EMAIL"
+    echo "     DB_PASS, TRUSTED_PROXIES, DOMAIN, MEDIA_DOMAIN, CLIENT_DOMAIN, OWNER_LOGIN, OWNER_PASS, OWNER_EMAIL"
   else
-    echo "     DB_PASS, DOMAIN, MEDIA_DOMAIN, OWNER_LOGIN, OWNER_PASS, OWNER_EMAIL"
+    echo "     DB_PASS, TRUSTED_PROXIES, DOMAIN, MEDIA_DOMAIN, OWNER_LOGIN, OWNER_PASS, OWNER_EMAIL"
   fi
   echo ""
   "$editor" .env
@@ -115,9 +119,9 @@ else
   echo ""
   echo "!! Редактор не найден. Отредактируйте .env вручную перед запуском."
   if [ "$client_choice" = "1" ]; then
-    echo "   Обязательные поля: DB_PASS, DOMAIN, MEDIA_DOMAIN, CLIENT_DOMAIN, OWNER_*"
+    echo "   Обязательные поля: DB_PASS, TRUSTED_PROXIES, DOMAIN, MEDIA_DOMAIN, CLIENT_DOMAIN, OWNER_*"
   else
-    echo "   Обязательные поля: DB_PASS, DOMAIN, MEDIA_DOMAIN, OWNER_*"
+    echo "   Обязательные поля: DB_PASS, TRUSTED_PROXIES, DOMAIN, MEDIA_DOMAIN, OWNER_*"
   fi
   echo ""
 fi
@@ -148,7 +152,7 @@ fi
 cat <<'EOF'
    REST API billing:             https://<DOMAIN>/api/v1/
    Swagger billing:              https://<DOMAIN>/api/docs
-   Swagger media:                https://<MEDIA_DOMAIN>/docs
+   Swagger media:                https://<MEDIA_DOMAIN>/api/media/docs
    Health:                       https://<DOMAIN>/api/health
 ============================================================================
 EOF
