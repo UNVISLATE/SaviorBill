@@ -51,10 +51,6 @@ export default defineConfig({
     port: 5173,
     host: "127.0.0.1",
     proxy: {
-      "^/plugins/.*/ui": {
-        target: "http://127.0.0.1:8001",
-        changeOrigin: true,
-      },
       "/api/media": {
         target: "http://127.0.0.1:8001",
         changeOrigin: true,

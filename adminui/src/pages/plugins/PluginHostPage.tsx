@@ -49,10 +49,10 @@ export function PluginHostPage() {
         setIsMounting(true)
         setMountError(null)
 
-        // URL бандла (через mediaworker или относительный прокси)
+        // URL бандла через единый префикс mediaworker (/api/media/*)
         const entryPath = adminUi.entry.replace(/^\/+/, "")
         const versionParam = currentPlugin.version ? `?v=${currentPlugin.version}` : ""
-        const bundleUrl = `/plugins/${slug}/ui/${entryPath}${versionParam}`
+        const bundleUrl = `/api/media/plugins/${slug}/ui/${entryPath}${versionParam}`
 
         // Динамический импорт ESM-модуля
         const module = await import(/* @vite-ignore */ bundleUrl)

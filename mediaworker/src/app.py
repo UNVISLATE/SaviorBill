@@ -10,7 +10,6 @@ from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from api import router
 from apiws import router as ws_router
-from api.plugins_static import router as plugins_static_router
 from lifespan import lifespan
 from utils.csrf import CookieCSRFMiddleware
 from utils.telemetry import install_access_log_filter, setup_observability
@@ -69,7 +68,6 @@ app.add_middleware(CookieCSRFMiddleware, cfg=_cfg)
 
 app.include_router(router)
 app.include_router(ws_router, prefix="/api/media")
-app.include_router(plugins_static_router)
 
 __all__ = ["app"]
 
