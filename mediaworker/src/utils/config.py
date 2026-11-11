@@ -173,6 +173,10 @@ class Config(BaseSettings):
     # значение можно переопределить отдельно, если mediaworker живёт на
     # другом наборе доменов). Пусто -> CORSMiddleware не подключается.
     CORS_ORIGINS: str = Field(default="")
+    PUBLIC_URL: str | None = Field(default=None)
+    MEDIA_PUBLIC_URL: str | None = Field(default=None)
+    DOMAIN: str = Field(default="")
+    MEDIA_DOMAIN: str = Field(default="")
 
     # Реверс-прокси (Caddy/nginx), которым доверяем X-Forwarded-For/-Proto
     # (CSV IP/CIDR; общее имя переменной с billing). Пусто -> заголовок

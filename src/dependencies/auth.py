@@ -44,6 +44,25 @@ def get_token_svc(
     return TokenSvc(_cfg(request), vk, settings, session)
 
 
+def _attach_request_user(
+    request: Request, acc: UserModel, role_name: str | None = None
+) -> None:
+    """Сохранить аутентифицированного пользователя в ``request.state`` для трекера/аудита."""
+    request_state = getattr(request, "state", None)
+    if request_state is None:
+        return
+    request_state.user = acc
+    resolved_role = role_name
+    if resolved_role is None:
+        role_obj = getattr(acc, "role", None)
+        resolved_role = getattr(role_obj, "name", None) if role_obj else None
+    request_state.user_snapshot = (
+        getattr(acc, "id", None),
+        getattr(acc, "login", None),
+        resolved_role,
+    )
+
+
 async def get_current_acc(
     request: Request,
     cred: HTTPAuthorizationCredentials | None = Depends(_bearer),
@@ -99,12 +118,15 @@ async def get_current_acc(
                 request_state.app_token = app_token
 
             if app_token.creator:
+                _attach_request_user(request, app_token.creator)
                 return app_token.creator
-            return UserModel(
+            acc_stub = UserModel(
                 id=app_token.created_by_account_id or 0,
                 login=f"app:{app_token.name}",
                 role_id=None,
             )
+            _attach_request_user(request, acc_stub, role_name="app_token")
+            return acc_stub
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or revoked app token")
     cfg = _cfg(request)
     try:
@@ -127,6 +149,7 @@ async def get_current_acc(
     # has_perm) на правах текущей роли — banned не хардкодится тут отдельно:
     # это просто роль, которую назначают при бане, без своих прав по
     # умолчанию. Если её правам явно дать конкретный perm — он будет работать.
+    _attach_request_user(request, acc)
     return acc
 
 

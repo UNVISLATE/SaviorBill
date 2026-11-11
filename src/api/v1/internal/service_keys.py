@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hmac
+
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -30,7 +32,7 @@ async def require_lua_token(
             status.HTTP_401_UNAUTHORIZED, "Требуется заголовок Authorization: Bearer <token>"
         )
     token = authorization[7:].strip()
-    if token != expected:
+    if not hmac.compare_digest(token, expected):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Неверный сервисный токен")
 
 
@@ -74,7 +76,7 @@ async def import_keys_internal(
             f"Услуга '{service.name}' имеет способ выдачи '{service.delivery}', а не цифровой ключ",
         )
 
-    created, skipped = await mngr.bulk_create(service.id, body.keys)
+    created, skipped = await mngr.create_batch(service.id, body.keys)
     await mngr.s.commit()
 
     avail = await mngr.s.scalar(

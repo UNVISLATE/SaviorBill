@@ -58,8 +58,28 @@ def _origin_of(url: str) -> str:
 
 
 def _origin_allowed(origin: str, allowed: list[str]) -> bool:
-    origin = _origin_of(origin).rstrip("/")
-    return origin in {o.rstrip("/") for o in allowed}
+    norm = _origin_of(origin).rstrip("/").lower()
+    return norm in {_origin_of(o).rstrip("/").lower() for o in allowed if o}
+
+
+def _fallback_origins(request: Request, cfg: object) -> list[str]:
+    origins: list[str] = []
+    host = request.headers.get("host")
+    if host:
+        origins.append(f"{request.url.scheme or 'http'}://{host}")
+    for attr in ("PUBLIC_URL", "MEDIA_PUBLIC_URL"):
+        val = getattr(cfg, attr, None)
+        if isinstance(val, str) and val.strip():
+            origins.append(val.strip())
+    for attr in ("DOMAIN", "MEDIA_DOMAIN"):
+        val = getattr(cfg, attr, None)
+        if isinstance(val, str) and val.strip():
+            dom = val.strip().rstrip("/")
+            if "://" in dom:
+                origins.append(dom)
+            else:
+                origins.extend([f"https://{dom}", f"http://{dom}"])
+    return origins
 
 
 class CookieCSRFMiddleware(BaseHTTPMiddleware):
@@ -79,8 +99,11 @@ class CookieCSRFMiddleware(BaseHTTPMiddleware):
             and request.cookies.get(ACCESS_COOKIE)
         ):
             origin = request.headers.get("origin") or request.headers.get("referer")
-            allowed = self._cfg.cors_origins_list
-            if not origin or (allowed and not _origin_allowed(origin, allowed)):
+            allowed = [
+                *self._cfg.cors_origins_list,
+                *_fallback_origins(request, self._cfg),
+            ]
+            if not origin or not allowed or not _origin_allowed(origin, allowed):
                 return JSONResponse(
                     {"detail": "cross-origin request rejected"}, status_code=403
                 )

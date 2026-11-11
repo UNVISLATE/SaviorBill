@@ -40,15 +40,26 @@ def test_is_exempt_helper():
 
 
 class _FakeCfg:
-    def __init__(self, origins: list[str]) -> None:
+    def __init__(
+        self,
+        origins: list[str],
+        public_url: str | None = None,
+        domain: str = "",
+    ) -> None:
         self.cors_origins_list = origins
+        self.PUBLIC_URL = public_url
+        self.DOMAIN = domain
 
 
 async def _ok(request):
     return JSONResponse({"ok": True})
 
 
-def _make_app(origins: list[str]) -> Starlette:
+def _make_app(
+    origins: list[str],
+    public_url: str | None = None,
+    domain: str = "",
+) -> Starlette:
     app = Starlette(
         routes=[
             Route("/x", _ok, methods=["GET", "POST"]),
@@ -56,7 +67,10 @@ def _make_app(origins: list[str]) -> Starlette:
             Route("/api/v1/callback/pay/test", _ok, methods=["POST"]),
         ]
     )
-    app.add_middleware(CookieCSRFMiddleware, cfg=_FakeCfg(origins))
+    app.add_middleware(
+        CookieCSRFMiddleware,
+        cfg=_FakeCfg(origins, public_url=public_url, domain=domain),
+    )
     return app
 
 
@@ -104,11 +118,30 @@ def test_post_with_cookie_and_no_origin_rejected():
     assert resp.status_code == 403
 
 
-def test_no_allowed_origins_configured_allows_any_origin():
-    """CORS_ORIGINS не задан (same-origin/dev через прокси) — проверка по origin не блокирует."""
-    client = TestClient(_make_app([]))
+def test_empty_cors_origins_rejects_foreign_origin_and_allows_same_origin():
+    """При пустом CORS_ORIGINS разрешается same-origin (Host/PUBLIC_URL/DOMAIN), а чужой Origin отклоняется."""
+    client = TestClient(_make_app([], public_url="https://shop.example.com", domain="api.example.com"))
+
+    # Чужой origin — отклонён даже при пустом CORS_ORIGINS
     resp = client.post(
         "/x", cookies={ACCESS_COOKIE: "tok"}, headers={"Origin": "http://127.0.0.1:5173"}
+    )
+    assert resp.status_code == 403
+
+    # Same-origin по Host заголовку TestClient (http://testserver) — разрешён
+    resp = client.post(
+        "/x", cookies={ACCESS_COOKIE: "tok"}, headers={"Origin": "http://testserver"}
+    )
+    assert resp.status_code == 200
+
+    # PUBLIC_URL / DOMAIN — разрешены
+    resp = client.post(
+        "/x", cookies={ACCESS_COOKIE: "tok"}, headers={"Origin": "https://shop.example.com"}
+    )
+    assert resp.status_code == 200
+
+    resp = client.post(
+        "/x", cookies={ACCESS_COOKIE: "tok"}, headers={"Origin": "https://api.example.com"}
     )
     assert resp.status_code == 200
 

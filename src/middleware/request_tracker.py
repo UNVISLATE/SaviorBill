@@ -15,6 +15,22 @@ from utils.request_context import current_trace_id_ctx, generate_trace_id
 log = logging.getLogger("saviorbill.tracker")
 
 
+def _extract_user_telemetry(request: Request) -> tuple[int | None, str | None, str | None]:
+    """Безопасно извлечь (id, login, role_name) из ``request.state``."""
+    snapshot = getattr(request.state, "user_snapshot", None)
+    if isinstance(snapshot, tuple) and len(snapshot) == 3:
+        return snapshot
+    user = getattr(request.state, "user", None)
+    if not user:
+        return None, None, None
+    role = getattr(user, "role", None)
+    return (
+        getattr(user, "id", None),
+        getattr(user, "login", None),
+        getattr(role, "name", None) if role else None,
+    )
+
+
 class RequestTrackerMiddleware(BaseHTTPMiddleware):
     """Сквозной трекер запросов:
 
@@ -81,7 +97,7 @@ class RequestTrackerMiddleware(BaseHTTPMiddleware):
             duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
             exception_type = type(exc).__name__
             if vk is not None:
-                user = getattr(request.state, "user", None)
+                user_id, user_login, user_role = _extract_user_telemetry(request)
                 await log_request_error(
                     vk,
                     status_code=500,
@@ -93,9 +109,9 @@ class RequestTrackerMiddleware(BaseHTTPMiddleware):
                     duration_ms=duration_ms,
                     user_agent=user_agent,
                     referer=referer,
-                    user_id=user.id if user else None,
-                    user_login=user.login if user else None,
-                    user_role=user.role.name if (user and user.role) else None,
+                    user_id=user_id,
+                    user_login=user_login,
+                    user_role=user_role,
                     exception_type=exception_type,
                     trace_id=trace_id,
                 )
@@ -110,10 +126,7 @@ class RequestTrackerMiddleware(BaseHTTPMiddleware):
         # 4. Логирование ответов с ошибками для API
         if response.status_code >= 400 and vk is not None:
             if request.url.path.startswith("/api/"):
-                user = getattr(request.state, "user", None)
-                user_id = user.id if user else None
-                user_login = user.login if user else None
-                user_role = user.role.name if (user and user.role) else None
+                user_id, user_login, user_role = _extract_user_telemetry(request)
 
                 detail = f"HTTP {response.status_code}"
                 await log_request_error(

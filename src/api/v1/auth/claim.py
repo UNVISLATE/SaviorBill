@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from dependencies.auth import TokenSvc, get_token_svc
 from dependencies.guest_checkout import GuestCheckoutSvc, get_guest_checkout_svc
 from dependencies.login_guard import client_ip
 from dependencies.ratelimit import LimitKind, rate_limit
+from errors import AuthSessionLimitError
 from schemas.auth import TokenPair
 from schemas.guest import GuestClaimRequest, GuestClaimRequestResult, GuestClaimVerify
 from security.sec.cookies import set_auth_cookies
@@ -52,9 +53,14 @@ async def verify_claim_code(
     acc = await svc.verify_guest_claim(body.claim_token, body.code, body.password)
     await svc.s.commit()
 
-    pair = await tokens.issue_tracked(
-        acc, ip=client_ip(request), user_agent=request.headers.get("user-agent")
-    )
+    try:
+        pair = await tokens.issue_tracked(
+            acc, ip=client_ip(request), user_agent=request.headers.get("user-agent")
+        )
+    except AuthSessionLimitError:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "active session limit reached"
+        ) from None
     set_auth_cookies(
         response,
         tokens.cfg,

@@ -55,6 +55,9 @@ if _cfg.cors_origins_list:
         allow_headers=["*"],
     )
 
+# Defense-in-depth поверх SameSite=Strict на auth-cookie (см. utils/csrf.py).
+app.add_middleware(CookieCSRFMiddleware, cfg=_cfg)
+
 # Доверять X-Forwarded-For/-Proto только если явно сконфигурирован список
 # реверс-прокси — иначе `request.client.host` (реальный TCP-peer) остаётся
 # единственным источником IP клиента (см. utils/authctx.py::client_ip).
@@ -62,9 +65,6 @@ if _cfg.trusted_proxies_list:
     app.add_middleware(
         ProxyHeadersMiddleware, trusted_hosts=_cfg.trusted_proxies_list
     )
-
-# Defense-in-depth поверх SameSite=Strict на auth-cookie (см. utils/csrf.py).
-app.add_middleware(CookieCSRFMiddleware, cfg=_cfg)
 
 app.include_router(router)
 app.include_router(ws_router, prefix="/api/media")
