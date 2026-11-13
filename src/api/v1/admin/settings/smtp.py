@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from typing import Literal
+
+import aiosmtplib
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 
+from dependencies.mail import build_mail_svc
 from dependencies.rbac import require_perm
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
-from dependencies.mail import build_mail_svc
 from schemas.types import NormEmail
 from services.audit import audit
 
@@ -23,20 +27,32 @@ class SmtpSettingsOut(BaseModel):
     user: str | None = None
     has_password: bool = False
     from_email: str | None = None
+    from_name: str | None = None
+    encryption: Literal["starttls", "ssl", "none"] = "starttls"
+    timeout: int = 10
     use_tls: bool = True
+    configured: bool = False
 
 
 class SmtpSettingsIn(BaseModel):
-    host: str | None = Field(default=None, description="SMTP хост")
-    port: int = Field(default=587, ge=1, le=65535, description="SMTP порт (обычно 587 или 465)")
-    user: str | None = Field(default=None, description="SMTP логин")
-    password: str | None = Field(default=None, description="Новый SMTP пароль (оставьте пустым, чтобы не менять)")
-    from_email: str | None = Field(default=None, description="Email отправителя (From)")
-    use_tls: bool = Field(default=True, description="Использовать TLS / STARTTLS")
+    host: str | None = Field(default=None, description="SMTP host (domain or IP)")
+    port: int = Field(default=587, ge=1, le=65535, description="SMTP port (any port, e.g. 587, 465, 9465, 9587, 2525)")
+    user: str | None = Field(default=None, description="SMTP username / login")
+    password: str | None = Field(default=None, description="New SMTP password (leave empty to keep unchanged)")
+    clear_password: bool = Field(default=False, description="Clear existing saved password")
+    from_email: str | None = Field(default=None, description="Sender email address (From)")
+    from_name: str | None = Field(default=None, description="Sender display name (From Name, optional)")
+    encryption: Literal["starttls", "ssl", "none"] = Field(
+        default="starttls",
+        description="Encryption mode: starttls (STARTTLS), ssl (Direct TLS/SSL), none (Plain text)",
+    )
+    timeout: int = Field(default=10, ge=1, le=120, description="Connection timeout in seconds")
 
 
 class SmtpTestIn(BaseModel):
-    to_email: NormEmail = Field(description="Email получателя тестового письма")
+    to_email: NormEmail = Field(description="Recipient email address for test message")
+    from_email: str | None = Field(default=None, description="Optional sender email override (From)")
+    from_name: str | None = Field(default=None, description="Optional sender display name override")
 
 
 @router.get(
@@ -54,7 +70,18 @@ async def get_smtp_settings(
     user = grp.get("smtp.user")
     has_pwd = bool(grp.get("smtp.pass"))
     from_email = grp.get("smtp.from")
-    use_tls = grp.get("smtp.tls", "1") not in ("0", "false", "False")
+    from_name = grp.get("smtp.from_name")
+    timeout = int(grp.get("smtp.timeout") or 10)
+
+    enc = grp.get("smtp.encryption")
+    if not enc:
+        tls_val = grp.get("smtp.tls", "1")
+        use_tls = tls_val not in ("0", "false", "False")
+        enc = "ssl" if (use_tls and port_val in (465, 9465)) else ("starttls" if use_tls else "none")
+    elif enc not in ("starttls", "ssl", "none"):
+        enc = "starttls"
+
+    configured = bool(host and from_email)
 
     return SmtpSettingsOut(
         host=host,
@@ -62,7 +89,11 @@ async def get_smtp_settings(
         user=user,
         has_password=has_pwd,
         from_email=from_email,
-        use_tls=use_tls,
+        from_name=from_name,
+        encryption=enc,
+        timeout=timeout,
+        use_tls=enc != "none",
+        configured=configured,
     )
 
 
@@ -75,23 +106,71 @@ async def update_smtp_settings(
     body: SmtpSettingsIn,
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> dict:
-    if body.host is not None:
-        await settings.set("smtp.host", body.host.strip() if body.host else None)
+    host_clean = body.host.strip() if body.host else None
+    user_clean = body.user.strip() if body.user else None
+    from_clean = body.from_email.strip() if body.from_email else None
+    from_name_clean = body.from_name.strip() if body.from_name else None
+
+    await settings.set("smtp.host", host_clean)
     await settings.set("smtp.port", str(body.port))
-    if body.user is not None:
-        await settings.set("smtp.user", body.user.strip() if body.user else None)
-    if body.password is not None and body.password != "":
+    await settings.set("smtp.user", user_clean)
+
+    if body.clear_password:
+        await settings.set("smtp.pass", None)
+    elif body.password is not None and body.password != "":
         await settings.set("smtp.pass", body.password)
-    if body.from_email is not None:
-        await settings.set("smtp.from", body.from_email.strip() if body.from_email else None)
-    await settings.set("smtp.tls", "1" if body.use_tls else "0")
+
+    await settings.set("smtp.from", from_clean)
+    await settings.set("smtp.from_name", from_name_clean)
+    await settings.set("smtp.encryption", body.encryption)
+    await settings.set("smtp.tls", "0" if body.encryption == "none" else "1")
+    await settings.set("smtp.timeout", str(body.timeout))
 
     await audit(
         settings.s,
         action="settings_smtp_update",
         target_type="settings",
         target_id="smtp",
-        meta={"host": body.host, "port": body.port, "user": body.user, "from": body.from_email},
+        meta={
+            "host": host_clean,
+            "port": body.port,
+            "user": user_clean,
+            "from": from_clean,
+            "encryption": body.encryption,
+            "timeout": body.timeout,
+        },
+    )
+    await settings.s.commit()
+    return {"ok": True}
+
+
+@router.delete(
+    "",
+    dependencies=[Depends(require_perm("settings.edit"))],
+    summary="Reset / clear SMTP settings",
+)
+async def delete_smtp_settings(
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
+) -> dict:
+    for key in (
+        "smtp.host",
+        "smtp.port",
+        "smtp.user",
+        "smtp.pass",
+        "smtp.from",
+        "smtp.from_name",
+        "smtp.encryption",
+        "smtp.tls",
+        "smtp.timeout",
+    ):
+        await settings.set(key, None)
+
+    await audit(
+        settings.s,
+        action="settings_smtp_delete",
+        target_type="settings",
+        target_id="smtp",
+        meta={"cleared": True},
     )
     await settings.s.commit()
     return {"ok": True}
@@ -107,10 +186,11 @@ async def test_smtp_connection(
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> dict:
     mail_svc = await build_mail_svc(settings)
-    if not mail_svc.configured:
+    effective_sender = body.from_email or mail_svc.sender
+    if not mail_svc.host or not effective_sender:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            "SMTP сервер не настроен: укажите хост и адрес отправителя",
+            "SMTP is not configured: host and sender email are required",
         )
 
     subject = "Тестовое письмо от SaviorBill"
@@ -119,12 +199,37 @@ async def test_smtp_connection(
         "Если вы видите это письмо, значит SMTP настроен корректно и готов к отправке писем!"
     )
     try:
-        await mail_svc.send(body.to_email, subject, content)
-    except Exception as exc:
-        log.exception("Ошибка отправки тестового письма через SMTP: %s", exc)
+        await mail_svc.send(
+            body.to_email,
+            subject,
+            content,
+            sender_override=body.from_email,
+            from_name_override=body.from_name,
+        )
+    except aiosmtplib.errors.SMTPAuthenticationError as exc:
+        log.warning("SMTP auth failed for %s:%s: %s", mail_svc.host, mail_svc.port, exc)
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            f"Не удалось отправить письмо: {exc}",
+            f"SMTP authentication failed: invalid username or password ({exc.message or exc})",
+        )
+    except aiosmtplib.errors.SMTPConnectError as exc:
+        log.warning("SMTP connect failed to %s:%s: %s", mail_svc.host, mail_svc.port, exc)
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Failed to connect to SMTP server {mail_svc.host}:{mail_svc.port}: {exc.message or exc}",
+        )
+    except (TimeoutError, asyncio.TimeoutError) as exc:
+        log.warning("SMTP timeout (%ss) connecting to %s:%s", mail_svc.timeout, mail_svc.host, mail_svc.port)
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"SMTP connection timeout ({mail_svc.timeout}s) connecting to {mail_svc.host}:{mail_svc.port}. "
+            f"Check if port is open and matches the encryption mode (STARTTLS vs SSL).",
+        )
+    except Exception as exc:
+        log.exception("SMTP test send failed: %s", exc)
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"Failed to send email: {exc}",
         )
 
     return {"ok": True, "message": f"Тестовое письмо успешно отправлено на {body.to_email}"}

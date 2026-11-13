@@ -38,20 +38,57 @@ def _const_eq(a: str, b: str) -> bool:
     return hmac.compare_digest(a, b)
 
 
-async def build_mail_svc(settings: SystemSettingsMngr) -> MailSvc:
-    """Собрать транспорт писем из настроек SMTP в БД.
+async def build_mail_svc(
+    settings: SystemSettingsMngr, cfg: AppConfig | None = None
+) -> MailSvc:
+    """Собрать транспорт писем из настроек SMTP в БД (с fallback на cfg).
 
     :arg settings: менеджер системных настроек.
-    :return: транспорт отправки писем (может быть не сконфигурирован).
+    :arg cfg: глобальная конфигурация (опционально).
+    :return: транспорт отправки писем.
     """
     grp = await settings.get_group("smtp.")
+
+    host = grp.get("smtp.host")
+    if host is None and cfg:
+        host = cfg.SMTP_HOST
+    port = int(grp.get("smtp.port") or (cfg.SMTP_PORT if cfg else 587))
+    user = grp.get("smtp.user")
+    if user is None and cfg:
+        user = cfg.SMTP_USER
+    password = grp.get("smtp.pass")
+    if password is None and cfg:
+        password = cfg.SMTP_PASS
+    sender = grp.get("smtp.from")
+    if sender is None and cfg:
+        sender = cfg.SMTP_FROM
+    from_name = grp.get("smtp.from_name")
+    if from_name is None and cfg:
+        from_name = cfg.SMTP_FROM_NAME
+    timeout = float(grp.get("smtp.timeout") or (cfg.SMTP_TIMEOUT if cfg else 10))
+
+    encryption = grp.get("smtp.encryption")
+    if not encryption:
+        tls_val = grp.get("smtp.tls")
+        if tls_val is not None:
+            use_tls = tls_val not in ("0", "false", "False")
+            encryption = "ssl" if (use_tls and port in (465, 9465)) else ("starttls" if use_tls else "none")
+        elif cfg and cfg.SMTP_ENCRYPTION:
+            encryption = cfg.SMTP_ENCRYPTION
+        elif cfg and not cfg.SMTP_TLS:
+            encryption = "none"
+        else:
+            encryption = "ssl" if port in (465, 9465) else "starttls"
+
     return MailSvc(
-        host=grp.get("smtp.host"),
-        port=int(grp.get("smtp.port") or 587),
-        user=grp.get("smtp.user"),
-        password=grp.get("smtp.pass"),
-        sender=grp.get("smtp.from"),
-        use_tls=(grp.get("smtp.tls", "1") not in ("0", "false", "False")),
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        sender=sender,
+        from_name=from_name,
+        encryption=encryption,
+        timeout=timeout,
     )
 
 

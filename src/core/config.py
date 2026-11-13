@@ -353,7 +353,10 @@ class AppConfig(BaseSettings):
     SMTP_PASS: str | None = Field(default=None)
     SMTP_PASS_FILE: str | None = Field(default=None)
     SMTP_FROM: str | None = Field(default=None)
+    SMTP_FROM_NAME: str | None = Field(default=None)
     SMTP_TLS: bool = Field(default=True)
+    SMTP_ENCRYPTION: str | None = Field(default=None)
+    SMTP_TIMEOUT: int = Field(default=10)
     KEYS_LOW_THRESHOLD: int = Field(default=5)
 
     # Имена базовых ролей (seed -> settings)

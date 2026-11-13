@@ -81,8 +81,24 @@ SETTINGS: tuple[SettingDef, ...] = (
     SettingDef("smtp.user", "SMTP_USER", group="smtp", desc="SMTP логин"),
     SettingDef("smtp.pass", "SMTP_PASS", secret=True, group="smtp", desc="SMTP пароль"),
     SettingDef("smtp.from", "SMTP_FROM", group="smtp", desc="Адрес отправителя"),
+    SettingDef("smtp.from_name", "SMTP_FROM_NAME", group="smtp", desc="Имя отправителя"),
     SettingDef(
         "smtp.tls", "SMTP_TLS", type="bool", group="smtp", desc="Использовать TLS"
+    ),
+    SettingDef(
+        "smtp.encryption",
+        "SMTP_ENCRYPTION",
+        group="smtp",
+        default="starttls",
+        desc="Режим шифрования SMTP (ssl, starttls, none)",
+    ),
+    SettingDef(
+        "smtp.timeout",
+        "SMTP_TIMEOUT",
+        type="int",
+        group="smtp",
+        default=10,
+        desc="Таймаут подключения к SMTP (сек)",
     ),
     # Цифровые ключи и услуги
     SettingDef(
