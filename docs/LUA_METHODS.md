@@ -65,6 +65,19 @@ end
 return M
 ```
 
+### `billing.send_email(opts)`
+
+Отправка транзакционного email через настроенный в системе почтовый транспорт (SMTP или специализированный Lua-драйвер) с использованием Jinja2-шаблонов биллинга.
+
+* **Параметры (`opts` table):**
+  * `to` *(string, обязательно)*: Email-адрес получателя.
+  * `template` *(string, обязательно)*: Слаг активного почтового шаблона (например `"service_delivered"` или `"password_reset"`).
+  * `context` *(table, опционально)*: Таблица параметров, подставляемых в Jinja2-шаблон (например `{ username = "Alice", service_name = "VPN Pro" }`).
+  * `from_email` *(string, опционально)*: Переопределение адреса отправителя.
+  * `from_name` *(string, опционально)*: Переопределение имени отправителя.
+* **Возвращаемое значение:**
+  * `{ ok = true }` или `{ ok = false, error = "описание ошибки" }`.
+
 ---
 
 ## 2. Сетевые запросы (`http.*`)
@@ -91,11 +104,14 @@ return M
 
 Безопасные криптографические операции поверх OpenSSL:
 * `crypto.sha256(data)` — SHA-256 хеш (hex-строка).
+* `crypto.sha1(data)` — SHA-1 хеш (hex-строка).
+* `crypto.sha512(data)` — SHA-512 хеш (hex-строка).
+* `crypto.md5(data)` — MD5 хеш (hex-строка).
 * `crypto.hmac_sha256(key, data)` — HMAC-SHA256 подпись (hex-строка).
-* `crypto.md5(data)` — MD5 хеш.
-* `crypto.random_bytes(len)` — криптографически стойкие случайные байты.
-* `crypto.random_hex(len)` — случайная hex-строка.
+* `crypto.hmac_sha512(key, data)` — HMAC-SHA512 подпись (hex-строка).
 * `crypto.base64_encode(str)` / `crypto.base64_decode(str)` — Base64 кодирование/декодирование.
+* `crypto.url_encode(str)` / `crypto.url_decode(str)` — URL-экранирование строк.
+* `crypto.hex(bin)` — преобразование бинарной строки в hex.
 
 ---
 
@@ -121,4 +137,5 @@ return M
 ## 6. Работа с JSON (`json.*`)
 
 * `json.encode(tbl)` — сериализация Lua-таблицы в JSON-строку.
-* `json.decode(str)` — парсинг JSON-строки в Lua-таблицу (значения `null` автоматически конвертируются в привычный `nil`).
+* `json.decode(str)` — парсинг JSON-строки в Lua-таблицу (значения `null` конвертируются в `cjson.null` либо `nil` при проверке).
+* `json.null` — специальный sentinel-объект cjson для представления явного JSON `null`.

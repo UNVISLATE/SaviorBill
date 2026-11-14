@@ -113,14 +113,13 @@ end
 
 -- Авторизация в Marzban: возвращает access_token или падает.
 local function get_token(s)
+  local u = http.urlencode and http.urlencode(tostring(s.marzban_user)) or tostring(s.marzban_user)
+  local p = http.urlencode and http.urlencode(tostring(s.marzban_pass)) or tostring(s.marzban_pass)
   local resp = http({
     url = host(s) .. "/api/admin/token",
     method = "POST",
     headers = { ["content-type"] = "application/x-www-form-urlencoded" },
-    body = "grant_type=password&username="
-      .. tostring(s.marzban_user)
-      .. "&password="
-      .. tostring(s.marzban_pass),
+    body = "grant_type=password&username=" .. u .. "&password=" .. p,
   })
   if not resp.ok or resp.status ~= 200 then
     error("marzban: авторизация не удалась (" .. tostring(resp.status) .. ")")
@@ -227,9 +226,14 @@ local function do_renew(ctx)
   if not resp.ok or resp.status ~= 200 then
     error("marzban: продление не удалось: " .. tostring(resp.status))
   end
+  local data = json.decode(resp.body) or {}
+  local sub = data.subscription_url or ""
+  if sub ~= "" and not string.match(sub, "^https?://") then
+    sub = host(s) .. sub
+  end
   log.info("marzban user renewed", username)
   return {
-    public = { subscription = (json.decode(resp.body) or {}).subscription_url, username = username },
+    public = { subscription = sub, username = username },
     private = { username = username, marzban_status = "active" },
     state = "active",
     product_key = "subscription",
@@ -242,12 +246,15 @@ local function do_freeze(ctx)
   local s = settings(ctx)
   local token = get_token(s)
   local username = target_username(ctx)
-  http({
+  local resp = http({
     url = host(s) .. "/api/user/" .. username,
     method = "PUT",
     headers = { ["authorization"] = "Bearer " .. token, ["content-type"] = "application/json" },
     body = json.encode({ status = "disabled" }),
   })
+  if not resp.ok or resp.status ~= 200 then
+    error("marzban: заморозка не удалась: " .. tostring(resp.status))
+  end
   log.info("marzban user disabled", username)
   return {
     public = { username = username },
@@ -260,11 +267,14 @@ local function do_remove(ctx)
   local s = settings(ctx)
   local token = get_token(s)
   local username = target_username(ctx)
-  http({
+  local resp = http({
     url = host(s) .. "/api/user/" .. username,
     method = "DELETE",
     headers = auth(token),
   })
+  if not resp.ok or (resp.status ~= 200 and resp.status ~= 204) then
+    error("marzban: удаление не удалось: " .. tostring(resp.status))
+  end
   log.info("marzban user removed", username)
   return {
     public = {},

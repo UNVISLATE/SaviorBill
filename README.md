@@ -37,7 +37,7 @@
 - **Admin UI (`adminui/`):** React 19 · TypeScript · Vite · Tailwind CSS · Monaco Editor · Radix UI · `sbuiSDK`
 - **Клиентский кабинет:** отдельный репозиторий [SBPersonalAccountClient](https://github.com/UNVISLATE/SBPersonalAccountClient) (может разворачиваться вместе с биллингом через `setup.sh`)
 - **Сервисная шина и кэш:** Valkey 8 (`lua:*`, `media:*`, `tasklog:*`), двухуровневый кэш каталога (L1/L2)
-- **Песочница логики (`luaworker/`):** изолированный LuaJIT-воркер для сценариев выдачи/продления услуг и платёжных шлюзов
+- **Песочница логики (`luaworker/`):** изолированный Lua 5.4-воркер для сценариев выдачи/продления услуг и платёжных шлюзов
 - **Медиа-конвейер (`mediaworker/`):** FastAPI + FFmpeg (конвертация в WebP/WebM, превью, локальная ФС или S3 / Cloudflare R2 / MinIO)
 - **Безопасность:** RS256 JWT, Argon2id, шифрование секретов (`Fernet`), `BUS_SIGNING_KEY` (HMAC-SHA256), CSRF-защита, Scoped App Tokens, 404-бан сканеров и журнал аудита
 
@@ -74,8 +74,8 @@ bash <(curl -fsSL https://raw.githubusercontent.com/UNVISLATE/SaviorBill/master/
 После запуска будут доступны:
 - **Admin UI:** `https://<DOMAIN>/`
 - **REST API:** `https://<DOMAIN>/api/v1/`
-- **OpenAPI / ReDoc (billing):** `https://<DOMAIN>/docs` и `https://<DOMAIN>/redoc`
-- **Медиа-сервер:** `https://<MEDIA_DOMAIN>/` (и OpenAPI по пути `/docs`)
+- **OpenAPI / ReDoc (billing):** `https://<DOMAIN>/api/docs` и `https://<DOMAIN>/api/redoc`
+- **Медиа-сервер:** `https://<MEDIA_DOMAIN>/` (и OpenAPI по пути `/api/media/docs`)
 - **Личный кабинет покупателя:** на домене клиентской витрины (если выбран при установке)
 
 ---

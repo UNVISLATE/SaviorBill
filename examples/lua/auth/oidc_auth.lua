@@ -40,15 +40,17 @@ end
 local function do_start(ctx)
   local s = secrets(ctx)
   assert(s.client_id and s.authorize_url, "oauth: нужны client_id и authorize_url")
-  local url = s.authorize_url
-    .. "?"
-    .. query({
-      client_id = s.client_id,
-      redirect_uri = ctx.redirect_uri,
-      response_type = "code",
-      scope = (ctx.provider or {}).scopes or "openid email profile",
-      state = ctx.state,
-    })
+  local params = {
+    client_id = s.client_id,
+    redirect_uri = ctx.redirect_uri,
+    response_type = "code",
+    scope = (ctx.provider or {}).scopes or "openid email profile",
+    state = ctx.state,
+  }
+  if ctx.nonce then
+    params.nonce = ctx.nonce
+  end
+  local url = s.authorize_url .. "?" .. query(params)
   return { public = { authorize_url = url } }
 end
 
@@ -100,6 +102,9 @@ local function do_callback(ctx)
   local ui = userinfo(ctx, tokens.access_token)
   if ui == nil or not (ui.sub or ui.id) then
     return { private = { ok = false } }
+  end
+  if ctx.expected_nonce and ui.nonce and ui.nonce ~= ctx.expected_nonce then
+    return { private = { ok = false, error = "nonce mismatch" } }
   end
   return {
     private = {
