@@ -1,4 +1,5 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { useSearchParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { FileText, PackageCheck, Plus, Sparkles, UserRound } from "lucide-react"
 
@@ -18,6 +19,13 @@ import { Button } from "@/components/shadsnui/button"
 import { Label } from "@/components/shadsnui/label"
 import { Switch } from "@/components/shadsnui/switch"
 import { toastError, toastSuccess } from "@/lib/toast"
+
+interface OrderConfigItem {
+  tier?: { title?: string; duration_days?: number }
+  group?: { title?: string }
+  components?: Record<string, { value?: unknown; unit?: string; label?: string }>
+  form?: Record<string, unknown>
+}
 
 interface Order {
   id: number
@@ -129,55 +137,58 @@ function OrderDetailDialog({ order, onOpenChange }: { order: Order; onOpenChange
             </div>
           </div>
 
-          {order.order_config && Object.keys(order.order_config).length > 0 && (
-            <div className="rounded-xl border border-border/80 bg-card/60 p-4 space-y-3">
-              <span className="text-xs text-muted-foreground font-medium block">
-                Конфигурация услуги (Service Engine 2.0)
-              </span>
-              <div className="space-y-2">
-                {(order.order_config.tier as any) && (
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-muted-foreground">Тариф:</span>
-                    <Badge variant="outline" className="font-mono text-xs">
-                      {((order.order_config.group as any)?.title || "")} {((order.order_config.tier as any)?.title || "")}
-                    </Badge>
-                    {((order.order_config.tier as any)?.duration_days) && (
-                      <span className="text-[11px] text-muted-foreground font-mono">
-                        ({(order.order_config.tier as any).duration_days} дн.)
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                {(order.order_config.components as any) && (
-                  <div className="space-y-1 text-xs">
-                    <span className="text-muted-foreground block">Ресурсы:</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {Object.entries((order.order_config.components as Record<string, any>)).map(([code, comp]) => (
-                        <Badge key={code} variant="secondary" className="text-xs font-mono">
-                          {code}: {comp.value} {comp.unit || ""} {comp.label ? `(${comp.label})` : ""}
-                        </Badge>
-                      ))}
+          {order.order_config && Object.keys(order.order_config).length > 0 && (() => {
+            const cfg = order.order_config as OrderConfigItem
+            return (
+              <div className="rounded-xl border border-border/80 bg-card/60 p-4 space-y-3">
+                <span className="text-xs text-muted-foreground font-medium block">
+                  Конфигурация услуги (Service Engine 2.0)
+                </span>
+                <div className="space-y-2">
+                  {cfg.tier && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-muted-foreground">Тариф:</span>
+                      <Badge variant="outline" className="font-mono text-xs">
+                        {cfg.group?.title || ""} {cfg.tier.title || ""}
+                      </Badge>
+                      {cfg.tier.duration_days && (
+                        <span className="text-[11px] text-muted-foreground font-mono">
+                          ({cfg.tier.duration_days} дн.)
+                        </span>
+                      )}
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {(order.order_config.form as any) && (
-                  <div className="space-y-1 text-xs">
-                    <span className="text-muted-foreground block">Данные клиента:</span>
-                    <div className="rounded-lg bg-muted/40 p-2.5 font-mono text-xs space-y-1">
-                      {Object.entries((order.order_config.form as Record<string, any>)).map(([k, v]) => (
-                        <div key={k} className="flex justify-between">
-                          <span className="text-muted-foreground">{k}:</span>
-                          <span className="font-semibold select-all">{String(v)}</span>
-                        </div>
-                      ))}
+                  {cfg.components && (
+                    <div className="space-y-1 text-xs">
+                      <span className="text-muted-foreground block">Ресурсы:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.entries(cfg.components).map(([code, comp]) => (
+                          <Badge key={code} variant="secondary" className="text-xs font-mono">
+                            {code}: {String(comp.value)} {comp.unit || ""} {comp.label ? `(${comp.label})` : ""}
+                          </Badge>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+
+                  {cfg.form && (
+                    <div className="space-y-1 text-xs">
+                      <span className="text-muted-foreground block">Данные клиента:</span>
+                      <div className="rounded-lg bg-muted/40 p-2.5 font-mono text-xs space-y-1">
+                        {Object.entries(cfg.form).map(([k, v]) => (
+                          <div key={k} className="flex justify-between">
+                            <span className="text-muted-foreground">{k}:</span>
+                            <span className="font-semibold select-all">{String(v)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {order.product_key && (
             <div className="rounded-xl border border-border/80 bg-card/60 p-4 space-y-1.5">
@@ -330,9 +341,23 @@ export function OrdersPage() {
   const { openUserProfile } = useProfileDialog()
   const { symbol } = useInstanceCurrency()
   const table = useDataTableQuery()
+  const [searchParams] = useSearchParams()
+  const orderIdParam = searchParams.get("id")
   const [detail, setDetail] = useState<Order | null>(null)
   const [granting, setGranting] = useState(false)
   const canGrant = can("orders.create")
+
+  const { data: directOrder } = useQuery({
+    queryKey: ["admin-order-direct", orderIdParam],
+    queryFn: async () => (await api.get<Order>(`/v1/admin/orders/${orderIdParam}`)).data,
+    enabled: Boolean(orderIdParam),
+  })
+
+  useEffect(() => {
+    if (directOrder) {
+      setDetail(directOrder)
+    }
+  }, [directOrder])
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["admin-orders", table.limit, table.offset, table.sort, table.search],

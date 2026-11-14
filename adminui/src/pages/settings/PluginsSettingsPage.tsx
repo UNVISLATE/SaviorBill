@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   Plug,
@@ -29,6 +29,7 @@ import {
 } from "@/components/shadsnui/dialog"
 import { DeclarativeForm } from "@/components/common/forms/DeclarativeForm"
 import { api } from "@/api/api"
+import { getErrorDetail } from "@/lib/api-error"
 import { toast } from "sonner"
 
 interface PluginInfo {
@@ -98,8 +99,8 @@ export function PluginsSettingsPage() {
       toast.success(`Плагины перезагружены (активно: ${data.loaded_count})`)
       queryClient.invalidateQueries({ queryKey: ["admin", "plugins"] })
     },
-    onError: (err: any) => {
-      toast.error(err?.response?.data?.detail || "Ошибка пересканирования плагинов")
+    onError: (err: unknown) => {
+      toast.error(getErrorDetail(err) || "Ошибка пересканирования плагинов")
     },
   })
 
@@ -115,8 +116,8 @@ export function PluginsSettingsPage() {
       setDropTargetSlug(null)
       queryClient.invalidateQueries({ queryKey: ["admin", "plugins"] })
     },
-    onError: (err: any) => {
-      toast.error(err?.response?.data?.detail || "Ошибка удаления данных")
+    onError: (err: unknown) => {
+      toast.error(getErrorDetail(err) || "Ошибка удаления данных")
     },
   })
 
@@ -294,7 +295,7 @@ export function PluginsSettingsPage() {
           {/* Панель настроек плагина справа */}
           <div className="lg:col-span-7">
             {activePlugin && activePlugin.has_settings ? (
-              <PluginSettingsFormCard slug={activePlugin.slug} name={activePlugin.name} />
+              <PluginSettingsFormCard key={activePlugin.slug} slug={activePlugin.slug} name={activePlugin.name} />
             ) : (
               <Card className="border-border/60 bg-card/30 border-dashed">
                 <CardContent className="py-16 text-center text-xs text-muted-foreground space-y-2">
@@ -359,11 +360,12 @@ function PluginSettingsFormCard({ slug, name }: { slug: string; name: string }) 
   const [isDirty, setIsDirty] = useState(false)
 
   // Синхронизация при загрузке значений
-  useState(() => {
+  useEffect(() => {
     if (data?.values) {
       setFormValues(data.values)
+      setIsDirty(false)
     }
-  })
+  }, [data?.values])
 
   const saveMutation = useMutation({
     mutationFn: async (updated: Record<string, unknown>) => {
@@ -377,8 +379,8 @@ function PluginSettingsFormCard({ slug, name }: { slug: string; name: string }) 
       setIsDirty(false)
       queryClient.invalidateQueries({ queryKey: ["admin", "plugin-settings", slug] })
     },
-    onError: (err: any) => {
-      toast.error(err?.response?.data?.detail || "Ошибка сохранения настроек")
+    onError: (err: unknown) => {
+      toast.error(getErrorDetail(err) || "Ошибка сохранения настроек")
     },
   })
 

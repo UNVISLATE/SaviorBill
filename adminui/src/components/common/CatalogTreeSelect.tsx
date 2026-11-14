@@ -40,6 +40,8 @@ interface FlattenedCatalogNode {
   path: string
 }
 
+const EMPTY_CATALOGS: CatalogItem[] = []
+
 export function CatalogTreeSelect({
   value,
   onChange,
@@ -76,7 +78,7 @@ export function CatalogTreeSelect({
     staleTime: 60_000,
   })
 
-  const rawCatalogs = propCatalogs !== undefined ? propCatalogs : fetchedCatalogs || []
+  const rawCatalogs = propCatalogs ?? fetchedCatalogs ?? EMPTY_CATALOGS
 
   // Вычисляем список ID, которые нужно исключить (сам excludeId и все его потомки, чтобы избежать циклов)
   const excludedIds = useMemo(() => {

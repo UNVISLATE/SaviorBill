@@ -63,6 +63,12 @@ async def revoke_my_session(
     dependencies=[Depends(require_perm("user.profile.edit"))],
     summary="Revoke all current user's sessions",
 )
+@router.delete(
+    "/me/sessions",
+    response_model=dict[str, int],
+    dependencies=[Depends(require_perm("user.profile.edit"))],
+    summary="Revoke all current user's sessions (DELETE alias)",
+)
 async def revoke_my_sessions(
     request: Request,
     acc: UserModel = Depends(get_current_acc),

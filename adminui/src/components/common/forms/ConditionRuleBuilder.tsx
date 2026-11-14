@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Plus, Trash2, Code2, SlidersHorizontal, Sparkles } from "lucide-react"
 import { Button } from "@/components/shadsnui/button"
 import { Input } from "@/components/shadsnui/input"
@@ -67,6 +67,7 @@ export function ConditionRuleBuilder({
   const [jsonText, setJsonText] = useState("")
   const [jsonError, setJsonError] = useState<string | null>(null)
   const [rules, setRules] = useState<RuleRow[]>([])
+  const lastEmittedRef = useRef<string>("")
 
   // Инициализация из внешнего значения
   useEffect(() => {
@@ -84,14 +85,18 @@ export function ConditionRuleBuilder({
       text = JSON.stringify(value, null, 2)
     }
 
+    if (text === lastEmittedRef.current) {
+      return
+    }
+    lastEmittedRef.current = text
     setJsonText(text)
 
-    const newRules: RuleRow[] = Object.entries(parsed).map(([k, v], idx) => {
+    const newRules: RuleRow[] = Object.entries(parsed).map(([k, v]) => {
       let t: "string" | "number" | "boolean" = "string"
       if (typeof v === "boolean") t = "boolean"
       else if (typeof v === "number") t = "number"
       return {
-        id: `rule-${idx}-${k}`,
+        id: crypto.randomUUID(),
         path: k,
         value: String(v ?? ""),
         type: t,
@@ -114,6 +119,7 @@ export function ConditionRuleBuilder({
       obj[r.path.trim()] = val
     }
     const text = JSON.stringify(obj, null, 2)
+    lastEmittedRef.current = text
     setJsonText(text)
     setJsonError(null)
     onChange(obj, text)
@@ -138,7 +144,7 @@ export function ConditionRuleBuilder({
 
   const handleAddRule = (suggestedPath?: string, defaultValue?: string) => {
     const newRule: RuleRow = {
-      id: `rule-${Date.now()}-${Math.random()}`,
+      id: crypto.randomUUID(),
       path: suggestedPath || "",
       value: defaultValue || "",
       type: defaultValue === "true" || defaultValue === "false" ? "boolean" : "string",
@@ -156,6 +162,7 @@ export function ConditionRuleBuilder({
 
   const handleJsonChange = (text: string) => {
     setJsonText(text)
+    lastEmittedRef.current = text
     if (!text.trim()) {
       setJsonError(null)
       setRules([])
@@ -169,12 +176,12 @@ export function ConditionRuleBuilder({
         return
       }
       setJsonError(null)
-      const nextRules: RuleRow[] = Object.entries(parsed).map(([k, v], idx) => {
+      const nextRules: RuleRow[] = Object.entries(parsed).map(([k, v]) => {
         let t: "string" | "number" | "boolean" = "string"
         if (typeof v === "boolean") t = "boolean"
         else if (typeof v === "number") t = "number"
         return {
-          id: `rule-${idx}-${k}`,
+          id: crypto.randomUUID(),
           path: k,
           value: String(v ?? ""),
           type: t,

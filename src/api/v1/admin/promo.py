@@ -173,4 +173,21 @@ async def set_code_active(
     return PromoCode.from_model(promo)
 
 
+@router.delete(
+    "/codes/{code_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_perm("promo.codes.delete"))],
+    summary="Delete promo code",
+)
+async def delete_code(
+    code_id: int,
+    mngr: PromoCodesMngr = Depends(get_promo_mngr),
+) -> None:
+    code = await mngr.s.get(PromoCodesModel, code_id)
+    if code is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "promo code not found")
+    await mngr.s.delete(code)
+    await mngr.s.commit()
+
+
 __all__ = ["router"]

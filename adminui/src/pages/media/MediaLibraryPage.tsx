@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useMemo } from "react"
+import { useState, useRef, useEffect, useMemo, useCallback } from "react"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   ImageOff,
@@ -208,23 +208,23 @@ export function MediaLibraryPage() {
 
   const rawItems = (data?.items ?? []).filter((m) => kindFilter === "all" || m.kind === kindFilter)
 
-  const executeUpload = async (file: File, config?: MediaUploadConfig) => {
+  const executeUpload = useCallback(async (file: File, config?: MediaUploadConfig) => {
     try {
       await uploadFile(file, config)
     } catch (e: unknown) {
       toastError("Ошибка загрузки", getErrorDetail(e))
     }
-  }
+  }, [uploadFile])
 
-  const getDefaultConfig = (file: File): MediaUploadConfig => {
+  const getDefaultConfig = useCallback((file: File): MediaUploadConfig => {
     const isGif = file.type === "image/gif" || file.name.toLowerCase().endsWith(".gif")
     const isVideo = file.type.startsWith("video/") || /\.(mp4|webm|mkv|mov|avi)$/i.test(file.name)
     const def = adminSettings?.mediadialog?.default
 
     if (isGif) {
-      const fmt = def?.gif_format || "gif"
+      const fmt = (def?.gif_format as MediaUploadConfig["format"]) || "gif"
       return {
-        format: fmt as any,
+        format: fmt,
         keep_animation: fmt === "gif",
         video_codec: fmt === "gif" ? "copy" : "libvpx-vp9",
         poster_scale: def?.poster_scale || "1080p",
@@ -242,19 +242,19 @@ export function MediaLibraryPage() {
         }
       }
       return {
-        format: (def?.video_format as any) || "webm",
-        video_codec: (def?.video_codec as any) || "libvpx-vp9",
-        audio_codec: (def?.audio_codec as any) || "libopus",
-        scale: (def?.scale as any) || "original",
+        format: (def?.video_format as MediaUploadConfig["format"]) || "webm",
+        video_codec: (def?.video_codec as MediaUploadConfig["video_codec"]) || "libvpx-vp9",
+        audio_codec: (def?.audio_codec as MediaUploadConfig["audio_codec"]) || "libopus",
+        scale: def?.scale || "original",
         poster_scale: def?.poster_scale || "1080p",
         crf: def?.crf ?? 32,
       }
     }
 
     return { format: "webp" }
-  }
+  }, [adminSettings])
 
-  const handleFiles = (files: File[]) => {
+  const handleFiles = useCallback((files: File[]) => {
     if (files.length === 0) return
     const isDialogEnabled = adminSettings?.mediadialog?.enabled ?? true
 
@@ -284,7 +284,12 @@ export function MediaLibraryPage() {
       setPendingFiles(configurableFiles)
       setConfigModalOpen(true)
     }
-  }
+  }, [adminSettings, executeUpload, getDefaultConfig])
+
+  const handleFilesRef = useRef(handleFiles)
+  useEffect(() => {
+    handleFilesRef.current = handleFiles
+  }, [handleFiles])
 
   // Full-window drag & drop overlay listener
   useEffect(() => {
@@ -332,7 +337,7 @@ export function MediaLibraryPage() {
       dragCounter = 0
       setIsDragOver(false)
       if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
-        handleFiles(Array.from(e.dataTransfer.files))
+        handleFilesRef.current(Array.from(e.dataTransfer.files))
       }
     }
 

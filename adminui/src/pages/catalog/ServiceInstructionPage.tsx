@@ -85,7 +85,7 @@ export function ServiceInstructionPage() {
     if (!editorHostRef.current) return
 
     const editor = monaco.editor.create(editorHostRef.current, {
-      value: markdown,
+      value: "",
       language: "markdown",
       theme: "vs-dark",
       automaticLayout: true,
@@ -114,8 +114,8 @@ export function ServiceInstructionPage() {
   // Populate initial markdown from service settings
   useEffect(() => {
     if (!service) return
-    const s = service.settings || {}
-    const text = String((s as any).instructions_md || "")
+    const s = (service.settings || {}) as Record<string, unknown>
+    const text = typeof s.instructions_md === "string" ? s.instructions_md : ""
 
     setMarkdown(text)
     setDirty(false)
@@ -171,7 +171,6 @@ export function ServiceInstructionPage() {
       return (
         await api.patch(`/v1/admin/services/${id}`, {
           settings: currentSettings,
-          lock_version: service?.lock_version,
         })
       ).data
     },

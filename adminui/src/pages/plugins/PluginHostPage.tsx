@@ -7,6 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/shadsnui/
 import { api } from "@/api/api"
 import { useAuth } from "@/hooks/use-auth"
 
+interface PluginMeta {
+  slug: string
+  name: string
+  version?: string
+  admin_ui?: { entry: string }
+}
+
 export function PluginHostPage() {
   const { slug } = useParams<{ slug: string }>()
   const navigate = useNavigate()
@@ -17,7 +24,7 @@ export function PluginHostPage() {
   const [isMounting, setIsMounting] = useState(true)
 
   // Получаем список плагинов для поиска манифеста текущего плагина
-  const { data: plugins = [], isLoading: isPluginsLoading } = useQuery({
+  const { data: plugins = [], isLoading: isPluginsLoading } = useQuery<PluginMeta[]>({
     queryKey: ["admin", "plugins"],
     queryFn: async () => {
       const res = await api.get("/v1/admin/plugins")
@@ -25,7 +32,7 @@ export function PluginHostPage() {
     },
   })
 
-  const currentPlugin = plugins.find((p: any) => p.slug === slug)
+  const currentPlugin = plugins.find((p) => p.slug === slug)
 
   useEffect(() => {
     if (isPluginsLoading) return
@@ -41,6 +48,9 @@ export function PluginHostPage() {
       return
     }
 
+    const entryPath = adminUi.entry.replace(/^\/+/, "")
+    const versionParam = currentPlugin.version ? `?v=${currentPlugin.version}` : ""
+
     let isCancelled = false
     let unmountFn: (() => void) | null = null
 
@@ -50,8 +60,6 @@ export function PluginHostPage() {
         setMountError(null)
 
         // URL бандла через единый префикс mediaworker (/api/media/*)
-        const entryPath = adminUi.entry.replace(/^\/+/, "")
-        const versionParam = currentPlugin.version ? `?v=${currentPlugin.version}` : ""
         const bundleUrl = `/api/media/plugins/${slug}/ui/${entryPath}${versionParam}`
 
         // Динамический импорт ESM-модуля
@@ -81,9 +89,9 @@ export function PluginHostPage() {
         }
 
         setIsMounting(false)
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (!isCancelled) {
-          setMountError(err.message || String(err))
+          setMountError(err instanceof Error ? err.message : String(err))
           setIsMounting(false)
         }
       }
@@ -96,7 +104,9 @@ export function PluginHostPage() {
       if (unmountFn) {
         try {
           unmountFn()
-        } catch {}
+        } catch {
+          // ignore unmount errors
+        }
       }
     }
   }, [slug, currentPlugin, isPluginsLoading, me, navigate])

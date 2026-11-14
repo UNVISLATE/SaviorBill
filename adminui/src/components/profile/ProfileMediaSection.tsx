@@ -342,9 +342,9 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
           const isVideo = file.type.startsWith("video/") || /\.(mp4|webm|mkv|mov|avi)$/i.test(file.name)
           let config: MediaUploadConfig
           if (isGif) {
-            const fmt = def?.gif_format || "gif"
+            const fmt = (def?.gif_format as MediaUploadConfig["format"]) || "gif"
             config = {
-              format: fmt as any,
+              format: fmt,
               keep_animation: fmt === "gif",
               video_codec: fmt === "gif" ? "copy" : "libvpx-vp9",
               poster_scale: def?.poster_scale || "1080p",
@@ -354,10 +354,10 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
             config = isOriginal
               ? { format: "original", video_codec: "copy", audio_codec: "copy", poster_scale: def?.poster_scale || "1080p" }
               : {
-                  format: (def?.video_format as any) || "webm",
-                  video_codec: (def?.video_codec as any) || "libvpx-vp9",
-                  audio_codec: (def?.audio_codec as any) || "libopus",
-                  scale: (def?.scale as any) || "original",
+                  format: (def?.video_format as MediaUploadConfig["format"]) || "webm",
+                  video_codec: (def?.video_codec as MediaUploadConfig["video_codec"]) || "libvpx-vp9",
+                  audio_codec: (def?.audio_codec as MediaUploadConfig["audio_codec"]) || "libopus",
+                  scale: def?.scale || "original",
                   poster_scale: def?.poster_scale || "1080p",
                   crf: def?.crf ?? 32,
                 }

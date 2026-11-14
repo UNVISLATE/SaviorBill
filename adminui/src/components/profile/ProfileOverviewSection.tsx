@@ -104,8 +104,8 @@ function BalanceAdjustDialog({
       const num = Number(amount)
       if (Number.isNaN(num) || num === 0) throw new Error("Укажите сумму (не ноль)")
       await api.post(`/v1/admin/users/${userId}/balance`, {
-        delta: num.toString(),
-        is_bonus: kind === "bonus",
+        amount: num.toString(),
+        kind: kind === "bonus" ? "bonus" : "main",
         reason: reason.trim(),
       })
     },
@@ -463,9 +463,9 @@ export function ProfileOverviewSection({
   const revokeSessions = useMutation({
     mutationFn: async () => {
       if (isOwn) {
-        await api.delete("/v1/user/me/sessions")
+        await api.post("/v1/user/me/sessions/revoke-all")
       } else if (userId) {
-        await api.delete(`/v1/admin/users/${userId}/sessions`)
+        await api.post(`/v1/admin/users/${userId}/sessions/revoke-all`)
       }
     },
     onSuccess: () => {

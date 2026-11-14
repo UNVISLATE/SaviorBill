@@ -51,6 +51,8 @@ interface PermsPickerProps {
   availablePerms?: Set<string>
 }
 
+const EMPTY_PERMS: string[] = []
+
 export function PermsPicker({
   selected,
   onChange,
@@ -68,7 +70,7 @@ export function PermsPicker({
   })
 
   const catalog = propCatalog || fetchedCatalog
-  const rawFlat = catalog?.flat ?? []
+  const rawFlat = catalog?.flat ?? EMPTY_PERMS
 
   const flatPerms = useMemo(() => {
     if (!availablePerms) return rawFlat

@@ -81,27 +81,30 @@ function ProviderFormDialog({
       setScopes(provider?.scopes ?? "openid email profile")
       setIconMediaId(provider?.icon_media_id ?? null)
       setIconUrl(provider?.icon_url ?? null)
-      setSecretsText("{}")
+      setSecretsText(isEdit ? "" : "{}")
     }
-  }, [open, provider])
+  }, [open, provider, isEdit])
 
   const save = useMutation({
     mutationFn: async () => {
-      let secrets: unknown = {}
-      if (secretsText.trim()) {
+      const trimmedSecrets = secretsText.trim()
+      let secrets: unknown = undefined
+      if (trimmedSecrets && trimmedSecrets !== "{}") {
         try {
-          secrets = JSON.parse(secretsText)
+          secrets = JSON.parse(trimmedSecrets)
         } catch {
           throw new Error("invalid json")
         }
       }
-      const body = {
+      const body: Record<string, unknown> = {
         title: title || null,
         enabled,
         script_id: Number(scriptId),
         scopes,
-        secrets,
         icon_media_id: iconMediaId,
+      }
+      if (secrets !== undefined || !isEdit) {
+        body.secrets = secrets ?? {}
       }
       if (isEdit) return api.patch(`/v1/admin/oauth/${provider!.id}`, body)
       return api.post("/v1/admin/oauth", { ...body, slug })

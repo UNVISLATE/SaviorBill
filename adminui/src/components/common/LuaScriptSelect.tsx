@@ -91,6 +91,8 @@ export function getScriptKindBadge(kind?: string | null) {
   }
 }
 
+const EMPTY_SCRIPTS: LuaScriptOption[] = []
+
 export function LuaScriptSelect({
   value,
   onChange,
@@ -128,7 +130,7 @@ export function LuaScriptSelect({
     staleTime: 60_000,
   })
 
-  const availableScripts = propScripts !== undefined ? propScripts : fetchedScripts || []
+  const availableScripts = propScripts ?? fetchedScripts ?? EMPTY_SCRIPTS
 
   // Фильтрация по переданному типу kind (например, только payment или только service)
   const kindFilteredScripts = useMemo(() => {

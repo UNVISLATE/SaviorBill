@@ -17,7 +17,7 @@ import { useInstanceCurrency } from "@/lib/currency"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
 import { MediaPickerDialog } from "@/components/media/MediaPickerDialog"
-import { KeySecretEditor } from "@/components/common/forms/KeySecretEditor"
+import { KeySecretEditor, type FormFieldSchema } from "@/components/common/forms/KeySecretEditor"
 import { CurrencySelect } from "@/components/common/CurrencySelect"
 import { CurrencyTagSelect } from "@/components/common/CurrencyTagSelect"
 import { LuaScriptSelect, type LuaScriptOption } from "@/components/common/LuaScriptSelect"
@@ -93,13 +93,14 @@ function ProviderFormDialog({
         setIsRecommended(Boolean(provider.is_recommended))
         setIconMediaId(provider.icon_media_id ?? null)
         setIconUrl(provider.icon_url ?? null)
-        setSecretsText("{}")
+        setSecretsText("")
       } else {
         const matched = initialScriptId && paymentScripts ? paymentScripts.find((s) => String(s.id) === String(initialScriptId)) : null
-        const m = ((matched?.settings as any)?.manifest as any) || ((matched?.settings as any) || {})
-        const pref = m.prefill || {}
-        setSlug(pref.slug || matched?.slug || "")
-        setTitle(pref.name || matched?.name || matched?.slug || "")
+        const rawSettings = (matched?.settings || {}) as Record<string, unknown>
+        const m = (rawSettings.manifest || rawSettings) as Record<string, unknown>
+        const pref = (m.prefill || {}) as Record<string, unknown>
+        setSlug(String(pref.slug || matched?.slug || ""))
+        setTitle(String(pref.name || matched?.name || matched?.slug || ""))
         setCurrency(instanceCurrency || "RUB")
         setOptionalCurrencies([])
         setFeeEnabled(false)
@@ -117,15 +118,16 @@ function ProviderFormDialog({
 
   const save = useMutation({
     mutationFn: async () => {
-      let secrets: unknown = {}
-      if (secretsText.trim()) {
+      const trimmedSecrets = secretsText.trim()
+      let secrets: unknown = undefined
+      if (trimmedSecrets && trimmedSecrets !== "{}") {
         try {
-          secrets = JSON.parse(secretsText)
+          secrets = JSON.parse(trimmedSecrets)
         } catch {
           throw new Error("invalid json")
         }
       }
-      const body = {
+      const body: Record<string, unknown> = {
         title: title || null,
         enabled,
         is_recommended: isRecommended,
@@ -136,7 +138,9 @@ function ProviderFormDialog({
         add_fee_to_amount: addFeeToAmount,
         script_id: scriptId ? Number(scriptId) : null,
         icon_media_id: iconMediaId,
-        secrets,
+      }
+      if (secrets !== undefined || !isEdit) {
+        body.secrets = secrets ?? {}
       }
       if (isEdit) return api.patch(`/v1/admin/purchases/providers/${provider!.id}`, body)
       return api.post("/v1/admin/purchases/providers", { slug, ...body })
@@ -160,10 +164,10 @@ function ProviderFormDialog({
 
   const scriptSettingsSchema = useMemo(() => {
     if (!selectedScript?.settings) return undefined
-    const set = selectedScript.settings as Record<string, any>
-    const m = set.manifest || set
-    const fields = m.settings_form || m.client_order_form
-    return Array.isArray(fields) && fields.length > 0 ? fields : undefined
+    const set = (selectedScript.settings || {}) as Record<string, unknown>
+    const m = (set.manifest || set) as Record<string, unknown>
+    const fields = (m.settings_form || m.client_order_form) as unknown
+    return Array.isArray(fields) && fields.length > 0 ? (fields as FormFieldSchema[]) : undefined
   }, [selectedScript])
 
   const tabs: TabDefinition[] = [
@@ -531,7 +535,7 @@ export function PaymentProvidersPage() {
                 </div>
                 <div className="flex items-center justify-between pt-2 border-t">
                   <a
-                    href={`/api/v1/user/purchases/callback/${p.slug}`}
+                    href={`/api/v1/callback/payment/${p.slug}`}
                     target="_blank"
                     rel="noreferrer"
                     onClick={(e) => e.stopPropagation()}

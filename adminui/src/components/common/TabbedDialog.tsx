@@ -74,17 +74,18 @@ export function TabbedDialog({
   className,
 }: TabbedDialogProps) {
   const isMobile = useIsMobile()
-  const [internalActiveTab, setInternalActiveTab] = useState(tabs[0]?.id || "")
+  const firstTabId = tabs[0]?.id
+  const [internalActiveTab, setInternalActiveTab] = useState(firstTabId || "")
   const prevOpenRef = useRef(open)
 
   useEffect(() => {
-    if (!prevOpenRef.current && open && tabs.length > 0) {
+    if (!prevOpenRef.current && open && firstTabId) {
       if (!controlledActiveTab) {
-        setInternalActiveTab(tabs[0].id)
+        setInternalActiveTab(firstTabId)
       }
     }
     prevOpenRef.current = open
-  }, [open, controlledActiveTab])
+  }, [open, controlledActiveTab, firstTabId])
 
   const activeTabId = controlledActiveTab !== undefined ? controlledActiveTab : internalActiveTab
   const handleTabChange = (id: string) => {

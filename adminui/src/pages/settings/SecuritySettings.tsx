@@ -396,7 +396,7 @@ export function SecuritySettings() {
               <Input
                 type="number"
                 min={10}
-                max={86400 * 7}
+                max={86400}
                 value={curCatalog.cache_ttl_sec}
                 onChange={(e) =>
                   setCatalogDraft({ ...curCatalog, cache_ttl_sec: Number(e.target.value) })

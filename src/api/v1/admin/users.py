@@ -334,6 +334,7 @@ async def edit_user(
     # иначе любое новое поле UserPatch обошло бы точечные проверки ниже.
     assert_can_modify_account(caller, acc)
     data = body.model_dump(exclude_unset=True)
+    is_active_changed = "is_active" in data and data["is_active"] != acc.is_active
     role_changed = "role_id" in data and data["role_id"] != acc.role_id
     if role_changed:
         caller_perms = caller.role.perms if caller.role else None
@@ -368,9 +369,8 @@ async def edit_user(
         meta={"fields": sorted(data.keys())},
     )
     await session.commit()
-    if role_changed:
-        # Роль (в т.ч. бан) сменена — обрываем выданные сессии, чтобы старый
-        # refresh нельзя было ротировать дальше (AUDIT.md §1.3 SEC-H2).
+    if role_changed or (is_active_changed and not acc.is_active):
+        # Роль сменена или аккаунт заблокирован — обрываем выданные сессии
         await tokens.revoke_all_sessions(acc.id)
     return User.from_model(acc)
 
@@ -633,6 +633,12 @@ async def revoke_user_session(
     response_model=dict[str, int],
     dependencies=[Depends(require_perm("admin.user.sessions.manage"))],
     summary="Revoke all user sessions",
+)
+@router.delete(
+    "/{user_id}/sessions",
+    response_model=dict[str, int],
+    dependencies=[Depends(require_perm("admin.user.sessions.manage"))],
+    summary="Revoke all user sessions (DELETE alias)",
 )
 async def revoke_all_user_sessions(
     request: Request,

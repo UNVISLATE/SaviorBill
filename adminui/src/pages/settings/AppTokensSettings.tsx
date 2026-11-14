@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { getErrorDetail } from "@/lib/api-error.ts"
 import { useAuth } from "@/hooks/use-auth.tsx"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { Button } from "@/components/shadsnui/button"
@@ -172,8 +173,8 @@ export function AppTokensSettings() {
       setRevealedToken(created)
       toastSuccess("Токен приложения успешно выпущен")
     },
-    onError: (err: any) => {
-      toastError(err?.response?.data?.detail || err?.message || "Не удалось создать токен")
+    onError: (err: unknown) => {
+      toastError(getErrorDetail(err) || "Не удалось создать токен")
     },
   })
 
@@ -189,8 +190,8 @@ export function AppTokensSettings() {
       }
       toastSuccess("Токен отозван")
     },
-    onError: (err: any) => {
-      toastError(err?.response?.data?.detail || "Не удалось отозвать токен")
+    onError: (err: unknown) => {
+      toastError(getErrorDetail(err) || "Не удалось отозвать токен")
     },
   })
 
@@ -204,8 +205,8 @@ export function AppTokensSettings() {
       setViewingToken(null)
       toastSuccess("Токен удален")
     },
-    onError: (err: any) => {
-      toastError(err?.response?.data?.detail || "Не удалось удалить токен")
+    onError: (err: unknown) => {
+      toastError(getErrorDetail(err) || "Не удалось удалить токен")
     },
   })
 

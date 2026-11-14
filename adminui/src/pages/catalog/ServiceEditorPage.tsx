@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState, useCallback } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useNavigate, useParams, Link, useSearchParams } from "react-router-dom"
 import { ManifestLivePreview } from "@unvislate/sbui-sdk"
@@ -401,8 +401,8 @@ export function ServiceEditorPage() {
 
   const scriptSettingsSchema = useMemo(() => {
     if (jsonModalConfig.target !== "settings" || !selectedLuaScript?.settings) return undefined
-    const set = selectedLuaScript.settings as Record<string, any>
-    const m = set.manifest || set
+    const set = selectedLuaScript.settings as Record<string, unknown>
+    const m = (set.manifest || set) as Record<string, unknown>
     const fields = m.settings_form
     return Array.isArray(fields) && fields.length > 0 ? fields : undefined
   }, [jsonModalConfig.target, selectedLuaScript])
@@ -532,22 +532,26 @@ export function ServiceEditorPage() {
 
       setInitialSnapshot(initial)
     } else if (isNew && !initialSnapshot) {
+      const fromScript = searchParams.get("from_script")
+      if (fromScript && !luaScripts) {
+        return // wait for lua scripts to finish loading
+      }
       let initName = ""
       let initSlug = ""
       let initDesc = ""
       let initDelivery: "key" | "lua" = "key"
       let initLuaId = ""
-      const fromScript = searchParams.get("from_script")
       if (fromScript && luaScripts) {
         const found = luaScripts.find((s) => String(s.id) === String(fromScript))
         if (found) {
           initDelivery = "lua"
           initLuaId = String(found.id)
-          const m = ((found.settings as any)?.manifest as any) || (found.settings as any) || {}
-          const pref = m.prefill || {}
-          initName = pref.name || found.name || found.slug || ""
-          initSlug = pref.slug || found.slug || ""
-          initDesc = pref.description || m.description || ""
+          const rawSettings = (found.settings || {}) as Record<string, unknown>
+          const m = (rawSettings.manifest || rawSettings) as Record<string, unknown>
+          const pref = (m.prefill || {}) as Record<string, unknown>
+          initName = String(pref.name || found.name || found.slug || "")
+          initSlug = String(pref.slug || found.slug || "")
+          initDesc = String(pref.description || m.description || "")
           setName(initName)
           setSlug(initSlug)
           setDescription(initDesc)
@@ -775,8 +779,8 @@ export function ServiceEditorPage() {
         throw new Error(`Проверьте форму: ${firstErr}`)
       }
 
-      let params: Record<string, unknown> = {}
-      let settings: Record<string, unknown> = {}
+      let params: Record<string, unknown>
+      let settings: Record<string, unknown>
       try {
         params = JSON.parse(paramsText || "{}")
         settings = JSON.parse(settingsText || "{}")
@@ -815,7 +819,19 @@ export function ServiceEditorPage() {
         }
       } else if (priceType === "configurable") {
         pricingConfig = {
-          components: compList,
+          components: compList.map((c) => ({
+            code: c.code,
+            name: c.name,
+            type: c.type,
+            unit: c.unit || "",
+            unit_price: c.unit_price !== "" && c.unit_price !== null && c.unit_price !== undefined ? Number(c.unit_price) : 0,
+            min: c.min !== "" && c.min !== null && c.min !== undefined ? Number(c.min) : null,
+            max: c.max !== "" && c.max !== null && c.max !== undefined ? Number(c.max) : null,
+            step: c.step !== "" && c.step !== null && c.step !== undefined ? Number(c.step) : null,
+            default: c.default !== "" ? c.default : "0",
+            path: c.path,
+            options: c.type === "select" ? c.options : undefined,
+          })),
         }
       }
 
@@ -860,7 +876,7 @@ export function ServiceEditorPage() {
     },
   })
 
-  const handleSave = () => {
+  const handleSave = useCallback(() => {
     setHasSubmitted(true)
     if (hasErrors) {
       const firstErr = Object.values(validationErrors)[0]
@@ -868,7 +884,12 @@ export function ServiceEditorPage() {
       return
     }
     saveMutation.mutate()
-  }
+  }, [hasErrors, validationErrors, saveMutation])
+
+  const handleSaveRef = useRef(handleSave)
+  useEffect(() => {
+    handleSaveRef.current = handleSave
+  }, [handleSave])
 
   // Быстрое сохранение Ctrl+S
   useEffect(() => {
@@ -876,13 +897,13 @@ export function ServiceEditorPage() {
       if ((e.ctrlKey || e.metaKey) && e.key === "s") {
         e.preventDefault()
         if (isDirty || isNew) {
-          handleSave()
+          handleSaveRef.current()
         }
       }
     }
     window.addEventListener("keydown", handleKeyDown)
     return () => window.removeEventListener("keydown", handleKeyDown)
-  }, [isDirty, isNew, hasErrors, validationErrors])
+  }, [isDirty, isNew])
 
   // Удаление услуги
   const deleteMutation = useMutation({

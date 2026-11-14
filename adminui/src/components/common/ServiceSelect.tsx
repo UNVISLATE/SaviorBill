@@ -41,6 +41,8 @@ interface ServiceSelectProps {
   className?: string
 }
 
+const EMPTY_SERVICES: ServiceOption[] = []
+
 export function ServiceSelect({
   services: externalServices,
   value,
@@ -75,7 +77,7 @@ export function ServiceSelect({
     staleTime: 60_000,
   })
 
-  const rawList = externalServices !== undefined ? externalServices : fetchedServices || []
+  const rawList = externalServices ?? fetchedServices ?? EMPTY_SERVICES
 
   // Нормализация и фильтрация по типу доставки (если запрошено)
   const allServices = useMemo(() => {

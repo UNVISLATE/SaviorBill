@@ -40,6 +40,19 @@ import { BreadcrumbProvider } from "@/hooks/use-breadcrumb"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/shadsnui/tooltip"
 import { ErrorBoundary } from "@/components/common/ErrorBoundary"
 
+interface PluginNavItemMeta {
+  slug: string
+  name: string
+  status: string
+  admin_ui?: {
+    nav?: {
+      title?: string
+      icon?: string
+      required_perm?: string
+    }
+  }
+}
+
 export function DashboardLayout() {
   const { can } = useAuth()
   const location = useLocation()
@@ -55,7 +68,7 @@ export function DashboardLayout() {
     health?.app_version || (typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0-dev")
   const displayVersion = rawVersion.startsWith("v") ? rawVersion : `v${rawVersion}`
 
-  const { data: plugins = [] } = useQuery<any[]>({
+  const { data: plugins = [] } = useQuery<PluginNavItemMeta[]>({
     queryKey: ["admin", "plugins"],
     queryFn: async () => (await api.get("/v1/admin/plugins")).data,
     staleTime: 60_000,
@@ -68,7 +81,7 @@ export function DashboardLayout() {
     for (const p of plugins) {
       if (p.status === "active" && p.admin_ui?.nav) {
         const nav = p.admin_ui.nav
-        const IconComp = (PLUGIN_ICONS[nav.icon] || Plug) as any
+        const IconComp = (PLUGIN_ICONS[nav.icon || ""] || Plug) as typeof Plug
         pluginNavItems.push({
           title: nav.title || p.name,
           url: `/plugins/${p.slug}`,
@@ -84,7 +97,7 @@ export function DashboardLayout() {
       ...navGroups,
       {
         title: "Расширения",
-        icon: Plug as any,
+        icon: Plug,
         items: pluginNavItems,
       },
     ]

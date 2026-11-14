@@ -170,6 +170,23 @@ async def update_provider(
     return PayProvider.from_model(prov)
 
 
+@router.delete(
+    "/providers/{provider_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_perm("purchases.providers.delete"))],
+    summary="Delete payment provider",
+)
+async def delete_provider(
+    provider_id: int,
+    session: AsyncSession = Depends(get_db_session),
+) -> None:
+    prov = await session.get(PaymentProvidersModel, provider_id)
+    if prov is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "provider not found")
+    await session.delete(prov)
+    await session.commit()
+
+
 # Карточка платежа объявлена после /purchases/providers, чтобы "providers"
 # не перехватывался как {payment_id}.
 @router.get(

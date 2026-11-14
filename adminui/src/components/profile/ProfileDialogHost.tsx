@@ -11,7 +11,7 @@ import {
   UsersRound,
 } from "lucide-react"
 
-import { api } from "@/api/api.ts"
+import { api, TOTP_SETUP_REQUIRED_EVENT } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
 import { toastError, toastSuccess } from "@/lib/toast.ts"
 import { useIsMobile } from "@/hooks/use-mobile"
@@ -154,10 +154,6 @@ function ProfileNav({
   )
 }
 
-/** Имя события, которое генерирует перехватчик 403 totp_setup_required в
- * api.ts. Вынесено константой, чтобы не опечататься. */
-export const TOTP_SETUP_REQUIRED_EVENT = "saviorbill:totp_setup_required"
-
 /** Диалог подтверждения удаления чужого пользователя */
 function DeleteUserDialog({
   userId,
@@ -237,8 +233,11 @@ export function ProfileDialogHost() {
 
   const revokeAllSessions = useMutation({
     mutationFn: async () => {
-      const basePath = mode === "own" ? "/v1/user/me/sessions" : `/v1/admin/users/${userId}/sessions`
-      await api.delete(basePath)
+      if (mode === "own") {
+        await api.post("/v1/user/me/sessions/revoke-all")
+      } else if (userId) {
+        await api.post(`/v1/admin/users/${userId}/sessions/revoke-all`)
+      }
     },
     onSuccess: () => {
       toastSuccess("Все сессии завершены")
@@ -272,7 +271,7 @@ export function ProfileDialogHost() {
   useEffect(() => {
     function onTotpRequired() {
       openProfile()
-      setSection("security")
+      setTabsByContext((prev) => ({ ...prev, own: "security" }))
       toastError(
         "Нужна двухфакторная аутентификация",
         "Для вашей роли она обязательна настройкой инстанса — включите её здесь, чтобы продолжить работать в админке.",
@@ -280,7 +279,7 @@ export function ProfileDialogHost() {
     }
     window.addEventListener(TOTP_SETUP_REQUIRED_EVENT, onTotpRequired)
     return () => window.removeEventListener(TOTP_SETUP_REQUIRED_EVENT, onTotpRequired)
-  }, [openProfile, setSection])
+  }, [openProfile, setTabsByContext])
 
   // Заголовок для чужого профиля
   const { data: viewedUser } = useQuery({

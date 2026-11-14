@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect, useCallback } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
   AlertCircle,
@@ -314,7 +314,7 @@ function SourceDialog({
   const [isTesting, setIsTesting] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
 
-  const handleOpenReset = () => {
+  const handleOpenReset = useCallback(() => {
     setType(source?.type || "provider")
     setProviderKey(source?.provider || "cbr")
     setName(source?.name || "")
@@ -333,7 +333,13 @@ function SourceDialog({
         { code: "EUR", rate: "103.00" },
       ])
     }
-  }
+  }, [source])
+
+  useEffect(() => {
+    if (open) {
+      handleOpenReset()
+    }
+  }, [open, handleOpenReset])
 
   const runTest = async () => {
     setIsTesting(true)
@@ -918,14 +924,23 @@ export function CurrencySettings() {
 
   const handleDrop = (e: React.DragEvent, targetIdx: number) => {
     e.preventDefault()
-    if (draggedIdx === null || draggedIdx === targetIdx || !sources) {
+    if (draggedIdx === null || draggedIdx === targetIdx || !sources || !filteredSources[draggedIdx] || !filteredSources[targetIdx]) {
+      setDraggedIdx(null)
+      setDragOverIdx(null)
+      return
+    }
+    const fromId = filteredSources[draggedIdx].id
+    const toId = filteredSources[targetIdx].id
+    const realFromIdx = sources.findIndex((s) => s.id === fromId)
+    const realToIdx = sources.findIndex((s) => s.id === toId)
+    if (realFromIdx === -1 || realToIdx === -1 || realFromIdx === realToIdx) {
       setDraggedIdx(null)
       setDragOverIdx(null)
       return
     }
     const next = [...sources]
-    const [moved] = next.splice(draggedIdx, 1)
-    next.splice(targetIdx, 0, moved)
+    const [moved] = next.splice(realFromIdx, 1)
+    next.splice(realToIdx, 0, moved)
     setDraggedIdx(null)
     setDragOverIdx(null)
     reorderSources.mutate(next.map((s) => s.id))
@@ -937,10 +952,15 @@ export function CurrencySettings() {
   }
 
   const moveItem = (fromIdx: number, toIdx: number) => {
-    if (!sources || toIdx < 0 || toIdx >= sources.length) return
+    if (!sources || !filteredSources[fromIdx] || !filteredSources[toIdx]) return
+    const fromId = filteredSources[fromIdx].id
+    const toId = filteredSources[toIdx].id
+    const realFromIdx = sources.findIndex((s) => s.id === fromId)
+    const realToIdx = sources.findIndex((s) => s.id === toId)
+    if (realFromIdx === -1 || realToIdx === -1 || realFromIdx === realToIdx) return
     const next = [...sources]
-    const [moved] = next.splice(fromIdx, 1)
-    next.splice(toIdx, 0, moved)
+    const [moved] = next.splice(realFromIdx, 1)
+    next.splice(realToIdx, 0, moved)
     reorderSources.mutate(next.map((s) => s.id))
   }
 

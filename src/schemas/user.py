@@ -78,6 +78,9 @@ class UserPatch(BaseModel):
     bonus_balance: Decimal | None = Field(
         default=None, description="New bonus balance (optional)"
     )
+    is_active: bool | None = Field(
+        default=None, description="Active status / ban"
+    )
 
 
 class BalanceAdjust(BaseModel):

@@ -225,7 +225,18 @@ export function EmailTemplateEditor({
       editor.dispose()
       editorRef.current = null
     }
-  }, [template.id, isHtml, canEdit, template.body])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- template.body and isHtml used for initial mount; updates handled without recreation
+  }, [template.id, canEdit])
+
+  // Переключение языка подсветки без пересоздания редактора
+  useEffect(() => {
+    if (editorRef.current) {
+      const model = editorRef.current.getModel()
+      if (model) {
+        monaco.editor.setModelLanguage(model, isHtml ? "html" : "plaintext")
+      }
+    }
+  }, [isHtml])
 
   // Сохранение изменений
   const save = useMutation({

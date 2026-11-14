@@ -25,11 +25,17 @@ import { KeySecretEditor } from "@/components/common/forms/KeySecretEditor"
 import { toast } from "sonner"
 import { api } from "@/api/api"
 
+declare global {
+  interface Window {
+    SaviorUI?: Record<string, unknown>
+  }
+}
+
 export function setupSaviorUI() {
   if (typeof window === "undefined") return
 
   // Экспортируем Host UI-Kit для микро-фронтендов плагинов
-  ;(window as any).SaviorUI = {
+  window.SaviorUI = {
     Button,
     Input,
     Badge,

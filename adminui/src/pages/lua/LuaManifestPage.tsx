@@ -265,7 +265,10 @@ export function LuaManifestPage() {
         !parsed ||
         typeof parsed !== "object" ||
         Array.isArray(parsed) ||
-        Object.keys(parsed).length === 0
+        (Object.keys(parsed).length === 0 &&
+          !parsed.client_view_form &&
+          !parsed.layout &&
+          !parsed.client_order_form)
 
       if (isEmpty) {
         delete currentSettings.manifest
@@ -276,7 +279,6 @@ export function LuaManifestPage() {
       return (
         await api.patch(`/v1/admin/lua/${scriptId}`, {
           settings: currentSettings,
-          lock_version: script?.lock_version,
         })
       ).data
     },

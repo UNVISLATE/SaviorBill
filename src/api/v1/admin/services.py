@@ -130,6 +130,39 @@ async def update_service(
     return ServiceAdmin.from_model(svc, warnings=warnings)
 
 
+@router.delete(
+    "/{service_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_perm("services.delete"))],
+    summary="Delete service",
+    description="Permanently deletes the service if it has no user orders, or archives/deactivates it (is_active=False).",
+)
+async def delete_service(
+    service_id: int,
+    mngr: ServiceMngr = Depends(get_service_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+) -> None:
+    svc = await mngr.by_id(service_id)
+    if svc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
+    from sqlalchemy import func, select
+    from models.user_services import UserServicesModel
+
+    has_orders = await mngr.s.scalar(
+        select(func.count())
+        .select_from(UserServicesModel)
+        .where(UserServicesModel.service_id == service_id)
+    )
+    if has_orders:
+        svc.is_active = False
+    else:
+        await mngr.s.delete(svc)
+    await mngr.s.commit()
+    await invalidate_service_entity(vk, service_id)
+    await invalidate_catalog_indexes(vk)
+    await invalidate_catalog_cache(vk)
+
+
 @router.get(
     "/{service_id}/attachments",
     response_model=list[Attachment],
