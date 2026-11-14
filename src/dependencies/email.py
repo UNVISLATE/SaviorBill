@@ -26,7 +26,7 @@ async def get_email_sender(
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> EmailSender:
     cfg: AppConfig = request.app.state.settings
-    mail = await build_mail_svc(settings)
+    mail = await build_mail_svc(settings, cfg)
     return EmailSender(mail, EmailMngr(session, cfg.EMAIL_TEMPLATES_DIR))
 
 

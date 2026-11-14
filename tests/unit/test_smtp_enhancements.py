@@ -155,3 +155,38 @@ async def test_smtp_test_connection_exceptions():
             await test_smtp_connection(body, mock_settings)
         assert exc_info.value.status_code == 400
         assert "authentication failed" in exc_info.value.detail
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_internal_email_send_endpoint():
+    """Verify internal email send endpoint renders template and sends with overrides."""
+    from api.v1.internal.email import LuaSendEmailIn, send_email_internal
+
+    mock_sender = AsyncMock()
+    mock_mngr = AsyncMock()
+
+    class MockTemplate:
+        id = 1
+        slug = "welcome"
+        is_active = True
+
+    mock_mngr.by_slug.return_value = MockTemplate()
+
+    body = LuaSendEmailIn(
+        to="user@example.com",
+        template="welcome",
+        context={"username": "Alice"},
+        from_email="custom@example.com",
+        from_name="My Shop",
+    )
+
+    res = await send_email_internal(body, sender=mock_sender, mngr=mock_mngr)
+    assert res == {"ok": True}
+    assert mock_sender.send_by_template.call_count == 1
+    call_args = mock_sender.send_by_template.call_args
+    assert call_args[0][1] == "user@example.com"
+    assert call_args[0][2] == {"username": "Alice"}
+    assert call_args[1]["from_email"] == "custom@example.com"
+    assert call_args[1]["from_name"] == "My Shop"
+

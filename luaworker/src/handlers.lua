@@ -58,6 +58,7 @@ function M.lint(payload)
     crypto = sbox.make_crypto(),
     billing = {
       import_keys = function() return { ok = true, imported = 0, duplicates = 0, available_total = 0 } end,
+      send_email = function() return { ok = true } end,
     },
     cache = { get = function() end, set = function() end, del = function() end, incr = function() end },
     log = sbox.make_logger(),
@@ -223,6 +224,10 @@ function M.run_script_sandbox(payload)
       import_keys = function(service, keys)
         logger.info("billing.import_keys вызван в test-run для услуги: " .. tostring(service) .. ", ключей: " .. tostring(keys and #keys or 0))
         return { ok = true, imported = (keys and #keys) or 0, duplicates = 0, available_total = (keys and #keys) or 0 }
+      end,
+      send_email = function(opts)
+        logger.info("billing.send_email called in test-run for: " .. tostring(opts and opts.to) .. ", template: " .. tostring(opts and opts.template))
+        return { ok = true }
       end,
     },
     crypto = sbox.make_crypto(),

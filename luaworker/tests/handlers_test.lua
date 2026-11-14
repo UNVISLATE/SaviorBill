@@ -76,6 +76,7 @@ case("run_script_sandbox: billing доступен в песочнице с ме
           public = {
             has_billing = (billing ~= nil),
             has_import_keys = (billing and type(billing.import_keys) == "function"),
+            has_send_email = (billing and type(billing.send_email) == "function"),
           }
         }
       end }
@@ -84,6 +85,7 @@ case("run_script_sandbox: billing доступен в песочнице с ме
   })
   assert(res.public.has_billing == true, "billing должен существовать в песочнице")
   assert(res.public.has_import_keys == true, "billing.import_keys должен быть функцией")
+  assert(res.public.has_send_email == true, "billing.send_email должен быть функцией")
 end)
 
 case("run_script_sandbox: urlencode и parse_form доступны через http и crypto", function()

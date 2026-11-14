@@ -107,4 +107,65 @@ function M.import_keys(service, keys)
   }
 end
 
+--- send_email: отправка письма через ядро биллинга (Jinja2-рендеринг + настроенный транспорт).
+-- @param opts: таблица параметров:
+--   to (string, обязательно) - email получателя
+--   template (string|number, обязательно) - слаг или ID шаблона из админки
+--   context (table, опционально) - таблица переменных для Jinja2 контекста шаблона
+--   from_email (string, опционально) - переопределить адрес отправителя
+--   from_name (string, опционально) - переопределить имя отправителя
+-- @return таблица { ok = true } или { ok = false, error = "сообщение" }
+function M.send_email(opts)
+  if type(opts) ~= "table" then
+    return { ok = false, error = "send_email: options must be a table" }
+  end
+  if type(opts.to) ~= "string" or not opts.to:match("%S") then
+    return { ok = false, error = "send_email: 'to' email address is required" }
+  end
+  if (type(opts.template) ~= "string" and type(opts.template) ~= "number") or (type(opts.template) == "string" and not opts.template:match("%S")) then
+    return { ok = false, error = "send_email: 'template' (slug or id) is required" }
+  end
+
+  local billing_url = env("BILLING_URL", "http://billing:8000")
+  local token = read_service_token()
+
+  local payload = {
+    to = opts.to,
+    template = opts.template,
+    context = (type(opts.context) == "table") and opts.context or {},
+    from_email = (type(opts.from_email) == "string" and opts.from_email:match("%S")) and opts.from_email or nil,
+    from_name = (type(opts.from_name) == "string" and opts.from_name:match("%S")) and opts.from_name or nil,
+  }
+
+  local req = {
+    url = billing_url .. "/api/v1/internal/email/send",
+    method = "POST",
+    headers = {
+      ["Content-Type"] = "application/json",
+      ["Authorization"] = "Bearer " .. token,
+    },
+    body = cjson.encode(payload),
+    timeout = 10,
+  }
+
+  local resp = httpc.request(req)
+  if not resp or not resp.ok then
+    local err_msg = (resp and resp.error) or ("HTTP status " .. tostring(resp and resp.status))
+    if resp and resp.body and #resp.body > 0 then
+      local ok_json, parsed = pcall(cjson.decode, resp.body)
+      if ok_json and parsed and parsed.detail then
+        err_msg = tostring(parsed.detail)
+      end
+    end
+    return { ok = false, error = "billing API error: " .. tostring(err_msg) }
+  end
+
+  local ok_decode, data = pcall(cjson.decode, resp.body)
+  if not ok_decode or type(data) ~= "table" then
+    return { ok = false, error = "invalid JSON response from billing" }
+  end
+
+  return { ok = data.ok == true }
+end
+
 return M
