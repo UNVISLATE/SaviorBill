@@ -357,6 +357,9 @@ class AppConfig(BaseSettings):
     SMTP_TLS: bool = Field(default=True)
     SMTP_ENCRYPTION: str | None = Field(default=None)
     SMTP_TIMEOUT: int = Field(default=10)
+    MAIL_DRIVER: str = Field(default="smtp")
+    MAIL_LUA_SCRIPT_ID: int | None = Field(default=None)
+    MAIL_LUA_SCRIPT_VERSION: str | None = Field(default=None)
     KEYS_LOW_THRESHOLD: int = Field(default=5)
 
     # Имена базовых ролей (seed -> settings)

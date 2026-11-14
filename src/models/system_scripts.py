@@ -38,6 +38,7 @@ _SUBDIR_BY_KIND = {
     ScriptKind.PAYMENT: "payments",
     ScriptKind.AUTH: "auth",
     ScriptKind.TRIGGER: "triggers",
+    ScriptKind.EMAIL: "email",
 }
 
 
@@ -307,6 +308,12 @@ class SystemScriptsMngr:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
                     "service script must support create",
+                )
+        elif kind == ScriptKind.EMAIL:
+            if actions and "send" not in actions:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "email script must support send",
                 )
 
     async def by_id(self, script_id: int) -> SystemScriptsModel | None:

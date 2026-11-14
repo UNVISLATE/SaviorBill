@@ -4,6 +4,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Clock,
+  Code2,
   Key,
   Loader2,
   RotateCcw,
@@ -47,8 +48,12 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/shadsnui/alert-dialog"
+import { LuaScriptSelect } from "@/components/common/LuaScriptSelect"
 
 interface SmtpData {
+  driver: "smtp" | "lua"
+  lua_script_id: number | null
+  lua_script_version: string | null
   host: string | null
   port: number
   user: string | null
@@ -69,6 +74,10 @@ export function SmtpSettings() {
     queryFn: async () => (await api.get<SmtpData>("/v1/admin/settings/smtp")).data,
   })
 
+  const [driver, setDriver] = useState<"smtp" | "lua">("smtp")
+  const [luaScriptId, setLuaScriptId] = useState<string>("")
+  const [luaScriptVersion, setLuaScriptVersion] = useState<string>("")
+
   const [host, setHost] = useState("")
   const [port, setPort] = useState(587)
   const [encryption, setEncryption] = useState<"starttls" | "ssl" | "none">("starttls")
@@ -87,6 +96,9 @@ export function SmtpSettings() {
 
   useEffect(() => {
     if (data) {
+      setDriver(data.driver || "smtp")
+      setLuaScriptId(data.lua_script_id ? String(data.lua_script_id) : "")
+      setLuaScriptVersion(data.lua_script_version || "")
       setHost(data.host || "")
       setPort(data.port || 587)
       setEncryption(data.encryption || "starttls")
@@ -108,6 +120,9 @@ export function SmtpSettings() {
   const saveMutation = useMutation({
     mutationFn: async () => {
       await api.post("/v1/admin/settings/smtp", {
+        driver,
+        lua_script_id: driver === "lua" && luaScriptId ? Number(luaScriptId) : null,
+        lua_script_version: driver === "lua" && luaScriptVersion ? luaScriptVersion.trim() : null,
         host: host.trim() || null,
         port: Number(port) || 587,
         encryption,
@@ -120,12 +135,12 @@ export function SmtpSettings() {
       })
     },
     onSuccess: () => {
-      toastSuccess("Настройки SMTP успешно сохранены")
+      toastSuccess("Настройки почтового транспорта успешно сохранены")
       setPassword("")
       setClearPassword(false)
       void qc.invalidateQueries({ queryKey: ["admin-settings-smtp"] })
     },
-    onError: (e) => toastError("Не удалось сохранить настройки SMTP", getErrorDetail(e)),
+    onError: (e) => toastError("Не удалось сохранить настройки", getErrorDetail(e)),
   })
 
   const resetMutation = useMutation({
@@ -133,7 +148,10 @@ export function SmtpSettings() {
       await api.delete("/v1/admin/settings/smtp")
     },
     onSuccess: () => {
-      toastSuccess("Настройки SMTP очищены")
+      toastSuccess("Настройки почтового транспорта очищены")
+      setDriver("smtp")
+      setLuaScriptId("")
+      setLuaScriptVersion("")
       setHost("")
       setPort(587)
       setEncryption("starttls")
@@ -174,7 +192,7 @@ export function SmtpSettings() {
     return (
       <Card className="bg-card/70 border-border/80">
         <CardContent className="p-12 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
-          <Loader2 className="size-4 animate-spin" /> Загрузка настроек SMTP…
+          <Loader2 className="size-4 animate-spin" /> Загрузка настроек почты…
         </CardContent>
       </Card>
     )
@@ -184,16 +202,16 @@ export function SmtpSettings() {
 
   return (
     <div className="space-y-6">
-      {/* Карточка 1: Конфигурация SMTP */}
+      {/* Карточка 1: Конфигурация транспорта */}
       <Card className="bg-card/70 border-border/80 shadow-2xs">
         <CardHeader className="pb-4">
           <div className="flex items-center justify-between">
             <div className="space-y-1">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Server className="size-4 text-primary" /> Почтовый сервер (SMTP)
+                <Server className="size-4 text-primary" /> Почтовый транспорт (Email Delivery)
               </CardTitle>
               <CardDescription className="text-xs">
-                Параметры подключения к почтовому серверу для отправки системных писем, кодов подтверждения и чеков клиентам.
+                Выберите транспорт для отправки системных писем, кодов подтверждения и чеков клиентам: встроенный SMTP или Lua-скрипт API-провайдера.
               </CardDescription>
             </div>
             {isConfigured ? (
@@ -209,136 +227,203 @@ export function SmtpSettings() {
         </CardHeader>
 
         <CardContent className="space-y-5">
-          {/* Сетевые параметры */}
-          <div className="grid gap-4 sm:grid-cols-4">
-            <div className="space-y-1.5 sm:col-span-2">
-              <Label htmlFor="smtp-host">Хост сервера (SMTP Host) *</Label>
-              <Input
-                id="smtp-host"
-                placeholder="smtp.bz, smtp.mailgun.org, smtp.yandex.ru"
-                value={host}
-                onChange={(e) => setHost(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="smtp-port">Порт *</Label>
-              <Input
-                id="smtp-port"
-                type="number"
-                min={1}
-                max={65535}
-                placeholder="587, 465, 9465, 9587"
-                value={port}
-                onChange={(e) => setPort(Number(e.target.value))}
-              />
-              <span className="text-[10px] text-muted-foreground">Любой порт (587, 465, 9465, 9587…)</span>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="smtp-encryption" className="flex items-center gap-1">
-                <Shield className="size-3 text-primary" /> Шифрование *
-              </Label>
-              <Select
-                value={encryption}
-                onValueChange={(val) => setEncryption(val as "starttls" | "ssl" | "none")}
-              >
-                <SelectTrigger id="smtp-encryption" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="starttls">STARTTLS (587, 9587, 2525)</SelectItem>
-                  <SelectItem value="ssl">SSL / Direct TLS (465, 9465)</SelectItem>
-                  <SelectItem value="none">Без шифрования (25, 1025)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+          {/* Выбор драйвера */}
+          <div className="flex items-center gap-2 border-b border-border/60 pb-3">
+            <button
+              type="button"
+              onClick={() => setDriver("smtp")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                driver === "smtp"
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              Встроенный SMTP
+            </button>
+            <button
+              type="button"
+              onClick={() => setDriver("lua")}
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors flex items-center gap-1.5 ${
+                driver === "lua"
+                  ? "bg-primary text-primary-foreground shadow-xs"
+                  : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              <Code2 className="size-3.5" /> Lua-скрипт (API-провайдер)
+            </button>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-4">
-            <div className="space-y-1.5 sm:col-span-1">
-              <Label htmlFor="smtp-timeout" className="flex items-center gap-1">
-                <Clock className="size-3 text-muted-foreground" /> Таймаут (сек)
-              </Label>
-              <Input
-                id="smtp-timeout"
-                type="number"
-                min={1}
-                max={120}
-                placeholder="10"
-                value={timeoutSec}
-                onChange={(e) => setTimeoutSec(Number(e.target.value))}
-              />
-              <span className="text-[10px] text-muted-foreground">Дефолт: 10с (защита от зависаний)</span>
-            </div>
-
-            <div className="space-y-1.5 sm:col-span-3">
-              <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5 text-[11px] text-muted-foreground">
-                <strong className="text-foreground">Подсказка:</strong> Для серверов с нестандартными портами (например, <code className="text-primary font-mono">smtp.bz</code> на портах <code className="font-mono">9465</code> и <code className="font-mono">9587</code>) режим шифрования выбирается независимо от номера порта.
-              </div>
-            </div>
-          </div>
-
-          {/* Аутентификация */}
-          <div className="grid gap-4 sm:grid-cols-2 pt-2 border-t border-border/60">
-            <div className="space-y-1.5">
-              <Label htmlFor="smtp-user">Логин / Пользователь</Label>
-              <Input
-                id="smtp-user"
-                placeholder="user@example.com или API-логин"
-                value={user}
-                onChange={(e) => setUser(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="smtp-pass">Пароль</Label>
-                {data?.has_password && !clearPassword && (
-                  <span className="text-[10px] text-emerald-500 font-medium flex items-center gap-1">
-                    <Key className="size-3" /> Пароль сохранён в SecBox
-                  </span>
-                )}
-                {clearPassword && (
-                  <span className="text-[10px] text-destructive font-medium">Будет удалён при сохранении</span>
-                )}
-              </div>
-              <Input
-                id="smtp-pass"
-                type="password"
-                placeholder={
-                  clearPassword
-                    ? "Пароль будет очищен"
-                    : data?.has_password
-                    ? "•••••••••••• (не изменен)"
-                    : "Пароль приложения или токен"
-                }
-                value={password}
-                disabled={clearPassword}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              {data?.has_password && (
-                <div className="flex justify-end pt-0.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setClearPassword(!clearPassword)
-                      setPassword("")
-                    }}
-                    className="text-[11px] text-destructive hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    <Trash2 className="size-3" />
-                    {clearPassword ? "Отменить удаление пароля" : "Очистить сохранённый пароль"}
-                  </button>
+          {/* Режим Lua-драйвера */}
+          {driver === "lua" ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 p-3 text-xs text-sky-700 dark:text-sky-300 space-y-1">
+                <div className="font-semibold flex items-center gap-1.5">
+                  <Code2 className="size-3.5" /> Доставка через Lua-скрипт (HTTP REST API)
                 </div>
-              )}
-            </div>
-          </div>
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  Ядро рендерит шаблон и передаёт отрендеренный HTML/текст в метод <code className="text-primary font-mono">handle(ctx)</code> скрипта:
+                  поля <code className="font-mono">ctx.email</code> (<code className="font-mono">to, subject, body, from_email</code>) и <code className="font-mono">ctx.config</code>.
+                  Скрипт пуляет запрос по HTTPS к любому сервису (smtp.bz API, Resend, Brevo, UniSender).
+                </p>
+              </div>
 
-          {/* Отправитель (From) */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label>Выберите Lua-скрипт транспорта *</Label>
+                  <LuaScriptSelect
+                    kind={["email", "generic"]}
+                    value={luaScriptId}
+                    onChange={(id) => setLuaScriptId(id)}
+                    placeholder="Выберите скрипт почтового транспорта…"
+                  />
+                  <span className="text-[10px] text-muted-foreground">Скрипты вида «email» или «generic»</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="lua-script-ver">Версия скрипта (опционально)</Label>
+                  <Input
+                    id="lua-script-ver"
+                    placeholder="Например, 1.0.0 (пусто = последняя активная)"
+                    value={luaScriptVersion}
+                    onChange={(e) => setLuaScriptVersion(e.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Режим SMTP */
+            <div className="space-y-5">
+              <div className="grid gap-4 sm:grid-cols-4">
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="smtp-host">Хост сервера (SMTP Host) *</Label>
+                  <Input
+                    id="smtp-host"
+                    placeholder="smtp.bz, smtp.mailgun.org, smtp.yandex.ru"
+                    value={host}
+                    onChange={(e) => setHost(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="smtp-port">Порт *</Label>
+                  <Input
+                    id="smtp-port"
+                    type="number"
+                    min={1}
+                    max={65535}
+                    placeholder="587, 465, 9465, 9587"
+                    value={port}
+                    onChange={(e) => setPort(Number(e.target.value))}
+                  />
+                  <span className="text-[10px] text-muted-foreground">Любой порт (587, 465, 9465, 9587…)</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="smtp-encryption" className="flex items-center gap-1">
+                    <Shield className="size-3 text-primary" /> Шифрование *
+                  </Label>
+                  <Select
+                    value={encryption}
+                    onValueChange={(val) => setEncryption(val as "starttls" | "ssl" | "none")}
+                  >
+                    <SelectTrigger id="smtp-encryption" className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="starttls">STARTTLS (587, 9587, 2525)</SelectItem>
+                      <SelectItem value="ssl">SSL / Direct TLS (465, 9465)</SelectItem>
+                      <SelectItem value="none">Без шифрования (25, 1025)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-4">
+                <div className="space-y-1.5 sm:col-span-1">
+                  <Label htmlFor="smtp-timeout" className="flex items-center gap-1">
+                    <Clock className="size-3 text-muted-foreground" /> Таймаут (сек)
+                  </Label>
+                  <Input
+                    id="smtp-timeout"
+                    type="number"
+                    min={1}
+                    max={120}
+                    placeholder="10"
+                    value={timeoutSec}
+                    onChange={(e) => setTimeoutSec(Number(e.target.value))}
+                  />
+                  <span className="text-[10px] text-muted-foreground">Дефолт: 10с (защита от зависаний)</span>
+                </div>
+
+                <div className="space-y-1.5 sm:col-span-3">
+                  <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5 text-[11px] text-muted-foreground">
+                    <strong className="text-foreground">Подсказка:</strong> Для серверов с нестандартными портами (например, <code className="text-primary font-mono">smtp.bz</code> на портах <code className="font-mono">9465</code> и <code className="font-mono">9587</code>) режим шифрования выбирается независимо от номера порта.
+                  </div>
+                </div>
+              </div>
+
+              {/* Аутентификация SMTP */}
+              <div className="grid gap-4 sm:grid-cols-2 pt-2 border-t border-border/60">
+                <div className="space-y-1.5">
+                  <Label htmlFor="smtp-user">Логин / Пользователь</Label>
+                  <Input
+                    id="smtp-user"
+                    placeholder="user@example.com или API-логин"
+                    value={user}
+                    onChange={(e) => setUser(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="smtp-pass">Пароль</Label>
+                    {data?.has_password && !clearPassword && (
+                      <span className="text-[10px] text-emerald-500 font-medium flex items-center gap-1">
+                        <Key className="size-3" /> Пароль сохранён в SecBox
+                      </span>
+                    )}
+                    {clearPassword && (
+                      <span className="text-[10px] text-destructive font-medium">Будет удалён при сохранении</span>
+                    )}
+                  </div>
+                  <Input
+                    id="smtp-pass"
+                    type="password"
+                    placeholder={
+                      clearPassword
+                        ? "Пароль будет очищен"
+                        : data?.has_password
+                        ? "•••••••••••• (не изменен)"
+                        : "Пароль приложения или токен"
+                    }
+                    value={password}
+                    disabled={clearPassword}
+                    onChange={(e) => setPassword(e.target.value)}
+                  />
+                  {data?.has_password && (
+                    <div className="flex justify-end pt-0.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setClearPassword(!clearPassword)
+                          setPassword("")
+                        }}
+                        className="text-[11px] text-destructive hover:underline flex items-center gap-1 cursor-pointer"
+                      >
+                        <Trash2 className="size-3" />
+                        {clearPassword ? "Отменить удаление пароля" : "Очистить сохранённый пароль"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Отправитель (From) — общий для обоих режимов */}
           <div className="grid gap-4 sm:grid-cols-2 pt-2 border-t border-border/60">
             <div className="space-y-1.5">
-              <Label htmlFor="smtp-from">Адрес отправителя (From Email) *</Label>
+              <Label htmlFor="smtp-from">Адрес отправителя по умолчанию (From Email) *</Label>
               <Input
                 id="smtp-from"
                 type="email"
@@ -346,7 +431,7 @@ export function SmtpSettings() {
                 value={fromEmail}
                 onChange={(e) => setFromEmail(e.target.value)}
               />
-              <span className="text-[10px] text-muted-foreground">Должен быть подтверждён вашим почтовым сервисом</span>
+              <span className="text-[10px] text-muted-foreground">Email, от имени которого будут доставляться системные письма</span>
             </div>
 
             <div className="space-y-1.5">
@@ -389,10 +474,10 @@ export function SmtpSettings() {
       <Card className="bg-card/70 border-border/80 shadow-2xs">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold flex items-center gap-2">
-            <Send className="size-4 text-primary" /> Проверка отправки (Тест SMTP)
+            <Send className="size-4 text-primary" /> Проверка доставки (Тест транспорта)
           </CardTitle>
           <CardDescription className="text-xs">
-            Отправьте тестовое письмо, чтобы в реальном времени проверить доступность порта, аутентификацию и доставку.
+            Отправьте тестовое письмо через текущий настроенный транспорт ({driver === "lua" ? "Lua-скрипт API" : "SMTP"}).
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -435,7 +520,7 @@ export function SmtpSettings() {
             >
               {testMutation.isPending ? (
                 <>
-                  <Loader2 className="size-4 animate-spin" /> Подключение и отправка…
+                  <Loader2 className="size-4 animate-spin" /> Отправка через {driver === "lua" ? "Lua API" : "SMTP"}…
                 </>
               ) : (
                 <>
@@ -460,7 +545,7 @@ export function SmtpSettings() {
                 <AlertCircle className="size-4 shrink-0 mt-0.5" />
               )}
               <div className="space-y-1 flex-1">
-                <div className="font-semibold">{testResult.ok ? "Успешная доставка" : "Ошибка соединения / отправки"}</div>
+                <div className="font-semibold">{testResult.ok ? "Успешная доставка" : "Ошибка доставки"}</div>
                 <div className="font-mono text-[11px] whitespace-pre-wrap break-all">{testResult.message}</div>
               </div>
             </div>
@@ -472,9 +557,9 @@ export function SmtpSettings() {
       <AlertDialog open={isResetDialogOpen} onOpenChange={setIsResetDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Сбросить настройки почтового сервера?</AlertDialogTitle>
+            <AlertDialogTitle>Сбросить настройки почтового транспорта?</AlertDialogTitle>
             <AlertDialogDescription>
-              Все сохранённые параметры SMTP (хост, логин, пароль, отправитель) будут удалены из базы данных. Отправка почты будет приостановлена до повторной настройки.
+              Все сохранённые параметры почты (выбранный драйвер, SMTP-хост, логин, пароль, привязанный Lua-скрипт) будут удалены из базы данных.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

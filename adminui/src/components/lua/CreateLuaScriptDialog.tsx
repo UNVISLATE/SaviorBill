@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from "@/components/shadsnui/select"
 
-type Kind = "service" | "payment" | "auth" | "trigger" | "generic"
+type Kind = "service" | "payment" | "auth" | "trigger" | "email" | "generic"
 
 /** Действия, доступные для выбора по виду скрипта, и обязательные среди них
  * (см. `SystemScriptsMngr._check_actions` на backend — тот же список). */
@@ -49,6 +49,10 @@ const ACTIONS_BY_KIND: Record<Kind, { value: string; mandatory?: boolean }[]> = 
     { value: "start", mandatory: true },
     { value: "callback", mandatory: true },
   ],
+  email: [
+    { value: "send", mandatory: true },
+    { value: "test" },
+  ],
   trigger: [],
   generic: [],
 }
@@ -57,6 +61,7 @@ const KIND_TITLES: Record<Kind, string> = {
   service: "Услуга (доставка товара)",
   payment: "Платёж (провайдер оплаты)",
   auth: "OAuth (вход через провайдера)",
+  email: "Почта (транспорт отправки email)",
   trigger: "Триггер (действие по событию)",
   generic: "Прочее",
 }

@@ -1,4 +1,4 @@
-"""Админ: управление настройками почтового сервера SMTP (/api/v1/admin/settings/smtp)."""
+"""Админ: управление настройками почтового транспорта (SMTP / Lua) (/api/v1/admin/settings/smtp)."""
 
 from __future__ import annotations
 
@@ -7,12 +7,16 @@ import logging
 from typing import Literal
 
 import aiosmtplib
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.config import AppConfig
+from dependencies.db import get_db_session
 from dependencies.mail import build_mail_svc
 from dependencies.rbac import require_perm
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
+from lua.deps import get_lua_bus
 from schemas.types import NormEmail
 from services.audit import audit
 
@@ -22,6 +26,11 @@ router = APIRouter()
 
 
 class SmtpSettingsOut(BaseModel):
+    driver: Literal["smtp", "lua"] = "smtp"
+    lua_script_id: int | None = None
+    lua_script_version: str | None = None
+
+    # SMTP fields
     host: str | None = None
     port: int = 587
     user: str | None = None
@@ -35,6 +44,11 @@ class SmtpSettingsOut(BaseModel):
 
 
 class SmtpSettingsIn(BaseModel):
+    driver: Literal["smtp", "lua"] = Field(default="smtp", description="Почтовый транспорт: smtp или lua")
+    lua_script_id: int | None = Field(default=None, description="ID Lua-скрипта почтового транспорта (при driver=lua)")
+    lua_script_version: str | None = Field(default=None, description="Версия Lua-скрипта почтового транспорта")
+
+    # SMTP fields
     host: str | None = Field(default=None, description="SMTP host (domain or IP)")
     port: int = Field(default=587, ge=1, le=65535, description="SMTP port (any port, e.g. 587, 465, 9465, 9587, 2525)")
     user: str | None = Field(default=None, description="SMTP username / login")
@@ -59,11 +73,17 @@ class SmtpTestIn(BaseModel):
     "",
     response_model=SmtpSettingsOut,
     dependencies=[Depends(require_perm("settings.read"))],
-    summary="Get SMTP settings",
+    summary="Get mail / SMTP settings",
 )
 async def get_smtp_settings(
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> SmtpSettingsOut:
+    mail_grp = await settings.get_group("mail.")
+    driver = mail_grp.get("mail.driver") or "smtp"
+    lua_script_id_raw = mail_grp.get("mail.lua_script_id")
+    lua_script_id = int(lua_script_id_raw) if lua_script_id_raw else None
+    lua_script_version = mail_grp.get("mail.lua_script_version")
+
     grp = await settings.get_group("smtp.")
     host = grp.get("smtp.host")
     port_val = int(grp.get("smtp.port") or 587)
@@ -81,9 +101,15 @@ async def get_smtp_settings(
     elif enc not in ("starttls", "ssl", "none"):
         enc = "starttls"
 
-    configured = bool(host and from_email)
+    if driver == "lua":
+        configured = bool(lua_script_id)
+    else:
+        configured = bool(host and from_email)
 
     return SmtpSettingsOut(
+        driver=driver if driver in ("smtp", "lua") else "smtp",
+        lua_script_id=lua_script_id,
+        lua_script_version=lua_script_version,
         host=host,
         port=port_val,
         user=user,
@@ -100,12 +126,16 @@ async def get_smtp_settings(
 @router.post(
     "",
     dependencies=[Depends(require_perm("settings.edit"))],
-    summary="Update SMTP settings",
+    summary="Update mail / SMTP settings",
 )
 async def update_smtp_settings(
     body: SmtpSettingsIn,
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> dict:
+    await settings.set("mail.driver", body.driver)
+    await settings.set("mail.lua_script_id", str(body.lua_script_id) if body.lua_script_id else None)
+    await settings.set("mail.lua_script_version", body.lua_script_version.strip() if body.lua_script_version else None)
+
     host_clean = body.host.strip() if body.host else None
     user_clean = body.user.strip() if body.user else None
     from_clean = body.from_email.strip() if body.from_email else None
@@ -132,6 +162,8 @@ async def update_smtp_settings(
         target_type="settings",
         target_id="smtp",
         meta={
+            "driver": body.driver,
+            "lua_script_id": body.lua_script_id,
             "host": host_clean,
             "port": body.port,
             "user": user_clean,
@@ -147,12 +179,15 @@ async def update_smtp_settings(
 @router.delete(
     "",
     dependencies=[Depends(require_perm("settings.edit"))],
-    summary="Reset / clear SMTP settings",
+    summary="Reset / clear mail / SMTP settings",
 )
 async def delete_smtp_settings(
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> dict:
     for key in (
+        "mail.driver",
+        "mail.lua_script_id",
+        "mail.lua_script_version",
         "smtp.host",
         "smtp.port",
         "smtp.user",
@@ -179,24 +214,28 @@ async def delete_smtp_settings(
 @router.post(
     "/test",
     dependencies=[Depends(require_perm("settings.edit"))],
-    summary="Send test email via SMTP",
+    summary="Send test email via configured transport",
 )
 async def test_smtp_connection(
     body: SmtpTestIn,
+    request: Request,
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
+    session: AsyncSession = Depends(get_db_session),
 ) -> dict:
-    mail_svc = await build_mail_svc(settings)
-    effective_sender = body.from_email or mail_svc.sender
-    if not mail_svc.host or not effective_sender:
+    cfg: AppConfig = request.app.state.settings
+    bus = get_lua_bus(request)
+    mail_svc = await build_mail_svc(settings, cfg, bus=bus, session=session)
+
+    if not mail_svc.configured:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            "SMTP is not configured: host and sender email are required",
+            "Mail transport is not configured: configure SMTP credentials or select an active Lua transport script",
         )
 
     subject = "Тестовое письмо от SaviorBill"
     content = (
-        "Это тестовое сообщение для проверки настроек почтового сервера SMTP.\n"
-        "Если вы видите это письмо, значит SMTP настроен корректно и готов к отправке писем!"
+        "Это тестовое сообщение для проверки настроек почтового транспорта SaviorBill.\n"
+        "Если вы видите это письмо, значит транспорт настроен корректно и готов к отправке писем!"
     )
     try:
         await mail_svc.send(
@@ -207,26 +246,33 @@ async def test_smtp_connection(
             from_name_override=body.from_name,
         )
     except aiosmtplib.errors.SMTPAuthenticationError as exc:
-        log.warning("SMTP auth failed for %s:%s: %s", mail_svc.host, mail_svc.port, exc)
+        host = getattr(mail_svc, "host", "smtp")
+        port = getattr(mail_svc, "port", 587)
+        log.warning("SMTP auth failed for %s:%s: %s", host, port, exc)
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             f"SMTP authentication failed: invalid username or password ({exc.message or exc})",
         )
     except aiosmtplib.errors.SMTPConnectError as exc:
-        log.warning("SMTP connect failed to %s:%s: %s", mail_svc.host, mail_svc.port, exc)
+        host = getattr(mail_svc, "host", "smtp")
+        port = getattr(mail_svc, "port", 587)
+        log.warning("SMTP connect failed to %s:%s: %s", host, port, exc)
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            f"Failed to connect to SMTP server {mail_svc.host}:{mail_svc.port}: {exc.message or exc}",
+            f"Failed to connect to SMTP server {host}:{port}: {exc.message or exc}",
         )
     except (TimeoutError, asyncio.TimeoutError) as exc:
-        log.warning("SMTP timeout (%ss) connecting to %s:%s", mail_svc.timeout, mail_svc.host, mail_svc.port)
+        host = getattr(mail_svc, "host", "smtp")
+        port = getattr(mail_svc, "port", 587)
+        timeout = getattr(mail_svc, "timeout", 10)
+        log.warning("SMTP timeout (%ss) connecting to %s:%s", timeout, host, port)
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            f"SMTP connection timeout ({mail_svc.timeout}s) connecting to {mail_svc.host}:{mail_svc.port}. "
+            f"SMTP connection timeout ({timeout}s) connecting to {host}:{port}. "
             f"Check if port is open and matches the encryption mode (STARTTLS vs SSL).",
         )
     except Exception as exc:
-        log.exception("SMTP test send failed: %s", exc)
+        log.exception("Mail test send failed: %s", exc)
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             f"Failed to send email: {exc}",

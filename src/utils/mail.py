@@ -111,4 +111,81 @@ class MailSvc:
         )
 
 
-__all__ = ["MailSvc"]
+class LuaMailSvc:
+    """Транспорт отправки писем через Lua-скрипт (API провайдера: smtp.bz, Resend, Brevo и т.д.)."""
+
+    def __init__(
+        self,
+        bus,  # LuaBus | None
+        session,  # AsyncSession
+        script_id: int | None,
+        script_version: str | None = None,
+        sender: str | None = None,
+        from_name: str | None = None,
+        config: dict | None = None,
+    ) -> None:
+        self.bus = bus
+        self.s = session
+        self.script_id = script_id
+        self.script_version = script_version
+        self.sender = sender
+        self.from_name = from_name
+        self.config = config or {}
+
+    @property
+    def configured(self) -> bool:
+        """Готов ли Lua-транспорт к отправке."""
+        return bool(self.bus and self.script_id)
+
+    async def send(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        *,
+        is_html: bool = False,
+        sender_override: str | None = None,
+        from_name_override: str | None = None,
+    ) -> None:
+        """Отправить письмо через Lua-скрипт почтового транспорта."""
+        if not self.configured:
+            raise RuntimeError("Lua-транспорт почты не настроен (не указан скрипт или шина LuaWorker)")
+
+        from models.system_scripts import SystemScriptsModel, resolve_version
+        from lua.context import LuaRunner
+
+        effective_sender = sender_override or self.sender
+        effective_name = from_name_override if from_name_override is not None else self.from_name
+
+        script = await self.s.get(SystemScriptsModel, int(self.script_id))
+        if script is None or not script.is_active:
+            raise RuntimeError(f"Lua-скрипт почтового транспорта #{self.script_id} не найден или неактивен")
+
+        filename, resolved_version = await resolve_version(self.s, script, self.script_version)
+
+        email_data = {
+            "to": to,
+            "subject": subject,
+            "body": body,
+            "is_html": is_html,
+            "from_email": effective_sender,
+            "from_name": effective_name,
+        }
+
+        runner = LuaRunner(self.bus)
+        res = await runner.run_email(
+            script,
+            "send",
+            email_data,
+            config=self.config,
+            filename=filename,
+            version=resolved_version,
+            requested_version=self.script_version,
+        )
+
+        if isinstance(res, dict) and res.get("ok") is False:
+            err = res.get("error") or "Unknown error from Lua email script"
+            raise RuntimeError(f"Lua email transport failed: {err}")
+
+
+__all__ = ["MailSvc", "LuaMailSvc"]

@@ -39,14 +39,41 @@ def _const_eq(a: str, b: str) -> bool:
 
 
 async def build_mail_svc(
-    settings: SystemSettingsMngr, cfg: AppConfig | None = None
-) -> MailSvc:
-    """Собрать транспорт писем из настроек SMTP в БД (с fallback на cfg).
+    settings: SystemSettingsMngr,
+    cfg: AppConfig | None = None,
+    bus=None,
+    session=None,
+) -> MailSvc | LuaMailSvc:
+    """Собрать транспорт писем из настроек БД (SMTP или Lua-скрипт) с fallback на cfg.
 
     :arg settings: менеджер системных настроек.
     :arg cfg: глобальная конфигурация (опционально).
+    :arg bus: шина LuaWorker (для Lua-драйвера).
+    :arg session: сессия БД (для Lua-драйвера).
     :return: транспорт отправки писем.
     """
+    mail_grp = await settings.get_group("mail.")
+    driver = mail_grp.get("mail.driver") or (cfg.MAIL_DRIVER if cfg else "smtp")
+
+    if driver == "lua":
+        script_id = mail_grp.get("mail.lua_script_id") or (cfg.MAIL_LUA_SCRIPT_ID if cfg else None)
+        script_version = mail_grp.get("mail.lua_script_version") or (cfg.MAIL_LUA_SCRIPT_VERSION if cfg else None)
+        smtp_grp = await settings.get_group("smtp.")
+        sender = smtp_grp.get("smtp.from") or (cfg.SMTP_FROM if cfg else None)
+        from_name = smtp_grp.get("smtp.from_name") or (cfg.SMTP_FROM_NAME if cfg else None)
+        sess = session or settings.s
+        if bus and script_id and sess:
+            from utils.mail import LuaMailSvc
+
+            return LuaMailSvc(
+                bus=bus,
+                session=sess,
+                script_id=int(script_id),
+                script_version=script_version,
+                sender=sender,
+                from_name=from_name,
+            )
+
     grp = await settings.get_group("smtp.")
 
     host = grp.get("smtp.host")
@@ -191,10 +218,13 @@ async def get_verify_svc(
     vk: valkey.Valkey = Depends(get_valkey_client),
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> VerifySvc:
+    from lua.deps import get_lua_bus
+
     cfg: AppConfig = request.app.state.settings
-    mail = await build_mail_svc(settings)
+    bus = get_lua_bus(request)
+    mail = await build_mail_svc(settings, cfg, bus=bus, session=session)
     sender = EmailSender(mail, EmailMngr(session, cfg.EMAIL_TEMPLATES_DIR))
     return VerifySvc(session, vk, settings, sender, cfg.VERIFY_TOKEN_TTL)
 
 
-__all__ = ["VerifySvc", "MailSvc", "build_mail_svc", "get_verify_svc"]
+__all__ = ["VerifySvc", "MailSvc", "LuaMailSvc", "build_mail_svc", "get_verify_svc"]

@@ -139,20 +139,26 @@ async def test_smtp_test_connection_exceptions():
         "smtp.port": "587",
         "smtp.from": "test@example.com",
     }
+    mock_request = AsyncMock()
+    mock_request.app.state.settings = AppConfig(
+        DB_PASS="test",
+        SECRETS_MASTER_KEY="0123456789abcdef0123456789abcdef",
+    )
+    mock_session = AsyncMock()
 
     body = SmtpTestIn(to_email="recipient@example.com")
 
     # Timeout error
     with patch("aiosmtplib.send", side_effect=asyncio.TimeoutError()):
         with pytest.raises(HTTPException) as exc_info:
-            await test_smtp_connection(body, mock_settings)
+            await test_smtp_connection(body, mock_request, mock_settings, mock_session)
         assert exc_info.value.status_code == 400
         assert "connection timeout" in exc_info.value.detail
 
     # Auth error
     with patch("aiosmtplib.send", side_effect=aiosmtplib.errors.SMTPAuthenticationError(535, "Auth failed")):
         with pytest.raises(HTTPException) as exc_info:
-            await test_smtp_connection(body, mock_settings)
+            await test_smtp_connection(body, mock_request, mock_settings, mock_session)
         assert exc_info.value.status_code == 400
         assert "authentication failed" in exc_info.value.detail
 
@@ -189,4 +195,82 @@ async def test_internal_email_send_endpoint():
     assert call_args[0][2] == {"username": "Alice"}
     assert call_args[1]["from_email"] == "custom@example.com"
     assert call_args[1]["from_name"] == "My Shop"
+
+
+@pytest.mark.unit
+def test_build_email_ctx_structure():
+    """Verify build_email_ctx produces structured context matching platform standards."""
+    from lua.context import build_email_ctx
+
+    email_data = {
+        "to": "client@example.com",
+        "subject": "Order #123 Paid",
+        "body": "<h1>Thank you</h1>",
+        "is_html": True,
+        "from_email": "noreply@myshop.com",
+        "from_name": "My Shop",
+    }
+    config = {"api_key": "secret_key_123"}
+
+    ctx = build_email_ctx("send", email_data, config)
+    assert ctx["action"] == "send"
+    assert ctx["email"] == email_data
+    assert ctx["config"] == config
+    assert "lua" in ctx
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_lua_mail_svc_send():
+    """Verify LuaMailSvc delegates to LuaRunner.run_email with structured context."""
+    from utils.mail import LuaMailSvc
+
+    mock_bus = AsyncMock()
+    mock_session = AsyncMock()
+
+    class MockScript:
+        id = 42
+        slug = "smtp_bz"
+        filename = "email/smtp_bz.lua"
+        current_version = 1
+        is_active = True
+        sha256 = "dummy"
+
+    mock_session.get.return_value = MockScript()
+
+    svc = LuaMailSvc(
+        bus=mock_bus,
+        session=mock_session,
+        script_id=42,
+        sender="default@example.com",
+        from_name="Default Store",
+        config={"api_key": "sec_123"},
+    )
+    assert svc.configured is True
+
+    with patch("lua.context.LuaRunner.run_email", new_callable=AsyncMock) as mock_run:
+        mock_run.return_value = {"ok": True}
+
+        await svc.send(
+            to="user@example.com",
+            subject="Hello",
+            body="<b>Text</b>",
+            is_html=True,
+            sender_override="override@example.com",
+            from_name_override="Override Name",
+        )
+
+        assert mock_run.call_count == 1
+        _, args, kwargs = mock_run.mock_calls[0]
+        script_arg, action_arg, email_arg = args[0], args[1], args[2]
+        assert script_arg.id == 42
+        assert action_arg == "send"
+        assert email_arg["to"] == "user@example.com"
+        assert email_arg["subject"] == "Hello"
+        assert email_arg["body"] == "<b>Text</b>"
+        assert email_arg["is_html"] is True
+        assert email_arg["from_email"] == "override@example.com"
+        assert email_arg["from_name"] == "Override Name"
+        assert kwargs["config"] == {"api_key": "sec_123"}
+
 

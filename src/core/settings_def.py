@@ -100,6 +100,27 @@ SETTINGS: tuple[SettingDef, ...] = (
         default=10,
         desc="Таймаут подключения к SMTP (сек)",
     ),
+    # Почтовый транспорт (SMTP / Lua)
+    SettingDef(
+        "mail.driver",
+        "MAIL_DRIVER",
+        group="mail",
+        default="smtp",
+        desc="Почтовый транспорт: smtp или lua",
+    ),
+    SettingDef(
+        "mail.lua_script_id",
+        "MAIL_LUA_SCRIPT_ID",
+        type="int",
+        group="mail",
+        desc="ID Lua-скрипта почтового транспорта",
+    ),
+    SettingDef(
+        "mail.lua_script_version",
+        "MAIL_LUA_SCRIPT_VERSION",
+        group="mail",
+        desc="Версия Lua-скрипта почтового транспорта",
+    ),
     # Цифровые ключи и услуги
     SettingDef(
         "service.keys_low_threshold",

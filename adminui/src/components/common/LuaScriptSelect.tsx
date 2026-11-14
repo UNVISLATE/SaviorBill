@@ -7,6 +7,7 @@ import {
   CreditCard,
   FileCode2,
   KeyRound,
+  Mail,
   Package,
   Search,
   X,
@@ -74,6 +75,12 @@ export function getScriptKindBadge(kind?: string | null) {
         label: "Триггер",
         icon: Zap,
         className: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20",
+      }
+    case "email":
+      return {
+        label: "Почта",
+        icon: Mail,
+        className: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border-sky-500/20",
       }
     default:
       return {

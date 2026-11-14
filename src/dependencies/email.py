@@ -25,8 +25,11 @@ async def get_email_sender(
     session: AsyncSession = Depends(get_db_session),
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> EmailSender:
+    from lua.deps import get_lua_bus
+
     cfg: AppConfig = request.app.state.settings
-    mail = await build_mail_svc(settings, cfg)
+    bus = get_lua_bus(request)
+    mail = await build_mail_svc(settings, cfg, bus=bus, session=session)
     return EmailSender(mail, EmailMngr(session, cfg.EMAIL_TEMPLATES_DIR))
 
 

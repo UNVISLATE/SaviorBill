@@ -167,6 +167,28 @@ def build_auth_ctx(
     return ctx
 
 
+def build_email_ctx(
+    action: str,
+    email_data: dict,
+    config: dict | None = None,
+    script=None,
+) -> dict:  # noqa: ANN001
+    """Контекст почтового скрипта (транспорт email).
+
+    :arg action: действие ("send" или "test").
+    :arg email_data: словарь {to, subject, body, text, is_html, from_email, from_name}.
+    :arg config: параметры транспорта (ключи, endpoint).
+    :arg script: модель скрипта — метаданные в ``lua.*``.
+    :return: структурированный словарь контекста для Lua.
+    """
+    return {
+        "action": action,
+        "lua": _lua_meta(script),
+        "email": email_data or {},
+        "config": config or {},
+    }
+
+
 def build_trigger_ctx(
     event: str, config: dict, data: dict, script=None
 ) -> dict:  # noqa: ANN001
@@ -370,11 +392,36 @@ class LuaRunner:
             requested_version=requested_version,
         )
 
+    async def run_email(
+        self,
+        script,  # noqa: ANN001 — SystemScriptsModel
+        action: str,
+        email_data: dict,
+        config: dict | None = None,
+        *,
+        filename=None,
+        version=None,
+        requested_version=None,
+    ) -> dict:
+        """Собрать контекст email и исполнить скрипт почтового транспорта."""
+        ctx = build_email_ctx(action, email_data, config, script)
+        return await self.run(
+            filename or script.filename,
+            ScriptKind.EMAIL,
+            ctx,
+            slug=script.slug,
+            version=version,
+            script_id=getattr(script, "id", None),
+            script_sha256=getattr(script, "sha256", None),
+            requested_version=requested_version,
+        )
+
 
 __all__ = [
     "LuaRunner",
     "build_service_ctx",
     "build_payment_ctx",
     "build_auth_ctx",
+    "build_email_ctx",
     "build_trigger_ctx",
 ]

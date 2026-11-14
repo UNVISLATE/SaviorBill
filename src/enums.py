@@ -117,6 +117,7 @@ class ScriptKind:
     AUTH = "auth"  # OAuth-интеграция (вход через провайдера)
     GENERIC = "generic"  # прочее
     TRIGGER = "trigger"  # действие триггера
+    EMAIL = "email"  # почтовый транспорт (отправка писем через API провайдера)
 
 
 class BaseRole:
