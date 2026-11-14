@@ -148,25 +148,34 @@ class TriggerDispatcher:
         self.settings = settings
 
     @staticmethod
-    def _match(cond: dict, ctx: dict) -> bool:
-        """Все пары ``{path: value/operators}`` условия должны совпасть с контекстом.
+    def _match_with_details(cond: dict, ctx: dict) -> tuple[bool, list[str]]:
+        """Evaluate trigger conditions against event context with matching explanations.
 
-        :arg cond: условие триггера (поддерживает операторы Triggers 2.0).
-        :arg ctx: контекст события.
-        :return: ``True`` если условие выполнено (или пустое).
+        :arg cond: trigger condition mapping (supports Triggers 2.0 operators).
+        :arg ctx: event context.
+        :return: tuple of (is_matched, list_of_match_explanations).
         """
         if not cond:
-            return True
-        return all(_match_single(dig(ctx, path), expected) for path, expected in cond.items())
+            return True, ["unconditional (empty filter)"]
+        details = []
+        for path, expected in cond.items():
+            actual = dig(ctx, path)
+            if not _match_single(actual, expected):
+                return False, [f"{path} mismatch (actual={actual!r}, expected={expected!r})"]
+            details.append(f"{path}={actual!r}")
+        return True, details
+
+    @staticmethod
+    def _match(cond: dict, ctx: dict) -> bool:
+        """All pairs {path: value/operators} must match context."""
+        matched, _ = TriggerDispatcher._match_with_details(cond, ctx)
+        return matched
 
     async def _allow_event(self, event: str) -> bool:
-        """Анти-петля: не более N срабатываний события в минуту (Valkey-счётчик).
+        """Anti-loop rate limiter: maximum N event fires per minute (Valkey counter).
 
-        Без ``settings`` (например, вне HTTP-запроса) лимит не проверяется —
-        считаем это осознанным ограничением области действия анти-петли.
-
-        :arg event: имя доменного события.
-        :return: ``True`` если срабатывание разрешено.
+        :arg event: domain event name.
+        :return: True if firing is permitted.
         """
         if self.settings is None:
             return True
@@ -182,32 +191,26 @@ class TriggerDispatcher:
                 await self.settings.vk.expire(key, 60)
             if n > limit:
                 log.warning(
-                    "триггеры: анти-петля — событие %s превысило лимит %s/мин",
+                    "Trigger anti-loop: event '%s' exceeded fire limit %s/min",
                     event,
                     limit,
                 )
                 return False
-        except Exception:  # noqa: BLE001 — анти-петля не должна ломать событие
-            log.exception("триггеры: ошибка анти-петли для %s", event)
+        except Exception:  # noqa: BLE001
+            log.exception("Trigger anti-loop: error checking rate limit for '%s'", event)
         return True
 
     async def fire(self, event: str, ctx: dict) -> int:
-        """Исполнить все подходящие триггеры события.
+        """Execute all matching triggers for the domain event.
 
-        Никогда не бросает: ошибки логируются и пропускаются. Каждое
-        действие повторяется до ``triggers.max_retries`` раз (без этого
-        сбойное действие могло бы либо остановиться после первой ошибки
-        без всякой попытки восстановиться, либо — при наивном retry-цикле
-        без предела — зациклиться и повесить обработку события).
-
-        :arg event: имя доменного события.
-        :arg ctx: контекст события.
-        :return: число успешно выполненных действий.
+        :arg event: domain event name.
+        :arg ctx: event context dictionary.
+        :return: number of successfully executed trigger actions.
         """
         depth = _trigger_depth.get()
         if depth >= _TRIGGER_MAX_DEPTH:
             log.warning(
-                "триггеры: анти-петля глубины — каскад прерван для %s (глубина %d >= %d)",
+                "Trigger depth limit reached: cascading execution aborted for '%s' (depth %d >= %d)",
                 event,
                 depth,
                 _TRIGGER_MAX_DEPTH,
@@ -227,7 +230,7 @@ class TriggerDispatcher:
         try:
             rows = await self.triggers.by_event(event)
         except Exception:  # noqa: BLE001
-            log.exception("триггеры: ошибка выборки для %s", event)
+            log.exception("Trigger query failed for event '%s'", event)
             return 0
 
         max_retries = _DEFAULT_MAX_RETRIES
@@ -240,9 +243,9 @@ class TriggerDispatcher:
                     or _DEFAULT_MAX_RETRIES
                 )
             except Exception:  # noqa: BLE001
-                log.exception("триггеры: ошибка чтения triggers.max_retries")
+                log.exception("Trigger: failed to read triggers.max_retries")
 
-        # In-process подписчики плагинов (Zero-Impact изоляция)
+        # In-process plugin subscribers (zero-impact isolation)
         in_process = list(_IN_PROCESS_SUBSCRIBERS.get(event, []))
         for sub_handler in in_process:
             try:
@@ -250,30 +253,48 @@ class TriggerDispatcher:
                 if inspect.isawaitable(res):
                     await res
             except Exception as exc:  # noqa: BLE001
-                log.exception("триггеры: ошибка in-process подписчика %r для %s: %s", sub_handler, event, exc)
+                log.exception("Trigger: in-process plugin subscriber %r failed for event '%s': %s", sub_handler, event, exc)
 
         done = 0
         for trig in rows:
-            if not self._match(trig.cond or {}, ctx):
+            matched, match_details = self._match_with_details(trig.cond or {}, ctx)
+            if not matched:
                 continue
+
             action = self.actions.get(trig.action)
             if action is None:
                 log.warning(
-                    "триггер #%s: неизвестное действие %r", trig.id, trig.action
+                    "Trigger #%s: unknown action %r (event '%s')", trig.id, trig.action, event
                 )
                 continue
+
+            log.info(
+                "Trigger #%s [%s -> %s] fired: matched conditions [%s] (context keys: %s)",
+                trig.id,
+                event,
+                trig.action,
+                ", ".join(match_details),
+                list(ctx.keys()),
+            )
+
             ok = False
             last_error: str | None = None
             for attempt in range(1, max(1, max_retries) + 1):
                 try:
                     if await action.run(event, ctx, trig.config or {}):
                         ok = True
+                        log.info(
+                            "Trigger #%s (%s/%s): action executed successfully",
+                            trig.id,
+                            event,
+                            trig.action,
+                        )
                         break
                     last_error = "action returned false"
-                except Exception as exc:  # noqa: BLE001 — триггер не ломает операцию
+                except Exception as exc:  # noqa: BLE001
                     last_error = str(exc)[:512]
                     log.exception(
-                        "триггер #%s (%s/%s): ошибка, попытка %s/%s",
+                        "Trigger #%s (%s/%s): error on attempt %s/%s",
                         trig.id,
                         event,
                         trig.action,
@@ -285,7 +306,7 @@ class TriggerDispatcher:
             else:
                 trigger_failures_total.labels(event=event, action=trig.action).inc()
                 log.error(
-                    "триггер #%s (%s/%s): исчерпаны все %s попыток: %s",
+                    "Trigger #%s (%s/%s): all %s attempts exhausted: %s",
                     trig.id,
                     event,
                     trig.action,
