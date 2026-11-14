@@ -216,7 +216,7 @@ async def delete_smtp_settings(
     dependencies=[Depends(require_perm("settings.edit"))],
     summary="Send test email via configured transport",
 )
-async def test_smtp_connection(
+async def send_test_email(
     body: SmtpTestIn,
     request: Request,
     settings: SystemSettingsMngr = Depends(get_settings_mngr),

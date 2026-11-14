@@ -9,7 +9,7 @@ import aiosmtplib
 import pytest
 from fastapi import HTTPException
 
-from api.v1.admin.settings.smtp import SmtpTestIn, test_smtp_connection
+from api.v1.admin.settings.smtp import SmtpTestIn, send_test_email
 from core.config import AppConfig
 from dependencies.mail import build_mail_svc
 from utils.mail import MailSvc
@@ -151,14 +151,14 @@ async def test_smtp_test_connection_exceptions():
     # Timeout error
     with patch("aiosmtplib.send", side_effect=asyncio.TimeoutError()):
         with pytest.raises(HTTPException) as exc_info:
-            await test_smtp_connection(body, mock_request, mock_settings, mock_session)
+            await send_test_email(body, mock_request, mock_settings, mock_session)
         assert exc_info.value.status_code == 400
         assert "connection timeout" in exc_info.value.detail
 
     # Auth error
     with patch("aiosmtplib.send", side_effect=aiosmtplib.errors.SMTPAuthenticationError(535, "Auth failed")):
         with pytest.raises(HTTPException) as exc_info:
-            await test_smtp_connection(body, mock_request, mock_settings, mock_session)
+            await send_test_email(body, mock_request, mock_settings, mock_session)
         assert exc_info.value.status_code == 400
         assert "authentication failed" in exc_info.value.detail
 
