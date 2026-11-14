@@ -106,4 +106,10 @@ class OrderGrant(BaseModel):
     )
 
 
-__all__ = ["OrderCreate", "Order", "OrderAdmin", "OrderGrant"]
+class OrderActionRequest(BaseModel):
+    """Execute action on service order."""
+
+    action: str = Field(min_length=1, max_length=32, description="Action: renew, freeze, stop, resume")
+
+
+__all__ = ["OrderCreate", "Order", "OrderAdmin", "OrderGrant", "OrderActionRequest"]

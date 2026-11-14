@@ -186,6 +186,10 @@ class Account(BaseModel):
         default_factory=list,
         description="Linked OAuth provider slugs",
     )
+    totp_enabled: bool = Field(
+        default=False,
+        description="Whether 2FA (TOTP) is enabled for this account",
+    )
 
     @classmethod
     def from_account(
@@ -228,6 +232,7 @@ class Account(BaseModel):
             referred_by_login=referred_by_login,
             referral_count=referral_count,
             oauth_providers=list(oauth_providers or []),
+            totp_enabled=bool(getattr(acc, "totp_enabled", False)),
         )
 
 

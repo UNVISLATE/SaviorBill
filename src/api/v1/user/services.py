@@ -21,7 +21,7 @@ from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.service import ServiceModel
 from models.user import UserModel
 from models.user_services import UserServicesModel
-from schemas.orders import OrderCreate, Order
+from schemas.orders import OrderCreate, Order, OrderActionRequest
 from schemas.page import Page
 from services.pricing import resolve_service_order
 from utils.pagination import PageParams, page_params, paginate
@@ -137,6 +137,41 @@ async def create_service(
     loop = getattr(request.app.state, "billing_loop", None)
     if loop is not None and usvc.expires_at is not None:
         await loop.enqueue_service(usvc.id, usvc.expires_at)
+    return Order.from_model(usvc)
+
+
+@router.post(
+    "/services/{service_id}/action",
+    response_model=Order,
+    summary="Execute action on user service",
+    description="Performs lifecycle action: renew, freeze, stop, resume.",
+    dependencies=[
+        Depends(require_perm("user.services.create")),
+        Depends(rate_limit("services.action", LimitKind.SENSITIVE, require_auth=True)),
+    ],
+)
+async def user_service_action(
+    service_id: int,
+    body: OrderActionRequest,
+    acc: UserModel = Depends(get_current_acc),
+    usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
+    svc_mngr: ServiceMngr = Depends(get_service_mngr),
+) -> Order:
+    usvc = await usvc_mngr.s.scalar(
+        select(UserServicesModel).where(
+            UserServicesModel.id == service_id,
+            UserServicesModel.account_id == acc.id,
+        )
+    )
+    if usvc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service order not found")
+    service = await svc_mngr.get(usvc.service_id)
+    if service is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog service not found")
+
+    action_norm = body.action.strip().lower()
+    usvc = await usvc_mngr.run_action(usvc, service, acc, action_norm)
+    await usvc_mngr.s.commit()
     return Order.from_model(usvc)
 
 

@@ -78,6 +78,8 @@ async def list_catalogs(
 @router.get("/services", response_model=Page[Service], summary="Services")
 async def list_services(
     catalog_id: int | None = Query(default=None, description="filter by catalog"),
+    q: str | None = Query(default=None, description="search query"),
+    sort: str | None = Query(default=None, description="sort: popular | price_asc | price_desc | newest"),
     pp: PageParams = Depends(page_params),
     acc: UserModel | None = Depends(get_current_acc_optional),
     vk: valkey.Valkey = Depends(get_valkey_client),
@@ -104,15 +106,27 @@ async def list_services(
     cache_enabled_raw = await settings.get("catalog.cache.enabled", "1")
     cache_enabled = cache_enabled_raw.strip().lower() in ("1", "true", "yes", "on")
 
-    # Если кэширование выключено в настройках — идём напрямую в PostgreSQL
-    if not cache_enabled:
+    # Если кэширование выключено в настройках или есть поиск/сортировка — идём напрямую в PostgreSQL
+    if not cache_enabled or (q and q.strip()) or sort:
         stmt = select(ServiceModel).where(ServiceModel.is_active.is_(True))
         if catalog_id is not None:
             stmt = stmt.where(ServiceModel.catalog_id == catalog_id)
+        if q and q.strip():
+            term = f"%{q.strip()}%"
+            stmt = stmt.where(ServiceModel.name.ilike(term) | ServiceModel.description.ilike(term))
+        if sort == "price_asc":
+            stmt = stmt.order_by(ServiceModel.price.asc(), ServiceModel.id.asc())
+        elif sort == "price_desc":
+            stmt = stmt.order_by(ServiceModel.price.desc(), ServiceModel.id.desc())
+        elif sort == "newest":
+            stmt = stmt.order_by(ServiceModel.id.desc())
+        else:
+            stmt = stmt.order_by(ServiceModel.id.asc())
+
         count_stmt = select(func.count()).select_from(stmt.subquery())
         total = (await mngr.s.scalars(count_stmt)).one()
         slice_stmt = (
-            stmt.order_by(ServiceModel.id).offset(pp.offset).limit(effective_limit)
+            stmt.offset(pp.offset).limit(effective_limit)
         )
         models = (await mngr.s.scalars(slice_stmt)).all()
         items = []
