@@ -282,7 +282,7 @@ export function SmtpSettings() {
                     kind={["email", "generic"]}
                     value={luaScriptId}
                     onChange={(id) => {
-                      setLuaScriptId(id)
+                      setLuaScriptId(id || "")
                       setLuaScriptVersion("")
                     }}
                     placeholder="Выберите скрипт почтового транспорта…"
@@ -295,7 +295,7 @@ export function SmtpSettings() {
                     <Label htmlFor="lua-script-ver">Версия скрипта</Label>
                     <Select
                       value={luaScriptVersion || "__latest__"}
-                      onValueChange={(val) => setLuaScriptVersion(val === "__latest__" ? "" : val)}
+                      onValueChange={(val) => setLuaScriptVersion(val === "__latest__" || !val ? "" : val)}
                     >
                       <SelectTrigger id="lua-script-ver" className="w-full">
                         <SelectValue placeholder="Последняя активная" />

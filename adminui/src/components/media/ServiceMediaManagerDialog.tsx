@@ -1,14 +1,30 @@
-import { useState, useRef, type DragEvent } from "react"
+import { useState, useRef, useEffect, type DragEvent } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 import {
   ImagePlus,
   RotateCw,
   Trash2,
-  Video,
   Upload,
-  Check,
   Tag,
   X,
+  GripVertical,
+  SlidersHorizontal,
 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
@@ -26,7 +42,6 @@ import {
 import {
   Dialog,
   DialogContent,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/shadsnui/dialog"
@@ -36,6 +51,11 @@ import { isMediaConfigRequired, type MediaUploadConfig } from "@/api/media-uploa
 import { useMediaUploadQueue } from "@/hooks/use-media-upload-queue"
 import { MediaUploadQueueProgress } from "@/components/media/MediaUploadQueueProgress"
 import { MediaContextMenu } from "@/components/media/MediaContextMenu"
+import {
+  MediaPreviewGallery,
+  type PreviewGalleryMedia,
+  type MediaVariant,
+} from "@/components/profile/MediaPreviewGallery"
 
 export interface ServiceAttachmentItem {
   id: number
@@ -47,6 +67,9 @@ export interface ServiceAttachmentItem {
   mime: string | null
   status: string
   url: string
+  name?: string | null
+  thumb?: MediaVariant | null
+  previews?: MediaVariant[]
 }
 
 interface ServiceMediaManagerDialogProps {
@@ -65,6 +88,204 @@ const PRESET_PLACEMENTS: { value: string; label: string }[] = [
   { value: "gallery", label: "Медиа" },
 ]
 
+function SortableAttachmentItem({
+  att,
+  currentTag,
+  isCustom,
+  onOpenDetails,
+  onChangePlacement,
+  onDelete,
+  onCustomTagActiveChange,
+  setTagMapValue,
+}: {
+  att: ServiceAttachmentItem
+  currentTag: string
+  isCustom: boolean
+  onOpenDetails?: () => void
+  onChangePlacement: (val: string) => void
+  onDelete: () => void
+  onCustomTagActiveChange: (active: boolean) => void
+  setTagMapValue: (val: string) => void
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: att.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : undefined,
+  }
+
+  const thumbUrl = att.thumb?.url || (att.kind === "video" ? `/api/media/${att.token}.thumb` : att.url)
+
+  return (
+    <MediaContextMenu
+      item={{
+        id: att.id,
+        token: att.token,
+        url: att.url,
+        kind: att.kind,
+        status: att.status,
+        tag: currentTag,
+        mime: att.mime,
+        name: att.name,
+      }}
+      placementOptions={PRESET_PLACEMENTS}
+      currentPlacement={currentTag}
+      onChangePlacement={onChangePlacement}
+      onOpenDetails={onOpenDetails}
+      onDelete={onDelete}
+      canDelete={true}
+    >
+      <div
+        ref={setNodeRef}
+        style={style}
+        className={`group flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/60 p-2.5 transition-colors hover:bg-card hover:border-border cursor-context-menu ${
+          isDragging ? "opacity-40 scale-[0.98] ring-2 ring-primary shadow-xl bg-card" : ""
+        }`}
+      >
+        {/* Drag handle */}
+        <button
+          type="button"
+          className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-1 touch-none shrink-0"
+          title="Перетащите для изменения порядка"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-4" />
+        </button>
+
+        {/* Thumbnail */}
+        <div className="relative size-12 shrink-0 overflow-hidden rounded-xl border border-border/80 bg-muted/30">
+          <img
+            src={thumbUrl}
+            alt={currentTag}
+            className="size-full object-cover"
+            onError={(e) => {
+              if (att.kind === "video") {
+                (e.target as HTMLElement).style.display = "none"
+              }
+            }}
+          />
+          {att.kind === "video" && (
+            <div className="absolute right-1 bottom-1 rounded bg-black/70 px-1 py-0.5 text-[9px] text-white font-mono">
+              video
+            </div>
+          )}
+        </div>
+
+        {/* File Metadata */}
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <p className="truncate font-mono text-xs font-medium text-foreground">
+            {att.name || `${att.token}.${att.mime?.split("/")[1] ?? (att.kind === "video" ? "webm" : "webp")}`}
+          </p>
+          <p className="text-[11px] text-muted-foreground capitalize">
+            {att.kind} {att.mime && `· ${att.mime}`}
+          </p>
+        </div>
+
+        {/* Placement Dropdown (or custom input) */}
+        <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
+          {isCustom ? (
+            <div className="flex items-center gap-1">
+              <Input
+                value={currentTag}
+                maxLength={16}
+                onChange={(e) => {
+                  const cleaned = e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, "")
+                  setTagMapValue(cleaned)
+                }}
+                onBlur={() => {
+                  if (currentTag.trim()) {
+                    onChangePlacement(currentTag.trim())
+                  }
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && currentTag.trim()) {
+                    onChangePlacement(currentTag.trim())
+                  }
+                }}
+                placeholder="свой тег (до 16 симв)"
+                className="h-8 w-32 font-mono text-xs"
+                autoFocus
+              />
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
+                onClick={() => {
+                  onCustomTagActiveChange(false)
+                  onChangePlacement("gallery")
+                }}
+                title="Вернуть пресеты"
+              >
+                <X className="size-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <Select
+              value={currentTag}
+              onValueChange={(val) => {
+                if (val === "__custom__") {
+                  onCustomTagActiveChange(true)
+                } else {
+                  onChangePlacement(val ?? "gallery")
+                }
+              }}
+            >
+              <SelectTrigger className="h-8 w-32 text-xs font-medium bg-muted/30">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PRESET_PLACEMENTS.map((p) => (
+                  <SelectItem key={p.value} value={p.value} className="text-xs">
+                    {p.label}
+                  </SelectItem>
+                ))}
+                <SelectItem value="__custom__" className="text-xs text-primary font-medium">
+                  <span className="flex items-center gap-1.5">
+                    <Tag className="size-3" /> Свой тег…
+                  </span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          )}
+
+          {/* Details button for video */}
+          {att.kind === "video" && onOpenDetails && (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-8 text-muted-foreground hover:text-foreground hover:bg-muted"
+              onClick={onOpenDetails}
+              title="Подробнее (превью и обложка)"
+            >
+              <SlidersHorizontal className="size-3.5" />
+            </Button>
+          )}
+
+          {/* Delete button */}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+            onClick={onDelete}
+            title="Удалить файл"
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      </div>
+    </MediaContextMenu>
+  )
+}
+
 export function ServiceMediaManagerDialog({
   serviceId,
   serviceName,
@@ -75,6 +296,11 @@ export function ServiceMediaManagerDialog({
 }: ServiceMediaManagerDialogProps) {
   const qc = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const [localAttachments, setLocalAttachments] = useState<ServiceAttachmentItem[]>(attachments)
+  useEffect(() => {
+    setLocalAttachments(attachments)
+  }, [attachments])
 
   // Локальное состояние тегов (placement) для каждого attachment
   const [tagMap, setTagMap] = useState<Record<number, string>>(() => {
@@ -96,8 +322,16 @@ export function ServiceMediaManagerDialog({
   const [configModalOpen, setConfigModalOpen] = useState(false)
   const [selectedPlacement, setSelectedPlacement] = useState<string>("gallery")
 
+  // Модалка подробностей видеофайла
+  const [detailMedia, setDetailMedia] = useState<PreviewGalleryMedia | null>(null)
+
   // Drag & drop
   const [isDragOver, setIsDragOver] = useState(false)
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
   // Мутация добавления вложения
   const addAttachmentMutation = useMutation({
@@ -163,32 +397,44 @@ export function ServiceMediaManagerDialog({
     },
   })
 
-  // Мутация сохранения всех измененных тегов (Сохранить медиа)
-  const saveAllPlacementsMutation = useMutation({
-    mutationFn: async () => {
-      const promises: Promise<unknown>[] = []
-      for (const a of attachments) {
-        const currentTag = tagMap[a.id] ?? a.tag ?? "gallery"
-        if (currentTag !== a.tag) {
-          promises.push(
-            api.patch(`/v1/admin/services/${serviceId}/attachments/${a.id}`, {
-              tag: currentTag,
-            }),
-          )
-        }
-      }
-      await Promise.all(promises)
-    },
-    onSuccess: () => {
-      toastSuccess("Медиа сохранено")
+  // Обработка мгновенного обновления тега (placement)
+  const handleUpdatePlacement = async (attId: number, newTag: string) => {
+    setTagMap((prev) => ({ ...prev, [attId]: newTag }))
+    try {
+      await api.patch(`/v1/admin/services/${serviceId}/attachments/${attId}`, { tag: newTag })
+      toastSuccess("Назначение медиа сохранено")
       onRefresh()
       void qc.invalidateQueries({ queryKey: ["admin-service-attachments", serviceId] })
-      onOpenChange(false)
-    },
-    onError: (e: unknown) => {
-      toastError("Ошибка сохранения медиа", getErrorDetail(e))
-    },
-  })
+    } catch (e: unknown) {
+      toastError("Ошибка обновления тега", getErrorDetail(e))
+    }
+  }
+
+  // Обработка перетаскивания и сохранения сортировки
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = localAttachments.findIndex((a) => a.id === active.id)
+    const newIndex = localAttachments.findIndex((a) => a.id === over.id)
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return
+    const next = [...localAttachments]
+    const [moved] = next.splice(oldIndex, 1)
+    next.splice(newIndex, 0, moved)
+    setLocalAttachments(next)
+
+    try {
+      await Promise.all(
+        next.map((att, pos) =>
+          api.patch(`/v1/admin/services/${serviceId}/attachments/${att.id}`, { position: pos })
+        )
+      )
+      toastSuccess("Порядок медиа сохранён")
+      onRefresh()
+      void qc.invalidateQueries({ queryKey: ["admin-service-attachments", serviceId] })
+    } catch (e: unknown) {
+      toastError("Ошибка сохранения порядка", getErrorDetail(e))
+    }
+  }
 
   // Обработка выбора файла с диска
   const handleFileSelect = (file: File) => {
@@ -240,7 +486,7 @@ export function ServiceMediaManagerDialog({
               Медиа для {serviceName}
             </DialogTitle>
             <p className="text-xs text-muted-foreground">
-              {attachments.length} {attachments.length === 1 ? "файл" : "файлов"}
+              {localAttachments.length} {localAttachments.length === 1 ? "файл" : "файлов"} · Изменения сохраняются автоматически
             </p>
           </DialogHeader>
 
@@ -312,183 +558,64 @@ export function ServiceMediaManagerDialog({
               onRemove={removeJob}
             />
 
-            {/* Attached Items List (Стиль Photo 2) */}
+            {/* Attached Items List с Dnd-kit сортировкой */}
             <div className="space-y-2.5">
-              {attachments.length === 0 ? (
+              {localAttachments.length === 0 ? (
                 <div className="py-8 text-center text-xs text-muted-foreground/60 italic">
                   К этой услуге пока не прикреплено ни одного медиафайла
                 </div>
               ) : (
-                attachments.map((att) => {
-                  const currentTag = tagMap[att.id] ?? att.tag ?? "gallery"
-                  const isCustom = customTagActive[att.id] || !PRESET_PLACEMENTS.some((p) => p.value === currentTag)
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={localAttachments.map((a) => a.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {localAttachments.map((att) => {
+                      const currentTag = tagMap[att.id] ?? att.tag ?? "gallery"
+                      const isCustom = customTagActive[att.id] || !PRESET_PLACEMENTS.some((p) => p.value === currentTag)
 
-                  return (
-                    <MediaContextMenu
-                      key={att.id}
-                      item={{
-                        id: att.id,
-                        token: att.token,
-                        url: att.url,
-                        kind: att.kind,
-                        status: att.status,
-                        tag: currentTag,
-                        mime: att.mime,
-                      }}
-                      placementOptions={PRESET_PLACEMENTS}
-                      currentPlacement={currentTag}
-                      onChangePlacement={(val) => {
-                        setCustomTagActive((prev) => ({ ...prev, [att.id]: false }))
-                        setTagMap((prev) => ({ ...prev, [att.id]: val }))
-                      }}
-                      onDelete={() => removeAttachmentMutation.mutate(att.id)}
-                      canDelete={true}
-                    >
-                      <div
-                        className="group flex items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/60 p-2.5 transition-colors hover:bg-card hover:border-border cursor-context-menu"
-                      >
-                      {/* Thumbnail */}
-                      <div className="relative size-12 shrink-0 overflow-hidden rounded-xl border border-border/80 bg-muted/30">
-                        {att.kind === "image" ? (
-                          <img
-                            src={att.url}
-                            alt={currentTag}
-                            className="size-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex size-full items-center justify-center bg-muted/60 text-muted-foreground">
-                            <Video className="size-5" />
-                          </div>
-                        )}
-                        {att.kind === "video" && (
-                          <div className="absolute right-1 bottom-1 rounded bg-black/70 px-1 py-0.5 text-[9px] text-white font-mono">
-                            video
-                          </div>
-                        )}
-                      </div>
-
-                      {/* File Metadata */}
-                      <div className="min-w-0 flex-1 space-y-0.5">
-                        <p className="truncate font-mono text-xs font-medium text-foreground">
-                          {att.token}.{att.mime?.split("/")[1] ?? (att.kind === "video" ? "webm" : "webp")}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground capitalize">
-                          {att.kind} {att.mime && `· ${att.mime}`}
-                        </p>
-                      </div>
-
-                      {/* Placement Dropdown (or custom input) */}
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {isCustom ? (
-                          <div className="flex items-center gap-1">
-                            <Input
-                              value={currentTag}
-                              maxLength={16}
-                              onChange={(e) =>
-                                setTagMap((prev) => ({
-                                  ...prev,
-                                  [att.id]: e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ""),
-                                }))
-                              }
-                              placeholder="свой тег (до 16 симв)"
-                              className="h-8 w-32 font-mono text-xs"
-                              autoFocus
-                            />
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-8 shrink-0 text-muted-foreground hover:text-foreground"
-                              onClick={() => {
-                                setCustomTagActive((prev) => ({ ...prev, [att.id]: false }))
-                                setTagMap((prev) => ({ ...prev, [att.id]: "gallery" }))
-                              }}
-                              title="Вернуть пресеты"
-                            >
-                              <X className="size-3.5" />
-                            </Button>
-                          </div>
-                        ) : (
-                          <Select
-                            value={currentTag}
-                            onValueChange={(val) => {
-                              if (val === "__custom__") {
-                                setCustomTagActive((prev) => ({ ...prev, [att.id]: true }))
-                              } else {
-                                setTagMap((prev) => ({ ...prev, [att.id]: val ?? "gallery" }))
-                              }
-                            }}
-                          >
-                            <SelectTrigger className="h-8 w-32 text-xs font-medium bg-muted/30">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {PRESET_PLACEMENTS.map((p) => (
-                                <SelectItem key={p.value} value={p.value} className="text-xs">
-                                  {p.label}
-                                </SelectItem>
-                              ))}
-                              <SelectItem value="__custom__" className="text-xs text-primary font-medium">
-                                <span className="flex items-center gap-1.5">
-                                  <Tag className="size-3" /> Свой тег…
-                                </span>
-                              </SelectItem>
-                            </SelectContent>
-                          </Select>
-                        )}
-
-                        {/* Replace / Reload button */}
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-8 text-muted-foreground hover:text-foreground hover:bg-muted"
-                          onClick={() => {
-                            setPendingFile(null)
-                            fileInputRef.current?.click()
+                      return (
+                        <SortableAttachmentItem
+                          key={att.id}
+                          att={att}
+                          currentTag={currentTag}
+                          isCustom={isCustom}
+                          onChangePlacement={(val) => {
+                            setCustomTagActive((prev) => ({ ...prev, [att.id]: false }))
+                            void handleUpdatePlacement(att.id, val)
                           }}
-                          title="Заменить файл"
-                        >
-                          <RotateCw className="size-3.5" />
-                        </Button>
-
-                        {/* Delete button */}
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          className="size-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                          onClick={() => removeAttachmentMutation.mutate(att.id)}
-                          disabled={removeAttachmentMutation.isPending}
-                          title="Удалить файл"
-                        >
-                          <Trash2 className="size-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  </MediaContextMenu>
-                )
-                })
+                          onOpenDetails={
+                            att.kind === "video"
+                              ? () =>
+                                  setDetailMedia({
+                                    token: att.token,
+                                    kind: att.kind,
+                                    mime: att.mime,
+                                    size: null,
+                                    created_at: new Date().toISOString(),
+                                    thumb: att.thumb ?? null,
+                                    previews: att.previews ?? [],
+                                    meta: {},
+                                  })
+                              : undefined
+                          }
+                          onDelete={() => removeAttachmentMutation.mutate(att.id)}
+                          onCustomTagActiveChange={(active) =>
+                            setCustomTagActive((prev) => ({ ...prev, [att.id]: active }))
+                          }
+                          setTagMapValue={(val) => setTagMap((prev) => ({ ...prev, [att.id]: val }))}
+                        />
+                      )
+                    })}
+                  </SortableContext>
+                </DndContext>
               )}
             </div>
           </div>
-
-          {/* Footer (Стиль Photo 2) */}
-          <DialogFooter className="px-6 py-3.5 bg-muted/20 border-t border-border/60 flex items-center justify-end gap-2">
-            <Button variant="ghost" size="sm" onClick={() => onOpenChange(false)}>
-              Отмена
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => saveAllPlacementsMutation.mutate()}
-              disabled={saveAllPlacementsMutation.isPending}
-              className="gap-1.5 shadow-sm"
-            >
-              {saveAllPlacementsMutation.isPending ? (
-                <RotateCw className="size-3.5 animate-spin" />
-              ) : (
-                <Check className="size-3.5" />
-              )}
-              <span>Сохранить медиа</span>
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -519,6 +646,19 @@ export function ServiceMediaManagerDialog({
           }
         }}
       />
+
+      {/* Диалог подробностей видеофайла (превью, обложка) */}
+      <Dialog open={Boolean(detailMedia)} onOpenChange={(open) => !open && setDetailMedia(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          {detailMedia && (
+            <MediaPreviewGallery
+              media={detailMedia}
+              queryKey={["admin-service-attachments", serviceId]}
+              onClose={() => setDetailMedia(null)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

@@ -1,15 +1,83 @@
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  rectSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
 import { ArrowLeft, Loader2, Plus, Trash2, Upload } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { fmtDateTime, fmtSize, metaRows } from "@/api/media-format.ts"
 import { Button } from "@/components/shadsnui/button"
 
-interface MediaVariant {
-  mime: string | null
-  size: number | null
+export interface MediaVariant {
+  mime?: string | null
+  size?: number | null
   url: string
+}
+
+function SortablePreviewItem({
+  preview,
+  onRemove,
+  isRemoving,
+}: {
+  preview: MediaVariant
+  onRemove: () => void
+  isRemoving: boolean
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: preview.url })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : undefined,
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      className={`group relative aspect-square cursor-grab overflow-hidden rounded-md border touch-none select-none active:cursor-grabbing ${
+        isDragging ? "opacity-40 scale-95 ring-2 ring-primary shadow-xl" : ""
+      }`}
+    >
+      <img src={preview.url} alt="" draggable={false} className="size-full object-cover pointer-events-none" />
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="destructive"
+        disabled={isRemoving}
+        className="absolute top-1 right-1 opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+        onClick={(e) => {
+          e.stopPropagation()
+          onRemove()
+        }}
+      >
+        <Trash2 className="size-3" />
+      </Button>
+    </div>
+  )
 }
 
 export interface PreviewGalleryMedia {
@@ -99,7 +167,6 @@ export function MediaPreviewGallery({
   const qc = useQueryClient()
   const thumbInputRef = useRef<HTMLInputElement>(null)
   const previewInputRef = useRef<HTMLInputElement>(null)
-  const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [localOrder, setLocalOrder] = useState<MediaVariant[]>(media.previews)
 
   // ``useState(media.previews)`` только на монтирование — без этого локальный
@@ -169,39 +236,25 @@ export function MediaPreviewGallery({
     onSuccess: invalidate,
   })
 
-  // Браузер (особенно Chrome) при drag DOM-узла с <img> внутри сам добавляет
-  // в dataTransfer.types запись "Files" (готов "отдать" картинку как файл),
-  // даже если это внутренняя сортировка div'ов, а не перетаскивание из ОС —
-  // именно поэтому одной проверки `types.includes("Files")` в
-  // ProfileDialogHost недостаточно: она путала сортировку превью с реальной
-  // загрузкой файла. Кастомный MIME-тип в dataTransfer — надёжный маркер
-  // "это наша внутренняя сортировка", stopPropagation не даёт событию дойти
-  // до onDragOver/onDrop диалога вообще.
-  const REORDER_MIME = "application/x-savior-preview-reorder"
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  )
 
-  function onDragStart(e: React.DragEvent, i: number) {
-    e.dataTransfer.setData(REORDER_MIME, String(i))
-    e.dataTransfer.effectAllowed = "move"
-    setDragIndex(i)
-  }
-  function onDragOverItem(e: React.DragEvent, i: number) {
-    e.preventDefault()
-    e.stopPropagation()
-    if (dragIndex === null || dragIndex === i) return
-    setLocalOrder((prev) => {
-      const next = [...prev]
-      const [moved] = next.splice(dragIndex, 1)
-      next.splice(i, 0, moved)
-      return next
-    })
-    setDragIndex(i)
-  }
-  function onDragEnd(e: React.DragEvent) {
-    e.stopPropagation()
-    if (dragIndex === null) return
-    setDragIndex(null)
-    const order = localOrder.map((v) => media.previews.indexOf(v))
-    if (order.some((v, i) => v !== i)) reorderPreviews.mutate(order)
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const oldIndex = localOrder.findIndex((p) => p.url === active.id)
+    const newIndex = localOrder.findIndex((p) => p.url === over.id)
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return
+    const next = [...localOrder]
+    const [moved] = next.splice(oldIndex, 1)
+    next.splice(newIndex, 0, moved)
+    setLocalOrder(next)
+    const order = next.map((v) => media.previews.findIndex((p) => p.url === v.url))
+    if (order.some((v, i) => v !== i)) {
+      reorderPreviews.mutate(order)
+    }
   }
 
   const rows = metaRows(media.meta, media.kind)
@@ -326,30 +379,27 @@ export function MediaPreviewGallery({
               Пока нет превью — добавьте кадр вручную или случайным выбором.
             </p>
           ) : (
-            <div className="grid grid-cols-4 gap-2">
-              {localOrder.map((p, i) => (
-                <div
-                  key={p.url}
-                  draggable
-                  onDragStart={(e) => onDragStart(e, i)}
-                  onDragOver={(e) => onDragOverItem(e, i)}
-                  onDragEnd={onDragEnd}
-                  className="group relative aspect-square cursor-grab overflow-hidden rounded-md border active:cursor-grabbing"
-                >
-                  <img src={p.url} alt="" draggable={false} className="size-full object-cover" />
-                  <Button
-                    type="button"
-                    size="icon-sm"
-                    variant="destructive"
-                    disabled={removePreview.isPending}
-                    className="absolute top-1 right-1 opacity-0 transition-opacity group-hover:opacity-100"
-                    onClick={() => removePreview.mutate(media.previews.indexOf(p))}
-                  >
-                    <Trash2 className="size-3" />
-                  </Button>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={localOrder.map((p) => p.url)}
+                strategy={rectSortingStrategy}
+              >
+                <div className="grid grid-cols-4 gap-2">
+                  {localOrder.map((p) => (
+                    <SortablePreviewItem
+                      key={p.url}
+                      preview={p}
+                      isRemoving={removePreview.isPending}
+                      onRemove={() => removePreview.mutate(media.previews.indexOf(p))}
+                    />
+                  ))}
                 </div>
-              ))}
-            </div>
+              </SortableContext>
+            </DndContext>
           )}
           <p className="text-[11px] text-muted-foreground">Перетаскивайте кадры, чтобы изменить порядок.</p>
         </div>

@@ -1,36 +1,65 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { ImageOff, Loader2, Upload } from "lucide-react"
-import { useRef } from "react"
-import { uploadOwnMedia } from "@/api/media-upload"
-import { toastError, toastSuccess } from "@/lib/toast"
-import { Button } from "@/components/shadsnui/button"
-import { useQueryClient } from "@tanstack/react-query"
+import {
+  ChevronLeft,
+  ChevronRight,
+  Image as ImageIcon,
+  Loader2,
+  Search,
+  SlidersHorizontal,
+  Video,
+} from "lucide-react"
 
 import { api } from "@/api/api.ts"
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/shadsnui/dialog"
-import { Input } from "@/components/shadsnui/input"
 import { Badge } from "@/components/shadsnui/badge"
+import { Button } from "@/components/shadsnui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/shadsnui/dialog"
+import { Input } from "@/components/shadsnui/input"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/shadsnui/table"
+import {
+  MediaPreviewGallery,
+  type PreviewGalleryMedia,
+  type MediaVariant,
+} from "@/components/profile/MediaPreviewGallery"
 
-interface MediaItem {
+export interface MediaPickerItem {
   id: number
   token: string
   kind: string
   tag: string | null
+  name?: string | null
   status: string
   url: string
   mime: string | null
-  thumb?: { url: string } | null
+  created_at?: string
+  size?: number | null
+  thumb?: MediaVariant | null
+  previews?: MediaVariant[]
+  meta?: Record<string, number>
 }
 
 interface Page<T> {
   items: T[]
+  total: number
+  limit: number
+  offset: number
+  has_more: boolean
 }
 
-/** Диалог выбора уже загруженного медиа для вложения к услуге — список с
- * поиском по тегу/mime и превью. Полноценная загрузка нового файла сюда не
- * входит: медиа сначала загружается через общий /media аплоадер (см. другие
- * страницы), здесь только привязка существующего к услуге. */
+const PAGE_SIZE = 10
+
 export function MediaPickerDialog({
   open,
   onOpenChange,
@@ -38,124 +67,254 @@ export function MediaPickerDialog({
 }: {
   open: boolean
   onOpenChange: (v: boolean) => void
-  onSelect: (media: MediaItem) => void
+  onSelect: (media: MediaPickerItem) => void
 }) {
-  const [q, setQ] = useState("")
-  const [uploading, setUploading] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const qc = useQueryClient()
+  const [search, setSearch] = useState("")
+  const [page, setPage] = useState(1)
+  const [detailMedia, setDetailMedia] = useState<PreviewGalleryMedia | null>(null)
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true)
-    try {
-      const { mediaId, token } = await uploadOwnMedia(file, { tag: "service" })
-      toastSuccess("Файл успешно загружен")
-      void qc.invalidateQueries({ queryKey: ["media-picker"] })
-      onSelect({
-        id: mediaId,
-        token,
-        kind: file.type.startsWith("video/") ? "video" : "image",
-        tag: "service",
-        status: "ready",
-        url: `/api/media/${token}`,
-        mime: file.type,
-      })
-      onOpenChange(false)
-    } catch (err) {
-      toastError("Ошибка при загрузке медиафайла", err instanceof Error ? err.message : String(err))
-    } finally {
-      setUploading(false)
-      if (fileInputRef.current) fileInputRef.current.value = ""
-    }
-  }
+  const offset = (page - 1) * PAGE_SIZE
 
   const { data, isLoading } = useQuery({
-    queryKey: ["media-picker", q],
-    queryFn: async () =>
-      (
-        await api.get<Page<MediaItem>>("/v1/admin/media", {
-          params: { limit: 60, q: q || undefined, sort: "-created_at" },
-        })
-      ).data.items,
+    queryKey: ["media-picker", search, page],
+    queryFn: async () => {
+      const res = await api.get<Page<MediaPickerItem>>("/v1/admin/media", {
+        params: {
+          limit: PAGE_SIZE,
+          offset,
+          q: search.trim() || undefined,
+          sort: "-created_at",
+        },
+      })
+      return res.data
+    },
     enabled: open,
   })
 
+  const items = data?.items || []
+  const total = data?.total || 0
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
+
+  const handleSearchChange = (val: string) => {
+    setSearch(val)
+    setPage(1)
+  }
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
-        <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-1">
-          <DialogTitle>Выбрать или загрузить медиа</DialogTitle>
-          <div className="flex items-center gap-2">
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              accept="image/*,video/*"
-              className="hidden"
-            />
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-8 text-xs gap-1.5"
-              disabled={uploading}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {uploading ? (
-                <>
-                  <Loader2 className="size-3.5 animate-spin" /> Загрузка…
-                </>
-              ) : (
-                <>
-                  <Upload className="size-3.5" /> Загрузить файл
-                </>
-              )}
-            </Button>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="w-full max-w-3xl p-0 overflow-hidden shadow-2xl border-border/80 h-[640px] flex flex-col">
+          <DialogHeader className="px-6 pt-5 pb-3 border-b border-border/60">
+            <DialogTitle className="text-base font-semibold">
+              Выбрать медиа из медиатеки
+            </DialogTitle>
+          </DialogHeader>
+
+          {/* Search bar */}
+          <div className="px-6 pt-4 pb-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-2.5 size-4 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => handleSearchChange(e.target.value)}
+                placeholder="Поиск по названию или токену…"
+                className="pl-9 text-xs h-9 bg-muted/20"
+                autoFocus
+              />
+            </div>
           </div>
-        </DialogHeader>
-        <Input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Поиск по тегу/mime…"
-          autoFocus
-        />
-        <div className="grid max-h-[60vh] grid-cols-3 gap-2 overflow-y-auto sm:grid-cols-4">
-          {isLoading && <p className="col-span-full text-sm text-muted-foreground">Загрузка…</p>}
-          {!isLoading && (data?.length ?? 0) === 0 && (
-            <p className="col-span-full py-8 text-center text-sm text-muted-foreground">
-              Ничего не найдено. Загрузите медиа через страницу медиатеки.
-            </p>
+
+          {/* Table container */}
+          <div className="flex-1 overflow-y-auto px-6 min-h-0">
+            <div className="rounded-lg border overflow-hidden bg-card">
+              <Table>
+                <TableHeader>
+                  <TableRow className="h-8 hover:bg-transparent">
+                    <TableHead className="w-14 text-[11px]">Файл</TableHead>
+                    <TableHead className="min-w-[180px] text-[11px]">Название / Токен</TableHead>
+                    <TableHead className="w-24 text-[11px]">Тип</TableHead>
+                    <TableHead className="w-28 text-[11px]">Тег</TableHead>
+                    <TableHead className="w-32 text-right pr-4 text-[11px]">Действие</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {isLoading && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-12 text-center text-xs text-muted-foreground">
+                        <Loader2 className="size-5 animate-spin mx-auto mb-2 text-primary" />
+                        Загрузка медиафайлов…
+                      </TableCell>
+                    </TableRow>
+                  )}
+
+                  {!isLoading && items.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={5} className="py-12 text-center text-xs text-muted-foreground">
+                        {search ? "Ничего не найдено по текущему запросу." : "В медиатеке пока нет файлов."}
+                      </TableCell>
+                    </TableRow>
+                  )}
+
+                  {!isLoading &&
+                    items.map((m) => {
+                      const thumbUrl =
+                        m.thumb?.url || (m.kind === "video" ? `/api/media/${m.token}.thumb` : m.url)
+
+                      return (
+                        <TableRow
+                          key={m.id}
+                          className="hover:bg-muted/40 cursor-pointer transition-colors"
+                          onClick={() => {
+                            onSelect(m)
+                            onOpenChange(false)
+                          }}
+                        >
+                          {/* Thumbnail */}
+                          <TableCell className="py-2 pl-3">
+                            <div className="relative size-10 shrink-0 overflow-hidden rounded-md border border-border/80 bg-muted/30">
+                              <img
+                                src={thumbUrl}
+                                alt={m.name || m.token}
+                                className="size-full object-cover"
+                                onError={(e) => {
+                                  if (m.kind === "video") {
+                                    (e.target as HTMLElement).style.display = "none"
+                                  }
+                                }}
+                              />
+                              {m.kind === "video" && (
+                                <div className="absolute right-0.5 bottom-0.5 rounded bg-black/70 px-1 py-0.2 text-[8px] text-white font-mono">
+                                  video
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+
+                          {/* Name / Token */}
+                          <TableCell className="py-2">
+                            <div className="space-y-0.5 max-w-[220px]">
+                              <p className="truncate text-xs font-medium text-foreground">
+                                {m.name || m.token}
+                              </p>
+                              <p className="truncate font-mono text-[10px] text-muted-foreground">
+                                {m.token}
+                              </p>
+                            </div>
+                          </TableCell>
+
+                          {/* Type */}
+                          <TableCell className="py-2">
+                            <Badge variant="outline" className="text-[10px] gap-1 px-1.5 py-0">
+                              {m.kind === "video" ? (
+                                <Video className="size-3 text-sky-400" />
+                              ) : (
+                                <ImageIcon className="size-3 text-emerald-400" />
+                              )}
+                              <span>{m.kind}</span>
+                            </Badge>
+                          </TableCell>
+
+                          {/* Tag */}
+                          <TableCell className="py-2">
+                            {m.tag ? (
+                              <Badge variant="secondary" className="font-mono text-[10px] px-1.5 py-0">
+                                {m.tag}
+                              </Badge>
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+
+                          {/* Actions */}
+                          <TableCell className="py-2 text-right pr-4" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-end gap-1.5">
+                              {m.kind === "video" && (
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="size-7 text-muted-foreground hover:text-foreground"
+                                  onClick={() =>
+                                    setDetailMedia({
+                                      token: m.token,
+                                      kind: m.kind,
+                                      mime: m.mime,
+                                      size: m.size ?? null,
+                                      created_at: m.created_at || new Date().toISOString(),
+                                      thumb: m.thumb ?? null,
+                                      previews: m.previews ?? [],
+                                      meta: m.meta ?? {},
+                                    })
+                                  }
+                                  title="Подробнее (превью и обложка)"
+                                >
+                                  <SlidersHorizontal className="size-3.5" />
+                                </Button>
+                              )}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 text-xs px-2.5 font-medium"
+                                onClick={() => {
+                                  onSelect(m)
+                                  onOpenChange(false)
+                                }}
+                              >
+                                Выбрать
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
+          {/* Pagination Footer */}
+          <div className="px-6 py-3 bg-muted/20 border-t border-border/60 flex items-center justify-between text-xs text-muted-foreground">
+            <span>
+              Показано {items.length} из {total} файлов (по 10 на страницу)
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-2 gap-1"
+                disabled={page <= 1 || isLoading}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                <ChevronLeft className="size-3.5" /> Назад
+              </Button>
+              <span className="text-xs font-mono font-medium text-foreground">
+                {page} / {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs px-2 gap-1"
+                disabled={page >= totalPages || isLoading}
+                onClick={() => setPage((p) => p + 1)}
+              >
+                Вперёд <ChevronRight className="size-3.5" />
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Details modal for video */}
+      <Dialog open={Boolean(detailMedia)} onOpenChange={(open) => !open && setDetailMedia(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          {detailMedia && (
+            <MediaPreviewGallery
+              media={detailMedia}
+              queryKey={["media-picker", search, page]}
+              onClose={() => setDetailMedia(null)}
+            />
           )}
-          {data?.map((m) => (
-            <button
-              key={m.id}
-              type="button"
-              onClick={() => {
-                onSelect(m)
-                onOpenChange(false)
-              }}
-              className="group relative flex aspect-square flex-col items-center justify-center overflow-hidden rounded-md border bg-muted transition hover:border-primary"
-            >
-              {m.thumb?.url || (m.kind === "image" && m.status === "ready") ? (
-                <img
-                  src={m.thumb?.url ?? m.url}
-                  alt={m.tag ?? `media #${m.id}`}
-                  className="size-full object-cover"
-                />
-              ) : (
-                <ImageOff className="size-6 text-muted-foreground" />
-              )}
-              {m.tag && (
-                <Badge variant="secondary" className="absolute bottom-1 left-1 text-[10px]">
-                  {m.tag}
-                </Badge>
-              )}
-            </button>
-          ))}
-        </div>
-      </DialogContent>
-    </Dialog>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

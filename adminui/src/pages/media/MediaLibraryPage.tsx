@@ -53,7 +53,14 @@ import {
 import { MediaUploadConfigModal } from "@/components/media/MediaUploadConfigModal"
 import { isMediaConfigRequired, type MediaUploadConfig } from "@/api/media-upload"
 import { MediaContextMenu } from "@/components/media/MediaContextMenu"
+import { MediaPreviewGallery, type PreviewGalleryMedia } from "@/components/profile/MediaPreviewGallery"
 import { useAdminUiSettings } from "@/api/admin-ui-settings"
+
+interface MediaVariant {
+  mime?: string | null
+  size?: number | null
+  url: string
+}
 
 interface MediaItem {
   id: number
@@ -68,8 +75,10 @@ interface MediaItem {
   size: number | null
   owner_id: number | null
   created_at: string
-  media?: { url: string } | null
-  thumb?: { url: string } | null
+  media?: MediaVariant | null
+  thumb?: MediaVariant | null
+  previews?: MediaVariant[]
+  meta?: Record<string, number>
   _isOptimistic?: boolean
   _job?: UploadJob
 }
@@ -137,6 +146,7 @@ export function MediaLibraryPage() {
   const [kindFilter, setKindFilter] = useState<string>("all")
   const [cleanupOpen, setCleanupOpen] = useState(false)
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
+  const [detailMedia, setDetailMedia] = useState<PreviewGalleryMedia | null>(null)
 
   // Settings for UI media modal & defaults
   const { data: adminSettings } = useAdminUiSettings()
@@ -728,6 +738,21 @@ export function MediaLibraryPage() {
               item={row}
               asChild
               onOpenPreview={() => setPreviewIndex(items.findIndex((i) => i.id === row.id))}
+              onOpenDetails={
+                row.kind === "video"
+                  ? () =>
+                      setDetailMedia({
+                        token: row.token,
+                        kind: row.kind,
+                        mime: row.mime,
+                        size: row.size,
+                        created_at: row.created_at,
+                        thumb: row.thumb ?? null,
+                        previews: row.previews ?? [],
+                        meta: row.meta ?? {},
+                      })
+                  : undefined
+              }
               onRename={() => {
                 setRenameItem(row)
                 setNewName(row.name || "")
@@ -895,6 +920,19 @@ export function MediaLibraryPage() {
               Сохранить
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Диалог подробностей видеофайла (превью, обложка) */}
+      <Dialog open={Boolean(detailMedia)} onOpenChange={(open) => !open && setDetailMedia(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          {detailMedia && (
+            <MediaPreviewGallery
+              media={detailMedia}
+              queryKey={["admin-media", table.offset, table.limit, table.search, kindFilter]}
+              onClose={() => setDetailMedia(null)}
+            />
+          )}
         </DialogContent>
       </Dialog>
     </div>

@@ -19,6 +19,7 @@ import {
   Check,
   ExternalLink,
   Pencil,
+  SlidersHorizontal,
 } from "lucide-react"
 import { toastSuccess } from "@/lib/toast"
 
@@ -39,6 +40,7 @@ export interface MediaContextMenuProps {
   item: MediaContextItemData
   asChild?: boolean
   onOpenPreview?: () => void
+  onOpenDetails?: () => void
   onRename?: () => void
   onSetAvatar?: () => void
   onDelete?: () => void
@@ -54,6 +56,7 @@ export function MediaContextMenu({
   item,
   asChild = false,
   onOpenPreview,
+  onOpenDetails,
   onRename,
   onSetAvatar,
   onDelete,
@@ -103,6 +106,19 @@ export function MediaContextMenu({
           >
             <Eye className="size-4 text-muted-foreground" />
             <span>Открыть просмотр</span>
+          </ContextMenuItem>
+        )}
+
+        {item.kind === "video" && onOpenDetails && (
+          <ContextMenuItem
+            onClick={(e) => {
+              e.stopPropagation()
+              onOpenDetails()
+            }}
+            className="gap-2 cursor-pointer"
+          >
+            <SlidersHorizontal className="size-4 text-muted-foreground" />
+            <span>Подробнее (превью и обложка)</span>
           </ContextMenuItem>
         )}
 
