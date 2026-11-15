@@ -2,22 +2,29 @@
 
 from __future__ import annotations
 
+import re
 from typing import Annotated
 
 from pydantic import AfterValidator
+
+_EMAIL_RE = re.compile(r"^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)+$")
 
 
 def normalize_email(value: str | None) -> str | None:
     """Привести email к каноничному виду: без пробелов, в нижнем регистре.
 
-    Регистр домена и локальной части не различается ни одним практически
-    используемым почтовым провайдером, а хранение в разном регистре давало два
-    аккаунта на один адрес и 500 на уникальном индексе (см. AUDIT.md §2.1).
+    Валидирует синтаксис адреса и защищает от инъекций (CRLF, разделители).
     """
     if value is None:
         return None
     value = value.strip().lower()
-    return value or None
+    if not value:
+        return None
+    if any(c in value for c in "\r\n\t\0"):
+        raise ValueError("Invalid email: control characters not allowed")
+    if not _EMAIL_RE.match(value) or len(value) > 254:
+        raise ValueError("Invalid email address format")
+    return value
 
 
 #: Email, нормализованный на входе. Использовать во всех схемах, которые

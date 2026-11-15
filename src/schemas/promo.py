@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from enums import PromoKind
 
@@ -74,13 +74,13 @@ class PromoCatalogCreate(BaseModel):
         default=PromoKind.BONUS,
         description="Action type: bonus | discount | service",
     )
-    value: Decimal = Field(default=Decimal("0"), description="Bonus/discount value")
+    value: Decimal = Field(default=Decimal("0"), ge=0, description="Bonus/discount value")
     discount_type: str | None = Field(
         default=None,
         description="Discount type: percent | fixed",
     )
     service_id: int | None = Field(
-        default=None, description="Service ID for kind=service"
+        default=None, ge=1, description="Service ID for kind=service"
     )
     per_user: int | None = Field(
         default=None,
@@ -95,20 +95,22 @@ class PromoCatalogCreate(BaseModel):
     @model_validator(mode="after")
     def _validate_kind_discount(self) -> "PromoCatalogCreate":
         _check_kind_discount(self.kind, self.discount_type)
+        if self.kind == PromoKind.DISCOUNT and self.discount_type == "percent" and self.value > Decimal("100"):
+            raise ValueError("percentage discount value cannot exceed 100")
         return self
 
 
 class PromoCatalogPatch(BaseModel):
     """Update promo catalog."""
 
-    name: str | None = Field(default=None, description="Catalog name")
+    name: str | None = Field(default=None, min_length=1, max_length=128, description="Catalog name")
     kind: str | None = Field(
         default=None, description="Action type: bonus | discount | service"
     )
-    value: Decimal | None = Field(default=None, description="Bonus/discount value")
+    value: Decimal | None = Field(default=None, ge=0, description="Bonus/discount value")
     discount_type: str | None = Field(default=None, description="percent | fixed")
     service_id: int | None = Field(
-        default=None, description="Service ID for kind=service"
+        default=None, ge=1, description="Service ID for kind=service"
     )
     per_user: int | None = Field(
         default=None,
@@ -169,10 +171,11 @@ class PromoUse(BaseModel):
 class PromoCodeBatch(BaseModel):
     """Create promo code batch."""
 
-    catalog_id: int = Field(description="Promo catalog ID")
+    catalog_id: int = Field(ge=1, description="Promo catalog ID")
     codes: list[str] | None = Field(
         default=None,
-        description="Explicit codes; otherwise generate count",
+        max_length=5000,
+        description="Explicit codes (up to 5000); otherwise generate count",
     )
     count: int = Field(
         default=0,
@@ -193,6 +196,15 @@ class PromoCodeBatch(BaseModel):
     valid_to: datetime | None = Field(
         default=None, description="Valid until; null = no expiry"
     )
+
+    @field_validator("codes")
+    @classmethod
+    def _validate_codes(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None:
+            for c in v:
+                if not (2 <= len(c) <= 64):
+                    raise ValueError("each code must be between 2 and 64 characters")
+        return v
 
 
 class PromoCodeToggle(BaseModel):

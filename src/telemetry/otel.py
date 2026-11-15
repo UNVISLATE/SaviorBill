@@ -124,6 +124,19 @@ def _install_error_handlers(app: FastAPI) -> None:
         payload, headers = _with_trace({"detail": exc.errors()})
         return JSONResponse(payload, status_code=422, headers=headers)
 
+    from sqlalchemy.exc import DBAPIError, DataError
+
+    @app.exception_handler(DataError)
+    @app.exception_handler(DBAPIError)
+    async def _dbapi_exc(request: Request, exc: DBAPIError) -> JSONResponse:
+        err_msg = str(getattr(exc, "orig", exc)).lower()
+        if "out of range" in err_msg or "value out of range" in err_msg or "truncation" in err_msg:
+            payload, headers = _with_trace({"detail": "Resource not found or parameter out of range"})
+            return JSONResponse(payload, status_code=404, headers=headers)
+        log.exception("ошибка БД при выполнении запроса")
+        payload, headers = _with_trace({"detail": "internal server error"})
+        return JSONResponse(payload, status_code=500, headers=headers)
+
     @app.exception_handler(Exception)
     async def _unhandled_exc(request: Request, exc: Exception) -> JSONResponse:
         log.exception("необработанная ошибка запроса")

@@ -119,21 +119,34 @@ class MediaResults:
                                 "неверная подпись",
                                 msg_id,
                             )
+                            await self.vk.xack(
+                                self.cfg.MEDIA_RESULT_STREAM,
+                                self.cfg.MEDIA_RESULT_GROUP,
+                                msg_id,
+                            )
                             continue
                         with span_from_carrier("media.result.consume", data):
                             await self._handle(msg_id, data)
-                    except Exception:  # noqa: BLE001 — одна запись не валит цикл
-                        log.exception("media-results: recording error")
-                        await self._on_failure(msg_id, data)
-                    finally:
                         await self.vk.xack(
                             self.cfg.MEDIA_RESULT_STREAM,
                             self.cfg.MEDIA_RESULT_GROUP,
                             msg_id,
                         )
+                    except Exception:  # noqa: BLE001 — одна запись не валит цикл
+                        log.exception("media-results: recording error")
+                        exhausted = await self._on_failure(msg_id, data)
+                        if exhausted:
+                            await self.vk.xack(
+                                self.cfg.MEDIA_RESULT_STREAM,
+                                self.cfg.MEDIA_RESULT_GROUP,
+                                msg_id,
+                            )
 
-    async def _on_failure(self, msg_id: str, data: dict) -> None:
-        """Учесть попытку; при исчерпании отправить результат в DLQ."""
+    async def _on_failure(self, msg_id: str, data: dict) -> bool:
+        """Учесть попытку; при исчерпании отправить результат в DLQ.
+
+        :return: True если лимит попыток исчерпан и сообщение отправлено в DLQ.
+        """
         token = data.get("token", "unknown")
         op = data.get("op", "convert")
         key = f"media:result:{token}:{op}:{msg_id}"
@@ -141,9 +154,11 @@ class MediaResults:
         if exhausted:
             await self.vk.xadd(self.cfg.MEDIA_RESULT_DLQ, {**data, "attempts": str(n)})
             await clear_attempts(self.vk, key)
+            return True
         else:
             # Снять idem-claim, чтобы повторная доставка могла обработаться заново.
             await release_once(self.vk, key)
+            return False
 
     async def _handle(self, msg_id: str, data: dict) -> None:
         op = data.get("op")

@@ -32,3 +32,20 @@ def test_input_schemas_normalize_email():
     assert UserPatch(email="Q@W.E").email == "q@w.e"
     created = UserCreateAdmin(login="bob", password="password123", email="B@C.D")
     assert created.email == "b@c.d"
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        "not-an-email",
+        "user@localhost",
+        "user@domain.com, hidden@evil.com",
+        "user@domain.com\r\nbcc: evil@evil.com",
+        "user@domain.com\0",
+        "@nodomain.com",
+        "user@",
+    ],
+)
+def test_normalize_email_rejects_invalid_and_injections(invalid):
+    with pytest.raises(ValueError):
+        normalize_email(invalid)

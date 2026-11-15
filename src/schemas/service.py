@@ -286,15 +286,15 @@ class ServiceCreate(BaseModel):
 class ServicePatch(BaseModel):
     """Update service."""
 
-    name: str | None = Field(default=None, description="Service name")
+    name: str | None = Field(default=None, min_length=1, max_length=255, description="Service name")
     description: str | None = Field(default=None, description="Description")
-    catalog_id: int | None = Field(default=None, description="Catalog ID")
-    price: Decimal | None = Field(default=None, description="Price")
-    currency: str | None = Field(default=None, description="Currency")
+    catalog_id: int | None = Field(default=None, ge=1, description="Catalog ID")
+    price: Decimal | None = Field(default=None, ge=0, description="Price")
+    currency: str | None = Field(default=None, min_length=1, max_length=8, description="Currency")
     price_type: str | None = Field(default=None, description="Pricing type")
     pricing_config: dict | None = Field(default=None, description="Pricing configuration")
     delivery: str | None = Field(default=None, description="Delivery method: key | lua")
-    lua_script_id: int | None = Field(default=None, description="Lua script ID")
+    lua_script_id: int | None = Field(default=None, ge=1, description="Lua script ID")
     lua_script_version: int | None = Field(
         default=None, description="Pinned script version; null = latest"
     )

@@ -20,6 +20,7 @@ from models.user_oauth import UserOauthMngr
 from schemas.auth import Account, AvatarSet, MePatch, PasswordChange, _media_url
 from schemas.user import UserReferralItem
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from security.sec.pwd import hash_pass, verify_pass
 from services.account import account_response, release_old_avatar
@@ -125,7 +126,11 @@ async def patch_me(
             # Новый email никем не подтверждён — аккаунт снова неверифицирован.
             await mngr.set_role_key(acc, BaseRole.GUEST)
 
-    await mngr.s.commit()
+    try:
+        await mngr.s.commit()
+    except IntegrityError:
+        await mngr.s.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, "login or email already taken")
     return await account_response(acc, mngr.s)
 
 

@@ -65,6 +65,16 @@ class RequestTrackerMiddleware(BaseHTTPMiddleware):
         request.state.trace_id = trace_id
         token = current_trace_id_ctx.set(trace_id)
 
+        # 1.1. Защита от OOM DoS: проверка размера тела запроса (лимит 16MB)
+        content_length = request.headers.get("content-length")
+        if content_length and content_length.isdigit() and int(content_length) > 16 * 1024 * 1024:
+            current_trace_id_ctx.reset(token)
+            return JSONResponse(
+                status_code=413,
+                content={"detail": "Payload too large (limit: 16MB)", "trace_id": trace_id},
+                headers={"X-Trace-Id": trace_id},
+            )
+
         client_ip = request.client.host if request.client else "unknown"
         user_agent = request.headers.get("user-agent", "")
         referer = request.headers.get("referer", "")

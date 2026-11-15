@@ -225,7 +225,17 @@ async def _run(
 
     stderr_task = asyncio.create_task(_pump_stderr())
     progress_task = asyncio.create_task(_pump_progress())
-    await proc.wait()
+    try:
+        await asyncio.wait_for(proc.wait(), timeout=300.0)
+    except (asyncio.TimeoutError, TimeoutError):
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        stderr_task.cancel()
+        progress_task.cancel()
+        raise ConvertError("FFmpeg execution timed out (limit: 300s)")
+
     stderr = await stderr_task
     await progress_task
     dst = args[-1]
@@ -247,7 +257,15 @@ async def probe_duration(src: str) -> float | None:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )
-    out, _ = await proc.communicate()
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+    except (asyncio.TimeoutError, TimeoutError, Exception):
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        return None
+
     try:
         return float(out.decode().strip())
     except (ValueError, UnicodeDecodeError):
@@ -276,7 +294,15 @@ async def probe_media(src: str) -> dict:
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.DEVNULL,
     )
-    out, _ = await proc.communicate()
+    try:
+        out, _ = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+    except (asyncio.TimeoutError, TimeoutError, Exception):
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        return {}
+
     try:
         probe = json.loads(out.decode())
     except (ValueError, UnicodeDecodeError):

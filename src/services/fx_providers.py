@@ -198,10 +198,22 @@ async def fetch_rates(provider: FxProvider, base: str, api_key: str) -> dict[str
 
     url = provider.build_url(base, api_key)
     try:
-        # follow_redirects — сервисы курсов периодически переезжают на новый
-        # домен и отвечают 301 (так случилось с api.frankfurter.app); без
-        # этого источник просто переставал работать без внятной причины.
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT, follow_redirects=True) as client:
+        def _check_safe_redirect(response: httpx.Response) -> None:
+            if response.is_redirect:
+                location = response.headers.get("Location", "")
+                from urllib.parse import urlparse
+                parsed = urlparse(location)
+                if parsed.scheme and parsed.scheme != "https":
+                    raise FxProviderError("Небезопасный протокол при редиректе (требуется HTTPS)")
+                host = (parsed.hostname or "").lower()
+                if host in ("localhost", "127.0.0.1", "::1", "169.254.169.254") or host.endswith(".local"):
+                    raise FxProviderError("Редирект на локальный/приватный хост заблокирован")
+
+        async with httpx.AsyncClient(
+            timeout=_HTTP_TIMEOUT,
+            follow_redirects=True,
+            event_hooks={"response": [_check_safe_redirect]},
+        ) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             payload = resp.json()

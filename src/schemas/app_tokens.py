@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict, Field
+import ipaddress
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class AppToken(BaseModel):
@@ -44,11 +45,22 @@ class AppTokenCreate(BaseModel):
         default_factory=list, description="Список разрешений Scoped RBAC (например, orders.read, services.keys.read)"
     )
     ip_allowlist: list[str] | None = Field(
-        default=None, description="Белый список IP или CIDR-сетей (если пусто — доступ со всех IP)"
+        default=None, max_length=100, description="Белый список IP или CIDR-сетей (если пусто — доступ со всех IP)"
     )
     expires_at: datetime | None = Field(
         default=None, description="Дата истечения срока действия (NULL — бессрочный)"
     )
+
+    @field_validator("ip_allowlist")
+    @classmethod
+    def _validate_ips(cls, v: list[str] | None) -> list[str] | None:
+        if v is not None:
+            for item in v:
+                try:
+                    ipaddress.ip_network(item.strip(), strict=False)
+                except ValueError:
+                    raise ValueError(f"Invalid IP address or CIDR network: {item!r}")
+        return v
 
 
 __all__ = ["AppToken", "AppTokenCreated", "AppTokenCreate"]

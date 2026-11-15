@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 from email.message import EmailMessage
 from email.utils import formataddr
 
@@ -82,14 +83,20 @@ class MailSvc:
         effective_sender = sender_override or self.sender
         effective_name = from_name_override if from_name_override is not None else self.from_name
 
-        msg = EmailMessage()
-        if effective_name:
-            msg["From"] = formataddr((effective_name, effective_sender))
-        else:
-            msg["From"] = effective_sender
+        # Защита от Header Injection (CRLF)
+        clean_subject = re.sub(r"[\r\n\0]+", " ", str(subject or "")).strip()
+        clean_name = re.sub(r"[\r\n\0]+", " ", str(effective_name or "")).strip() if effective_name else None
+        clean_sender = re.sub(r"[\r\n\0]+", "", str(effective_sender or "")).strip()
+        clean_to = re.sub(r"[\r\n\0]+", "", str(to or "")).strip()
 
-        msg["To"] = to
-        msg["Subject"] = subject
+        msg = EmailMessage()
+        if clean_name:
+            msg["From"] = formataddr((clean_name, clean_sender))
+        else:
+            msg["From"] = clean_sender
+
+        msg["To"] = clean_to
+        msg["Subject"] = clean_subject
         if is_html:
             msg.set_content("Для просмотра письма используйте HTML-совместимый клиент.")
             msg.add_alternative(body, subtype="html")
@@ -163,13 +170,19 @@ class LuaMailSvc:
 
         filename, resolved_version = await resolve_version(self.s, script, self.script_version)
 
+        # Очистка заголовков от CRLF
+        clean_subject = re.sub(r"[\r\n\0]+", " ", str(subject or "")).strip()
+        clean_name = re.sub(r"[\r\n\0]+", " ", str(effective_name or "")).strip() if effective_name else None
+        clean_sender = re.sub(r"[\r\n\0]+", "", str(effective_sender or "")).strip()
+        clean_to = re.sub(r"[\r\n\0]+", "", str(to or "")).strip()
+
         email_data = {
-            "to": to,
-            "subject": subject,
+            "to": clean_to,
+            "subject": clean_subject,
             "body": body,
             "is_html": is_html,
-            "from_email": effective_sender,
-            "from_name": effective_name,
+            "from_email": clean_sender,
+            "from_name": clean_name,
         }
 
         runner = LuaRunner(self.bus)

@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from schemas.types import OptNormEmail
 
@@ -55,10 +55,10 @@ class UserCreateAdmin(BaseModel):
     password: str = Field(min_length=8, max_length=256)
     email: OptNormEmail = Field(default=None, max_length=255)
     role_id: int | None = Field(
-        default=None, description="Starting role; defaults to 'user' if omitted"
+        default=None, ge=1, description="Starting role; defaults to 'user' if omitted"
     )
     avatar_media_id: int | None = Field(
-        default=None, description="Optional initial avatar media ID"
+        default=None, ge=1, description="Optional initial avatar media ID"
     )
 
 
@@ -70,13 +70,14 @@ class UserPatch(BaseModel):
     )
     role_id: int | None = Field(
         default=None,
+        ge=1,
         description="Role ID; controls block/verify",
     )
     balance: Decimal | None = Field(
-        default=None, description="New main balance (optional)"
+        default=None, ge=0, description="New main balance (optional)"
     )
     bonus_balance: Decimal | None = Field(
-        default=None, description="New bonus balance (optional)"
+        default=None, ge=0, description="New bonus balance (optional)"
     )
     is_active: bool | None = Field(
         default=None, description="Active status / ban"
@@ -91,6 +92,13 @@ class BalanceAdjust(BaseModel):
     )
     kind: Literal["main", "bonus"] = Field(description="Which balance to adjust")
     reason: str = Field(min_length=1, max_length=500, description="Audit reason")
+
+    @field_validator("amount")
+    @classmethod
+    def _validate_amount(cls, v: Decimal) -> Decimal:
+        if v.is_nan() or v == Decimal("0"):
+            raise ValueError("amount must be non-zero and not NaN")
+        return v
 
 
 class UserStats(BaseModel):

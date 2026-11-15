@@ -305,6 +305,10 @@ class ServiceMngr:
             delivery = data.get("delivery", svc.delivery)
             lua_script_id = data.get("lua_script_id", svc.lua_script_id)
             await self._validate_lua_script(delivery, lua_script_id)
+        if "pricing_config" in data and data["pricing_config"] is not None:
+            target_pt = data.get("price_type", svc.price_type)
+            from schemas.service import validate_pricing_config
+            data["pricing_config"] = validate_pricing_config(target_pt, data["pricing_config"])
 
         warnings: list[str] = []
         if data.get("is_active") is False and svc.is_active:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -23,7 +23,7 @@ class PaymentCreate(BaseModel):
     amount: Decimal | None = Field(
         default=None, gt=0, description="Payment amount > 0 (target=balance only)"
     )
-    provider: str = Field(description="Payment provider slug")
+    provider: str = Field(min_length=1, max_length=64, description="Payment provider slug")
     currency: str | None = Field(
         default=None, max_length=8, description="Desired payment currency (optional)"
     )
@@ -31,12 +31,12 @@ class PaymentCreate(BaseModel):
         default=False,
         description="When true (target=balance only), amount is specified in selected payment currency",
     )
-    target: str = Field(
+    target: Literal["balance", "service"] = Field(
         default=PayTarget.BALANCE,
         description="Target: balance | service",
     )
     service_id: int | None = Field(
-        default=None, description="Service ID for target=service"
+        default=None, ge=1, description="Service ID for target=service"
     )
     custom_amount: Decimal | None = Field(
         default=None, gt=0, description="Arbitrary sum for price_type=custom (target=service only)"
@@ -60,9 +60,13 @@ class PaymentCreate(BaseModel):
 
     @model_validator(mode="after")
     def _check_amount(self) -> "PaymentCreate":
+        if self.target not in (PayTarget.BALANCE, PayTarget.SERVICE):
+            raise ValueError(f"invalid target: {self.target!r}, must be 'balance' or 'service'")
         if self.target == PayTarget.BALANCE:
-            if self.amount is None:
-                raise ValueError("amount is required for target=balance")
+            if self.amount is None or self.amount <= 0:
+                raise ValueError("positive amount is required for target=balance")
+            if self.service_id is not None:
+                raise ValueError("service_id must not be supplied for target=balance")
             if self.promocode is not None:
                 raise ValueError("promocode is only valid for target=service")
             if (
@@ -76,6 +80,8 @@ class PaymentCreate(BaseModel):
                     "are only valid for target=service"
                 )
         if self.target == PayTarget.SERVICE:
+            if not self.service_id or self.service_id < 1:
+                raise ValueError("valid service_id is required for target=service")
             if self.amount is not None:
                 raise ValueError(
                     "amount must not be supplied for target=service; "

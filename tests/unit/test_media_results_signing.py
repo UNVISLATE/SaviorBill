@@ -85,3 +85,50 @@ async def test_correctly_signed_result_is_handled(monkeypatch):
 
     assert len(handled) == 1
     assert handled[0]["token"] == "tok1"
+
+
+@pytest.mark.asyncio
+async def test_failure_does_not_ack_until_exhausted(monkeypatch):
+    signed = sign_fields("shared-secret", {"op": "convert", "token": "tok1"})
+    vk = _FakeVk([("1-1", signed)])
+    vk.dlq = []
+
+    async def fake_xadd(stream, data):
+        vk.dlq.append((stream, data))
+
+    vk.xadd = fake_xadd
+
+    mr = MediaResults(sessionmaker=None, vk=vk, cfg=_FakeCfg())
+
+    # 1. Первый сбой: попытка 1 из 3 -> НЕ должен делать xack
+    async def fake_fail_once(_msg_id: str, data: dict):
+        return False  # not exhausted
+
+    monkeypatch.setattr(mr, "_handle", lambda *_: (_ for _ in ()).throw(RuntimeError("DB error")))
+    monkeypatch.setattr(mr, "_on_failure", fake_fail_once)
+
+    task = asyncio.create_task(mr._run())
+    await asyncio.sleep(0.05)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    assert vk.acked == []  # не должно ack-ить при первой ошибке!
+
+    # 2. Исчерпание попыток: _on_failure возвращает True -> xack вызывается
+    vk2 = _FakeVk([("1-2", signed)])
+    mr2 = MediaResults(sessionmaker=None, vk=vk2, cfg=_FakeCfg())
+
+    async def fake_fail_exhausted(_msg_id: str, data: dict):
+        return True  # exhausted, sent to DLQ
+
+    monkeypatch.setattr(mr2, "_handle", lambda *_: (_ for _ in ()).throw(RuntimeError("DB fatal error")))
+    monkeypatch.setattr(mr2, "_on_failure", fake_fail_exhausted)
+
+    task2 = asyncio.create_task(mr2._run())
+    await asyncio.sleep(0.05)
+    task2.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task2
+
+    assert vk2.acked == ["1-2"]  # подтверждается только после ухода в DLQ

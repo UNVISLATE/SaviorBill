@@ -81,7 +81,7 @@ end
 function M.request(p)
   assert(type(p) == "table" and p.url, "http: требуется поле url")
 
-  if env("LUA_HTTP_BLOCK_PRIVATE", "0") == "1" and is_private_host(tostring(p.url)) then
+  if env("LUA_HTTP_BLOCK_PRIVATE", "1") ~= "0" and is_private_host(tostring(p.url)) then
     return {
       ok = false,
       status = 0,

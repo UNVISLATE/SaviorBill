@@ -18,8 +18,9 @@ class MailRenderer:
         )
 
     def subject(self, template: str, ctx: dict) -> str:
-        """Отрендерить тему (всегда как текст, без HTML-экранирования)."""
-        return self._text.from_string(template).render(**ctx).strip()
+        """Отрендерить тему (всегда как текст, без HTML-экранирования, без переводов строк)."""
+        rendered = self._text.from_string(template).render(**ctx).strip()
+        return " ".join(rendered.splitlines()).strip()
 
     def body(self, template: str, ctx: dict, *, is_html: bool) -> str:
         """Отрендерить тело письма (HTML или текст)."""

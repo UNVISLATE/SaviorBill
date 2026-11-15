@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from schemas.types import OptNormEmail
+from schemas.types import NormEmail, OptNormEmail
 
 
 def _media_url(token: str | None) -> str | None:
@@ -120,7 +120,7 @@ class TokenPair(BaseModel):
 class PassResetRequest(BaseModel):
     """Password reset request."""
 
-    email: str = Field(max_length=255, description="Account email")
+    email: NormEmail = Field(max_length=255, description="Account email")
 
 
 class PassResetConfirm(BaseModel):
@@ -240,7 +240,11 @@ class MePatch(BaseModel):
     """Update current account."""
 
     login: str | None = Field(
-        default=None, min_length=3, max_length=64, description="New login (optional)"
+        default=None,
+        min_length=3,
+        max_length=64,
+        pattern=r"^[a-zA-Zа-яА-ЯёЁ0-9_.-]+$",
+        description="New login (optional)",
     )
     email: OptNormEmail = Field(
         default=None,

@@ -8,6 +8,7 @@ from decimal import Decimal
 import valkey.asyncio as valkey
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -219,6 +220,9 @@ async def create_user(
 
     acc = await mngr.create(body.login, hash_pass(body.password), body.email, role_key=role_key)
     if body.avatar_media_id is not None:
+        media = await SystemMediaMngr(session).by_id(body.avatar_media_id)
+        if media is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "avatar_media_id not found")
         acc.avatar_media_id = body.avatar_media_id
     await audit(
         session,
@@ -229,7 +233,14 @@ async def create_user(
         target_id=str(acc.id),
         meta={"login": acc.login},
     )
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Account with this login or email already exists",
+        )
     return User.from_model(acc)
 
 
@@ -346,7 +357,16 @@ async def edit_user(
                 "insufficient permissions: admin.user.role.edit",
             )
         new_role = await session.get(Role, data["role_id"]) if data["role_id"] else None
+        if data.get("role_id") is not None and new_role is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Role not found")
         assert_role_assignable(new_role)
+    if "email" in data and data["email"] and data["email"] != acc.email:
+        existing = await UserMngr(session).by_email(data["email"])
+        if existing and existing.id != acc.id:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "Email is already taken by another user",
+            )
     if ("balance" in data or "bonus_balance" in data) and not (
         caller.role and caller.role.key == "owner"
     ):
@@ -368,7 +388,14 @@ async def edit_user(
         ip=request.client.host if request.client else None,
         meta={"fields": sorted(data.keys())},
     )
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "User with this login or email already exists",
+        )
     if role_changed or (is_active_changed and not acc.is_active):
         # Роль сменена или аккаунт заблокирован — обрываем выданные сессии
         await tokens.revoke_all_sessions(acc.id)
