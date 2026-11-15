@@ -1,6 +1,22 @@
 import { useState, useMemo, useEffect, useCallback } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core"
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable"
+import { CSS } from "@dnd-kit/utilities"
+import {
   AlertCircle,
   ArrowDown,
   ArrowUp,
@@ -748,6 +764,250 @@ function SourceDialog({
   )
 }
 
+interface SortableSourceRowProps {
+  src: FxSourceItem
+  idx: number
+  totalCount: number
+  onEdit: () => void
+  onToggleEnabled: () => void
+  onMoveUp: () => void
+  onMoveDown: () => void
+  onRefresh: () => void
+  onDelete: () => void
+  isRefreshing: boolean
+}
+
+function SortableSourceRow({
+  src,
+  idx,
+  totalCount,
+  onEdit,
+  onToggleEnabled,
+  onMoveUp,
+  onMoveDown,
+  onRefresh,
+  onDelete,
+  isRefreshing,
+}: SortableSourceRowProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: src.id })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : undefined,
+  }
+
+  const ratesObj = src.rates && Object.keys(src.rates).length > 0 ? src.rates : src.last_rates
+
+  return (
+    <TableRow
+      ref={setNodeRef}
+      style={style}
+      onClick={onEdit}
+      className={`cursor-pointer transition-all duration-150 ${
+        isDragging
+          ? "opacity-50 scale-[0.99] bg-accent/60 shadow-lg relative z-50"
+          : "hover:bg-muted/40"
+      }`}
+    >
+      {/* Приоритет */}
+      <TableCell className="py-2.5 pl-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-0.5 touch-none"
+            title="Перетащите для изменения приоритета"
+            {...attributes}
+            {...listeners}
+          >
+            <GripVertical className="size-3.5" />
+          </button>
+          <div className="flex flex-col items-center">
+            <span className="text-[11px] font-mono font-bold">#{idx + 1}</span>
+            {idx === 0 && (
+              <span className="text-[9px] text-amber-500 font-bold uppercase leading-none">
+                Top
+              </span>
+            )}
+          </div>
+        </div>
+      </TableCell>
+
+      {/* Источник */}
+      <TableCell className="py-2.5">
+        <div className="space-y-0.5">
+          <span className="font-medium text-xs text-foreground block truncate">
+            {src.name || src.id}
+          </span>
+          {src.last_error && (
+            <div
+              className="inline-flex items-center gap-1 text-destructive bg-destructive/10 border border-destructive/20 rounded px-1.5 py-0.2 text-[10px]"
+              title={`Ошибка (${src.last_error_at ? new Date(src.last_error_at).toLocaleString() : ""}):\n${src.last_error}`}
+            >
+              <AlertCircle className="size-3 shrink-0 text-destructive animate-pulse" />
+              <span className="font-medium max-w-[180px] truncate">
+                {src.last_error}
+              </span>
+            </div>
+          )}
+        </div>
+      </TableCell>
+
+      {/* Тип */}
+      <TableCell className="py-2.5">
+        {src.type === "provider" && (
+          <Badge variant="outline" className="text-[10px]">
+            Провайдер API
+          </Badge>
+        )}
+        {src.type === "manual" && (
+          <Badge variant="outline" className="text-[10px] text-primary border-primary/30">
+            Ручные курсы
+          </Badge>
+        )}
+        {src.type === "lua" && (
+          <Badge variant="secondary" className="text-[10px]">
+            Lua-скрипт
+          </Badge>
+        )}
+      </TableCell>
+
+      {/* Конфигурация */}
+      <TableCell className="py-2.5 text-xs text-muted-foreground">
+        {src.type === "provider" && (
+          <div className="space-y-0.5">
+            <span className="font-mono text-[11px] text-foreground font-medium">
+              {src.provider || "API"}
+            </span>
+            <p className="text-[10px]">
+              {src.has_api_key || src.api_key ? "Ключ: ••• (зашифрован)" : "Без ключа"}
+            </p>
+          </div>
+        )}
+        {src.type === "manual" && (
+          <div className="flex flex-wrap gap-1 max-w-xs">
+            {ratesObj && Object.keys(ratesObj).length > 0 ? (
+              Object.entries(ratesObj).slice(0, 4).map(([code, rate]) => (
+                <Badge key={code} variant="secondary" className="font-mono text-[10px] py-0 px-1">
+                  {code}: {String(rate)}
+                </Badge>
+              ))
+            ) : (
+              <span className="text-[11px] italic">Курсы не настроены</span>
+            )}
+            {ratesObj && Object.keys(ratesObj).length > 4 && (
+              <span className="text-[10px] text-muted-foreground">
+                +{Object.keys(ratesObj).length - 4} ещё
+              </span>
+            )}
+          </div>
+        )}
+        {src.type === "lua" && (
+          <span className="font-mono text-[11px] text-foreground">
+            slug: {src.lua_slug}
+          </span>
+        )}
+      </TableCell>
+
+      {/* Статус и курсы */}
+      <TableCell className="py-2.5 text-xs">
+        {src.last_fetched_at && !src.last_error && (
+          <div className="space-y-0.5">
+            <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
+              Актуален ({src.last_rates_count} валют)
+            </span>
+            <p className="text-[10px] text-muted-foreground">
+              {new Date(src.last_fetched_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+            </p>
+          </div>
+        )}
+        {src.type === "manual" && !src.last_fetched_at && (
+          <span className="text-[11px] text-muted-foreground font-mono">
+            {Object.keys(ratesObj || {}).length} валют
+          </span>
+        )}
+        {!src.last_fetched_at && src.type !== "manual" && !src.last_error && (
+          <span className="text-[11px] text-muted-foreground">Ожидает первого опроса</span>
+        )}
+      </TableCell>
+
+      {/* Активен */}
+      <TableCell className="py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+        <Switch
+          checked={src.enabled}
+          onCheckedChange={onToggleEnabled}
+          title={src.enabled ? "Включен" : "Отключен"}
+        />
+      </TableCell>
+
+      {/* Действия */}
+      <TableCell className="py-2.5 text-right pr-4" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-end gap-1">
+          <div className="flex flex-col gap-0.5 mr-1">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-5 h-4"
+              disabled={idx === 0}
+              onClick={onMoveUp}
+              title="Поднять приоритет"
+            >
+              <ArrowUp className="size-3" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-5 h-4"
+              disabled={idx === totalCount - 1}
+              onClick={onMoveDown}
+              title="Понизить приоритет"
+            >
+              <ArrowDown className="size-3" />
+            </Button>
+          </div>
+
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7"
+            onClick={onRefresh}
+            title="Принудительно обновить курсы"
+            disabled={isRefreshing}
+          >
+            <RefreshCw className="size-3.5" />
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 text-xs px-2"
+            onClick={onEdit}
+          >
+            Изменить
+          </Button>
+
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+            onClick={onDelete}
+            title="Удалить источник"
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
+  )
+}
+
 export function CurrencySettings() {
   const qc = useQueryClient()
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -755,10 +1015,6 @@ export function CurrencySettings() {
   const [currenciesModalOpen, setCurrenciesModalOpen] = useState(false)
   const [search, setSearch] = useState("")
   const [typeFilter, setTypeFilter] = useState<string>("all")
-
-  // Drag and Drop reordering state
-  const [draggedIdx, setDraggedIdx] = useState<number | null>(null)
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null)
 
   const { data: status } = useQuery({
     queryKey: ["admin-currency-status"],
@@ -908,47 +1164,28 @@ export function CurrencySettings() {
     })
   }, [sources, search, typeFilter])
 
-  // Animated Drag & Drop
-  const handleDragStart = (e: React.DragEvent, index: number) => {
-    setDraggedIdx(index)
-    e.dataTransfer.effectAllowed = "move"
-  }
+  // Dnd-kit sensors and drag end handler
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  )
 
-  const handleDragOver = (e: React.DragEvent, index: number) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = "move"
-    if (dragOverIdx !== index) {
-      setDragOverIdx(index)
-    }
-  }
-
-  const handleDrop = (e: React.DragEvent, targetIdx: number) => {
-    e.preventDefault()
-    if (draggedIdx === null || draggedIdx === targetIdx || !sources || !filteredSources[draggedIdx] || !filteredSources[targetIdx]) {
-      setDraggedIdx(null)
-      setDragOverIdx(null)
-      return
-    }
-    const fromId = filteredSources[draggedIdx].id
-    const toId = filteredSources[targetIdx].id
-    const realFromIdx = sources.findIndex((s) => s.id === fromId)
-    const realToIdx = sources.findIndex((s) => s.id === toId)
-    if (realFromIdx === -1 || realToIdx === -1 || realFromIdx === realToIdx) {
-      setDraggedIdx(null)
-      setDragOverIdx(null)
-      return
-    }
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id || !sources) return
+    const oldIndex = sources.findIndex((s) => s.id === active.id)
+    const newIndex = sources.findIndex((s) => s.id === over.id)
+    if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return
     const next = [...sources]
-    const [moved] = next.splice(realFromIdx, 1)
-    next.splice(realToIdx, 0, moved)
-    setDraggedIdx(null)
-    setDragOverIdx(null)
+    const [moved] = next.splice(oldIndex, 1)
+    next.splice(newIndex, 0, moved)
     reorderSources.mutate(next.map((s) => s.id))
-  }
-
-  const handleDragEnd = () => {
-    setDraggedIdx(null)
-    setDragOverIdx(null)
   }
 
   const moveItem = (fromIdx: number, toIdx: number) => {
@@ -1189,256 +1426,70 @@ export function CurrencySettings() {
 
         {/* Таблица на всю ширину с плавной анимацией перемещения строк */}
         <div className="rounded-lg border overflow-x-auto bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow className="h-9 hover:bg-transparent">
-                <TableHead className="w-20 text-[11px]">Приоритет</TableHead>
-                <TableHead className="min-w-[180px] text-[11px]">Источник</TableHead>
-                <TableHead className="w-32 text-[11px]">Тип</TableHead>
-                <TableHead className="min-w-[200px] text-[11px]">Конфигурация</TableHead>
-                <TableHead className="min-w-[180px] text-[11px]">Статус и курсы</TableHead>
-                <TableHead className="w-20 text-center text-[11px]">Активен</TableHead>
-                <TableHead className="w-28 text-right pr-4 text-[11px]">Действия</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sourcesLoading && (
-                <TableRow>
-                  <TableCell colSpan={7} className="py-8 text-center text-xs text-muted-foreground">
-                    Загрузка источников…
-                  </TableCell>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <Table>
+              <TableHeader>
+                <TableRow className="h-9 hover:bg-transparent">
+                  <TableHead className="w-20 text-[11px]">Приоритет</TableHead>
+                  <TableHead className="min-w-[180px] text-[11px]">Источник</TableHead>
+                  <TableHead className="w-32 text-[11px]">Тип</TableHead>
+                  <TableHead className="min-w-[200px] text-[11px]">Конфигурация</TableHead>
+                  <TableHead className="min-w-[180px] text-[11px]">Статус и курсы</TableHead>
+                  <TableHead className="w-20 text-center text-[11px]">Активен</TableHead>
+                  <TableHead className="w-28 text-right pr-4 text-[11px]">Действия</TableHead>
                 </TableRow>
-              )}
+              </TableHeader>
+              <TableBody>
+                {sourcesLoading && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-8 text-center text-xs text-muted-foreground">
+                      Загрузка источников…
+                    </TableCell>
+                  </TableRow>
+                )}
 
-              {!sourcesLoading && filteredSources.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={7} className="py-12 text-center text-xs text-muted-foreground">
-                    {sources?.length === 0
-                      ? "Источники курсов пока не добавлены. Нажмите «Добавить источник»."
-                      : "Ничего не найдено по текущему запросу."}
-                  </TableCell>
-                </TableRow>
-              )}
+                {!sourcesLoading && filteredSources.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="py-12 text-center text-xs text-muted-foreground">
+                      {sources?.length === 0
+                        ? "Источники курсов пока не добавлены. Нажмите «Добавить источник»."
+                        : "Ничего не найдено по текущему запросу."}
+                    </TableCell>
+                  </TableRow>
+                )}
 
-              {!sourcesLoading &&
-                filteredSources.map((src, idx) => {
-                  const isBeingDragged = draggedIdx === idx
-                  const isOver = dragOverIdx === idx && draggedIdx !== idx
-                  const ratesObj = (src.rates && Object.keys(src.rates).length > 0) ? src.rates : src.last_rates
-
-                  return (
-                    <TableRow
-                      key={src.id}
-                      draggable
-                      onDragStart={(e) => handleDragStart(e, idx)}
-                      onDragOver={(e) => handleDragOver(e, idx)}
-                      onDrop={(e) => handleDrop(e, idx)}
-                      onDragEnd={handleDragEnd}
-                      onClick={() => {
-                        setEditingSource(src)
-                        setDialogOpen(true)
-                      }}
-                      className={`cursor-pointer transition-all duration-150 ${
-                        isBeingDragged
-                          ? "opacity-40 scale-[0.99] bg-accent/50"
-                          : isOver
-                          ? "border-t-2 border-t-primary bg-primary/5"
-                          : "hover:bg-muted/40"
-                      }`}
-                    >
-                      {/* Приоритет */}
-                      <TableCell className="py-2.5 pl-4" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-0.5"
-                            title="Перетащите для изменения приоритета"
-                          >
-                            <GripVertical className="size-3.5" />
-                          </button>
-                          <div className="flex flex-col items-center">
-                            <span className="text-[11px] font-mono font-bold">#{idx + 1}</span>
-                            {idx === 0 && (
-                              <span className="text-[9px] text-amber-500 font-bold uppercase leading-none">
-                                Top
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-
-                      {/* Источник */}
-                      <TableCell className="py-2.5">
-                        <div className="space-y-0.5">
-                          <span className="font-medium text-xs text-foreground block truncate">
-                            {src.name || src.id}
-                          </span>
-                          {src.last_error && (
-                            <div
-                              className="inline-flex items-center gap-1 text-destructive bg-destructive/10 border border-destructive/20 rounded px-1.5 py-0.2 text-[10px]"
-                              title={`Ошибка (${src.last_error_at ? new Date(src.last_error_at).toLocaleString() : ""}):\n${src.last_error}`}
-                            >
-                              <AlertCircle className="size-3 shrink-0 text-destructive animate-pulse" />
-                              <span className="font-medium max-w-[180px] truncate">
-                                {src.last_error}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      </TableCell>
-
-                      {/* Тип */}
-                      <TableCell className="py-2.5">
-                        {src.type === "provider" && (
-                          <Badge variant="outline" className="text-[10px]">
-                            Провайдер API
-                          </Badge>
-                        )}
-                        {src.type === "manual" && (
-                          <Badge variant="outline" className="text-[10px] text-primary border-primary/30">
-                            Ручные курсы
-                          </Badge>
-                        )}
-                        {src.type === "lua" && (
-                          <Badge variant="secondary" className="text-[10px]">
-                            Lua-скрипт
-                          </Badge>
-                        )}
-                      </TableCell>
-
-                      {/* Конфигурация */}
-                      <TableCell className="py-2.5 text-xs text-muted-foreground">
-                        {src.type === "provider" && (
-                          <div className="space-y-0.5">
-                            <span className="font-mono text-[11px] text-foreground font-medium">
-                              {src.provider || "API"}
-                            </span>
-                            <p className="text-[10px]">
-                              {src.has_api_key || src.api_key ? "Ключ: ••• (зашифрован)" : "Без ключа"}
-                            </p>
-                          </div>
-                        )}
-                        {src.type === "manual" && (
-                          <div className="flex flex-wrap gap-1 max-w-xs">
-                            {ratesObj && Object.keys(ratesObj).length > 0 ? (
-                              Object.entries(ratesObj).slice(0, 4).map(([code, rate]) => (
-                                <Badge key={code} variant="secondary" className="font-mono text-[10px] py-0 px-1">
-                                  {code}: {String(rate)}
-                                </Badge>
-                              ))
-                            ) : (
-                              <span className="text-[11px] italic">Курсы не настроены</span>
-                            )}
-                            {ratesObj && Object.keys(ratesObj).length > 4 && (
-                              <span className="text-[10px] text-muted-foreground">
-                                +{Object.keys(ratesObj).length - 4} ещё
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {src.type === "lua" && (
-                          <span className="font-mono text-[11px] text-foreground">
-                            slug: {src.lua_slug}
-                          </span>
-                        )}
-                      </TableCell>
-
-                      {/* Статус и курсы */}
-                      <TableCell className="py-2.5 text-xs">
-                        {src.last_fetched_at && !src.last_error && (
-                          <div className="space-y-0.5">
-                            <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-medium">
-                              Актуален ({src.last_rates_count} валют)
-                            </span>
-                            <p className="text-[10px] text-muted-foreground">
-                              {new Date(src.last_fetched_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                            </p>
-                          </div>
-                        )}
-                        {src.type === "manual" && !src.last_fetched_at && (
-                          <span className="text-[11px] text-muted-foreground font-mono">
-                            {Object.keys(ratesObj || {}).length} валют
-                          </span>
-                        )}
-                        {!src.last_fetched_at && src.type !== "manual" && !src.last_error && (
-                          <span className="text-[11px] text-muted-foreground">Ожидает первого опроса</span>
-                        )}
-                      </TableCell>
-
-                      {/* Активен */}
-                      <TableCell className="py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
-                        <Switch
-                          checked={src.enabled}
-                          onCheckedChange={() => toggleEnabled(src)}
-                          title={src.enabled ? "Включен" : "Отключен"}
-                        />
-                      </TableCell>
-
-                      {/* Действия */}
-                      <TableCell className="py-2.5 text-right pr-4" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1">
-                          <div className="flex flex-col gap-0.5 mr-1">
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-5 h-4"
-                              disabled={idx === 0}
-                              onClick={() => moveItem(idx, idx - 1)}
-                              title="Поднять приоритет"
-                            >
-                              <ArrowUp className="size-3" />
-                            </Button>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="size-5 h-4"
-                              disabled={idx === sources!.length - 1}
-                              onClick={() => moveItem(idx, idx + 1)}
-                              title="Понизить приоритет"
-                            >
-                              <ArrowDown className="size-3" />
-                            </Button>
-                          </div>
-
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="size-7"
-                            onClick={() => refreshSource.mutate(src.id)}
-                            title="Принудительно обновить курсы"
-                            disabled={refreshSource.isPending}
-                          >
-                            <RefreshCw className="size-3.5" />
-                          </Button>
-
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-7 text-xs px-2"
-                            onClick={() => {
-                              setEditingSource(src)
-                              setDialogOpen(true)
-                            }}
-                          >
-                            Изменить
-                          </Button>
-
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="size-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => deleteSource.mutate(src.id)}
-                            title="Удалить источник"
-                          >
-                            <Trash2 className="size-3.5" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-            </TableBody>
-          </Table>
+                {!sourcesLoading && filteredSources.length > 0 && (
+                  <SortableContext
+                    items={filteredSources.map((s) => s.id)}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    {filteredSources.map((src, idx) => (
+                      <SortableSourceRow
+                        key={src.id}
+                        src={src}
+                        idx={idx}
+                        totalCount={sources?.length || 0}
+                        onEdit={() => {
+                          setEditingSource(src)
+                          setDialogOpen(true)
+                        }}
+                        onToggleEnabled={() => toggleEnabled(src)}
+                        onMoveUp={() => moveItem(idx, idx - 1)}
+                        onMoveDown={() => moveItem(idx, idx + 1)}
+                        onRefresh={() => refreshSource.mutate(src.id)}
+                        onDelete={() => deleteSource.mutate(src.id)}
+                        isRefreshing={refreshSource.isPending}
+                      />
+                    ))}
+                  </SortableContext>
+                )}
+              </TableBody>
+            </Table>
+          </DndContext>
         </div>
       </div>
 
