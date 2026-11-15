@@ -1,4 +1,4 @@
-{$DOMAIN:localhost:8000} {
+{$DOMAIN:localhost} {
 	encode zstd gzip
 
 	# /metrics — служебный эндпоинт для Prometheus
@@ -24,19 +24,6 @@
 	# Раздача SPA интерфейса Admin UI
 	handle {
 		reverse_proxy adminui:80
-	}
-}
-
-{$MEDIA_DOMAIN:localhost:8001} {
-	encode zstd gzip
-
-	# /metrics — служебный эндпоинт для Prometheus
-	handle /metrics {
-		respond "not found" 404
-	}
-
-	handle {
-		reverse_proxy mediaworker:8001
 	}
 }
 

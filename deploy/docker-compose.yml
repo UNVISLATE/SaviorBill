@@ -45,7 +45,7 @@ services:
       DB_PORT: 5432
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
-      TRUSTED_PROXIES: ${TRUSTED_PROXIES:?TRUSTED_PROXIES is required in .env (IP/CIDR of the caddy service, never "*")}
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12,10.0.0.0/8,192.168.0.0/16,127.0.0.1}
       PRIVATE_DATA_DIR: /app/private
     volumes:
       - ${DATA_HOST_DIR:-../data}:/app/data:rw
@@ -157,13 +157,13 @@ services:
       adminui:
         condition: service_healthy
     environment:
-      DOMAIN: ${DOMAIN:-localhost:8000}
-      MEDIA_DOMAIN: ${MEDIA_DOMAIN:-localhost:8001}
+      DOMAIN: ${DOMAIN:-localhost}
+      MEDIA_DOMAIN: ${MEDIA_DOMAIN:-localhost}
       CLIENT_DOMAIN: ${CLIENT_DOMAIN:-shop.localhost}
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./caddy.d:/etc/caddy/caddy.d:ro

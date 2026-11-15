@@ -115,3 +115,41 @@ def test_set_auth_cookies_falls_back_to_host_only_for_separate_client_domain():
 
     clear_auth_cookies(resp, cfg, request=req)
     assert all(call["domain"] is None for call in resp.delete_calls)
+
+
+def test_localhost_subdomain_and_root_domain_are_same_root():
+    cfg = AppConfig(DOMAIN="localhost", MEDIA_DOMAIN="media.localhost")
+    assert cfg.cookie_domain == "localhost"
+
+
+def test_subdomains_of_localhost_are_same_root():
+    cfg = AppConfig(DOMAIN="admin.localhost:8000", MEDIA_DOMAIN="media.localhost:8001")
+    assert cfg.cookie_domain == "localhost"
+
+
+def test_loopback_ip_and_localhost_combination_allowed():
+    cfg = AppConfig(DOMAIN="127.0.0.1:8000", MEDIA_DOMAIN="localhost:8001")
+    assert cfg.cookie_domain in ("127.0.0.1", "localhost")
+
+
+def test_ip_domains_are_same_root():
+    cfg = AppConfig(DOMAIN="127.0.0.1:8000", MEDIA_DOMAIN="127.0.0.1:8001")
+    assert cfg.cookie_domain == "127.0.0.1"
+
+
+def test_set_auth_cookies_localhost_uses_host_only():
+    cfg = AppConfig(DOMAIN="localhost:8000", MEDIA_DOMAIN="media.localhost:8001")
+    resp = _FakeResponse()
+    req = _FakeRequest({"host": "localhost:8000"})
+    set_auth_cookies(resp, cfg, access_token="a", refresh_token="r", request=req)
+    # Browsers reject Domain=localhost or Domain=127.0.0.1; must be host-only (domain=None)
+    assert all(call["domain"] is None for call in resp.set_calls)
+
+
+def test_set_auth_cookies_ip_uses_host_only():
+    cfg = AppConfig(DOMAIN="127.0.0.1:8000", MEDIA_DOMAIN="127.0.0.1:8001")
+    resp = _FakeResponse()
+    req = _FakeRequest({"host": "127.0.0.1:8000"})
+    set_auth_cookies(resp, cfg, access_token="a", refresh_token="r", request=req)
+    assert all(call["domain"] is None for call in resp.set_calls)
+

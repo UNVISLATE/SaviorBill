@@ -5,10 +5,12 @@
 
 ```
 deploy/
-  docker-compose.yml     # ПРОД: образы из ghcr.io (сборки нет)
-  Caddyfile              # единый reverse-proxy (TLS/HTTP2/3)
-  setup.sh               # подготовка deploy/.env и запуск прод-стека
-  .env.example           # шаблон переменных окружения
+  docker-compose.yml     # ПРОД/Local: готовые образы, Caddy reverse-proxy
+  Caddyfile              # единый reverse-proxy (TLS/HTTP2/3, маршрутизация API и SPA)
+  setup.sh               # интерактивный мастер установки (WIZARD) и меню управления
+  .env.example           # шаблон переменных окружения с безопасными дефолтами
+  client.caddy.example   # шаблон конфигурации Caddy для клиентского фронтенда
+  media.caddy.example    # шаблон конфигурации Caddy для отдельного медиа-домена
   dev/docker-compose.yml   # DEV: сборка из исходников
   test/docker-compose.yml  # ТЕСТЫ: оверлей поверх dev + сервис `tests`
   test/pytest.ini          # конфигурация pytest (billing)

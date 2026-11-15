@@ -1,0 +1,12 @@
+{$MEDIA_DOMAIN:media.localhost} {
+	encode zstd gzip
+
+	# /metrics — служебный эндпоинт для Prometheus
+	handle /metrics {
+		respond "not found" 404
+	}
+
+	handle {
+		reverse_proxy mediaworker:8001
+	}
+}

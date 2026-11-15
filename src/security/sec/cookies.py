@@ -14,12 +14,21 @@ AUDIT.md §6.1). ``Authorization: Bearer`` остаётся рабочим пу�
 
 from __future__ import annotations
 
+import ipaddress
 from fastapi import Request, Response
 
 from core.config import AppConfig
 
 ACCESS_COOKIE = "sb_access"
 REFRESH_COOKIE = "sb_refresh"
+
+
+def _is_ip(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
 
 
 def _resolve_cookie_domain(
@@ -31,9 +40,15 @@ def _resolve_cookie_domain(
     чтобы adminui и mediaworker делили сессию. Если запрос пришёл с другого
     домена (например, отдельного ``CLIENT_DOMAIN`` через reverse proxy),
     возвращается ``None`` (host-only cookie), иначе браузер отвергнет cookie.
+    Для localhost / IP всегда возвращается ``None`` (host-only), так как браузеры
+    отклоняют Domain=localhost и Domain=127.0.0.1 (RFC 6265).
     """
     domain = cfg.cookie_domain
-    if not domain or request is None:
+    if not domain:
+        return None
+    if domain == "localhost" or _is_ip(domain):
+        return None
+    if request is None:
         return domain
     raw_host = request.headers.get("host") or ""
     if cfg.trusted_proxies_list:

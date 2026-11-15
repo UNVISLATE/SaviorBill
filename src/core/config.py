@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import os
 from pathlib import Path
 
@@ -19,17 +20,30 @@ APP_NAME = os.environ.get("APP_NAME", "SaviorBill")
 APP_VERSION = resolve_app_version(_BASE_DIR)
 
 
-def _root_domain(domain: str | None) -> str | None:
-    """Наивный "корневой домен" (последние 2 части хоста, без порта).
+def _is_ip(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+        return True
+    except ValueError:
+        return False
 
-    Не honor'ит составные публичные суффиксы (``co.uk`` и т.п.) — для целей
-    сравнения DOMAIN/MEDIA_DOMAIN этого достаточно (внутренний проект,
-    домены задаются оператором, не произвольным пользователем). ``None``/
-    ``localhost`` (без точки) возвращается как есть — сравнивать не с чем.
+
+def _root_domain(domain: str | None) -> str | None:
+    """Корневой домен для сравнения DOMAIN/MEDIA_DOMAIN и вычисления cookie_domain.
+
+    - IP-адреса (IPv4/IPv6, напр. 127.0.0.1) возвращаются как есть (не разбиваются по точкам).
+    - localhost и любые его поддомены (*.localhost) возвращают 'localhost'.
+    - Стандартные домены (admin.example.com) возвращают последние 2 части (example.com).
     """
     if not domain:
         return None
     host = domain.split(":", 1)[0].strip().lower()
+    if not host:
+        return None
+    if _is_ip(host):
+        return host
+    if host == "localhost" or host.endswith(".localhost"):
+        return "localhost"
     parts = host.split(".")
     if len(parts) < 2:
         return host or None
@@ -448,12 +462,14 @@ class AppConfig(BaseSettings):
         d1 = _root_domain(self.DOMAIN)
         d2 = _root_domain(self.MEDIA_DOMAIN)
         if d1 and d2 and d1 != d2:
-            raise ValueError(
-                f"DOMAIN ({self.DOMAIN!r}) и MEDIA_DOMAIN ({self.MEDIA_DOMAIN!r}) "
-                f"должны быть поддоменами одного корневого домена (сейчас "
-                f"{d1!r} != {d2!r}) — иначе auth-cookie не будет видна "
-                "одновременно billing и mediaworker"
-            )
+            loopback_hosts = {"localhost", "127.0.0.1", "::1"}
+            if not (d1 in loopback_hosts and d2 in loopback_hosts):
+                raise ValueError(
+                    f"DOMAIN ({self.DOMAIN!r}) и MEDIA_DOMAIN ({self.MEDIA_DOMAIN!r}) "
+                    f"должны быть поддоменами одного корневого домена (сейчас "
+                    f"{d1!r} != {d2!r}) — иначе auth-cookie не будет видна "
+                    "одновременно billing и mediaworker"
+                )
         return self
 
     @model_validator(mode="after")
