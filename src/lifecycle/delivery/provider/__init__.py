@@ -1,8 +1,4 @@
-"""Нативные провайдеры выдачи услуг (стратегии доставки).
-
-Lua-провайдер (``LuaService``) — не здесь, а в ``lua.integrations.delivery``
-(см. ``lifecycle.delivery.get_issuer`` — импортирует его лениво, чтобы не
-создавать цикл между пакетами lifecycle и lua)."""
+"""Нативные провайдеры выдачи услуг (стратегии доставки)."""
 
 from __future__ import annotations
 

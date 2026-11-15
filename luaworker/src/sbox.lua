@@ -231,11 +231,10 @@ M.encode_json = cjson.encode
 M.decode_json = cjson.decode
 
 -- Ограничения ресурсов для пользовательского кода -------------------------
---
 -- Без них `while true do end` в скрипте занимает процесс воркера навсегда
 -- (питоновский таймаут на стороне billing прерывает только ожидание ответа,
 -- но не само выполнение), а `string.rep("x", 2^30)` мгновенно съедает память
--- (см. AUDIT.md §1.3 SEC-H4, §1.4 SEC-M1).
+--.
 
 local DEFAULT_MAX_INSTRUCTIONS = 50000000
 local DEFAULT_MAX_STRING_BYTES = 1048576

@@ -88,7 +88,7 @@ async def my_media(
         "Активные (queued/processing/retrying) джобы конвертации/пост-обработки "
         "своих загрузок — восстановление карточек 'в обработке' после "
         "перезагрузки страницы (WS /api/media/mine покрывает live-обновления, "
-        "но не переживает reload сам по себе, см. IMPLEMENTATION_PLAN.md §3.Д)."
+        "но не переживает reload сам по себе)."
     ),
     dependencies=[Depends(require_perm("user.media.read"))],
 )
@@ -140,7 +140,7 @@ async def delete_my_media(
 ) -> None:
     media = await mngr.by_token(token)
     # 404 для "не найдено" и "не моё" одинаковы — иначе можно перебором узнать
-    # существующие токены чужих медиа (см. AUDIT.md §2.1, тот же принцип, что
+    # существующие токены чужих медиа (, тот же принцип, что
     # и в set_avatar/_owned_media).
     if media is None or media.owner_id != acc.id:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")

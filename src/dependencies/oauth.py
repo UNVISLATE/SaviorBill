@@ -1,9 +1,4 @@
-"""OAuth-флоу через Lua-скрипты провайдеров (action-driven, как платежи).
-
-У каждого провайдера один auth-скрипт: ``start`` строит authorize_url, ``callback``
-обменивает код на нормализованный профиль (``OAuthUser``). Секреты провайдера
-шифруются в ``oauth_cfg.secrets_enc`` и прокидываются в скрипт как ``provider.secrets``.
-"""
+"""OAuth-флоу через Lua-скрипты провайдеров (action-driven, как платежи)."""
 
 from __future__ import annotations
 
@@ -40,7 +35,7 @@ from security.sec.crypt import generate_base_token, generate_numeric_code
 _STATE = "oauth:state:"
 _STATE_TTL = 600
 # Незавершённая привязка OAuth к существующему аккаунту (найден по email, но
-# владение аккаунтом не подтверждено — см. AUDIT.md §1.4/§2.1). Хранится
+# владение аккаунтом не подтверждено —§2.1). Хранится
 # отдельно от подтверждающего кода, чтобы можно было проверять неверные
 # попытки без сброса самой заявки на привязку.
 _PENDING = "oauth:pendinglink:"
@@ -49,7 +44,7 @@ _PENDING_FAIL = "oauth:pendinglink:fail:"
 _PENDING_TTL = 600
 _CODE_DIGITS = 6
 # 6 цифр за 10 минут без счётчика — 10^6 попыток, т.е. гарантированный подбор
-# и захват чужого аккаунта через OAuth (см. AUDIT.md §2.2).
+# и захват чужого аккаунта через OAuth.
 _PENDING_MAX_FAILS = 5
 
 
@@ -201,7 +196,7 @@ class OAuthSvc:
 
         GETDEL атомарен: без него два параллельных callback-запроса с одним
         state успевали оба пройти проверку "одноразовости" до того, как
-        первый удалит ключ (AUDIT.md §2.2).
+        первый удалит ключ ().
         """
         saved = await self.vk.getdel(_STATE + state)
         if not saved:

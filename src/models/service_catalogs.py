@@ -14,12 +14,7 @@ from utils.datetime_utils import utc_now
 
 
 class ServiceCatalogsModel(Base):
-    """Каталог (или подкаталог) услуг.
-
-    ``parent_id`` указывает на родительский каталог; ``NULL`` — корневой
-    каталог. Услуга (``ServiceModel.catalog_id``) без каталога считается корневым
-    товаром. Структура нужна исключительно для отображения в UI.
-    """
+    """Каталог (или подкаталог) услуг."""
 
     __tablename__ = "svc_catalogs"
 

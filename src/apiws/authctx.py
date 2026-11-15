@@ -16,7 +16,7 @@ from security.sec.cookies import ACCESS_COOKIE
 from utils.degrade import VALKEY_ERRORS, note_degraded
 
 # Периодичность повторной проверки токена/прав уже открытого соединения
-# (см. ``watch_session`` / AUDIT.md §3.4).
+# (см. ``watch_session`` / ).
 REAUTH_INTERVAL_SEC = 30
 
 _PREAUTH_PREFIX = "ws:preauth:"
@@ -25,7 +25,7 @@ _PREAUTH_PREFIX = "ws:preauth:"
 def _handshake_timeout(ws: WebSocket) -> int:
     """Окно ожидания первого фрейма с токеном — берётся из конфига
     (``WS_HANDSHAKE_TIMEOUT_SEC``), а не хардкодится, чтобы значение можно
-    было менять окружением без правки кода (см. AUDIT.md §3.1)."""
+    было менять окружением без правки кода."""
     cfg = ws.app.state.settings
     return cfg.WS_HANDSHAKE_TIMEOUT_SEC
 
@@ -33,7 +33,7 @@ def _handshake_timeout(ws: WebSocket) -> int:
 async def _acquire_preauth_slot(ws: WebSocket) -> bool:
     """Ограничить число одновременных pre-auth-соединений на IP (Valkey-счётчик
     с TTL = окно хендшейка) — без этого открыть много сокетов и не слать токен
-    было тривиальным resource exhaustion (см. AUDIT.md §3.1).
+    было тривиальным resource exhaustion.
 
     При недоступности Valkey — пропускаем (лимит вспомогательный, отказ в
     обслуживании хуже отсутствия лимита, см. utils/degrade.py).
@@ -66,7 +66,7 @@ async def _release_preauth_slot(ws: WebSocket) -> None:
 async def safe_receive_text(ws: WebSocket, *, timeout: float | None = None) -> str | None:
     """Прочитать один текстовый фрейм с явной обработкой бинарных/слишком
     больших сообщений — общий читатель для хендшейка и последующих фреймов
-    уже открытого соединения (см. AUDIT.md §3.2/§3.3).
+    уже открытого соединения.
 
     :return: текст фрейма, либо ``None`` — соединение уже закрыто данной
         функцией (таймаут/disconnect/binary/too-big), вызывающая сторона
@@ -186,7 +186,7 @@ async def watch_session(
 
     Единственная проверка на хендшейке означала, что соединение жило
     неограниченно долго после неё — истечение токена или отзыв права не
-    разрывали уже открытый WS (TOCTOU, см. AUDIT.md §3.4). Запускается как
+    разрывали уже открытый WS (TOCTOU). Запускается как
     отдельная задача рядом с основным циклом роута; при провале сама
     закрывает сокет, что рвёт основной цикл через ``WebSocketDisconnect``.
     """

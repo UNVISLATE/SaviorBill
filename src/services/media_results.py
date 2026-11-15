@@ -1,14 +1,4 @@
-"""Консьюмер результатов конвертации медиа (mediaworker → billing).
-
-mediaworker публикует готовое медиа в стрим ``media:results`` как выполненную
-задачу; billing — владелец схемы БД — потребляет её через consumer-группу и сам
-записывает запись ``system_media``. Так логика записи в (изменяемую) БД живёт
-только в одном сервисе.
-
-Consumer-группа шардирует сообщения между инстансами billing (каждый результат
-обрабатывается ровно один раз), поэтому распределённый лок не нужен — достаточно
-уникального имени консьюмера на инстанс.
-"""
+"""Консьюмер результатов конвертации медиа (mediaworker → billing)."""
 
 from __future__ import annotations
 
@@ -207,7 +197,7 @@ class MediaResults:
                 if tag == "avatar" and kind == "image" and status_ == "ready":
                     # Кандидат аватарки: не подтвердят через PUT /me/avatar в
                     # течение дедлайна — авто-удалит BillingLoop (см.
-                    # AUDIT.md §4, слот квоты не должен вечно занимать
+                    # , слот квоты не должен вечно занимать
                     # брошенную попытку подбора фото).
                     settings = SystemSettingsMngr(
                         session, self.vk, make_secbox(self.cfg), self.cfg.SETTINGS_CACHE_TTL

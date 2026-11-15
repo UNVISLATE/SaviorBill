@@ -1,4 +1,4 @@
-"""Юнит-тесты валидации схем услуги (Phase 9): delivery-реестр, а не enum."""
+"""Юнит-тесты валидации схем услуги: delivery-реестр, а не enum."""
 
 from __future__ import annotations
 

@@ -1,23 +1,4 @@
-"""Резолвер настроек, редактируемых из billing-админки (таблица ``settings``).
-
-billing хранит лимиты медиа-загрузки (``media.max_bytes`` и т.п.) в таблице
-``settings`` и кэширует значения в Valkey под ключом ``settings:{key}`` (см.
-``models/system_settings.py::SystemSettingsMngr`` в billing — он же пишет и
-инвалидирует кэш при ``set()``). mediaworker живёт в том же Valkey/Postgres,
-поэтому читает то же самое:
-
-1. Valkey ``settings:{key}`` — быстрый путь, общий кэш с billing (если billing
-   уже читал/писал этот ключ, значение уже тёплое, TTL — ``SETTINGS_CACHE_TTL``
-   billing, по умолчанию 300с).
-2. Postgres ``settings`` (read-only) — если кэш промахнулся или ещё не тёплый
-   (протух по TTL, а никто в billing не перечитывал). После удачного чтения
-   сами прогреваем Valkey-кэш тем же ключом (тем же соглашением), чтобы не
-   бить БД на каждый запрос.
-3. env (``Config``) — если настройки в БД вообще нет (не засеяна/удалена).
-
-Так админ может поменять лимиты через ``/api/v1/admin/settings`` не
-передеплоивая mediaworker.
-"""
+"""Резолвер настроек, редактируемых из billing-админки (таблица ``settings``)."""
 
 from __future__ import annotations
 
@@ -86,7 +67,7 @@ class SettingsResolver:
 
         До этой настройки у ``media.upload.video`` не было вообще никакого
         потолка на суммарный объём — только на размер одного файла (см.
-        AUDIT.md §1.4 HIGH-2): можно было бесконечно копить 500 MiB файлы.
+         HIGH-2): можно было бесконечно копить 500 MiB файлы.
         """
         return await self.get_int(
             "media.quota.video_bytes", self.cfg.quota_video_bytes

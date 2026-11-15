@@ -158,7 +158,7 @@ class ResetSvc:
 
         key = _RESET + norm
         # GETDEL атомарен: без него два параллельных confirm успевали оба
-        # пройти сравнение до того, как первый удалит ключ (AUDIT.md §2.1).
+        # пройти сравнение до того, как первый удалит ключ ().
         stored = await self.vk.getdel(key)
         if stored is None:
             raise HTTPException(

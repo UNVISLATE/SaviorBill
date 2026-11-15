@@ -37,17 +37,7 @@ _ACTIVE_USVC_STATUSES = (UsvcStatus.PENDING, UsvcStatus.ACTIVE, UsvcStatus.FROZE
 
 
 class ServiceModel(Base):
-    """Услуга-объект каталога (эталон).
-
-    ``delivery`` определяет способ выдачи:
-      * ``key`` — из пула :class:`ServiceKeysModel`, привязанных к этой услуге;
-      * ``lua`` — исполнением скрипта ``lua_script_id`` с передачей данных
-        пользователя и ``settings`` услуги.
-
-    ``settings`` — JSON эталонной услуги (прокидывается в Lua как
-    ``service.settings.*``). Позволяет одним скриптом обслуживать несколько
-    похожих услуг с разными параметрами (срок действия и т.п.).
-    """
+    """Услуга-объект каталога (эталон)."""
 
     __tablename__ = "services"
     __table_args__ = (

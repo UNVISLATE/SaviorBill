@@ -1,8 +1,4 @@
-"""Админ: управление медиа (/api/v1/admin/media).
-
-Удаление конкретного медиа и чистка «осиротевших» записей (не привязанных ни к
-товарам-вложениям, ни к аватаркам). Файлы удаляет mediaworker по задаче в Valkey.
-"""
+"""Админ: управление медиа (/api/v1/admin/media)."""
 
 from __future__ import annotations
 
@@ -58,7 +54,7 @@ def _bus(request: Request, vk: valkey.Valkey) -> MediaBus:
     summary="Media",
     description="Все медиа (постранично), либо только владельца — фильтр "
     "`owner_id` для просмотра медиа конкретного пользователя из админского "
-    "Drawer (см. IMPLEMENTATION_PLAN.md §4). `q` searches tag/mime (exact "
+    "Drawer. `q` searches tag/mime (exact "
     f"substring); `sort` accepts {'/'.join(sorted(_MEDIA_SORT_FIELDS))}.",
 )
 async def list_media(

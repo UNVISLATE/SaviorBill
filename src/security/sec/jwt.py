@@ -16,7 +16,7 @@ REFRESH = "refresh"
 # подмены конфигурации на "none". Только RS-семейство (асимметрия): billing
 # подписывает приватным ключом, mediaworker проверяет access-токены только
 # публичным — компрометация mediaworker не даёт подделывать токены billing
-# (см. AUDIT.md §1.1).
+#.
 ALLOWED_ALGS = frozenset({"RS256", "RS384", "RS512"})
 
 # Аудитория токенов этого стека — билинг + доверенные внутренние сервисы
@@ -114,7 +114,7 @@ def decode_jwt(token: str, public_keys: dict[str, str], alg: str, iss: str) -> J
 
     Ключ выбирается по заголовку ``kid`` токена — так поддерживается ротация
     ключей без мгновенного logout (см. ``AppConfig.jwt_public_keys``,
-    AUDIT.md §1.5). Бросает ``InvalidJWT`` при ошибке или неизвестном ``kid``.
+    ). Бросает ``InvalidJWT`` при ошибке или неизвестном ``kid``.
     """
     _check_alg(alg)
     try:

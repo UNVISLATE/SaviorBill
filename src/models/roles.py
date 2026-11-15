@@ -16,11 +16,7 @@ if TYPE_CHECKING:
 
 
 class Role(Base):
-    """Роль с древовидными правами.
-
-    ``perms`` — вложенный словарь вида ``{"payment": {"refund": true}}``.
-    Доступ к узлу даёт доступ ко всем его подпунктам.
-    """
+    """Роль с древовидными правами."""
 
     __tablename__ = "roles"
 
@@ -62,7 +58,7 @@ class Role(Base):
     # Не путать с RBAC-правами: роль может не иметь прав на действия, но
     # всё равно логиниться (например, чтобы видеть причину блокировки).
     # false здесь — жёсткий запрет входа независимо от perms (см. §1.3
-    # AUDIT.md, роль ``banned``).
+    # , роль ``banned``).
     allow_login: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default="true", nullable=False
     )

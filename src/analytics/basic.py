@@ -1,6 +1,6 @@
 """Базовый уровень аналитики — простые SQL-агрегаты (без Polars).
 
-Право доступа: ``analytics.basic.read`` (см. IMPLEMENTATION_PLAN §13.1).
+Право доступа: ``analytics.basic.read``.
 """
 
 from __future__ import annotations

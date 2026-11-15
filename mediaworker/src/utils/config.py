@@ -1,8 +1,4 @@
-"""Конфигурация mediaworker (pydantic_settings, тот же .env что у billing).
-
-Читает переменные окружения через pydantic_settings. Все имена переменных
-совпадают с billing-конфигом — один .env файл на весь стек.
-"""
+"""Конфигурация mediaworker (pydantic_settings, тот же .env что у billing)."""
 
 from __future__ import annotations
 
@@ -49,7 +45,7 @@ class Config(BaseSettings):
     JWT_PUBLIC_KEY: str | None = Field(default=None)
     JWT_PUBLIC_KEY_FILE: str | None = Field(default=None)
     # kid текущего ключа + предыдущий ключ (grace-период после ротации на
-    # billing, см. AUDIT.md §1.5) — все не секреты, читаются из общего DATA_DIR.
+    # billing) — все не секреты, читаются из общего DATA_DIR.
     JWT_KID: str | None = Field(default=None)
     JWT_KID_FILE: str | None = Field(default=None)
     JWT_PUBLIC_KEY_PREV: str | None = Field(default=None)
@@ -90,7 +86,7 @@ class Config(BaseSettings):
     MEDIA_PROCLOG_MAX_JOBS: int = Field(default=50)
     MEDIA_PROCLOG_TTL: int = Field(default=3600)  # 1 час
 
-    # --- Heartbeat/метрики инстанса (§1 IMPLEMENTATION_PLAN.md) ---
+    # --- Heartbeat/метрики инстанса (§1 ) ---
     # Push собственного CPU%/RSS + текущей джобы в media:metrics:{consumer}
     # (billing переэкспортирует/агрегирует, см. telemetry/instance_metrics.py).
     MEDIA_METRICS_INTERVAL_SEC: int = Field(default=10)
@@ -106,7 +102,7 @@ class Config(BaseSettings):
     # Максимум медиа-файлов на пользователя (обычная роль); превышение —
     # жёсткий отказ при загрузке нового файла, без авто-удаления старых.
     USER_MEDIA_LIMIT: int = Field(default=5)
-    # Суммарный объём хранимых медиа на аккаунт (§1.4 HIGH-2 AUDIT.md: раньше
+    # Суммарный объём хранимых медиа на аккаунт (§1.4 HIGH-2 раньше
     # у media.upload.video не было вообще никакого потолка на общий объём —
     # только на размер одного файла, т.е. можно было копить 500 MiB файлы
     # без ограничения количества). Реалистичные дефолты: обычный
@@ -133,7 +129,7 @@ class Config(BaseSettings):
     # --- Backpressure и надёжность ---
     # Раздельные лимиты на конвертацию по виду медиа: видео (ffmpeg,
     # секунды-минуты) не должно занимать все слоты и блокировать быстрые
-    # фото — см. AUDIT/IMPLEMENTATION_PLAN. `MEDIA_TASK_CONCURRENCY`
+    # фото —/. `MEDIA_TASK_CONCURRENCY`
     # остаётся общим лимитом для лёгких операций (preview_add/thumb_replace/
     # delete), которым раздельные пулы не нужны.
     MEDIA_TASK_CONCURRENCY: int = Field(default=4)
@@ -229,10 +225,7 @@ class Config(BaseSettings):
             )
         return self
 
-    # ------------------------------------------------------------------ #
-    # Вычисляемые свойства (совпадают с атрибутами старого Config).       #
-    # ------------------------------------------------------------------ #
-
+    # ------------------------------------------------------------------    # Вычисляемые свойства (совпадают с атрибутами старого Config).    # ------------------------------------------------------------------
     @property
     def valkey_url(self) -> str:
         return f"redis://{self.VALKEY_HOST}:{self.VALKEY_PORT}/{self.VALKEY_DB}"
@@ -276,7 +269,7 @@ class Config(BaseSettings):
         Читает файлы заново при каждом вызове (не кэширует при старте) —
         billing может ротировать ключ, пока mediaworker уже запущен, а перечитывать
         файлы дешевле, чем требовать рестарта сервиса при каждой ротации.
-        Приватного ключа у mediaworker нет и быть не должно (см. AUDIT.md §1.1) —
+        Приватного ключа у mediaworker нет и быть не должно —
         только верификация access-токенов billing.
         """
         keys: dict[str, str] = {}

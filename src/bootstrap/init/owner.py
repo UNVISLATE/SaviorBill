@@ -33,7 +33,7 @@ async def create_owner(
 
     # ref_code генерируется тут же, а не в UserModel.__init__ — иначе owner
     # (единственный аккаунт, создаваемый мимо UserMngr.create()) навсегда
-    # остаётся без реферального кода (см. AUDIT/IMPLEMENTATION_PLAN).
+    # остаётся без реферального кода.
     acc = UserModel(
         login=cfg.OWNER_LOGIN,
         email=cfg.OWNER_EMAIL,

@@ -1,20 +1,4 @@
-"""Журнал фактов о фоновых тасках (lua/media) — независим от OTEL.
-
-Хранится в Valkey кольцевым буфером (``LPUSH``+``LTRIM``+``EXPIRE``) на
-каждый вид тасков (``kind``: ``"lua"`` | ``"media"``). Одновременно каждая
-запись публикуется в Pub/Sub канал ``tasklog:events:{kind}`` — на него
-подписывается WS-роутер realtime-хвоста (``apiws/v1/tasks.py``).
-
-Формат общий с mediaworker-стороной (``mediaworker/src/utils/task_log.py``)
-— оба сервиса пишут в один и тот же Valkey одним контрактом полей, но
-никогда не импортируют код друг друга (сервисы не делят код, см. прецедент
-``telemetry.py``).
-
-Почему не Postgres: это оперативные факты для отладки/мониторинга, не
-бизнес-данные — хранить в БД означало бы лишнюю миграцию и нагрузку на
-запись при каждом таске. Почему не бесконечный стрим: ``LTRIM`` даёт
-предсказуемый размер без отдельного cron/cleanup-джоба
-"""
+"""Журнал задач воркеров в Valkey Streams."""
 
 from __future__ import annotations
 
@@ -98,7 +82,7 @@ class TaskLog:
     async def tail(self, kind: str, limit: int = 100) -> list[dict]:
         """Последние ``limit`` фактов (от новых к старым), включая ``detail``/
         ``trace_id`` — для права ``system.tasks.tail.read`` (сырая диагностика,
-        см. AUDIT.md §3.6)."""
+)."""
         raw = await self.vk.lrange(f"{_PREFIX}{kind}", 0, limit - 1)
         out: list[dict] = []
         for item in raw:
@@ -111,7 +95,7 @@ class TaskLog:
     async def tail_summary(self, kind: str, limit: int = 100) -> list[dict]:
         """Те же факты, но без ``detail``/``trace_id`` — для права
         ``system.tasks.summary.read`` (кто/что/когда, без внутренней
-        диагностики ошибок, см. AUDIT.md §3.6)."""
+        диагностики ошибок)."""
         return [_sanitize(entry) for entry in await self.tail(kind, limit)]
 
 

@@ -2,7 +2,7 @@
 
 Только вычисления над готовыми Polars DataFrame — без обращения к БД (сбор
 данных из БД, ``fetch_frames``, требует интеграционного теста с реальным
-Postgres — см. IMPLEMENTATION_PLAN §14/15).
+Postgres —).
 """
 
 from __future__ import annotations

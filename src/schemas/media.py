@@ -1,9 +1,4 @@
-"""Схемы медиа: загрузка/статус/регистрация/вложения (Request/Response).
-
-Файлы физически обрабатывает mediaworker; billing хранит метаданные и решает
-права/квоты. Публичный URL готового файла — относительный ``/api/media/{token}``
-(домен подставляет фронтенд/Caddy).
-"""
+"""Схемы медиа: загрузка/статус/регистрация/вложения (Request/Response)."""
 
 from __future__ import annotations
 
@@ -18,16 +13,7 @@ def _media_url(token: str) -> str:
 
 
 class MediaVariant(BaseModel):
-    """One physical file variant (main/thumb/preview).
-
-    ``key`` (реальное имя файла в хранилище, с расширением, например
-    ``<token>.webp``) намеренно не отдаётся клиенту — это внутренний
-    storage-идентификатор (см. ``models/system_media.py::all_storage_keys``,
-    используется только сервером для удаления/S3). Публичный контракт — только
-    ``url`` (``/api/media/<token>[.variant]``, без расширения: mediaworker сам
-    резолвит реальный файл по токену+варианту, поэтому URL не привязан к
-    текущему формату файла и не мигрирует при его смене).
-    """
+    """One physical file variant (main/thumb/preview)."""
 
     mime: str | None = None
     size: int | None = None

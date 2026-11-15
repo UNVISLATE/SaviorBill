@@ -1,6 +1,10 @@
+from __future__ import annotations
+
 """Выданные услуги текущего пользователя (/api/v1/user/services)."""
 
-from __future__ import annotations
+import logging
+
+logger = logging.getLogger(__name__)
 
 from decimal import Decimal
 

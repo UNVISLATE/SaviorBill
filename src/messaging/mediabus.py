@@ -1,11 +1,4 @@
-"""Тонкая шина медиа-задач поверх Valkey (billing-сторона).
-
-- enqueue задач конвертации/удаления в стрим ``media:tasks`` (потребляет mediaworker);
-- чтение статуса конвертации из ``media:status:{token}``.
-
-Полноценный consumer живёт в mediaworker; billing только продюсит задачи удаления
-и читает статус.
-"""
+"""Тонкая шина медиа-задач поверх Valkey (billing-сторона)."""
 
 from __future__ import annotations
 

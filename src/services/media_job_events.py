@@ -1,16 +1,4 @@
-"""Консьюмер переходов статуса медиа-задач (mediaworker → billing).
-
-mediaworker публикует facт перехода состояния (queued/processing/ready/
-failed/...) в стрим ``media:job_events`` из того же места, где пишет свой
-Valkey ``TaskLog`` (см. ``mediaworker/src/utils/task_log.py``). billing
-(владелец схемы БД) потребляет их через consumer-группу и материализует в
-``worker_jobs``/``worker_job_events`` (см. ``models/worker_jobs.py``) — так
-статус одной джобы и статус в списке всегда читаются из одного источника,
-без риска рассинхронизации между разными Valkey-ключами разного TTL.
-
-Устроено по образцу ``services/media_results.py`` (тот же стрим-протокол,
-та же consumer-группа-на-сервис).
-"""
+"""Консьюмер переходов статуса медиа-задач (mediaworker → billing)."""
 
 from __future__ import annotations
 

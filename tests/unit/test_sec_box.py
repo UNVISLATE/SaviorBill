@@ -38,7 +38,7 @@ def test_legacy_value_without_prefix_passthrough():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Ротация ключей (IMPLEMENTATION_PLAN §12) — MultiFernet, "vN:key" CSV
+# Ротация ключей () — MultiFernet, "vN:key" CSV
 # ─────────────────────────────────────────────────────────────────────────────
 
 def test_multi_key_new_reads_old_ciphertext():

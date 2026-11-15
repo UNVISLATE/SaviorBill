@@ -1,14 +1,4 @@
-"""Журнал фактов о медиа-тасках (mediaworker) — независим от OTEL.
-
-Хранится в Valkey кольцевым буфером (``LPUSH``+``LTRIM``+``EXPIRE``) под
-ключом ``tasklog:media``. Одновременно каждая запись публикуется в Pub/Sub
-канал ``tasklog:events:media`` для realtime-хвоста через WS
-
-Формат записи общий с billing-стороной (``src/utils/task_log.py`` в
-billing) — оба сервиса пишут в тот же Valkey тем же контрактом, но никогда
-не импортируют код друг друга (сервисы не делят код, см. прецедент
-``telemetry.py``).
-"""
+"""Журнал фактов о медиа-тасках (mediaworker) — независим от OTEL."""
 
 from __future__ import annotations
 

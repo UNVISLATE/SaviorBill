@@ -26,17 +26,7 @@ _CASTERS: dict[str, Callable[[str], Any]] = {
 
 @dataclass(frozen=True)
 class SettingDef:
-    """Описание одной настройки в БД.
-
-    :arg key:      ключ настройки (``smtp.host``, ``ui.admin.name`` …).
-    :arg source:   имя атрибута ``AppConfig`` — источник для первичного сидинга.
-    :arg type:     тип значения (``str|int|bool``).
-    :arg secret:   шифровать ли значение в БД (через SecBox).
-    :arg system:   внутренний служебный флаг платформы.
-    :arg protected: значение можно редактировать через админку, но НЕЛЬЗЯ удалить.
-    :arg group:    логическая группа (для админки и ``get_group``).
-    :arg desc:     человекочитаемое описание.
-    """
+    """Описание одной настройки в БД."""
 
     key: str
     source: str | None
@@ -306,7 +296,7 @@ SETTINGS: tuple[SettingDef, ...] = (
         type="int",
         group="media",
         desc="Суммарный объём хранимых медиа на аккаунт с media.upload.video "
-        "(раньше такого потолка не было вообще — см. AUDIT.md §1.4 HIGH-2)",
+        "(раньше такого потолка не было вообще — HIGH-2)",
     ),
     SettingDef(
         "media.avatar_attach_deadline_sec",
@@ -316,7 +306,7 @@ SETTINGS: tuple[SettingDef, ...] = (
         desc="Сколько секунд ждать подтверждения загруженного кандидата "
         "аватарки (PUT /me/avatar), прежде чем автоматически удалить его — "
         "иначе брошенные попытки подбора фото навсегда съедают слот "
-        "user.media.limit (см. AUDIT.md §4)",
+        "user.media.limit",
     ),
     SettingDef(
         "media.auto_cleanup_interval_sec",

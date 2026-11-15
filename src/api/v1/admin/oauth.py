@@ -1,8 +1,4 @@
-"""Админ: управление OAuth-провайдерами (/api/v1/admin/oauth).
-
-Провайдер исполняется Lua-скриптом вида ``auth`` (start/callback). Секреты
-провайдера хранятся зашифрованными в ``secrets_enc``.
-"""
+"""Админ: управление OAuth-провайдерами (/api/v1/admin/oauth)."""
 
 from __future__ import annotations
 

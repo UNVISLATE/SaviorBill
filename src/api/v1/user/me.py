@@ -198,7 +198,7 @@ async def set_avatar(
         # distinct 403 would let callers enumerate existing media ids.
         # Ownership must be strict `owner_id == acc.id`: `owner_id is None`
         # is "nobody's", not "anybody's" — it must not be claimable by any
-        # authenticated user (see AUDIT.md §2.1).
+        # authenticated user.
         if m is None or m.owner_id != acc.id:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
         # Аватар обязан быть картинкой — иначе видео/аудио, загруженное по
@@ -209,7 +209,7 @@ async def set_avatar(
                 status.HTTP_400_BAD_REQUEST, "avatar must be an image, not " + m.kind
             )
         # Подтверждено в срок — снимаем дедлайн авто-удаления кандидата
-        # (см. BillingLoop._exec_media_expire / AUDIT.md §4).
+        # (см. BillingLoop._exec_media_expire / ).
         await media.confirm(m)
 
     old_media_id = acc.avatar_media_id

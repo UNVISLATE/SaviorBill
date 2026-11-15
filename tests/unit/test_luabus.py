@@ -353,7 +353,7 @@ async def test_signed_bus_accepts_correctly_signed_response():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# call: ретраи (IMPLEMENTATION_PLAN §9)
+# call: ретраи ()
 # ─────────────────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio

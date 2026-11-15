@@ -1,9 +1,4 @@
-"""Админ: продвинутая аналитика (/api/v1/admin/analytics/advanced), Polars.
-
-Право ``analytics.advanced.read`` — **отдельное** от ``analytics.basic.read``
-(не наследуется), по умолчанию только у ``owner`` (см. IMPLEMENTATION_PLAN
-§13.2/13.3 — явное решение под будущую монетизацию продвинутого уровня).
-"""
+"""Админ: продвинутая аналитика (/api/v1/admin/analytics/advanced), Polars."""
 
 from __future__ import annotations
 

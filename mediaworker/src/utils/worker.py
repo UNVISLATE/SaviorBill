@@ -1,11 +1,4 @@
-"""Consumer задач media:tasks: конвертация, доп. превью, thumb и удаление файлов.
-
-Слушает поток Valkey ``media:tasks`` (consumer-group), конвертирует оригиналы
-(webp/webm + варианты) и публикует статус в Valkey. Готовое медиа НЕ пишется в
-БД напрямую: воркер публикует результат как задачу в стрим ``media:results``,
-а запись в БД делает billing (владелец схемы). Биллинг и воркер друг о друге не
-знают — общий контракт только через Valkey.
-"""
+"""Consumer задач media:tasks: конвертация, доп. превью, thumb и удаление файлов."""
 
 from __future__ import annotations
 
@@ -81,7 +74,7 @@ class Worker:
         # Ограничители одновременно обрабатываемых задач (backpressure).
         # "convert" делится на 2 пула по виду медиа — иначе одна долгая
         # видео-конвертация занимает слот, который могла бы использовать
-        # мгновенная фото-конвертация (см. AUDIT/IMPLEMENTATION_PLAN).
+        # мгновенная фото-конвертация.
         # Прочие операции (preview_add/thumb_replace/delete) — общий пул.
         self._sem_image = asyncio.Semaphore(cfg.task_concurrency_image)
         self._sem_video = asyncio.Semaphore(cfg.task_concurrency_video)
@@ -131,7 +124,7 @@ class Worker:
 
         Раньше здесь был ``await asyncio.gather(*tasks)`` на каждую пачку —
         цикл не читал следующую пачку из стрима, пока не завершится САМАЯ
-        долгая задача текущей (см. IMPLEMENTATION_PLAN.md §1). Из-за этого
+        долгая задача текущей. Из-за этого
         раздельные пулы (``_sem_*``) не давали реального выигрыша: лёгкий
         фото-слот освобождался за секунду, но простаивал, пока где-то в той
         же пачке доваривалось видео минуту — новые фото-задачи из стрима не
@@ -547,7 +540,7 @@ class Worker:
         owner_id = data.get("owner_id")
         video_allowed = data.get("video_allowed") == "1"
         # admin.media.upload — единственное по-настоящему безлимитное право
-        # (см. AUDIT.md §2.2), пробрасывается через очередь так же, как
+        #, пробрасывается через очередь так же, как
         # video_allowed (см. upload.py::upload_file) — квота на общий объём
         # (см. ниже, перед emit_result) для него не проверяется вовсе.
         is_unlimited = data.get("unlimited") == "1"
@@ -587,7 +580,7 @@ class Worker:
 
         # Право на kind файла проверяется здесь, не на приёме (HTTP) — сам
         # kind определяется по сигнатуре файла только сейчас, в фоне (см.
-        # IMPLEMENTATION_PLAN.md §0.1.3). media.upload — только фото;
+        # ). media.upload — только фото;
         # media.upload.video/admin.media.upload разрешают video (флаг
         # video_allowed прокинут из upload.py при приёме файла).
         if not video_allowed:
@@ -622,7 +615,7 @@ class Worker:
         job_id = await self.proc_log.start_job(op="convert", token=token)
 
         async def sink(chunk: str) -> None:
-            # Маскируем абсолютные пути (см. AUDIT.md §4.4) — stderr ffmpeg
+            # Маскируем абсолютные пути — stderr ffmpeg
             # обычно содержит полный путь к input/output на сервере.
             await self.proc_log.append(
                 job_id, sanitize_paths(chunk, self.cfg.uploads_dir, self.cfg.media_dir)
@@ -647,7 +640,7 @@ class Worker:
                 )
                 # Тот же снимок — в основной статус-хэш (``media:status:*``),
                 # откуда его читают REST `/status/{token}` и WS `media/mine`
-                # (см. IMPLEMENTATION_PLAN.md §3.В). Раньше percent/eta_sec
+                #. Раньше percent/eta_sec
                 # оседали только в ProcLog (debug-лог), клиент их не видел.
                 if snapshot.percent is not None:
                     await self._set_status(
@@ -753,7 +746,7 @@ class Worker:
         # только заявленный клиентом Content-Length, а не реальный размер
         # ПОСЛЕ конвертации. admin.media.upload (is_unlimited) не проверяем
         # вовсе; media.upload.video/media.upload.image — по своим потолкам
-        # (см. AUDIT.md §1.4 HIGH-2 — раньше media.upload.video не имел
+        # ( HIGH-2 — раньше media.upload.video не имел
         # потолка на общий объём вообще).
         if owner_id and self.db is not None and not is_unlimited:
             quota = (
@@ -840,7 +833,7 @@ class Worker:
                 if not os.path.exists(src):
                     raise ConvertError("исходный кадр для превью не найден")
                 # Defense-in-depth: kind уже проверен на приёме (serve.py,
-                # см. AUDIT.md §4.2) — повторная дешёвая проверка на случай
+                #) — повторная дешёвая проверка на случай
                 # гонки/повторной постановки задачи из старой очереди.
                 with open(src, "rb") as f:
                     header = f.read(SIGNATURE_READ_BYTES)
@@ -935,7 +928,7 @@ class Worker:
             if not os.path.exists(src):
                 raise ConvertError("исходный файл для thumb не найден")
             # Defense-in-depth: kind уже проверен на приёме (serve.py, см.
-            # AUDIT.md §4.2) — повторная дешёвая проверка на случай гонки/
+            # ) — повторная дешёвая проверка на случай гонки/
             # повторной постановки задачи из старой очереди.
             with open(src, "rb") as f:
                 header = f.read(SIGNATURE_READ_BYTES)

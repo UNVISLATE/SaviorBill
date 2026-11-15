@@ -1,12 +1,4 @@
-"""Pydantic-схемы декларативных манифестов скриптов и Server-Driven UI (sbuiSDK).
-
-Определяет структуру manifest.json для скриптов Lua:
-- prefill: заготовки при создании сущностей
-- media_download: безопасная загрузка статики/иконок через mediaworker
-- settings_form: форма настроек провайдера/интеграции для администратора
-- client_order_form: форма заказа для покупателя в витринном диалоге
-- layout: декларативное дерево узлов интерфейса (SchemaNode)
-"""
+"""Pydantic-схемы декларативных манифестов скриптов и Server-Driven UI (sbuiSDK)."""
 
 from __future__ import annotations
 

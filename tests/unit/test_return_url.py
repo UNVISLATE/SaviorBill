@@ -1,4 +1,4 @@
-"""Юнит-тесты защиты от open-redirect в ``return_url`` (AUDIT.md §2.5)."""
+"""Юнит-тесты защиты от open-redirect в ``return_url`` ()."""
 
 from __future__ import annotations
 

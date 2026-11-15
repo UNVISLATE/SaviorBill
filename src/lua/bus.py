@@ -57,7 +57,7 @@ class LuaBus:
         self.resp_stream = resp_stream
         self.default_timeout = default_timeout
         # Мягкий таймаут + повторные попытки при таймауте/временной ошибке
-        # воркера (см. IMPLEMENTATION_PLAN §9) — изоляция CPU/памяти внутри
+        # воркера — изоляция CPU/памяти внутри
         # воркера сознательно оставлена администратору инсталляции.
         self.max_retries = max_retries
         self.retry_backoff = retry_backoff

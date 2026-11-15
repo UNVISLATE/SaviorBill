@@ -1,31 +1,4 @@
-"""Мониторинг живых инстансов (billing/media/lua): heartbeat + CPU/RSS.
-
-Каждый инстанс (billing сам себе, mediaworker, luaworker) периодически
-push'ит снимок своего состояния в Valkey-хэш ``{service}:metrics:{consumer}``
-(TTL чуть больше периода пуша — умерший процесс просто не продлит TTL, и хэш
-пропадает сам). Общий формат полей:
-
-```
-service        "lua"|"media"|"billing"
-consumer       "<hostname>-<pid|random>"
-started_at     unix ts запуска процесса (для uptime)
-last_seen_at   unix ts последнего пуша
-cpu_percent    float — своё потребление CPU процесса (не всего сервера)
-rss_mb         float — своя резидентная память процесса, МиБ
-# lua-специфично:
-processed_total, errors_total, reclaimed_total, avg_exec_ms
-# media-специфично:
-current_job    JSON {"token","op","started_at"} или "" — что сейчас в работе
-```
-
-Этот модуль — read-side (``list_instances``/``get_instance``, используются
-``api/v1/system/stats.py``) и Prometheus-переэкспорт lua-счётчиков
-(``LuaMetricsCollector`` — было в ``telemetry/lua_metrics.py``, перенесено
-сюда при обобщении на все 3 сервиса, см. IMPLEMENTATION_PLAN.md §1). Push
-собственных метрик billing — ``SelfMetricsPusher`` ниже; mediaworker и
-luaworker пушат сами себе (см. ``mediaworker/src/utils/metrics.py`` и
-``luaworker/src/main.lua::maybe_push_metrics``).
-"""
+"""Мониторинг живых инстансов (billing/media/lua): heartbeat + CPU/RSS."""
 
 from __future__ import annotations
 
@@ -145,9 +118,7 @@ class LuaMetricsCollector:
 
 
 class SelfMetricsPusher:
-    """Периодический пуш собственных CPU/RSS billing-процесса в
-    ``billing:metrics:{consumer}`` — billing виден в списке инстансов наравне
-    с media/lua (см. §1: "billing тоже шлёт heartbeat сам себе")."""
+    """Периодический пуш собственных CPU/RSS billing-процесса в."""
 
     def __init__(self, vk: valkey.Valkey, cfg: AppConfig) -> None:
         self.vk = vk

@@ -12,13 +12,7 @@ from enums import PayTarget
 
 
 class PaymentCreate(BaseModel):
-    """Create payment.
-
-    ``amount`` is required only for ``target=balance`` (arbitrary top-up
-    sum chosen by the user). For ``target=service`` the price is always
-    the server-side ``service.price`` (or calculated from tier/components/custom_amount) —
-    the client cannot override ``amount`` directly.
-    """
+    """Create payment."""
 
     amount: Decimal | None = Field(
         default=None, gt=0, description="Payment amount > 0 (target=balance only)"

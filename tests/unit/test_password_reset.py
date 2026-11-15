@@ -208,7 +208,7 @@ class TestConfirm:
 
     @pytest.mark.asyncio
     async def test_confirm_consumes_code_atomically(self) -> None:
-        """Второе подтверждение тем же кодом не проходит (GETDEL, AUDIT.md §2.1)."""
+        """Второе подтверждение тем же кодом не проходит (GETDEL, )."""
         vk = _FakeValkey()
         await vk.set("reset:pwd:alice@example.com", "123456")
         svc, patcher = _svc(vk, _FakeSettings(), _FakeSender(), _acc())

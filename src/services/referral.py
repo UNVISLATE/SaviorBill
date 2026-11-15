@@ -15,15 +15,7 @@ _HUNDRED = Decimal("100")
 
 
 class ReferralMngr:
-    """Начисляет бонус рефереру за покупку приглашённого пользователя.
-
-    Размер бонуса определяется в порядке приоритета:
-      1. ``service.settings.referral_amount`` — фиксированная сумма (переопределяет %);
-      2. ``service.settings.referral_percent`` — процент от суммы покупки;
-      3. глобальный процент из настройки ``referral.percent``.
-
-    Бонус зачисляется на ``bonus_balance`` реферера.
-    """
+    """Начисляет бонус рефереру за покупку приглашённого пользователя."""
 
     def __init__(self, session: AsyncSession) -> None:
         self.s = session

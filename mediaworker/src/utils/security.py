@@ -1,13 +1,4 @@
-"""Валидация access-JWT (публичный RS256-ключ, общий с billing).
-
-``ALLOWED_ALGS``/``AUDIENCE`` дублируют значения ``security/sec/jwt.py`` из
-billing буквально (по значению, не по импорту — mediaworker — отдельный
-деплоймент без общего пакета с billing). При изменении значений в billing
-нужно поменять и здесь, иначе токены перестанут проверяться.
-
-mediaworker получает только публичный ключ (см. AUDIT.md, Phase 1) — приватный
-ключ живёт в billing-only volume и никогда не монтируется сюда.
-"""
+"""Валидация access-JWT (публичный RS256-ключ, общий с billing)."""
 
 from __future__ import annotations
 

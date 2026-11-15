@@ -32,13 +32,7 @@ def _extract_user_telemetry(request: Request) -> tuple[int | None, str | None, s
 
 
 class RequestTrackerMiddleware(BaseHTTPMiddleware):
-    """Сквозной трекер запросов:
-
-    1. Trace ID: гарантирует стандартный 32-hex идентификатор (W3C Trace Context) для каждого запроса.
-    2. IP Ban Gate: пресекает запросы от заблокированных IP с кодом 403 Forbidden.
-    3. Журнал ошибок: регистрирует ответы 4xx и 5xx с расширенной телеметрией (задержка, query-параметры, user-agent, referer).
-    4. Throttling сканирования (404 rate-limiting): пресекает агрессивный фаззинг и DirBuster.
-    """
+    """Сквозной трекер запросов."""
 
     async def dispatch(self, request: Request, call_next) -> Response:
         start_time = time.perf_counter()

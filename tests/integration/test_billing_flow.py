@@ -169,7 +169,7 @@ async def test_payment_topup_and_callback(http, new_user, seed):
 
 
 async def test_purchase_rejects_foreign_return_url(http, new_user, seed):
-    """Open-redirect через доверенный payment-провайдер (AUDIT.md §2.5)."""
+    """Open-redirect через доверенный payment-провайдер ()."""
     provider = await seed.pay_provider(secret=CALLBACK_SECRET)
     _, hdr = await _auth(http, new_user)
     r = await http.post(

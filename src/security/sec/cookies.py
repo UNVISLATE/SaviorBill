@@ -1,16 +1,4 @@
-"""httpOnly auth-cookie: выставление/очистка access и refresh токенов.
-
-Cookie — основной канал авторизации браузерного клиента (adminui): токены
-недоступны JS (``httponly``), поэтому XSS не может украсть их из
-``document.cookie``/``localStorage`` для долгоживущего захвата сессии (см.
-AUDIT.md §6.1). ``Authorization: Bearer`` остаётся рабочим путём для
-не-браузерных клиентов (скрипты, mediaworker-to-billing и т.п.) —
-``dependencies/auth.py::get_current_acc`` принимает оба варианта.
-
-Имена cookie должны совпадать между billing и mediaworker (см.
-``mediaworker/src/utils/authctx.py``) — общий корневой домен
-(``AppConfig.cookie_domain``) делает cookie видимой обоим сервисам.
-"""
+"""httpOnly auth-cookie: выставление/очистка access и refresh токенов."""
 
 from __future__ import annotations
 

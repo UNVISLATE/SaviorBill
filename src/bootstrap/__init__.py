@@ -1,8 +1,4 @@
-"""Проверки при каждом старте сервиса (вызывается из ``lifespan``).
-
-Модуль независим от ``bootstrap.init``: первичная инициализация выполняется отдельно
-(:func:`bootstrap.init.init_system`) до вызова :func:`bootstrap`.
-"""
+"""Проверки при каждом старте сервиса (вызывается из ``lifespan``)."""
 
 from __future__ import annotations
 

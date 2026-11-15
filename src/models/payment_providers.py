@@ -24,18 +24,7 @@ from utils.datetime_utils import utc_now
 
 
 class PaymentProvidersModel(Base):
-    """Запись о платёжном провайдере (ЮKassa, Stripe, …).
-
-    ``secrets_enc`` — зашифрованный (SecBox) JSON с секретами и уникальными
-    данными платёжки (ключи API, shop_id, webhook-секрет и т.п.). В рантайме
-    он расшифровывается и прокидывается в Lua-скрипты провайдера.
-
-    Каждая платёжка работает по-своему, поэтому у провайдера один action-driven
-    Lua-скрипт (``script_id``), который обрабатывает все действия платежа:
-    ``create`` (инициализация, вернуть ссылку), ``callback`` (доверенный вебхук),
-    ``check`` (перепроверка у API) и ``refund`` (возврат). Обязательны create и
-    callback — см. :class:`enums.PayAction`.
-    """
+    """Запись о платёжном провайдере (ЮKassa, Stripe, …)."""
 
     __tablename__ = "pay_providers"
 

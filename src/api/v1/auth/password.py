@@ -1,10 +1,4 @@
-"""Сброс пароля по email-коду/токену (/api/v1/auth/password).
-
-Способ управляется настройкой ``password.reset.method``: ``code``/``token`` —
-email-сброс включён; ``authenticated``/``disabled`` — email-сброс выключен
-(404 на request/confirm), при ``authenticated`` доступна только смена пароля
-в профиле по старому паролю (``POST /me/password``).
-"""
+"""Сброс пароля по email-коду/токену (/api/v1/auth/password)."""
 
 from __future__ import annotations
 
@@ -63,7 +57,7 @@ async def confirm_reset(
     acc = await svc.confirm(body.code, body.password, email=body.email)
     await svc.s.commit()
     # Сброс пароля обрывает все прежние сессии — иначе тот, кто и вынудил
-    # сброс, сохраняет доступ по старому refresh (AUDIT.md §1.5 LOW-4).
+    # сброс, сохраняет доступ по старому refresh ( LOW-4).
     await tokens.revoke_all_sessions(acc.id)
 
 

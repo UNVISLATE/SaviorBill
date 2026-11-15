@@ -1,14 +1,4 @@
-"""Единые auth-хелперы для роутов mediaworker.
-
-Раньше ``_client_ip``/``_bearer``/``_authenticate``/``_authorize`` были
-продублированы буквально (copy-paste) в ``upload.py`` и ``serve.py``, а
-``kinds.py`` держал свою урезанную копию (``_soft_authenticate``) — при
-любом изменении логики (например, добавлении нового поля в проверку бана)
-нужно было помнить о всех копиях. Вынесено сюда одним модулем;
-``add_preview``/``replace_thumb``-специфичная проверка владения медиа
-(``_authorize_media_owner`` в ``serve.py``) осталась на месте, т.к. она
-не переиспользуется больше нигде и завязана на ``db.media_owner``.
-"""
+"""Единые auth-хелперы для роутов mediaworker."""
 
 from __future__ import annotations
 

@@ -1,8 +1,4 @@
-"""Действие триггера: исполнение Lua-скрипта.
-
-Lua-реализация `lifecycle.triggers.base.BaseAction` — второе действие,
-не зависящее от lua — `lifecycle.triggers.email_action.EmailAction`.
-"""
+"""Действие триггера: исполнение Lua-скрипта."""
 
 from __future__ import annotations
 

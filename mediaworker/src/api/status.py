@@ -1,31 +1,4 @@
-"""Статус конвертации напрямую в mediaworker (``GET /api/media/status/{token}``).
-
-Раньше статус был доступен только через billing
-(``GET /api/v1/media/status/{token}``, читает тот же Valkey-ключ + фоллбэк на
-БД). Этот роут нужен, если клиент по какой-то причине общается с mediaworker
-напрямую (без billing в цепочке) — например, тот же домен смонтирован под
-``/api/media/*`` отдельно от billing.
-
-В отличие от billing-варианта здесь нет фоллбэка на Postgres: mediaworker не
-владеет схемой ``system_media`` и не пишет туда статус сам, поэтому если ключ
-``media:status:{token}`` протух в Valkey (``MEDIA_STATUS_TTL``) — честный 404
-(источник истины по готовым медиа — billing, обращайтесь через него).
-
-``jobs`` — сводка недавних/активных запусков ffmpeg этого токена (см.
-``utils/proclog.py::jobs_for_token``): ``job_id``/``op``/``status``/``percent``/
-``eta_sec``. Billing этого не отдаёт и не обязан — это ephemeral debug-данные
-самого mediaworker, а не часть его контракта "готово/не готово" (см.
-``docs/media.md``, раздел про realtime-лог и прогресс).
-
-Роут зарегистрирован ДО ``serve_router`` (см. ``api/__init__.py``) — иначе
-``GET /{token}`` (catch-all) перехватил бы ``/status/{token}`` так же, как это
-уже случилось бы с ``/kinds``.
-
-Авторизация: JWT обязателен, доступ только владельцу токена (``owner_id`` в
-статус-хэше, записан на приёме файла в ``upload.py``) либо аккаунту с правом
-``admin.media.manage_any`` — раньше знания одного токена было достаточно для
-чтения чужого статуса/mime/ошибок (см. AUDIT.md §4.3).
-"""
+"""Статус конвертации напрямую в mediaworker (``GET /api/media/status/{token}``)."""
 
 from __future__ import annotations
 
@@ -116,14 +89,14 @@ async def media_status(
     if not data:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
 
-    # Owner-check (AUDIT.md §4.3): знания одного лишь токена больше не
+    # Owner-check (): знания одного лишь токена больше не
     # достаточно — владелец фиксируется на приёме файла (upload.py) и
     # хранится прямо в статус-хэше, поэтому проверка не требует похода в БД
     # (статус существует и для ещё не опубликованных в billing медиа).
     acc_id = await authenticate(request)
     perms, _role = await authorize(request, acc_id)
     if not _may_view_status(data.get("owner_id") or None, acc_id, perms):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "не владелец медиа")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied to this media resource")
 
     proc_log: ProcLog = request.app.state.proc_log
     artifact_status = None

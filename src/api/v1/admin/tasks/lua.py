@@ -32,7 +32,7 @@ async def tail_lua_tasks_summary(
     description="Последние факты о вызовах LuaWorker: sent/ok/error "
     "(fire-and-forget задачи — только sent, ответа никогда не ждём). "
     "Содержит сырой `detail` и `trace_id` — отдельное от summary право "
-    "(см. AUDIT.md §3.6).",
+    ".",
 )
 async def tail_lua_tasks(
     limit: int = Query(default=100, ge=1, le=500),

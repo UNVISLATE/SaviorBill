@@ -102,7 +102,7 @@ async def lifespan(app: FastAPI):
     await app.state.self_metrics.start()
 
     # Единый фоновый поллер снапшота инстансов для WS system/stats — вместо
-    # отдельного Valkey-запроса на каждого клиента (см. AUDIT.md §3.5).
+    # отдельного Valkey-запроса на каждого клиента.
     app.state.stats_broadcaster = StatsBroadcaster(app.state.valkey, config)
     await app.state.stats_broadcaster.start()
 

@@ -36,7 +36,7 @@ class GuestPurchaseCreate(BaseModel):
     """Создание заказа и инвойса через гостевой чекаут."""
 
     email: str = Field(min_length=3, max_length=255, description="Email покупателя")
-    provider: str = Field(description="Слаг платёжного провайдера")
+    provider: str = Field(max_length=64, description="Слаг платёжного провайдера")
     service_id: int = Field(description="ID приобретаемой услуги")
     currency: str | None = Field(default=None, max_length=8, description="Желаемая валюта оплаты (опционально)")
     custom_amount: Decimal | None = Field(

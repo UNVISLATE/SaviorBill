@@ -33,7 +33,7 @@ async def tail_media_tasks_summary(
     "thumb_replace): queued/processing/ready/failed. Пишет mediaworker, "
     "billing читает из общего Valkey напрямую (без HTTP между сервисами). "
     "Содержит сырой `detail` (часто = текст исключения) и `trace_id` — "
-    "отдельное от summary право (см. AUDIT.md §3.6).",
+    "отдельное от summary право.",
 )
 async def tail_media_tasks(
     limit: int = Query(default=100, ge=1, le=500),

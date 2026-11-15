@@ -1,9 +1,4 @@
-"""Отдача медиа и ручная догрузка thumb/превью.
-
-``GET /api/media/{token}``            — отдать файл: S3 → presigned redirect; fs → FileResponse.
-``POST /api/media/{token}/preview``   — добавить ОДНО новое превью (не трогая существующие).
-``POST /api/media/{token}/thumb``     — заменить единственный thumb целиком.
-"""
+"""Отдача медиа и ручная догрузка thumb/превью."""
 
 from __future__ import annotations
 
@@ -33,7 +28,7 @@ router = APIRouter()
 
 _PERM_LARGE = "media.upload.video"
 # Отдельное право на доступ к preview/thumb ЧУЖОГО медиа — не совпадает с
-# _PERM_LARGE (тот только про лимит размера, см. §2.2 AUDIT.md).
+# _PERM_LARGE (тот только про лимит размера, см. §2.2 ).
 _PERM_MANAGE_ANY = "admin.media.manage_any"
 
 
@@ -244,7 +239,7 @@ async def _authorize_media_owner(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "медиа не найдено")
     _mid, owner_id, mkind = media
     if owner_id != acc_id and not manage_any:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "не владелец медиа")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Access denied to this media resource")
     if mkind != "video":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "доступно только для видео")
     return acc_id, is_large, max_bytes
@@ -292,7 +287,7 @@ async def add_preview(
         ip = client_ip(request)
         # Загружаемый кадр должен быть изображением — ffmpeg одинаково легко
         # "декодирует" видео как источник кадра, что подтверждало бы риск
-        # "видео вместо аватара/превью" (см. AUDIT.md §4.2) без явной проверки.
+        # "видео вместо аватара/превью" без явной проверки.
         if detect_kind(header) != "image":
             raise HTTPException(
                 status.HTTP_422_UNPROCESSABLE_ENTITY, "preview source must be an image"
@@ -302,7 +297,7 @@ async def add_preview(
         except ValueError:
             if is_large:
                 raise HTTPException(
-                    status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "не надо баловаться XD"
+                    status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Payload exceeds maximum permitted size"
                 )
             await ipban.ban(vk, ip, cfg.ban_seconds)
             raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")
@@ -360,7 +355,7 @@ async def replace_thumb(
     except ValueError:
         if is_large:
             raise HTTPException(
-                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "не надо баловаться XD"
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "Payload exceeds maximum permitted size"
             )
         await ipban.ban(vk, ip, cfg.ban_seconds)
         raise HTTPException(status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "file too large")

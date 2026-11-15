@@ -100,7 +100,7 @@ class AppConfig(BaseSettings):
 
     # Auth / JWT
     # RS256 (асимметрия): billing подписывает access/refresh приватным ключом,
-    # mediaworker проверяет access-токены только публичным (см. AUDIT.md §1.1
+    # mediaworker проверяет access-токены только публичным (
     # — раньше был общий HS-secret, компрометация mediaworker позволяла
     # подделывать токены billing).
     JWT_PRIVATE_KEY: str | None = Field(default=None)
@@ -108,7 +108,7 @@ class AppConfig(BaseSettings):
     JWT_PUBLIC_KEY: str | None = Field(default=None)
     JWT_PUBLIC_KEY_FILE: str | None = Field(default=None)
     # Идентификатор текущего ключа (JWT-заголовок ``kid``) — нужен для ротации
-    # без мгновенного logout всех пользователей (см. AUDIT.md §1.5): новые
+    # без мгновенного logout всех пользователей: новые
     # токены подписываются текущим ключом, но токены с предыдущим ``kid``,
     # выпущенные до ротации, ещё проверяются публичным ключом ниже, пока не
     # истечёт grace-период (обычно — REFRESH_TOKEN_TTL).
@@ -261,7 +261,7 @@ class AppConfig(BaseSettings):
     # жёсткий отказ при загрузке нового файла (без media.upload.video/
     # admin.media.upload лимит не применяется).
     USER_MEDIA_LIMIT: int = Field(default=5)
-    # Суммарный объём хранимых медиа на аккаунт (см. AUDIT.md §1.4 HIGH-2 —
+    # Суммарный объём хранимых медиа на аккаунт ( HIGH-2 —
     # media.upload.video раньше не имел потолка на общий объём вообще).
     MEDIA_QUOTA_IMAGE_BYTES: int = Field(default=52_428_800)  # 50 MiB
     MEDIA_QUOTA_VIDEO_BYTES: int = Field(default=2_147_483_648)  # 2 GiB
@@ -424,14 +424,14 @@ class AppConfig(BaseSettings):
                 Path(self.PRIVATE_DATA_DIR) / "jwt_private.pem"
             )
         if not self.JWT_PUBLIC_KEY_FILE:
-            # В общей data/ (см. AUDIT.md §1.1) — публичный ключ не секрет,
+            # В общей data/ — публичный ключ не секрет,
             # его читает и mediaworker для верификации access-токенов.
             self.JWT_PUBLIC_KEY_FILE = str(
                 Path(self.DATA_DIR) / "keys" / "jwt_public.pem"
             )
         # kid и предыдущий публичный ключ — тоже не секреты, лежат рядом с
         # текущим публичным ключом в общей data/ (нужны mediaworker для
-        # верификации по key ring, см. AUDIT.md §1.5).
+        # верификации по key ring).
         if not self.JWT_KID_FILE:
             self.JWT_KID_FILE = str(Path(self.DATA_DIR) / "keys" / "jwt_kid.txt")
         if not self.JWT_PUBLIC_KEY_PREV_FILE:
@@ -500,7 +500,7 @@ class AppConfig(BaseSettings):
 
         Содержит текущий ключ и (если есть, в течение grace-периода после
         ротации) предыдущий — так проверка токенов, выпущенных до ротации,
-        продолжает работать до их естественного истечения (см. AUDIT.md §1.5).
+        продолжает работать до их естественного истечения.
         """
         keys: dict[str, str] = {}
         if self.JWT_KID and self.JWT_PUBLIC_KEY:

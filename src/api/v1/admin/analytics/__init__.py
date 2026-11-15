@@ -1,9 +1,4 @@
-"""Пакет роутеров аналитики: /admin/analytics/basic, /admin/analytics/advanced.
-
-Единый сегмент пути ("/analytics") задаётся при монтировании в
-``admin/__init__.py`` — тот же паттерн, что у ``admin/tasks`` (см.
-``admin/tasks/__init__.py``); подмодули объявляют только свой суффикс.
-"""
+"""Пакет роутеров аналитики: /admin/analytics/basic, /admin/analytics/advanced."""
 
 from fastapi import APIRouter
 

@@ -280,7 +280,7 @@ async def user_detail(
     description=(
         "Тот же формат, что и `GET /v1/user/me`, но для произвольного "
         "аккаунта — источник данных вкладки 'Профиль' в админском Drawer при "
-        "просмотре чужого профиля (см. IMPLEMENTATION_PLAN.md §4)."
+        "просмотре чужого профиля."
     ),
 )
 async def user_profile_admin(
@@ -717,7 +717,7 @@ async def set_user_avatar(
         if m is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
         # Тот же порядок, что и в self-service /me/avatar: подтверждение
-        # снимает дедлайн авто-удаления кандидата (AUDIT.md §4).
+        # снимает дедлайн авто-удаления кандидата ().
         await media.confirm(m)
 
     old_media_id = acc.avatar_media_id

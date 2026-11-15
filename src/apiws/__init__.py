@@ -1,9 +1,4 @@
-"""``/api/ws`` — WebSocket-роуты billing.
-
-Живут в отдельном пакете ``apiws/`` (код организован отдельно от HTTP-роутов
-в ``api/``), но URL — под общим ``/api`` (см. IMPLEMENTATION_PLAN.md §2/§7):
-единый префикс для dev-прокси и продакшен-балансировщика, отдельное правило
-под "/apiws" не нужно."""
+"""``/api/ws`` — WebSocket-роуты billing."""
 
 from fastapi import APIRouter
 

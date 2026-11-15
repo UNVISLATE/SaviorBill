@@ -11,7 +11,7 @@ def is_safe_return_url(url: str, allowed_origins: list[str]) -> bool:
     Используется для ``return_url`` в платежах — провайдер оплаты доверенный
     и подставит его как есть в редирект после оплаты, поэтому произвольный
     абсолютный URL здесь означает open redirect через доверенный сервис
-    (см. AUDIT.md §2.5).
+.
 
     :arg url: значение, присланное клиентом.
     :arg allowed_origins: allowlist абсолютных origin'ов (схема+хост[:порт]),

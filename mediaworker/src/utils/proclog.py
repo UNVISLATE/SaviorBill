@@ -1,38 +1,4 @@
-"""Журнал сырого вывода ffmpeg/ffprobe (mediaworker) для realtime-логов в UI.
-
-Отдельно от ``task_log.py`` (структурированные факты о статусах тасков):
-здесь хранится именно **сырой текст**, который печатает сам процесс
-(включая прогресс-строки с ``\\r`` без ``\\n``) — чтобы админ мог смотреть
-за ним в реальном времени через xterm.js, как за обычным терминалом.
-
-Схема хранения в Valkey
-
-- ``proclog:jobs`` — список последних ``max_jobs`` job_id (кольцевой буфер,
-  ``LPUSH``+``LTRIM``) — для листинга "какие запуски были недавно".
-- ``proclog:meta:{job_id}`` — hash с метаданными запуска (``op``, ``token``,
-  ``state``, ``stage``, ``started_at``, ``finished_at``), TTL = ``ttl``.
-  ``stage`` — текущий под-этап многошагового job'а (см. ``set_stage()``):
-  для видео-конвертации это ``encode`` → ``thumb`` → ``preview`` →
-  ``publish`` → финальный ``ready``/``failed``; для одношаговых job'ов
-  (``preview_add``/``thumb_replace``) совпадает с ``op`` до самого конца.
-- ``proclog:lines:{job_id}`` — список кусков сырого вывода в хронологическом
-  порядке (``RPUSH``), TTL = ``ttl`` — для отдачи бэклога при подключении.
-- ``proclog:events:{job_id}`` — Pub/Sub канал, каждый кусок публикуется как
-  есть (plain text) для live-форвардинга через WS.
-- ``proclog:progress:{job_id}`` — hash со структурированным снимком прогресса
-  (``percent``/``eta_sec``/``fps``/``speed``/``frame``/``out_time_sec``),
-  TTL = ``ttl`` — отдельно от сырого лога (см. ``utils/ffprogress.py``: это
-  разобранный machine-readable вывод ffmpeg, не текст терминала).
-- ``proclog:progress-events:{job_id}`` — Pub/Sub канал, каждый снимок
-  публикуется как JSON для live-форвардинга через отдельный WS-эндпоинт.
-- ``proclog:token_jobs:{token}`` — список job_id, относящихся к одному
-  media-токену (``RPUSH``), TTL = ``ttl`` — по нему ``/api/media/status/{token}``
-  собирает сводку активных/недавних job'ов без сканирования всех job'ов.
-
-Один job_id — один запуск ffmpeg/ffprobe (не один token медиа): для одного
-token может параллельно идти и конвертация, и генерация доп. превью — у
-каждой свой job_id и свой независимый лог.
-"""
+"""Журнал сырого вывода ffmpeg/ffprobe (mediaworker) для realtime-логов в UI."""
 
 from __future__ import annotations
 

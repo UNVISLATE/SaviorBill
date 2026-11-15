@@ -1,10 +1,4 @@
-"""Помощник постраничной выборки поверх SQLAlchemy select.
-
-Модель пагинации: два параметра запроса — ``limit`` (сколько отдать) и
-``offset`` (сколько пропустить). Ответ (:class:`schemas.page.Page`) помимо
-элементов несёт ``total`` (всего записей) и ``has_more`` (есть ли ещё
-страницы) — для динамической подгрузки.
-"""
+"""Помощник постраничной выборки поверх SQLAlchemy select."""
 
 from __future__ import annotations
 
@@ -184,7 +178,7 @@ async def paginate_search(
     С ``q`` — сперва точный ``ILIKE '%q%'`` по ``search_fields``; если он не
     нашёл НИ ОДНОЙ строки и заданы ``fuzzy_fields`` — повтор через
     `pg_trgm`-similarity (fallback, не параллельный поиск — решение зафиксировано
-    в IMPLEMENTATION_PLAN.md §0.5).
+    в ).
 
     :arg stmt: базовый select (без ``limit``/``offset``), с уже применённым
         ``order_by`` (см. :func:`apply_sort`) — fuzzy-фоллбэк это переопределит.

@@ -1,4 +1,4 @@
-"""Юнит-тесты owner-check для GET /api/media/status/{token} (AUDIT.md §4.3)."""
+"""Юнит-тесты owner-check для GET /api/media/status/{token} ()."""
 
 from api.status import _may_view_status
 

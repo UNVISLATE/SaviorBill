@@ -1,19 +1,4 @@
-"""Break-glass: восстановление доступа владельца из консоли контейнера.
-
-Владелец — единственный аккаунт, который нельзя починить через API: его нельзя
-удалить, изменить чужими руками и нельзя выдать его роль (см.
-`security/owner_guard.py`). Если пароль владельца потерян, а email уже не
-принадлежит компании, единственным выходом была ручная правка БД.
-
-Запуск (нужен доступ к хосту — это и есть подтверждение полномочий)::
-
-    docker compose exec billing python src/ownerctl.py show
-    docker compose exec billing python src/ownerctl.py reset-password --login owner
-    docker compose exec billing python src/ownerctl.py promote --login alice
-
-Каждое изменение пишется в аудит-журнал и обрывает все сессии затронутого
-аккаунта.
-"""
+"""Break-glass: восстановление доступа владельца из консоли контейнера."""
 
 from __future__ import annotations
 

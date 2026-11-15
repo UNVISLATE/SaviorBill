@@ -1,20 +1,4 @@
-"""``GET /api/ws/v1/system/stats`` — realtime-поток агрегатов инстансов (WS).
-
-Отличие от ``apiws/v1/tasks.py`` (pubsub-хвост событий): здесь клиент отдаёт
-последний снапшот из общего фонового поллера (``services/stats_broadcaster.py``)
-на своём таймере — тот же JSON, что и ``GET /api/v1/system/stats`` (список +
-агрегаты), НЕ детали конкретного инстанса (drill-down остаётся отдельным
-pull-роутом — не смешиваем summary-право (``system.stats.read``) и
-instance-право в одном канале). Один общий поллер вместо запроса в Valkey на
-каждого клиента (см. AUDIT.md §3.5) — рост числа подписчиков не увеличивает
-нагрузку на Valkey.
-
-Схема авторизации — та же, что у ``tasks.py`` (per-message, без токена в URL):
-первый текстовый фрейм — ``{"token": "<access_jwt>"}``, дальше клиент может в
-любой момент прислать ``{"interval_sec": N}`` (1..``SYSTEM_STATS_WS_MAX_SEC``)
-— меняет частоту, с которой ЕМУ отдаётся кэш (не частоту самого поллинга
-Valkey — тот фиксирован, см. ``StatsBroadcaster``).
-"""
+"""``GET /api/ws/v1/system/stats`` — realtime-поток агрегатов инстансов (WS)."""
 
 from __future__ import annotations
 
@@ -38,7 +22,7 @@ async def _read_interval_updates(ws: WebSocket, state: dict, min_sec: int, max_s
     """Фоновая корутина: слушать входящие фреймы клиента и обновлять
     ``state["interval_sec"]`` на лету. Невалидные значения/сообщения — тихо
     игнорируются (не рвём поток из-за одного плохого фрейма). Бинарные/
-    слишком большие фреймы закрывают соединение явно (см. AUDIT.md §3.2/§3.3,
+    слишком большие фреймы закрывают соединение явно (§3.3,
     ``authctx.safe_receive_text``)."""
     while True:
         raw = await safe_receive_text(ws)

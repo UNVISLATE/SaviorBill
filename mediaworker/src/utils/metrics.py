@@ -1,11 +1,4 @@
-"""Heartbeat mediaworker: push CPU%/RSS/current_job в ``media:metrics:{consumer}``.
-
-Формат хэша и семантика — общие с billing/luaworker (см.
-``src/telemetry/instance_metrics.py`` на billing-стороне): ``service``,
-``consumer``, ``started_at``, ``last_seen_at``, ``cpu_percent``, ``rss_mb``,
-плюс media-специфичное ``current_job`` — JSON ``{"token","op","started_at"}``
-активной прямо сейчас конвертации, или ``""``, если воркер сейчас свободен.
-"""
+"""Heartbeat mediaworker: push CPU%/RSS/current_job в ``media:metrics:{consumer}``."""
 
 from __future__ import annotations
 

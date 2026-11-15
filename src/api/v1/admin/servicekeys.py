@@ -1,12 +1,4 @@
-"""Админ: пул цифровых ключей услуги (/api/v1/admin/services/{id}/keys).
-
-- ``services.keys.read`` — список/остаток; значение ключа всегда замаскировано.
-- ``ownersec.servicekeys.read`` — отдельное, не наследуемое от обычных
-  ``*.read``/``admin: {"*": ...}`` право, только оно раскрывает расшифрованное
-  значение конкретного ключа.
-- ``services.keys.create`` — массовый импорт.
-- ``services.keys.delete`` — удаление ключа.
-"""
+"""Админ: пул цифровых ключей услуги (/api/v1/admin/services/{id}/keys)."""
 
 from __future__ import annotations
 

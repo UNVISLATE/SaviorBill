@@ -1,8 +1,4 @@
-"""Схемы Lua-скриптов для админ-CRUD (Request/Response).
-
-Отличаются от схем контекста (user/service/payment/…): здесь — регистрация,
-замена и выдача метаданных зарегистрированных скриптов.
-"""
+"""Схемы Lua-скриптов для админ-CRUD (Request/Response)."""
 
 from __future__ import annotations
 

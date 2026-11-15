@@ -24,16 +24,7 @@ from utils.datetime_utils import utc_now
 
 
 class UserPaymentsModel(Base):
-    """Платёж
-
-    Создаётся в статусе ``pending``; init-скрипт провайдера возвращает данные
-    для редиректа (``public_data``). Подтверждение приходит колбэком и
-    переводит платёж в ``paid``.
-
-    ``target`` определяет назначение:
-      * ``balance`` — зачисление на баланс аккаунта;
-      * ``service`` — оплата конкретной выдачи (``user_svc_id``).
-    """
+    """Платёж."""
 
     __tablename__ = "payments"
 

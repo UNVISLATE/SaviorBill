@@ -151,7 +151,7 @@ async def create_purchase(
         allowed = [*cfg.cors_origins_list, cfg.PUBLIC_URL.rstrip("/")]
         if not is_safe_return_url(body.return_url, allowed):
             # Провайдер оплаты доверенный — произвольный абсолютный URL здесь
-            # означает open redirect после оплаты (см. AUDIT.md §2.5).
+            # означает open redirect после оплаты.
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
                 "return_url must be a relative path or a project origin",

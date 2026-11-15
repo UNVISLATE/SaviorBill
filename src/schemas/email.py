@@ -53,7 +53,7 @@ class EmailTemplateUpload(BaseModel):
         default=None, max_length=128, description="Display name (optional)"
     )
     subject: str = Field(max_length=255, description="Subject (Jinja2)")
-    body: str = Field(description="Email body (Jinja2 template)")
+    body: str = Field(max_length=65536, description="Email body (Jinja2 template)")
     is_html: bool = Field(default=True, description="HTML or plain text (optional)")
     description: str | None = Field(
         default=None, max_length=2048, description="Description (optional)"
@@ -77,7 +77,7 @@ class EmailTemplatePatch(BaseModel):
 class EmailBodyPatch(BaseModel):
     """Replace template body."""
 
-    body: str = Field(description="New email body (Jinja2 template)")
+    body: str = Field(..., max_length=65536, description="New email body (Jinja2 template)")
 
 
 __all__ = [

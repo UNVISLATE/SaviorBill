@@ -1,8 +1,4 @@
-"""Схемы OAuth-провайдеров (админ, Request/Response).
-
-Провайдер работает через Lua-скрипт (``script_id``); креды/endpoints хранятся в
-зашифрованном ``secrets`` (JSON) и прокидываются в скрипт как ``provider.secrets``.
-"""
+"""Схемы OAuth-провайдеров (админ, Request/Response)."""
 
 from __future__ import annotations
 

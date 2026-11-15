@@ -1,10 +1,4 @@
-"""Лёгкая CSRF-защита для cookie-based авторизации (см. billing/src/security/csrf.py).
-
-Тот же принцип: ``SameSite=Strict`` на auth-cookie уже блокирует классический
-CSRF в современных браузерах; эта миддлварь — defense-in-depth поверх него
-для небезопасных методов, аутентифицированных именно cookie (не
-``Authorization``-заголовком).
-"""
+"""Лёгкая CSRF-защита для cookie-based авторизации (см. billing/src/security/csrf.py)."""
 
 from __future__ import annotations
 

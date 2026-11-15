@@ -1,9 +1,4 @@
-"""Вложения товара (ServiceAttachmentModel) + менеджер (ServiceAttachmentMngr).
-
-Товар (услуга) может иметь несколько медиа (фото/видео) вместо одиночной картинки.
-Каждое вложение — ссылка на запись :class:`SystemMediaModel` + текстовый тег,
-который задаёт фронтенд при добавлении (до 16 символов), и порядок сортировки.
-"""
+"""Вложения товара (ServiceAttachmentModel) + менеджер (ServiceAttachmentMngr)."""
 
 from __future__ import annotations
 

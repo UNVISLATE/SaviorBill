@@ -47,10 +47,7 @@ class ServiceKeysModel(Base):
 
 
 class ServiceKeysMngr:
-    """CRUD для цифровых ключей услуг. Значения ключей хранятся зашифрованными
-    (``SecBox``/Fernet) и расшифровываются только при выдаче пользователю или
-    явном раскрытии обладателем права ``ownersec.servicekeys.read``.
-    """
+    """CRUD для цифровых ключей услуг. Значения ключей хранятся зашифрованными."""
 
     def __init__(self, session: AsyncSession, box: SecBox) -> None:
         self.s = session

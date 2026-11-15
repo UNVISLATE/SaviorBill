@@ -1,11 +1,4 @@
-"""Разбор machine-readable прогресса ffmpeg (``-progress pipe:1``).
-
-Не парсинг человеческого stderr (хрупкие регулярки на строку вида
-``frame=120 fps=30 time=00:01:23.45 ...``, которая меняет формат между
-версиями ffmpeg) — используем встроенный в ffmpeg строгий key=value вывод,
-предназначенный именно для программного чтения (``ffmpeg -progress <url>``).
-Каждый блок завершается строкой ``progress=continue``/``progress=end``.
-"""
+"""Разбор machine-readable прогресса ffmpeg (``-progress pipe:1``)."""
 
 from __future__ import annotations
 

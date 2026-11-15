@@ -32,7 +32,7 @@ def require_perm(path: str) -> Callable:
             return acc
 
         # owner может ВСЁ, независимо от содержимого perms — единственная
-        # неприкасаемая роль (см. IMPLEMENTATION_PLAN.md, "Решения по
+        # неприкасаемая роль (, "Решения по
         # открытым вопросам" п.1).
         if acc.role and acc.role.key == "owner":
             return acc

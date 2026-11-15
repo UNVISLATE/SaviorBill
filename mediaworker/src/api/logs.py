@@ -1,26 +1,4 @@
-"""Realtime-логи и прогресс ffmpeg — своя привилегия mediaworker.
-
-Раньше это отдавалось через billing (``apiws/v1/logs/media.py`` — WS,
-``api/v1/admin/logs/media.py`` — REST, ``telemetry/proclog_read.py`` — обёртка
-над тем же Valkey-контрактом). billing при этом ничего не добавлял: тот же
-JWT + чтение прав роли из той же Postgres, тот же Valkey-контракт — только
-лишний сетевой прыжок и два места для синхронного обновления при изменении
-формата. mediaworker и так уже умеет проверять права (см. ``api/upload.py``),
-поэтому отдаёт логи/прогресс сам, напрямую.
-
-Роуты (все требуют право ``system.jobs.read``):
-
-- ``GET /api/media/logs/jobs``                          — список job'ов
-- ``GET /api/media/logs/jobs/{job_id}``                  — метаданные job'а
-- ``GET /api/media/logs/jobs/{job_id}/progress``         — снимок percent/eta
-- ``WS  /api/media/logs/jobs/{job_id}/tail``             — live сырой вывод (xterm.js)
-- ``WS  /api/media/logs/jobs/{job_id}/progress/tail``    — live percent/eta
-
-WS не может передать ``Authorization`` header из браузера так же просто, как
-HTTP — авторизация происходит первым текстовым сообщением
-``{"token": "<access-JWT>"}`` сразу после подключения (см. ``utils/authws.py``,
-идентичная схема billing).
-"""
+"""Realtime-логи и прогресс ffmpeg — своя привилегия mediaworker."""
 
 from __future__ import annotations
 

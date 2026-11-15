@@ -22,7 +22,7 @@ async def lock_account(session: AsyncSession, account_id: int) -> UserModel | No
 
     Обязательна перед любой мутацией ``balance``/``bonus_balance``: без неё два
     параллельных платежа одного пользователя читают одно значение и последний
-    коммит затирает первый (см. AUDIT.md §3.1).
+    коммит затирает первый.
 
     ``of=UserModel`` нужен потому, что у ``UserModel`` есть ``lazy="joined"``
     связи: без него Postgres откажется применять FOR UPDATE к nullable-стороне

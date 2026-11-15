@@ -67,9 +67,7 @@ class Conn(BaseModel):
 
 
 class OAuthPendingLink(BaseModel):
-    """Response when the OAuth login matches an existing account by email but
-    is not yet confirmed as belonging to the same person (see
-    ``OAuthSvc.link_account``)."""
+    """Response when the OAuth login matches an existing account by email but."""
 
     pending: bool = True
     pending_token: str

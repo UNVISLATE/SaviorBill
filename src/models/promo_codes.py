@@ -26,12 +26,7 @@ from utils.datetime_utils import utc_now
 
 
 class PromoCodesModel(Base):
-    """Промокод — набор символов с лимитом активаций и сроком.
-
-    Что код делает — описывает каталог (``catalog_id``, обязателен). Сам код
-    хранит лишь: ``max_uses`` (``None`` — безлимит), ``valid_to`` (``None`` —
-    бессрочно) и счётчик активаций.
-    """
+    """Промокод — набор символов с лимитом активаций и сроком."""
 
     __tablename__ = "promocodes"
 
@@ -298,7 +293,7 @@ class PromoCodesMngr:
         # Единый ответ для всех "код не годится в принципе" случаев — иначе
         # различие reason'ов (invalid/expired/limit reached/not-discount)
         # позволяет перебором находить ещё не анонсированные промокоды по
-        # факту их существования в БД (см. AUDIT.md §2.3).
+        # факту их существования в БД.
         generic_invalid = "promo code is invalid"
 
         promo = await self.s.scalar(

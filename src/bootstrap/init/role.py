@@ -46,7 +46,7 @@ _BASE_PERMS: dict[str, dict] = {
         # журнала media/lua тасков (billing, apiws/v1/tasks.py +
         # admin/tasks/*), разбит на summary (без detail/trace_id) и
         # tail (сырая диагностика) + dlq (просмотр/повтор застрявших задач)
-        # — см. AUDIT.md §3.6, отдельное право на внутреннюю диагностику;
+        # —, отдельное право на внутреннюю диагностику;
         # system.jobs.* — realtime-логи/прогресс ffmpeg (сами роуты на
         # стороне mediaworker, см. mediaworker/src/api/logs.py);
         # system.stats.* — heartbeat/CPU/RSS инстансов (§1, api/v1/system/
@@ -65,11 +65,11 @@ _BASE_PERMS: dict[str, dict] = {
         # Явные админ-права на медиа: "upload" — без ограничения по размеру
         # вообще; "manage_any" — доступ к preview/thumb/avatar ЧУЖОГО медиа.
         # Не совпадают с media.upload.video (только лимит размера) — см.
-        # §2.2 AUDIT.md.
+        # §2.2 .
         "admin": {"media": {"upload": True, "manage_any": True}},
         # Админ — тоже пользователь платформы: полный доступ к СВОИМ данным
         # (профиль/медиа/услуги/покупки/OAuth/2FA), иначе GET /me/... падает
-        # 403 сразу после логина в админку (см. AUDIT.md, отчёт "админ не
+        # 403 сразу после логина в админку (, отчёт "админ не
         # видит даже свой профиль"). Не путать с "users": True выше — тот
         # namespace про управление ЧУЖИМИ аккаунтами.
         "user": {"*": True},
@@ -93,7 +93,7 @@ _BASE_PERMS: dict[str, dict] = {
     # Обычный (верифицированный) пользователь: полный доступ к своим данным.
     "user": {"media": {"upload": {"image": True}}, "user": {"*": True}},
     # Гость: медиа-загрузка (даже фото) запрещена на уровне права, не только
-    # квоты (см. IMPLEMENTATION_PLAN.md/PLAN.md D3) — до полной верификации
+    # квоты — до полной верификации
     # аккаунт не должен занимать хранилище.
     "guest": {"user": {"*": True}},
     # Заблокированный: видит свой профиль/бан-флаг, ничего больше.
@@ -105,7 +105,7 @@ _BASE_PERMS: dict[str, dict] = {
 _ADMIN_LOGIN_ALLOWED: frozenset[str] = frozenset({"owner", "admin", "manager"})
 
 # Роли, которым запрещена выдача/обновление токенов вообще (см.
-# Role.allow_login, AUDIT.md §1.3). По умолчанию только ``banned``.
+# Role.allow_login, ). По умолчанию только ``banned``.
 _ALLOW_LOGIN_DENIED: frozenset[str] = frozenset({"banned"})
 
 # Неприкасаемые роли: не выдаются, не редактируются и не удаляются через API,

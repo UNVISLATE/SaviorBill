@@ -1,9 +1,4 @@
-"""``GET /api/v1/system/stats`` — список инстансов + агрегаты (мониторинг §1).
-
-``system.stats.read`` — список/summary (без деталей текущей джобы конкретного
-инстанса); ``system.stats.instance.read`` — детали одного инстанса, включая
-какую именно джобу воркер сейчас выполняет (см. ``dependencies/rbac.py``).
-"""
+"""``GET /api/v1/system/stats`` — список инстансов + агрегаты (мониторинг §1)."""
 
 from __future__ import annotations
 

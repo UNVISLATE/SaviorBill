@@ -1,10 +1,4 @@
-"""Наблюдаемость mediaworker: метрики Prometheus + трейсинг OpenTelemetry.
-
-Зеркало billing-модуля ``utils.telemetry`` (см. его docstring для деталей
-дизайна) — сервисы независимо деплоятся и не делят код, но обеспечивают
-одинаковый набор наблюдаемости и совместимый механизм связи трасс через
-Valkey Streams (``inject_carrier``/``span_from_carrier``).
-"""
+"""Наблюдаемость mediaworker: метрики Prometheus + трейсинг OpenTelemetry."""
 
 from __future__ import annotations
 
@@ -159,11 +153,7 @@ def setup_observability(
 
 
 class _NoisyEndpointFilter(logging.Filter):
-    """Отфильтровать access-логи uvicorn по опрашиваемым служебным путям.
-
-    /metrics дёргается Prometheus раз в несколько секунд — без фильтра он
-    забивает лог шумом и мешает искать реальные запросы.
-    """
+    """Отфильтровать access-логи uvicorn по опрашиваемым служебным путям."""
 
     def __init__(self, paths: tuple[str, ...] = ("/metrics",)) -> None:
         super().__init__()

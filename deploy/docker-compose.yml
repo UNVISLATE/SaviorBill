@@ -50,7 +50,7 @@ services:
     volumes:
       - ${DATA_HOST_DIR:-../data}:/app/data:rw
       # Приватный ключ подписи JWT (RS256) — билинг-only, НЕ монтируется в
-      # mediaworker/luaworker (см. AUDIT.md, Phase 1).
+      # mediaworker/luaworker.
       - ${PRIVATE_DATA_HOST_DIR:-../data-private}:/app/private:rw
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')\""]

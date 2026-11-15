@@ -1,4 +1,4 @@
-"""Юнит-тесты доверия X-Forwarded-For (IMPLEMENTATION_PLAN §10).
+"""Юнит-тесты доверия X-Forwarded-For ().
 
 Проверяем: (1) парсинг ``TRUSTED_PROXIES`` в конфиге, (2) поведение
 ``ProxyHeadersMiddleware`` — заголовок учитывается только когда прямой TCP-peer

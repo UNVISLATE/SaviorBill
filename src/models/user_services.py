@@ -36,15 +36,7 @@ _CENT = Decimal("0.01")
 
 
 class UserServicesModel(Base):
-    """Экземпляр выданной услуги (бывш. ``Order``).
-
-    Единый ``status`` (см. :class:`enums.UsvcStatus`) описывает и доставку, и
-    состояние ЖЦ: ``pending`` → ``active`` → ``frozen``/``stopped``/``expired``;
-    ``failed`` — доставка не удалась.
-
-    ``payment_id`` — опциональная привязка к платежу, по которому выдана
-    услуга. ``NULL`` — ручная выдача администратором (без оплаты).
-    """
+    """Экземпляр выданной услуги (бывш. ``Order``)."""
 
     __tablename__ = "user_services"
 
@@ -227,7 +219,7 @@ class UserServicesMngr:
         charged_balance = Decimal("0")
         if charge:
             # Блокируем строку аккаунта до чтения баланса — иначе две
-            # параллельные покупки уводят баланс в минус (AUDIT.md §3.1).
+            # параллельные покупки уводят баланс в минус ().
             await lock_account(self.s, acc.id)
             charged_bonus, charged_balance = self._charge(acc, price)
 

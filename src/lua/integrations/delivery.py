@@ -1,8 +1,4 @@
-"""Выдача и обслуживание услуги через Lua-скрипт в LuaWorker (action-driven).
-
-Lua-реализация `lifecycle.delivery.base.BaseIssuer` — второй ("нативный",
-без lua) issuer — `lifecycle.delivery.provider.key_service.KeyService`.
-"""
+"""Выдача и обслуживание услуги через Lua-скрипт в LuaWorker (action-driven)."""
 
 from __future__ import annotations
 
@@ -14,13 +10,7 @@ from lua.context import LuaRunner
 
 
 class LuaService(BaseIssuer):
-    """Исполняет привязанный к услуге Lua-скрипт для действий её ЖЦ.
-
-    Скрипт получает ``ctx.action`` и сам решает, что делать (create/renew/stop/
-    delete/freeze). Помимо ``public``/``private`` он может вернуть ``state``
-    (новый статус услуги) и ``expires_at`` (unix-время истечения) — их
-    подхватывает billing-loop для планирования.
-    """
+    """Исполняет привязанный к услуге Lua-скрипт для действий её ЖЦ."""
 
     async def issue(self, usvc, service, acc) -> None:  # noqa: ANN001 — ORM-объекты
         """Первичная выдача услуги (действие ``create``)."""

@@ -22,7 +22,7 @@ class SettingRawOut(BaseModel):
     """Raw settings row."""
 
     key: str = Field(description="Setting key")
-    value: str | None = Field(description="Value; null for secrets")
+    value: str | None = Field(default=None, description="Value; null for secrets")
     is_secret: bool = Field(description="Stored encrypted")
     editable: bool = Field(description="Editable via raw routes")
     group: str = Field(description="Settings group (catalog group, or key prefix for ad-hoc keys)")
@@ -56,7 +56,7 @@ class SettingsGroupOut(BaseModel):
 class SettingRawUpsert(BaseModel):
     """Upsert raw setting."""
 
-    value: str | None = Field(description="New value or null")
+    value: str | None = Field(default=None, max_length=65536, description="New value or null")
 
 
 __all__ = ["SettingRawOut", "SettingRawUpsert", "SettingsGroupOut", "effective_group"]

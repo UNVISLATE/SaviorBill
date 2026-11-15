@@ -1,4 +1,4 @@
-"""Юнит-тесты защит WS-хендшейка (AUDIT.md §3.1-§3.4): лимит pre-auth
+"""Юнит-тесты защит WS-хендшейка (§3.4): лимит pre-auth
 соединений на IP, лимит размера фрейма, обработка бинарных фреймов,
 периодическая перепроверка токена/прав уже открытого соединения.
 """
@@ -124,7 +124,7 @@ async def test_safe_receive_text_returns_text():
 @pytest.mark.asyncio
 async def test_safe_receive_text_rejects_binary_frame():
     """Раньше receive_text() падал KeyError на бинарном фрейме — необработанное
-    исключение вне списка перехватываемых (AUDIT.md §3.3)."""
+    исключение вне списка перехватываемых ()."""
     ws = _FakeWS()
     ws.push_message({"type": "websocket.receive", "bytes": b"\x00\x01"})
     result = await safe_receive_text(ws)
