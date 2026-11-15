@@ -305,12 +305,11 @@ run_wizard() {
   prepare_base_files
 
   step "1. Выбор режима окружения"
-  echo "   [1] Production  — Боевой сервер со своими доменами и автоматическим HTTPS (SSL)"
-  echo "   [2] Localhost   — Локальное тестирование на домашнем ПК (localhost / shop.localhost)"
-  echo "   [3] Local IP    — Тестирование по IP-адресу (127.0.0.1 или локальный IP в сети)"
+  echo "   [1] Production — Боевой сервер со своими доменами и автоматическим HTTPS (SSL)"
+  echo "   [2] Local / IP — Локальный или тестовый запуск (localhost, 127.0.0.1 или IP без SSL)"
   
   local env_choice
-  env_choice=$(prompt_default "Выберите вариант [1/2/3]" "1")
+  env_choice=$(prompt_default "Выберите вариант [1/2]" "1")
 
   local domain=""
   local media_domain=""
@@ -319,34 +318,25 @@ run_wizard() {
   local http_port="80"
   local https_port="443"
   local is_debug="false"
-  local is_ip_mode=0
 
   case "$env_choice" in
     2)
-      # Localhost
-      step "2. Настройка адресов (Localhost)"
-      domain="localhost"
-      media_domain="media.localhost"
+      # Local / IP
+      step "2. Настройка адреса (Local / IP)"
+      local host_input
+      host_input=$(prompt_default "Адрес хоста (localhost, 127.0.0.1 или IP)" "localhost")
+      domain="$host_input"
       is_debug="true"
-      info "Режим: Localhost (HTTP, DEBUG=true)"
-      http_port=$(prompt_default "HTTP порт для веб-сервера (Caddy)" "80")
-      owner_email=$(prompt_default "Email администратора" "owner@localhost.test")
-      ;;
-    3)
-      # Local IP
-      step "2. Настройка адресов (IP-адрес)"
-      is_debug="true"
-      is_ip_mode=1
-      local detected_ip="127.0.0.1"
-      if command -v hostname >/dev/null 2>&1; then
-        detected_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")"
+
+      if [[ "$domain" == "localhost" || "$domain" == *.localhost ]]; then
+        media_domain="media.localhost"
+        owner_email=$(prompt_default "Email администратора" "owner@localhost.test")
+      else
+        media_domain="$domain"
+        owner_email=$(prompt_default "Email администратора" "owner@${domain}.test")
       fi
-      local ip_input
-      ip_input=$(prompt_default "Введите IP-адрес для доступа к панели" "${detected_ip:-127.0.0.1}")
-      domain="$ip_input"
-      media_domain="$ip_input"
+
       http_port=$(prompt_default "HTTP порт для веб-сервера (Caddy)" "80")
-      owner_email=$(prompt_default "Email администратора" "owner@${ip_input}.test")
       ;;
     *)
       # Production
@@ -379,7 +369,7 @@ run_wizard() {
   # ── Клиентский фронтенд ─────────────────────────────────────────────────────
   step "3. Клиентский фронтенд (Личный Кабинет)"
   echo "Личный Кабинет (SBPersonalAccountClient) позволяет покупателям просматривать каталог,"
-  echo "делать заказы, баланс и управлять своими услугами."
+  echo "делать заказы, пополнять баланс и управлять своими услугами."
   local want_client
   want_client=$(prompt_default "Установить клиентский фронтенд? [Y/n]" "Y")
 
@@ -393,23 +383,24 @@ run_wizard() {
         local root_d
         root_d="$(get_root_domain "$domain")"
         client_domain=$(prompt_default "Домен клиентского кабинета" "shop.${root_d}")
-      elif [ "$env_choice" = "2" ]; then
-        # Localhost
-        echo "   [1] Поддомен http://shop.localhost:${http_port} (браузеры резолвят автоматически)"
-        echo "   [2] Отдельный порт http://localhost:3000"
-        local cl_mode
-        cl_mode=$(prompt_default "Выберите вариант доступа для клиента [1/2]" "1")
-        if [ "$cl_mode" = "2" ]; then
+      else
+        # Local / IP
+        if [[ "$domain" == "localhost" || "$domain" == *.localhost ]]; then
+          echo "   [1] Поддомен http://shop.localhost:${http_port} (браузеры открывают без правок hosts)"
+          echo "   [2] Отдельный порт http://localhost:3000"
+          local cl_mode
+          cl_mode=$(prompt_default "Выберите вариант доступа для клиента [1/2]" "1")
+          if [ "$cl_mode" = "2" ]; then
+            client_domain=":3000"
+            client_override_port="3000"
+          else
+            client_domain="shop.localhost"
+          fi
+        else
+          info "Для доступа по IP клиент будет доступен на порту :3000."
           client_domain=":3000"
           client_override_port="3000"
-        else
-          client_domain="shop.localhost"
         fi
-      else
-        # IP mode
-        info "Для IP-адресов поддомены не поддерживаются — клиент будет доступен на порту 3000."
-        client_domain=":3000"
-        client_override_port="3000"
       fi
       ;;
     *)

@@ -66,10 +66,9 @@ mkdir -p /opt/saviorbill && cd /opt/saviorbill
 bash <(curl -fsSL https://raw.githubusercontent.com/UNVISLATE/SaviorBill/master/deploy/setup.sh)
 ```
 
-Мастер поддерживает три готовых пресета:
+Мастер поддерживает два режима:
 1. **Production:** боевой запуск со своими доменами (напр. `admin.myshop.com` + `media.myshop.com` + опционально `shop.myshop.com`) и автоматическим выпуском SSL-сертификатов (Let's Encrypt).
-2. **Localhost:** запуск для тестирования на локальной машине (`http://localhost` для Admin UI, `http://shop.localhost` для личного кабинета, без необходимости реальных доменов).
-3. **Local IP:** запуск по IP-адресу сервера (`127.0.0.1` или `192.168.x.x` в локальной сети) с разделением портов.
+2. **Local / IP:** запуск для локального тестирования или на сервере без доменов (`localhost`, `127.0.0.1` или локальный/внешний IP-адрес).
 
 ---
 
@@ -78,9 +77,9 @@ bash <(curl -fsSL https://raw.githubusercontent.com/UNVISLATE/SaviorBill/master/
 | Ресурс | Минимальная конфигурация (базовый запуск) | Рекомендуемая конфигурация для production |
 | :--- | :--- | :--- |
 | **ОС** | Ubuntu 22.04 / 24.04 LTS или Debian 12 | Ubuntu 24.04 LTS (x86_64 или aarch64) |
-| **CPU** | 2 vCPU | 4+ vCPU |
-| **RAM** | 2 GB | 4–8 GB (в зависимости от пула воркеров и нагрузки) |
-| **Диск** | 20 GB NVMe/SSD | 50+ GB NVMe SSD |
+| **CPU** | **1 vCPU** (стек полностью асинхронный и оптимизированный, спокойно работает на самых бюджетных VPS) | 2–4+ vCPU |
+| **RAM** | **1–1.5 GB RAM** (в режиме простоя стек потребляет ~300 МБ; рекомендуется 1–2 GB swap при активной конвертации видео в MediaWorker) | 4–8 GB |
+| **Диск** | **10–15 GB NVMe/SSD** (все Docker-образы суммарно занимают ~1.5 GB) | 40+ GB NVMe SSD |
 | **Домены** | 2 поддомена одного домена (например, `bill.example.com` и `media.example.com`), либо `localhost`/IP для тестов |
 
 > [!IMPORTANT]
