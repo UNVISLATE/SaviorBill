@@ -6,7 +6,7 @@ import { api } from "@/api/api.ts"
 import { useAuth } from "@/hooks/use-auth"
 import { useBranding } from "@/hooks/use-branding"
 import { footerNavItems, isNavItemVisible, navGroups, type NavItem } from "@/components/layout/nav-config"
-import { Plug, MessageSquare, Gift, Users as UsersIcon, Shield, Database, Layers } from "lucide-react"
+import { Plug, MessageSquare, Gift, Users as UsersIcon, Shield, Database, Layers, BookOpen, FileText } from "lucide-react"
 
 const PLUGIN_ICONS: Record<string, React.ElementType> = {
   Plug,
@@ -37,6 +37,8 @@ import {
 import { Separator } from "@/components/shadsnui/separator"
 import { Breadcrumbs } from "@/components/layout/Breadcrumbs"
 import { BreadcrumbProvider } from "@/hooks/use-breadcrumb"
+import { ButtonGroup, ButtonGroupSeparator } from "@/components/shadsnui/button-group"
+import { Button } from "@/components/shadsnui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/shadsnui/tooltip"
 import { ErrorBoundary } from "@/components/common/ErrorBoundary"
 
@@ -61,12 +63,13 @@ export function DashboardLayout() {
 
   const { data: health } = useQuery({
     queryKey: ["app-health"],
-    queryFn: async () => (await api.get<{ app_name: string; app_version: string }>("/health")).data,
+    queryFn: async () => (await api.get<{ app_name: string; app_version: string; debug?: boolean; docs_enabled?: boolean }>("/health")).data,
     staleTime: 60_000,
   })
   const rawVersion =
     health?.app_version || (typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0-dev")
   const displayVersion = rawVersion.startsWith("v") ? rawVersion : `v${rawVersion}`
+  const isDebug = Boolean(health?.debug)
 
   const { data: plugins = [] } = useQuery<PluginNavItemMeta[]>({
     queryKey: ["admin", "plugins"],
@@ -156,20 +159,79 @@ export function DashboardLayout() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Link
-                    to="/about"
-                    className="flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/30 hover:bg-muted px-2.5 py-1 text-xs font-mono font-medium text-muted-foreground hover:text-foreground transition-all hover:border-primary/40 shadow-2xs"
-                  >
-                    <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                    <span>{displayVersion}</span>
-                  </Link>
-                }
-              />
-              <TooltipContent>О системе SaviorBill</TooltipContent>
-            </Tooltip>
+            {isDebug ? (
+              <ButtonGroup className="rounded-full border border-border/70 bg-muted/30 shadow-2xs p-0.5 items-center">
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="rounded-full h-6 px-2.5 text-xs font-mono font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 gap-1.5 transition-colors"
+                        render={<a href="/api/docs" target="_blank" rel="noreferrer" />}
+                      >
+                        <BookOpen className="size-3 text-emerald-500" />
+                        <span>Swagger</span>
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>Swagger API документация (/api/docs)</TooltipContent>
+                </Tooltip>
+
+                <ButtonGroupSeparator className="h-3 my-auto bg-border/60" />
+
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="rounded-full h-6 px-2.5 text-xs font-mono font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 gap-1.5 transition-colors"
+                        render={<a href="/api/redoc" target="_blank" rel="noreferrer" />}
+                      >
+                        <FileText className="size-3 text-teal-400" />
+                        <span>ReDoc</span>
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>ReDoc API спецификация (/api/redoc)</TooltipContent>
+                </Tooltip>
+
+                <ButtonGroupSeparator className="h-3 my-auto bg-border/60" />
+
+                <Tooltip>
+                  <TooltipTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        className="rounded-full h-6 px-2.5 text-xs font-mono font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 gap-1.5 transition-colors"
+                        render={<Link to="/about" />}
+                      >
+                        <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <span>{displayVersion}</span>
+                      </Button>
+                    }
+                  />
+                  <TooltipContent>О системе SaviorBill</TooltipContent>
+                </Tooltip>
+              </ButtonGroup>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Link
+                      to="/about"
+                      className="flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/30 hover:bg-muted px-2.5 py-1 text-xs font-mono font-medium text-muted-foreground hover:text-foreground transition-all hover:border-primary/40 shadow-2xs"
+                    >
+                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      <span>{displayVersion}</span>
+                    </Link>
+                  }
+                />
+                <TooltipContent>О системе SaviorBill</TooltipContent>
+              </Tooltip>
+            )}
           </div>
         </header>
         <main className="flex-1 overflow-auto p-6">

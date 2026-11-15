@@ -16,11 +16,13 @@ _READY_TIMEOUT_SEC = 2.0
 @router.get("/health")
 async def health(request: Request):
     """Liveness — процесс жив и отвечает, без проверки зависимостей."""
-    settings: AppConfig = request.app.state.settings
+    settings: AppConfig = getattr(request.app.state, "settings", None)
     return HealthCheck(
         status="ok",
         app_name=APP_NAME,
         app_version=APP_VERSION,
+        debug=bool(settings.DEBUG) if settings else False,
+        docs_enabled=bool(settings.DOCS_ENABLED) if settings else True,
     )
 
 

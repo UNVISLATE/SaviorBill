@@ -2,10 +2,13 @@ import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.responses import RedirectResponse
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
 from lifespan import lifespan
 from core.config import AppConfig, APP_NAME, APP_VERSION
+from api.docs import router as docs_router
+from api.health import router as health_router
 from middleware.request_tracker import RequestTrackerMiddleware
 from security.csrf import CookieCSRFMiddleware
 from telemetry.otel import install_access_log_filter, setup_observability
@@ -78,10 +81,22 @@ app = FastAPI(
     description=DESCRIPTION,
     openapi_tags=TAGS_META,
     lifespan=lifespan,
-    docs_url="/api/docs" if settings.DOCS_ENABLED else None,
-    redoc_url="/api/redoc" if settings.DOCS_ENABLED else None,
+    docs_url=None,
+    redoc_url=None,
     openapi_url="/api/openapi.json" if settings.DOCS_ENABLED else None,
 )
+
+app.include_router(health_router, prefix="/api")
+app.include_router(docs_router, prefix="/api")
+
+if settings.DOCS_ENABLED:
+    @app.get("/docs", include_in_schema=False)
+    async def root_docs_redirect():
+        return RedirectResponse(url="/api/docs", status_code=307)
+
+    @app.get("/redoc", include_in_schema=False)
+    async def root_redoc_redirect():
+        return RedirectResponse(url="/api/redoc", status_code=307)
 
 # Метрики Prometheus + трейсинг OpenTelemetry (по флагам METRICS_ENABLED/OTEL_ENABLED).
 setup_observability(app, settings, APP_NAME, APP_VERSION)
