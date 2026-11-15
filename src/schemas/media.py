@@ -175,21 +175,33 @@ class Attachment(BaseModel):
     mime: str | None = None
     status: str
     url: str
+    thumb: MediaVariant | None = Field(
+        default=None,
+        description="Single square thumbnail (video: always; image: only if larger than small_max_bytes)",
+    )
+    previews: list[MediaVariant] = Field(
+        default_factory=list,
+        description="Video poster previews, 0..N, ordered",
+    )
 
     @classmethod
     def from_model(cls, m) -> "Attachment":  # noqa: ANN001 — ServiceAttachmentModel
         """Построить схему из ORM-вложения (с подгруженным ``media``)."""
         media = m.media
+        variants = getattr(media, "variants", None) or {}
         return cls(
             id=m.id,
             media_id=m.media_id,
             token=media.token,
+            name=(getattr(media, "meta", None) or {}).get("name"),
             kind=media.kind,
             tag=m.tag,
             position=m.position,
             mime=media.mime,
             status=media.status,
             url=_media_url(media.token),
+            thumb=variants.get("thumb"),
+            previews=variants.get("previews") or [],
         )
 
 
