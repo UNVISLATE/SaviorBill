@@ -1,8 +1,10 @@
+import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { GitBranch, Heart } from "lucide-react"
+import { GitBranch, Heart, Copy, Check } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/shadsnui/tooltip"
+import { formatAppVersion } from "@/lib/version"
 
 function GithubIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
@@ -51,6 +53,8 @@ interface GithubRelease {
 }
 
 export function AboutPage() {
+  const [copied, setCopied] = useState(false)
+
   // Динамическое получение версии с бэкенда /api/health
   const { data: health } = useQuery({
     queryKey: ["app-health"],
@@ -60,10 +64,21 @@ export function AboutPage() {
 
   // Динамические данные о коммите и дате сборки
   const appName = health?.app_name || "SaviorBill"
-  const version =
-    health?.app_version || (typeof __APP_VERSION__ !== "undefined" && __APP_VERSION__ ? __APP_VERSION__ : "undefined")
-  const gitCommit = typeof __GIT_COMMIT__ !== "undefined" && __GIT_COMMIT__ ? __GIT_COMMIT__ : "undefined"
+  const rawVersion =
+    health?.app_version || (typeof __APP_VERSION__ !== "undefined" && __APP_VERSION__ ? __APP_VERSION__ : "0.0.0-dev")
+  const versionInfo = useMemo(() => formatAppVersion(rawVersion), [rawVersion])
+  const effectiveCommit =
+    typeof __GIT_COMMIT__ !== "undefined" && __GIT_COMMIT__ && __GIT_COMMIT__ !== "undefined"
+      ? __GIT_COMMIT__
+      : versionInfo.shortHash || "undefined"
   const gitDate = typeof __GIT_COMMIT_DATE__ !== "undefined" && __GIT_COMMIT_DATE__ ? __GIT_COMMIT_DATE__ : "undefined"
+
+  const handleCopyVersion = () => {
+    navigator.clipboard.writeText(versionInfo.full).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
 
   // Проверка релизов через GitHub API (/releases возвращает 200 [] если релизов нет, без 404)
   const { data: releases } = useQuery({
@@ -109,7 +124,7 @@ export function AboutPage() {
     return false
   }
 
-  const hasUpdate = Boolean(latestRelease && isNewer(latestRelease.tag_name, version))
+  const hasUpdate = Boolean(latestRelease && isNewer(latestRelease.tag_name, versionInfo.base))
 
   return (
     <div className="flex h-[calc(100vh-13rem)] min-h-[360px] flex-col justify-between items-center overflow-hidden py-4 select-none">
@@ -129,7 +144,9 @@ export function AboutPage() {
             <h1 className="text-xl font-bold tracking-tight text-foreground">
               {appName}
             </h1>
-            <span className="font-mono text-xs text-muted-foreground">{version}</span>
+            <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded-md bg-muted/60 border border-border/80 text-foreground">
+              {versionInfo.base}
+            </span>
             {hasUpdate && latestRelease ? (
               <a
                 href={latestRelease.html_url}
@@ -148,6 +165,30 @@ export function AboutPage() {
               </span>
             )}
           </div>
+
+          {/* Полная версия / хеш сборки (чистый компактный вид при длинных хешах) */}
+          {versionInfo.isExtended && (
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted/30 border border-border/70 max-w-full">
+              <span className="text-[10px] uppercase font-semibold text-muted-foreground/60 tracking-wider shrink-0">
+                Сборка:
+              </span>
+              <span
+                className="font-mono text-[11px] text-muted-foreground truncate max-w-[240px] sm:max-w-[300px] select-all"
+                title={versionInfo.full}
+              >
+                {versionInfo.full}
+              </span>
+              <button
+                type="button"
+                onClick={handleCopyVersion}
+                className="text-muted-foreground/60 hover:text-foreground transition-colors p-0.5 shrink-0 cursor-pointer"
+                title="Скопировать полную версию"
+                aria-label="Скопировать версию"
+              >
+                {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+              </button>
+            </div>
+          )}
 
           {/* Описание проекта */}
           <p className="text-xs text-muted-foreground leading-relaxed max-w-xs text-balance">
@@ -172,7 +213,7 @@ export function AboutPage() {
           <div className="flex items-center justify-center gap-1.5 text-[11px] font-mono text-muted-foreground pt-1">
             <GitBranch className="size-3.5 text-primary shrink-0" />
             <span>
-              Commit: <strong className="font-semibold text-foreground">{gitCommit}</strong>
+              Commit: <strong className="font-semibold text-foreground">{effectiveCommit}</strong>
             </span>
             <span>•</span>
             <span>

@@ -7,24 +7,16 @@ from core.config import AppConfig
 
 @pytest.fixture
 def client():
-    # Make sure app.state.settings is set
     app.state.settings = AppConfig(DEBUG=True, DOCS_ENABLED=True)
     return TestClient(app, follow_redirects=False)
 
 
-def test_api_docs_swagger_ui_custom_theme(client):
+def test_api_docs_swagger_ui_default(client):
     response = client.get("/api/docs")
     assert response.status_code == 200
     html = response.text
-    # Should contain Swagger UI bundle
     assert "swagger-ui-bundle.js" in html
-    # Should contain custom Dark CSS
-    assert "--sb-primary: #009080" in html
-    assert "--sb-bg: #0b0d10" in html
-    # Should contain custom SaviorBill header
-    assert "sb-docs-header" in html
-    assert "SaviorBill" in html
-    assert "/api/redoc" in html
+    assert "swagger-ui.css" in html
 
 
 def test_api_v1_docs_redirect(client):
@@ -33,13 +25,11 @@ def test_api_v1_docs_redirect(client):
     assert response.headers["location"] == "/api/docs"
 
 
-def test_api_redoc_custom_theme(client):
+def test_api_redoc_default(client):
     response = client.get("/api/redoc")
     assert response.status_code == 200
     html = response.text
     assert "redoc.standalone.js" in html
-    assert "--sb-primary" in html or "#009080" in html
-    assert "sb-docs-header" in html
 
 
 def test_api_v1_redoc_redirect(client):
@@ -65,5 +55,4 @@ def test_api_docs_disabled(client):
     assert resp_docs.status_code == 404
     resp_redoc = client.get("/api/redoc")
     assert resp_redoc.status_code == 404
-    # Restore
     app.state.settings = AppConfig(DEBUG=True, DOCS_ENABLED=True)

@@ -41,6 +41,7 @@ import { ButtonGroup, ButtonGroupSeparator } from "@/components/shadsnui/button-
 import { Button } from "@/components/shadsnui/button"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/shadsnui/tooltip"
 import { ErrorBoundary } from "@/components/common/ErrorBoundary"
+import { formatAppVersion } from "@/lib/version"
 
 interface PluginNavItemMeta {
   slug: string
@@ -66,9 +67,11 @@ export function DashboardLayout() {
     queryFn: async () => (await api.get<{ app_name: string; app_version: string; debug?: boolean; docs_enabled?: boolean }>("/health")).data,
     staleTime: 60_000,
   })
-  const rawVersion =
-    health?.app_version || (typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0-dev")
-  const displayVersion = rawVersion.startsWith("v") ? rawVersion : `v${rawVersion}`
+  const versionInfo = useMemo(() => {
+    const raw =
+      health?.app_version || (typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "0.0.0-dev")
+    return formatAppVersion(raw)
+  }, [health?.app_version])
   const isDebug = Boolean(health?.debug)
 
   const { data: plugins = [] } = useQuery<PluginNavItemMeta[]>({
@@ -205,15 +208,15 @@ export function DashboardLayout() {
                       <Button
                         variant="ghost"
                         size="xs"
-                        className="rounded-full h-6 px-2.5 text-xs font-mono font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 gap-1.5 transition-colors"
+                        className="rounded-full h-6 px-2.5 text-xs font-mono font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 gap-1.5 transition-colors max-w-[170px]"
                         render={<Link to="/about" />}
                       >
-                        <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        <span>{displayVersion}</span>
+                        <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                        <span className="truncate">{versionInfo.short}</span>
                       </Button>
                     }
                   />
-                  <TooltipContent>О системе SaviorBill</TooltipContent>
+                  <TooltipContent>О системе SaviorBill ({versionInfo.full})</TooltipContent>
                 </Tooltip>
               </ButtonGroup>
             ) : (
@@ -222,14 +225,14 @@ export function DashboardLayout() {
                   render={
                     <Link
                       to="/about"
-                      className="flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/30 hover:bg-muted px-2.5 py-1 text-xs font-mono font-medium text-muted-foreground hover:text-foreground transition-all hover:border-primary/40 shadow-2xs"
+                      className="flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/30 hover:bg-muted px-2.5 py-1 text-xs font-mono font-medium text-muted-foreground hover:text-foreground transition-all hover:border-primary/40 shadow-2xs max-w-[170px]"
                     >
-                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      <span>{displayVersion}</span>
+                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                      <span className="truncate">{versionInfo.short}</span>
                     </Link>
                   }
                 />
-                <TooltipContent>О системе SaviorBill</TooltipContent>
+                <TooltipContent>О системе SaviorBill ({versionInfo.full})</TooltipContent>
               </Tooltip>
             )}
           </div>
