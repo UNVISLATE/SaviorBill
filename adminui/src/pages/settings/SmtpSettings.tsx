@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   Clock,
   Code2,
+  Info,
   Key,
   Loader2,
   RotateCcw,
@@ -116,6 +117,19 @@ export function SmtpSettings() {
       setTestEmail(me.email)
     }
   }, [me?.email, testEmail])
+
+  // Загрузка реальных доступных версий выбранного скрипта
+  const { data: scriptVersions = [] } = useQuery({
+    queryKey: ["admin-lua-script-versions", luaScriptId],
+    queryFn: async () => {
+      if (!luaScriptId) return []
+      const res = await api.get<{ version: string; is_active: boolean }[]>(
+        `/v1/admin/lua/scripts/${luaScriptId}/versions`,
+      )
+      return res.data || []
+    },
+    enabled: Boolean(luaScriptId),
+  })
 
   const saveMutation = useMutation({
     mutationFn: async () => {
@@ -256,45 +270,59 @@ export function SmtpSettings() {
           {/* Режим Lua-драйвера */}
           {driver === "lua" ? (
             <div className="space-y-4">
-              <div className="rounded-lg border border-sky-500/20 bg-sky-500/5 p-3 text-xs text-sky-700 dark:text-sky-300 space-y-1">
-                <div className="font-semibold flex items-center gap-1.5">
-                  <Code2 className="size-3.5" /> Доставка через Lua-скрипт (HTTP REST API)
-                </div>
-                <p className="text-[11px] leading-relaxed text-muted-foreground">
-                  Ядро рендерит шаблон и передаёт отрендеренный HTML/текст в метод <code className="text-primary font-mono">handle(ctx)</code> скрипта:
-                  поля <code className="font-mono">ctx.email</code> (<code className="font-mono">to, subject, body, from_email</code>) и <code className="font-mono">ctx.config</code>.
-                  Скрипт пуляет запрос по HTTPS к любому сервису (smtp.bz API, Resend, Brevo, UniSender).
-                </p>
+              <div className="flex items-center gap-2.5 rounded-lg border border-sky-500/20 bg-sky-500/5 px-3 py-2 text-xs text-muted-foreground">
+                <Info className="size-4 text-sky-400 shrink-0" />
+                <span>Подключение почтового провайдера через внешний HTTP REST API с помощью Lua-скрипта.</span>
               </div>
 
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-1.5">
+              <div className="grid gap-4 sm:grid-cols-12">
+                <div className={`space-y-1.5 ${luaScriptId ? "sm:col-span-6" : "sm:col-span-12"}`}>
                   <Label>Выберите Lua-скрипт транспорта *</Label>
                   <LuaScriptSelect
                     kind={["email", "generic"]}
                     value={luaScriptId}
-                    onChange={(id) => setLuaScriptId(id)}
+                    onChange={(id) => {
+                      setLuaScriptId(id)
+                      setLuaScriptVersion("")
+                    }}
                     placeholder="Выберите скрипт почтового транспорта…"
                   />
                   <span className="text-[10px] text-muted-foreground">Скрипты вида «email» или «generic»</span>
                 </div>
 
-                <div className="space-y-1.5">
-                  <Label htmlFor="lua-script-ver">Версия скрипта (опционально)</Label>
-                  <Input
-                    id="lua-script-ver"
-                    placeholder="Например, 1.0.0 (пусто = последняя активная)"
-                    value={luaScriptVersion}
-                    onChange={(e) => setLuaScriptVersion(e.target.value)}
-                  />
-                </div>
+                {luaScriptId && (
+                  <div className="space-y-1.5 sm:col-span-6">
+                    <Label htmlFor="lua-script-ver">Версия скрипта</Label>
+                    <Select
+                      value={luaScriptVersion || "__latest__"}
+                      onValueChange={(val) => setLuaScriptVersion(val === "__latest__" ? "" : val)}
+                    >
+                      <SelectTrigger id="lua-script-ver" className="w-full">
+                        <SelectValue placeholder="Последняя активная" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__latest__">Последняя активная версия (по умолчанию)</SelectItem>
+                        {scriptVersions.map((v) => (
+                          <SelectItem key={v.version} value={v.version}>
+                            {v.version} {v.is_active ? " (активная)" : ""}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <span className="text-[10px] text-muted-foreground">
+                      {scriptVersions.length === 0
+                        ? "Загрузка доступных версий…"
+                        : `Доступно версий: ${scriptVersions.length}`}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           ) : (
             /* Режим SMTP */
-            <div className="space-y-5">
-              <div className="grid gap-4 sm:grid-cols-4">
-                <div className="space-y-1.5 sm:col-span-2">
+            <div className="space-y-4">
+              <div className="grid gap-4 sm:grid-cols-12">
+                <div className="space-y-1.5 sm:col-span-6">
                   <Label htmlFor="smtp-host">Хост сервера (SMTP Host) *</Label>
                   <Input
                     id="smtp-host"
@@ -304,21 +332,20 @@ export function SmtpSettings() {
                   />
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 sm:col-span-2">
                   <Label htmlFor="smtp-port">Порт *</Label>
                   <Input
                     id="smtp-port"
                     type="number"
                     min={1}
                     max={65535}
-                    placeholder="587, 465, 9465, 9587"
+                    placeholder="587"
                     value={port}
                     onChange={(e) => setPort(Number(e.target.value))}
                   />
-                  <span className="text-[10px] text-muted-foreground">Любой порт (587, 465, 9465, 9587…)</span>
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 sm:col-span-2">
                   <Label htmlFor="smtp-encryption" className="flex items-center gap-1">
                     <Shield className="size-3 text-primary" /> Шифрование *
                   </Label>
@@ -330,16 +357,14 @@ export function SmtpSettings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="starttls">STARTTLS (587, 9587, 2525)</SelectItem>
-                      <SelectItem value="ssl">SSL / Direct TLS (465, 9465)</SelectItem>
-                      <SelectItem value="none">Без шифрования (25, 1025)</SelectItem>
+                      <SelectItem value="starttls">STARTTLS</SelectItem>
+                      <SelectItem value="ssl">SSL / TLS</SelectItem>
+                      <SelectItem value="none">Без шифрования</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
-              </div>
 
-              <div className="grid gap-4 sm:grid-cols-4">
-                <div className="space-y-1.5 sm:col-span-1">
+                <div className="space-y-1.5 sm:col-span-2">
                   <Label htmlFor="smtp-timeout" className="flex items-center gap-1">
                     <Clock className="size-3 text-muted-foreground" /> Таймаут (сек)
                   </Label>
@@ -352,19 +377,12 @@ export function SmtpSettings() {
                     value={timeoutSec}
                     onChange={(e) => setTimeoutSec(Number(e.target.value))}
                   />
-                  <span className="text-[10px] text-muted-foreground">Дефолт: 10с (защита от зависаний)</span>
-                </div>
-
-                <div className="space-y-1.5 sm:col-span-3">
-                  <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5 text-[11px] text-muted-foreground">
-                    <strong className="text-foreground">Подсказка:</strong> Для серверов с нестандартными портами (например, <code className="text-primary font-mono">smtp.bz</code> на портах <code className="font-mono">9465</code> и <code className="font-mono">9587</code>) режим шифрования выбирается независимо от номера порта.
-                  </div>
                 </div>
               </div>
 
               {/* Аутентификация SMTP */}
-              <div className="grid gap-4 sm:grid-cols-2 pt-2 border-t border-border/60">
-                <div className="space-y-1.5">
+              <div className="grid gap-4 sm:grid-cols-12 pt-2 border-t border-border/60">
+                <div className="space-y-1.5 sm:col-span-6">
                   <Label htmlFor="smtp-user">Логин / Пользователь</Label>
                   <Input
                     id="smtp-user"
@@ -374,7 +392,7 @@ export function SmtpSettings() {
                   />
                 </div>
 
-                <div className="space-y-1.5">
+                <div className="space-y-1.5 sm:col-span-6">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="smtp-pass">Пароль</Label>
                     {data?.has_password && !clearPassword && (
@@ -421,8 +439,8 @@ export function SmtpSettings() {
           )}
 
           {/* Отправитель (From) — общий для обоих режимов */}
-          <div className="grid gap-4 sm:grid-cols-2 pt-2 border-t border-border/60">
-            <div className="space-y-1.5">
+          <div className="grid gap-4 sm:grid-cols-12 pt-2 border-t border-border/60">
+            <div className="space-y-1.5 sm:col-span-6">
               <Label htmlFor="smtp-from">Адрес отправителя по умолчанию (From Email) *</Label>
               <Input
                 id="smtp-from"
@@ -434,7 +452,7 @@ export function SmtpSettings() {
               <span className="text-[10px] text-muted-foreground">Email, от имени которого будут доставляться системные письма</span>
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 sm:col-span-6">
               <Label htmlFor="smtp-from-name">Имя отправителя (From Name, опционально)</Label>
               <Input
                 id="smtp-from-name"

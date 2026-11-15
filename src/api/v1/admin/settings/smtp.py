@@ -9,6 +9,7 @@ from typing import Literal
 import aiosmtplib
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import AppConfig
@@ -17,6 +18,7 @@ from dependencies.mail import build_mail_svc
 from dependencies.rbac import require_perm
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from lua.deps import get_lua_bus
+from models.system_scripts import LuaScriptVersionModel, SystemScriptsModel
 from schemas.types import NormEmail
 from services.audit import audit
 
@@ -132,6 +134,27 @@ async def update_smtp_settings(
     body: SmtpSettingsIn,
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> dict:
+    if body.driver == "lua":
+        if body.lua_script_id:
+            script = await settings.s.get(SystemScriptsModel, body.lua_script_id)
+            if not script:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"Lua script {body.lua_script_id} not found",
+                )
+            if body.lua_script_version and body.lua_script_version.strip():
+                ver_clean = body.lua_script_version.strip()
+                v_q = select(LuaScriptVersionModel).where(
+                    LuaScriptVersionModel.script_id == body.lua_script_id,
+                    LuaScriptVersionModel.version == ver_clean,
+                )
+                ver_row = await settings.s.scalar(v_q)
+                if not ver_row:
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        f"Version '{ver_clean}' not found for Lua script {body.lua_script_id}",
+                    )
+
     await settings.set("mail.driver", body.driver)
     await settings.set("mail.lua_script_id", str(body.lua_script_id) if body.lua_script_id else None)
     await settings.set("mail.lua_script_version", body.lua_script_version.strip() if body.lua_script_version else None)

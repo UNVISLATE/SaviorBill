@@ -274,3 +274,41 @@ async def test_lua_mail_svc_send():
         assert kwargs["config"] == {"api_key": "sec_123"}
 
 
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_update_smtp_settings_lua_validation():
+    from unittest.mock import MagicMock
+    from fastapi import HTTPException
+    from api.v1.admin.settings.smtp import SmtpSettingsIn, update_smtp_settings
+
+    mock_settings = AsyncMock()
+    mock_settings.s = AsyncMock()
+
+    # Case 1: Script not found -> HTTPException 400
+    mock_settings.s.get.return_value = None
+    body = SmtpSettingsIn(
+        driver="lua",
+        lua_script_id=999,
+        lua_script_version="1.0.0",
+        from_email="noreply@example.com",
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await update_smtp_settings(body, settings=mock_settings)
+    assert exc_info.value.status_code == 400
+    assert "not found" in exc_info.value.detail
+
+    # Case 2: Script found, version not found -> HTTPException 400
+    mock_settings.s.get.return_value = MagicMock(id=999)
+    mock_settings.s.scalar.return_value = None
+    with pytest.raises(HTTPException) as exc_info:
+        await update_smtp_settings(body, settings=mock_settings)
+    assert exc_info.value.status_code == 400
+    assert "Version '1.0.0' not found" in exc_info.value.detail
+
+    # Case 3: Script found, version found -> Success
+    mock_settings.s.scalar.return_value = MagicMock(version="1.0.0")
+    res = await update_smtp_settings(body, settings=mock_settings)
+    assert res == {"ok": True}
+
+
+
