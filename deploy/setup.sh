@@ -3,10 +3,10 @@
 # SaviorBill — Интерактивный мастер развертывания и управления (Deploy Wizard)
 # ==============================================================================
 # Использование:
-#   mkdir -p /opt/saviorbill && cd /opt/saviorbill
+#   curl -fsSL https://get.saviorbill.com | bash
+# или:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/UNVISLATE/SaviorBill/master/deploy/setup.sh)
-# или локально:
-#   cd deploy && ./setup.sh
+# Скрипт автоматически гарантирует установку и работу стека в /opt/saviorbill
 # ==============================================================================
 
 set -euo pipefail
@@ -32,6 +32,7 @@ else
 fi
 
 RAW_BASE="https://raw.githubusercontent.com/UNVISLATE/SaviorBill/master/deploy"
+INSTALL_DIR="${SAVIORBILL_DIR:-/opt/saviorbill}"
 
 info()    { printf "${CYAN}ℹ %s${RESET}\n" "$*"; }
 success() { printf "${GREEN}✔ %s${RESET}\n" "$*"; }
@@ -178,24 +179,60 @@ check_docker() {
   fi
 }
 
-# ── Скачивание или копирование базовых шаблонов ────────────────────────────────
+# ── Гарантия установки строго в /opt/saviorbill ─────────────────────────────
+ensure_install_dir() {
+  local script_source=""
+  if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
+    script_source="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
+  fi
+
+  # Создаем целевой каталог /opt/saviorbill
+  if [ ! -d "$INSTALL_DIR" ]; then
+    info "Создание целевого каталога установки: $INSTALL_DIR..."
+    if [ "${EUID:-$(id -u)}" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
+      sudo mkdir -p "$INSTALL_DIR"
+      sudo chown -R "$(id -u):$(id -g)" "$INSTALL_DIR"
+    else
+      mkdir -p "$INSTALL_DIR"
+    fi
+  fi
+
+  # Если вызов сделан из локального клона репозитория (deploy/)
+  if [ -n "$script_source" ] && [ "$script_source" != "$INSTALL_DIR" ] && [ -f "$script_source/docker-compose.yml" ]; then
+    info "Копирование файлов деплоя из $script_source в $INSTALL_DIR..."
+    cp -n "$script_source/docker-compose.yml" "$INSTALL_DIR/" 2>/dev/null || true
+    cp -n "$script_source/Caddyfile" "$INSTALL_DIR/" 2>/dev/null || true
+    cp -n "$script_source/.env.example" "$INSTALL_DIR/" 2>/dev/null || true
+    cp -n "$script_source/client.caddy.example" "$INSTALL_DIR/" 2>/dev/null || true
+    cp -n "$script_source/media.caddy.example" "$INSTALL_DIR/" 2>/dev/null || true
+    cp "$script_source/setup.sh" "$INSTALL_DIR/setup.sh" 2>/dev/null || true
+    chmod +x "$INSTALL_DIR/setup.sh" 2>/dev/null || true
+  fi
+
+  # Переходим в рабочий каталог установки
+  cd "$INSTALL_DIR" || {
+    err "Не удалось перейти в каталог $INSTALL_DIR"
+    exit 1
+  }
+
+  # Обеспечиваем наличие исполняемого setup.sh в самом каталоге установки
+  if [ ! -f "$INSTALL_DIR/setup.sh" ]; then
+    if [ -n "$script_source" ] && [ -f "$script_source/setup.sh" ]; then
+      cp "$script_source/setup.sh" "$INSTALL_DIR/setup.sh" 2>/dev/null || true
+    else
+      curl -fsSL "$RAW_BASE/setup.sh" -o "$INSTALL_DIR/setup.sh" 2>/dev/null || true
+    fi
+    chmod +x "$INSTALL_DIR/setup.sh" 2>/dev/null || true
+  fi
+}
+
+# ── Скачивание или подготовка базовых шаблонов ────────────────────────────────
 prepare_base_files() {
   mkdir -p caddy.d data data-private
   chmod 700 data-private 2>/dev/null || true
 
-  # Проверяем, запущен ли скрипт в репозитории или в пустой папке
-  local script_dir
-  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-  if [ -f "$script_dir/docker-compose.yml" ] && [ "$script_dir" != "$(pwd)" ]; then
-    info "Копирование файлов из локального каталога $script_dir..."
-    cp -n "$script_dir/docker-compose.yml" ./ 2>/dev/null || true
-    cp -n "$script_dir/Caddyfile" ./ 2>/dev/null || true
-    cp -n "$script_dir/.env.example" ./ 2>/dev/null || true
-    cp -n "$script_dir/client.caddy.example" ./ 2>/dev/null || true
-    cp -n "$script_dir/media.caddy.example" ./ 2>/dev/null || true
-  elif [ ! -f "docker-compose.yml" ]; then
-    info "Загрузка конфигурационных файлов из репозитория..."
+  if [ ! -f "docker-compose.yml" ]; then
+    info "Загрузка конфигурационных файлов из репозитория в $INSTALL_DIR..."
     curl -fsSL "$RAW_BASE/docker-compose.yml" -o docker-compose.yml
     curl -fsSL "$RAW_BASE/Caddyfile" -o Caddyfile
     curl -fsSL "$RAW_BASE/.env.example" -o .env.example
@@ -295,6 +332,9 @@ show_summary_card() {
   printf "│  ${BOLD}Логин владельца (Owner):${RESET}      %-40s│\n" "${owner_login:-owner}"
   printf "│  ${BOLD}Пароль владельца:${RESET}             %-40s│\n" "${owner_pass:-[задан в .env]}"
   printf "│  ${BOLD}Email владельца:${RESET}              %-40s│\n" "${owner_email:-owner@example.com}"
+  printf "${BOLD}${GREEN}├────────────────────────────────────────────────────────────────────────┤${RESET}\n"
+  printf "│  ${BOLD}Каталог установки:${RESET}            %-40s│\n" "$INSTALL_DIR"
+  printf "│  ${BOLD}Управление стеком:${RESET}            %-40s│\n" "cd $INSTALL_DIR && ./setup.sh"
   printf "${BOLD}${GREEN}└────────────────────────────────────────────────────────────────────────┘${RESET}\n"
 }
 
@@ -593,6 +633,8 @@ main_menu() {
 }
 
 # ── Точка входа ───────────────────────────────────────────────────────────────
+ensure_install_dir
+
 if [ -f .env ] && [ -s .env ] && [ "${1:-}" != "--reconfigure" ] && [ "${1:-}" != "-r" ]; then
   main_menu
 else
