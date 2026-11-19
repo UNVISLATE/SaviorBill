@@ -42,9 +42,13 @@ step()    { printf "\n${BOLD}${MAGENTA}── %s ──${RESET}\n" "$*"; }
 
 prompt_default() {
   local prompt="$1"
-  local default="$2"
+  local default="${2:-}"
   local answer=""
-  printf "${BOLD}%s${RESET} ${DIM}[%s]${RESET}: " "$prompt" "$default"
+  if [ -n "$default" ]; then
+    printf "${BOLD}%s${RESET} ${DIM}[%s]${RESET}: " "$prompt" "$default" >&2
+  else
+    printf "${BOLD}%s${RESET}: " "$prompt" >&2
+  fi
   read -r answer
   echo "${answer:-$default}"
 }
@@ -53,7 +57,7 @@ prompt_secret_or_gen() {
   local prompt="$1"
   local generated="$2"
   local answer=""
-  printf "${BOLD}%s${RESET} ${DIM}[Enter = использовать '%s']${RESET}: " "$prompt" "$generated"
+  printf "${BOLD}%s${RESET} ${DIM}[Enter = использовать '%s']${RESET}: " "$prompt" "$generated" >&2
   read -r answer
   echo "${answer:-$generated}"
 }
