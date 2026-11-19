@@ -205,6 +205,7 @@ ensure_install_dir() {
     cp -n "$script_source/.env.example" "$INSTALL_DIR/" 2>/dev/null || true
     cp -n "$script_source/client.caddy.example" "$INSTALL_DIR/" 2>/dev/null || true
     cp -n "$script_source/media.caddy.example" "$INSTALL_DIR/" 2>/dev/null || true
+    cp -n "$script_source/api.caddy.example" "$INSTALL_DIR/" 2>/dev/null || true
     cp "$script_source/setup.sh" "$INSTALL_DIR/setup.sh" 2>/dev/null || true
     chmod +x "$INSTALL_DIR/setup.sh" 2>/dev/null || true
   fi
@@ -238,6 +239,35 @@ prepare_base_files() {
     curl -fsSL "$RAW_BASE/.env.example" -o .env.example
     curl -fsSL "$RAW_BASE/client.caddy.example" -o client.caddy.example 2>/dev/null || true
     curl -fsSL "$RAW_BASE/media.caddy.example" -o media.caddy.example 2>/dev/null || true
+    curl -fsSL "$RAW_BASE/api.caddy.example" -o api.caddy.example 2>/dev/null || true
+  fi
+
+  if [ ! -f "api.caddy.example" ]; then
+    cat <<'EOF' > api.caddy.example
+{$API_DOMAIN:api.localhost} {
+	encode zstd gzip
+
+	handle /metrics {
+		respond "not found" 404
+	}
+
+	handle /api/media/* {
+		reverse_proxy mediaworker:8001
+	}
+
+	handle /api/* {
+		reverse_proxy billing:8000
+	}
+
+	handle /ws/* {
+		reverse_proxy billing:8000
+	}
+
+	handle {
+		redir / /api/docs 302
+	}
+}
+EOF
   fi
 
   if [ ! -f "media.caddy.example" ]; then
@@ -287,8 +317,10 @@ EOF
 
 # ── Показ карточки доступа ────────────────────────────────────────────────────
 show_summary_card() {
-  local domain media_domain client_domain owner_login owner_pass owner_email client_profile http_port https_port debug_mode
+  local domain api_domain media_domain client_domain owner_login owner_pass owner_email client_profile http_port https_port debug_mode
   domain="$(get_env_var "DOMAIN")"
+  api_domain="$(get_env_var "API_DOMAIN")"
+  api_domain="${api_domain:-$domain}"
   media_domain="$(get_env_var "MEDIA_DOMAIN")"
   client_domain="$(get_env_var "CLIENT_DOMAIN")"
   owner_login="$(get_env_var "OWNER_LOGIN")"
@@ -316,8 +348,14 @@ show_summary_card() {
   printf "${BOLD}${GREEN}│                 ✓ SaviorBill настроен и готов к работе!               │${RESET}\n"
   printf "${BOLD}${GREEN}├────────────────────────────────────────────────────────────────────────┤${RESET}\n"
   printf "│  ${BOLD}Панель управления (Admin UI):${RESET} %-40s│\n" "${proto}://${domain}${port_suffix}/"
+  if [ "$api_domain" != "$domain" ]; then
+    printf "│  ${BOLD}REST API Gateway & Webhooks:${RESET}  %-40s│\n" "${proto}://${api_domain}${port_suffix}/api/"
+    printf "│  ${BOLD}REST API Swagger Docs:${RESET}        %-40s│\n" "${proto}://${api_domain}${port_suffix}/api/docs"
+  else
+    printf "│  ${BOLD}REST API Swagger Docs:${RESET}        %-40s│\n" "${proto}://${domain}${port_suffix}/api/docs"
+    printf "│  ${BOLD}API Health Check:${RESET}             %-40s│\n" "${proto}://${domain}${port_suffix}/api/health"
+  fi
   if [[ "$client_profile" == *"client"* ]]; then
-    local client_proto="$proto"
     local client_url=""
     if [[ "$client_domain" == :* ]]; then
       client_url="${proto}://${domain}${client_domain}/"
@@ -326,8 +364,9 @@ show_summary_card() {
     fi
     printf "│  ${BOLD}Личный Кабинет (Client UI):${RESET}   %-40s│\n" "$client_url"
   fi
-  printf "│  ${BOLD}REST API Swagger Docs:${RESET}        %-40s│\n" "${proto}://${domain}${port_suffix}/api/docs"
-  printf "│  ${BOLD}API Health Check:${RESET}             %-40s│\n" "${proto}://${domain}${port_suffix}/api/health"
+  if [ "$media_domain" != "$domain" ] && [ "$media_domain" != "$api_domain" ]; then
+    printf "│  ${BOLD}Медиа-сервер (Media):${RESET}         %-40s│\n" "${proto}://${media_domain}${port_suffix}/"
+  fi
   printf "${BOLD}${GREEN}├────────────────────────────────────────────────────────────────────────┤${RESET}\n"
   printf "│  ${BOLD}Логин владельца (Owner):${RESET}      %-40s│\n" "${owner_login:-owner}"
   printf "│  ${BOLD}Пароль владельца:${RESET}             %-40s│\n" "${owner_pass:-[задан в .env]}"
@@ -352,6 +391,7 @@ run_wizard() {
   env_choice=$(prompt_default "Выберите вариант [1/2]" "1")
 
   local domain=""
+  local api_domain=""
   local media_domain=""
   local client_domain=""
   local owner_email=""
@@ -362,16 +402,27 @@ run_wizard() {
   case "$env_choice" in
     2)
       # Local / IP
-      step "2. Настройка адреса (Local / IP)"
+      step "2. Настройка адресов (Local / IP)"
       local host_input
-      host_input=$(prompt_default "Адрес хоста (localhost, 127.0.0.1 или IP)" "localhost")
+      host_input=$(prompt_default "Базовый адрес хоста (localhost, 127.0.0.1 или IP)" "localhost")
       domain="$host_input"
       is_debug="true"
 
       if [[ "$domain" == "localhost" || "$domain" == *.localhost ]]; then
-        media_domain="media.localhost"
+        echo ""
+        echo "   [1] Единый адрес для Админки и API: http://${domain}"
+        echo "   [2] Отдельный поддомен для API: http://api.${domain}"
+        local loc_api_ch
+        loc_api_ch=$(prompt_default "Размещение API [1/2]" "1")
+        if [ "$loc_api_ch" = "2" ]; then
+          api_domain="api.${domain}"
+        else
+          api_domain="$domain"
+        fi
+        media_domain="media.${domain}"
         owner_email=$(prompt_default "Email администратора" "owner@localhost.test")
       else
+        api_domain="$domain"
         media_domain="$domain"
         owner_email=$(prompt_default "Email администратора" "owner@${domain}.test")
       fi
@@ -381,19 +432,46 @@ run_wizard() {
     *)
       # Production
       step "2. Настройка доменных имён (Production)"
-      info "Для боевого сервера требуются привязанные домены, смотрящие на этот сервер."
+      info "Для боевого сервера укажите ваши зарегистрированные домены."
+      info "Вы можете использовать один общий домен или разнести компоненты по разным поддоменам."
+      echo ""
+
+      # 1. Админка
       while true; do
-        domain=$(prompt_default "Основной домен (Admin UI + API, напр. admin.myshop.com или panel.myshop.ru)" "")
+        domain=$(prompt_default "1. Домен Панели управления (Admin UI, напр. admin.myshop.com или panel.myshop.ru)" "")
         if [ -n "$domain" ]; then break; fi
-        err "Основной домен не может быть пустым!"
+        err "Домен панели управления не может быть пустым!"
       done
 
       local root_d
       root_d="$(get_root_domain "$domain")"
 
-      local default_media="media.${root_d}"
-      media_domain=$(prompt_default "Домен для медиа (Mediaworker)" "$default_media")
+      # 2. REST API & Webhooks
+      echo ""
+      echo "   [1] Единый домен для Админки и API: https://${domain}"
+      echo "       (REST API и вебхуки будут доступны по пути /api/* на этом же домене)"
+      echo "   [2] Выделить отдельный домен для API (напр. api.${root_d})"
+      local api_choice
+      api_choice=$(prompt_default "Размещение REST API и вебхуков платежей [1/2]" "1")
+      if [ "$api_choice" = "2" ]; then
+        api_domain=$(prompt_default "Домен для REST API" "api.${root_d}")
+      else
+        api_domain="$domain"
+      fi
 
+      # 3. Медиа-сервер
+      echo ""
+      echo "   [1] Общий домен API для картинок и файлов (путь /api/media/*)"
+      echo "   [2] Отдельный поддомен для медиа (напр. media.${root_d})"
+      local media_choice
+      media_choice=$(prompt_default "Размещение медиа-сервера (Mediaworker) [1/2]" "1")
+      if [ "$media_choice" = "2" ]; then
+        media_domain=$(prompt_default "Домен для медиа" "media.${root_d}")
+      else
+        media_domain="$api_domain"
+      fi
+
+      echo ""
       while true; do
         owner_email=$(prompt_default "Email владельца (используется для Let's Encrypt SSL)" "admin@${root_d}")
         if [[ "$owner_email" == *"@"* ]]; then break; fi
@@ -407,11 +485,12 @@ run_wizard() {
   esac
 
   # ── Клиентский фронтенд ─────────────────────────────────────────────────────
-  step "3. Клиентский фронтенд (Личный Кабинет)"
-  echo "Личный Кабинет (SBPersonalAccountClient) позволяет покупателям просматривать каталог,"
+  step "3. Клиентский фронтенд (Личный Кабинет / Витрина)"
+  echo "Личный Кабинет (SBPersonalAccountClient) позволяет покупателям просматривать витрину,"
   echo "делать заказы, пополнять баланс и управлять своими услугами."
+  echo ""
   local want_client
-  want_client=$(prompt_default "Установить клиентский фронтенд? [Y/n]" "Y")
+  want_client=$(prompt_default "Установить клиентский Личный Кабинет? [Y/n]" "Y")
 
   local enable_client=0
   local client_override_port=""
@@ -422,24 +501,40 @@ run_wizard() {
         # Production
         local root_d
         root_d="$(get_root_domain "$domain")"
-        client_domain=$(prompt_default "Домен клиентского кабинета" "shop.${root_d}")
+        echo ""
+        info "Клиентский кабинет размещается на отдельном домене от Панели управления."
+        echo "Примеры: основной сайт (${root_d}), витрина (shop.${root_d}), кабинет (client.${root_d} или my.${root_d})"
+        while true; do
+          client_domain=$(prompt_default "Домен клиентского Личного Кабинета" "${root_d}")
+          if [ -n "$client_domain" ]; then
+            if [ "$client_domain" = "$domain" ]; then
+              warn "Клиентский кабинет не может иметь такой же домен, как Панель управления ($domain)!"
+              warn "Пожалуйста, укажите другой домен или поддомен (напр. ${root_d} или shop.${root_d})."
+            else
+              break
+            fi
+          fi
+        done
       else
         # Local / IP
         if [[ "$domain" == "localhost" || "$domain" == *.localhost ]]; then
-          echo "   [1] Поддомен http://shop.localhost:${http_port} (браузеры открывают без правок hosts)"
-          echo "   [2] Отдельный порт http://localhost:3000"
+          echo ""
+          echo "   [1] Отдельный поддомен (напр. client.localhost или my.localhost)"
+          echo "   [2] Отдельный порт на основном хосте (напр. :3000)"
           local cl_mode
           cl_mode=$(prompt_default "Выберите вариант доступа для клиента [1/2]" "1")
           if [ "$cl_mode" = "2" ]; then
-            client_domain=":3000"
-            client_override_port="3000"
+            client_override_port=$(prompt_default "Порт для клиентского интерфейса" "3000")
+            client_domain=":${client_override_port}"
           else
-            client_domain="shop.localhost"
+            client_domain=$(prompt_default "Поддомен для клиента" "client.localhost")
           fi
         else
-          info "Для доступа по IP клиент будет доступен на порту :3000."
-          client_domain=":3000"
-          client_override_port="3000"
+          echo ""
+          local custom_cl_port
+          custom_cl_port=$(prompt_default "Порт для клиентского интерфейса на IP $domain" "3000")
+          client_domain=":${custom_cl_port}"
+          client_override_port="$custom_cl_port"
         fi
       fi
       ;;
@@ -477,6 +572,7 @@ run_wizard() {
 
   set_env_var "DEBUG" "$is_debug"
   set_env_var "DOMAIN" "$domain"
+  set_env_var "API_DOMAIN" "$api_domain"
   set_env_var "MEDIA_DOMAIN" "$media_domain"
   set_env_var "HTTP_PORT" "$http_port"
   set_env_var "HTTPS_PORT" "$https_port"
@@ -492,10 +588,27 @@ run_wizard() {
   fi
 
   set_env_var "PUBLIC_URL" "${proto_scheme}://${domain}${pub_port}"
-  if [ "$media_domain" = "$domain" ]; then
-    set_env_var "MEDIA_PUBLIC_URL" "${proto_scheme}://${domain}${pub_port}/api/media"
+  if [ "$media_domain" = "$domain" ] || [ "$media_domain" = "$api_domain" ]; then
+    set_env_var "MEDIA_PUBLIC_URL" "${proto_scheme}://${api_domain}${pub_port}/api/media"
   else
     set_env_var "MEDIA_PUBLIC_URL" "${proto_scheme}://${media_domain}${pub_port}"
+  fi
+
+  # Автоматическая настройка CORS_ORIGINS при раздельных доменах
+  local cors_list=""
+  if [ "$api_domain" != "$domain" ]; then
+    cors_list="${proto_scheme}://${domain}${pub_port}"
+  fi
+  if [ "$enable_client" -eq 1 ] && [[ "$client_domain" != :* ]]; then
+    if [ -n "$cors_list" ]; then
+      cors_list="${cors_list},${proto_scheme}://${client_domain}${pub_port}"
+    else
+      cors_list="${proto_scheme}://${client_domain}${pub_port}"
+    fi
+  fi
+  if [ -n "$cors_list" ]; then
+    set_env_var "CORS_ORIGINS" "$cors_list"
+    info "Автоматически сконфигурирован CORS_ORIGINS: $cors_list"
   fi
 
   set_env_var "DB_PASS" "$db_pass"
@@ -507,14 +620,24 @@ run_wizard() {
   set_env_var "DATA_HOST_DIR" "./data"
   set_env_var "PRIVATE_DATA_HOST_DIR" "./data-private"
 
-  # Настройка Caddy для Media
   mkdir -p caddy.d
-  if [ "$media_domain" != "$domain" ]; then
-    cp -f media.caddy.example caddy.d/media.caddy
-    info "Включён отдельный домен медиа: caddy.d/media.caddy"
+
+  # Настройка Caddy для отдельного API домена
+  if [ "$api_domain" != "$domain" ]; then
+    cp -f api.caddy.example caddy.d/api.caddy 2>/dev/null || true
+    info "Включён отдельный домен API: caddy.d/api.caddy ($api_domain)"
+  else
+    rm -f caddy.d/api.caddy
+    info "REST API маршрутизируется через общий домен (${domain}/api/*)"
+  fi
+
+  # Настройка Caddy для Media
+  if [ "$media_domain" != "$domain" ] && [ "$media_domain" != "$api_domain" ]; then
+    cp -f media.caddy.example caddy.d/media.caddy 2>/dev/null || true
+    info "Включён отдельный домен медиа: caddy.d/media.caddy ($media_domain)"
   else
     rm -f caddy.d/media.caddy
-    info "Медиа маршрутизируется через общий домен (/api/media/*)"
+    info "Медиа маршрутизируется через домен API (/api/media/*)"
   fi
 
   # Настройка Caddy и Compose для Client UI
@@ -568,10 +691,19 @@ EOF
 # ── Главное меню (если .env уже существует) ──────────────────────────────────
 main_menu() {
   print_banner
-  local domain
+  local domain api_domain client_domain
   domain="$(get_env_var "DOMAIN")"
+  api_domain="$(get_env_var "API_DOMAIN")"
+  client_domain="$(get_env_var "CLIENT_DOMAIN")"
   if [ -n "$domain" ]; then
-    printf "${DIM}Текущий домен в .env: ${BOLD}%s${RESET}\n\n" "$domain"
+    printf "${DIM}Панель управления (Admin): ${BOLD}%s${RESET}\n" "$domain"
+    if [ -n "$api_domain" ] && [ "$api_domain" != "$domain" ]; then
+      printf "${DIM}REST API & Webhooks:       ${BOLD}%s${RESET}\n" "$api_domain"
+    fi
+    if [ -n "$client_domain" ]; then
+      printf "${DIM}Личный Кабинет (Client):   ${BOLD}%s${RESET}\n" "$client_domain"
+    fi
+    echo ""
   fi
 
   echo "   [1] Запустить стек (docker compose up -d)"
