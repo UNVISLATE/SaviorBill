@@ -11,8 +11,8 @@
 
 set -euo pipefail
 
-# Если запуск через пайп (curl ... | bash), перенаправляем stdin на tty
-if [ ! -t 0 ] && [ -e /dev/tty ]; then
+# Если запуск через пайп (curl ... | bash), перенаправляем stdin на tty (если tty доступен)
+if [ ! -t 0 ] && (exec < /dev/tty) 2>/dev/null; then
   exec < /dev/tty
 fi
 
