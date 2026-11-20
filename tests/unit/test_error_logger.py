@@ -64,3 +64,29 @@ async def test_list_request_errors_filter():
     res_search = await list_request_errors(vk, search="boom")
     assert len(res_search) == 1
     assert res_search[0]["path"] == "/api/boom"
+
+
+def test_extract_user_telemetry_fallback():
+    import jwt
+    from starlette.requests import Request
+    from middleware.request_tracker import _extract_user_telemetry
+
+    # 1. State snapshot
+    scope = {"type": "http", "headers": [], "state": {}}
+    req = Request(scope)
+    req.state.user_snapshot = (42, "admin_user", "owner")
+    assert _extract_user_telemetry(req) == (42, "admin_user", "owner")
+
+    # 2. sb_refresh cookie fallback when expired access token or 401
+    refresh_token = jwt.encode(
+        {"sub": "99", "login": "test_owner", "role": "owner"},
+        "dummy",
+        algorithm="HS256",
+    )
+    cookie_hdr = (b"cookie", f"sb_refresh={refresh_token}".encode())
+    req_cookie = Request({"type": "http", "headers": [cookie_hdr], "state": {}})
+    uid, login, role = _extract_user_telemetry(req_cookie)
+    assert uid == 99
+    assert login == "test_owner"
+    assert role == "owner"
+

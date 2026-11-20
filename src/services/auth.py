@@ -82,6 +82,7 @@ class TokenSvc:
         )
 
     def _refresh(self, acc: UserModel) -> str:
+        role_name = getattr(acc.role, "name", None) if getattr(acc, "role", None) else None
         return jwtu.make_refresh(
             str(acc.id),
             self.cfg.JWT_PRIVATE_KEY,
@@ -90,6 +91,10 @@ class TokenSvc:
             self.cfg.JWT_ISS,
             self.cfg.JWT_KID,
             session_version=getattr(acc, "auth_session_version", 0),
+            extra={
+                "login": getattr(acc, "login", None),
+                "role": role_name,
+            },
         )
 
     def issue(

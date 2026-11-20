@@ -377,7 +377,11 @@ export function SystemErrorLogs() {
                                 Пользователь:
                               </div>
                               <div className="font-medium">
-                                {err.user_login ? `${err.user_login} (id: ${err.user_id})` : "Анонимный клиент"}
+                                {err.user_login
+                                  ? `${err.user_login}${err.user_id ? ` (id: ${err.user_id})` : ""}`
+                                  : err.user_id
+                                    ? `Пользователь #${err.user_id}`
+                                    : "Анонимный клиент"}
                               </div>
                             </div>
 

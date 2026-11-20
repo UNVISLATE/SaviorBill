@@ -16,19 +16,75 @@ log = logging.getLogger("saviorbill.tracker")
 
 
 def _extract_user_telemetry(request: Request) -> tuple[int | None, str | None, str | None]:
-    """Безопасно извлечь (id, login, role_name) из ``request.state``."""
+    """Безопасно извлечь (id, login, role_name) из ``request.state`` или токена запроса."""
     snapshot = getattr(request.state, "user_snapshot", None)
-    if isinstance(snapshot, tuple) and len(snapshot) == 3:
+    if isinstance(snapshot, tuple) and len(snapshot) == 3 and snapshot[0] is not None:
         return snapshot
     user = getattr(request.state, "user", None)
-    if not user:
-        return None, None, None
-    role = getattr(user, "role", None)
-    return (
-        getattr(user, "id", None),
-        getattr(user, "login", None),
-        getattr(role, "name", None) if role else None,
-    )
+    if user:
+        role = getattr(user, "role", None)
+        return (
+            getattr(user, "id", None),
+            getattr(user, "login", None),
+            getattr(role, "name", None) if role else None,
+        )
+
+    # Запасной путь: если аутентификация упала (например, 401 истёк токен),
+    # извлекаем пользователя из переданного JWT без верификации подписи,
+    # проверяя access токен, refresh токен и cookie sb_refresh,
+    # чтобы в системном журнале ошибок не висело ложное «Анонимный клиент».
+    try:
+        import jwt as pyjwt
+        candidate_tokens: list[str] = []
+        auth_hdr = request.headers.get("authorization") or ""
+        if auth_hdr.lower().startswith("bearer "):
+            candidate_tokens.append(auth_hdr[7:].strip())
+
+        cookies = getattr(request, "cookies", {}) or {}
+        if "sb_access" in cookies:
+            candidate_tokens.append(cookies["sb_access"])
+        if "sb_refresh" in cookies:
+            candidate_tokens.append(cookies["sb_refresh"])
+
+        try:
+            query_token = request.query_params.get("token") or request.query_params.get("access_token")
+            if query_token:
+                candidate_tokens.append(query_token)
+        except Exception:
+            pass
+
+        for raw_token in candidate_tokens:
+            if not raw_token:
+                continue
+            try:
+                unverified = pyjwt.decode(
+                    raw_token,
+                    options={
+                        "verify_signature": False,
+                        "verify_exp": False,
+                        "verify_aud": False,
+                        "verify_iss": False,
+                    },
+                )
+                sub = unverified.get("sub")
+                user_id = int(sub) if sub and str(sub).isdigit() else None
+                login = unverified.get("login")
+                role = unverified.get("role")
+                if user_id is not None:
+                    login_display = login or f"user_{user_id}"
+                    return (user_id, login_display, role)
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+    app_token = request.headers.get("x-app-token")
+    if app_token:
+        parts = app_token.split("_")
+        tag = parts[2] if len(parts) >= 3 else "token"
+        return (None, f"app:{tag}", "app_token")
+
+    return None, None, None
 
 
 class RequestTrackerMiddleware(BaseHTTPMiddleware):

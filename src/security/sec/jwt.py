@@ -95,8 +95,12 @@ def make_refresh(
     iss: str,
     kid: str,
     session_version: int = 0,
+    extra: dict | None = None,
 ) -> str:
     """Долгоживущий refresh-токен с версией security-сессий аккаунта."""
+    payload_extra = {"session_version": session_version}
+    if extra:
+        payload_extra.update(extra)
     return _encode(
         sub,
         REFRESH,
@@ -105,7 +109,7 @@ def make_refresh(
         ttl,
         iss,
         kid,
-        extra={"session_version": session_version},
+        extra=payload_extra,
     )
 
 
