@@ -149,7 +149,8 @@ class Config(BaseSettings):
     # reclaim'нута и обработана ПОВТОРНО конкурентно с ещё живым оригиналом —
     # см. worker.py::_process_one. TTL должен быть заметно больше самой долгой
     # ожидаемой конвертации (не самого reclaim-интервала).
-    MEDIA_JOB_LOCK_TTL_SEC: int = Field(default=900)
+    MEDIA_JOB_LOCK_TTL_SEC: int = Field(default=1800)
+    MEDIA_CONVERT_TIMEOUT_SEC: float = Field(default=1800.0)
 
     # --- OpenAPI ---
     MEDIA_DOCS_ENABLED: bool = Field(default=True)
@@ -474,6 +475,10 @@ class Config(BaseSettings):
     @property
     def s3_secret(self) -> str | None:
         return self.S3_SECRET
+
+    @property
+    def convert_timeout_sec(self) -> float:
+        return float(self.MEDIA_CONVERT_TIMEOUT_SEC)
 
     @classmethod
     def load(cls) -> "Config":

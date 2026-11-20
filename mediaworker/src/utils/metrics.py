@@ -60,6 +60,20 @@ class MetricsPusher:
         job = self.worker.current_job()
         current_job = json.dumps(job) if job else ""
         key = f"media:metrics:{self.cfg.consumer}"
+        import psutil
+
+        cpu = self._proc.cpu_percent()
+        rss = self._proc.memory_info().rss
+        try:
+            for child in self._proc.children(recursive=True):
+                try:
+                    cpu += child.cpu_percent()
+                    rss += child.memory_info().rss
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+
         await self.vk.hset(
             key,
             mapping={
@@ -67,8 +81,8 @@ class MetricsPusher:
                 "consumer": self.cfg.consumer,
                 "started_at": self._started_at,
                 "last_seen_at": time.time(),
-                "cpu_percent": f"{self._proc.cpu_percent():.2f}",
-                "rss_mb": f"{self._proc.memory_info().rss / (1024 * 1024):.2f}",
+                "cpu_percent": f"{cpu:.2f}",
+                "rss_mb": f"{rss / (1024 * 1024):.2f}",
                 "current_job": current_job,
             },
         )

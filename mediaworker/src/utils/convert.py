@@ -174,6 +174,7 @@ def _thumb_vf(size: int) -> str:
 async def _run(
     args: list[str],
     *,
+    timeout: float = 1800.0,
     on_output: OutputSink | None = None,
     on_progress: ProgressSink | None = None,
     total_duration: float | None = None,
@@ -219,7 +220,7 @@ async def _run(
     stderr_task = asyncio.create_task(_pump_stderr())
     progress_task = asyncio.create_task(_pump_progress())
     try:
-        await asyncio.wait_for(proc.wait(), timeout=300.0)
+        await asyncio.wait_for(proc.wait(), timeout=timeout)
     except (asyncio.TimeoutError, TimeoutError):
         try:
             proc.kill()
@@ -227,7 +228,7 @@ async def _run(
             pass
         stderr_task.cancel()
         progress_task.cancel()
-        raise ConvertError("FFmpeg execution timed out (limit: 300s)")
+        raise ConvertError(f"FFmpeg execution timed out (limit: {int(timeout)}s)")
 
     stderr = await stderr_task
     await progress_task
@@ -361,7 +362,7 @@ async def convert_image(
     результата (маленькие фото не тумбятся, см. модуль-докстринг).
     """
     main = Variant("main", *target_key(token, "image"))
-    await _run(_webp(src, os.path.join(out_dir, main.key), cfg.webp_quality), on_output=on_output)
+    await _run(_webp(src, os.path.join(out_dir, main.key), cfg.webp_quality), timeout=cfg.convert_timeout_sec, on_output=on_output)
     return [main]
 
 
@@ -377,6 +378,7 @@ async def make_thumb(
             cfg.thumb_quality,
             _thumb_vf(cfg.thumb_size),
         ),
+        timeout=cfg.convert_timeout_sec,
         on_output=on_output,
     )
     return thumb
@@ -391,6 +393,7 @@ async def make_preview(
     preview = Variant(f"preview.{suffix}", f"{token}.preview.{suffix}.webp", "image/webp")
     await _run(
         _webp(src, os.path.join(out_dir, preview.key), cfg.webp_quality, vf=vf, at=at),
+        timeout=cfg.convert_timeout_sec,
         on_output=on_output,
     )
     return preview
@@ -548,6 +551,7 @@ async def convert_video(
     cmd.append(os.path.join(out_dir, main.key))
     await _run(
         cmd,
+        timeout=cfg.convert_timeout_sec,
         on_output=on_output,
         on_progress=on_progress,
         total_duration=duration,
