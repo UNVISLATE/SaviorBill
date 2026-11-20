@@ -70,11 +70,12 @@ async def test_scan_orphaned_files_registers_new_media():
         standalone_file = media_dir / "dropped_image.png"
         standalone_file.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 30)
 
-        # Mock session and mngr
+        # Mock session and mngr with existing rows having None fields in variants dict
         mock_session = AsyncMock()
-        # Mock execute returning empty existing rows (no files known)
         mock_result = MagicMock()
-        mock_result.__iter__.return_value = []
+        mock_result.__iter__.return_value = [
+            ("existing_token", "/path/to/file", {"media": None, "thumb": None, "previews": None})
+        ]
         mock_session.execute = AsyncMock(return_value=mock_result)
         mock_session.commit = AsyncMock()
         mock_session.add = MagicMock()

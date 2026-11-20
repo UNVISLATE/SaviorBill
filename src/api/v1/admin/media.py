@@ -421,13 +421,17 @@ async def scan_orphaned_files(
             known_files.add(os.path.basename(path).lower())
             known_files.add(str(path).replace("\\", "/").lower())
         if isinstance(variants, dict):
-            if variants.get("media", {}).get("key"):
-                known_files.add(os.path.basename(variants["media"]["key"]).lower())
-            if variants.get("thumb", {}).get("key"):
-                known_files.add(os.path.basename(variants["thumb"]["key"]).lower())
-            for prev in variants.get("previews", []):
-                if isinstance(prev, dict) and prev.get("key"):
-                    known_files.add(os.path.basename(prev["key"]).lower())
+            media_item = variants.get("media")
+            if isinstance(media_item, dict) and media_item.get("key"):
+                known_files.add(os.path.basename(media_item["key"]).lower())
+            thumb_item = variants.get("thumb")
+            if isinstance(thumb_item, dict) and thumb_item.get("key"):
+                known_files.add(os.path.basename(thumb_item["key"]).lower())
+            previews = variants.get("previews") or []
+            if isinstance(previews, list):
+                for prev in previews:
+                    if isinstance(prev, dict) and prev.get("key"):
+                        known_files.add(os.path.basename(prev["key"]).lower())
 
     hex32_prefix_re = re.compile(r"^([a-f0-9]{32})\b", re.IGNORECASE)
 
