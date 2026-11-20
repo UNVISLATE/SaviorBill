@@ -1,8 +1,9 @@
 import { useState, useMemo } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { GitBranch, Heart, Copy, Check } from "lucide-react"
+import { GitBranch, Heart, Copy, Check, Calendar } from "lucide-react"
 
 import { api } from "@/api/api.ts"
+import { useBranding } from "@/hooks/use-branding"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/shadsnui/tooltip"
 import { formatAppVersion } from "@/lib/version"
 
@@ -52,8 +53,26 @@ interface GithubRelease {
   prerelease: boolean
 }
 
+function formatBuildDate(rawDate: string): string {
+  if (!rawDate || rawDate === "undefined") return "—"
+  if (/^\d{2}\.\d{2}\.\d{4}$/.test(rawDate)) {
+    return rawDate
+  }
+  try {
+    const d = new Date(rawDate)
+    if (isNaN(d.getTime())) return rawDate
+    const pad = (n: number) => n.toString().padStart(2, "0")
+    return `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)}.${d.getUTCFullYear()}`
+  } catch {
+    return rawDate
+  }
+}
+
 export function AboutPage() {
-  const [copied, setCopied] = useState(false)
+  const [copiedVersion, setCopiedVersion] = useState(false)
+  const [copiedCommit, setCopiedCommit] = useState(false)
+
+  const branding = useBranding()
 
   // Динамическое получение версии с бэкенда /api/health
   const { data: health } = useQuery({
@@ -63,20 +82,36 @@ export function AboutPage() {
   })
 
   // Динамические данные о коммите и дате сборки
-  const appName = health?.app_name || "SaviorBill"
+  const appName = health?.app_name || (branding.name !== "SaviorBill Admin" ? branding.name : "SaviorBill")
   const rawVersion =
     health?.app_version || (typeof __APP_VERSION__ !== "undefined" && __APP_VERSION__ ? __APP_VERSION__ : "0.0.0-dev")
   const versionInfo = useMemo(() => formatAppVersion(rawVersion), [rawVersion])
+
   const effectiveCommit =
     typeof __GIT_COMMIT__ !== "undefined" && __GIT_COMMIT__ && __GIT_COMMIT__ !== "undefined"
       ? __GIT_COMMIT__
       : versionInfo.shortHash || "undefined"
+
+  const shortCommit = useMemo(() => {
+    if (!effectiveCommit || effectiveCommit === "undefined") return "undefined"
+    return effectiveCommit.length > 8 ? effectiveCommit.slice(0, 7) : effectiveCommit
+  }, [effectiveCommit])
+
   const gitDate = typeof __GIT_COMMIT_DATE__ !== "undefined" && __GIT_COMMIT_DATE__ ? __GIT_COMMIT_DATE__ : "undefined"
+  const formattedDate = useMemo(() => formatBuildDate(gitDate), [gitDate])
 
   const handleCopyVersion = () => {
     navigator.clipboard.writeText(versionInfo.full).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      setCopiedVersion(true)
+      setTimeout(() => setCopiedVersion(false), 2000)
+    })
+  }
+
+  const handleCopyCommit = () => {
+    if (!effectiveCommit || effectiveCommit === "undefined") return
+    navigator.clipboard.writeText(effectiveCommit).then(() => {
+      setCopiedCommit(true)
+      setTimeout(() => setCopiedCommit(false), 2000)
     })
   }
 
@@ -127,19 +162,23 @@ export function AboutPage() {
   const hasUpdate = Boolean(latestRelease && isNewer(latestRelease.tag_name, versionInfo.base))
 
   return (
-    <div className="flex h-[calc(100vh-13rem)] min-h-[360px] flex-col justify-between items-center overflow-hidden py-4 select-none">
-      {/* Центр экрана: компактная карточка SaviorBill */}
-      <div className="flex-1 flex items-center justify-center w-full">
-        <div className="w-full max-w-md rounded-2xl border bg-card/90 p-6 sm:p-7 shadow-sm text-center flex flex-col items-center space-y-4 backdrop-blur-xs">
+    <div className="flex h-[calc(100vh-13rem)] min-h-[420px] flex-col justify-between items-center overflow-hidden py-4 select-none">
+      {/* Центр экрана: компактная аккуратная карточка SaviorBill */}
+      <div className="flex-1 flex items-center justify-center w-full px-4">
+        <div className="relative w-full max-w-md rounded-2xl border bg-card/95 p-6 sm:p-8 shadow-lg text-center flex flex-col items-center space-y-4 backdrop-blur-md">
+          {/* Мягкое фоновое свечение */}
+          <div className="pointer-events-none absolute -top-12 size-48 rounded-full bg-primary/10 blur-3xl" />
+
           {/* Логотип проекта SaviorBill */}
-          <div className="relative size-16 rounded-2xl p-2.5 bg-muted/40 border border-border/80 shadow-2xs flex items-center justify-center">
+          <div className="relative size-16 rounded-2xl p-2.5 bg-muted/40 border border-border/80 shadow-xs flex items-center justify-center">
             <img
-              src="/unvi/logo_1x1_128.webp"
+              src={branding.logoUrl || "/unvi/logo_1x1_128.webp"}
               alt={appName}
               className="size-full object-contain rounded-xl"
             />
           </div>
 
+          {/* Заголовок + версия + статус latest/update */}
           <div className="flex items-center justify-center gap-2 flex-wrap">
             <h1 className="text-xl font-bold tracking-tight text-foreground">
               {appName}
@@ -166,14 +205,14 @@ export function AboutPage() {
             )}
           </div>
 
-          {/* Полная версия / хеш сборки (чистый компактный вид при длинных хешах) */}
+          {/* Хеш сборки (чистый компактный чип) */}
           {versionInfo.isExtended && (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-muted/30 border border-border/70 max-w-full">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-muted/30 border border-border/70 max-w-full">
               <span className="text-[10px] uppercase font-semibold text-muted-foreground/60 tracking-wider shrink-0">
                 Сборка:
               </span>
               <span
-                className="font-mono text-[11px] text-muted-foreground truncate max-w-[240px] sm:max-w-[300px] select-all"
+                className="font-mono text-[11px] text-muted-foreground truncate max-w-[220px] sm:max-w-[280px] select-all"
                 title={versionInfo.full}
               >
                 {versionInfo.full}
@@ -182,16 +221,20 @@ export function AboutPage() {
                 type="button"
                 onClick={handleCopyVersion}
                 className="text-muted-foreground/60 hover:text-foreground transition-colors p-0.5 shrink-0 cursor-pointer"
-                title="Скопировать полную версию"
+                title="Скопировать строку сборки"
                 aria-label="Скопировать версию"
               >
-                {copied ? <Check className="size-3 text-emerald-500" /> : <Copy className="size-3" />}
+                {copiedVersion ? (
+                  <Check className="size-3 text-emerald-500" />
+                ) : (
+                  <Copy className="size-3" />
+                )}
               </button>
             </div>
           )}
 
           {/* Описание проекта */}
-          <p className="text-xs text-muted-foreground leading-relaxed max-w-xs text-balance">
+          <p className="text-xs text-muted-foreground leading-relaxed max-w-sm text-balance">
             Событийная биллинг-система с изолированным исполнением через Lua, мультивалютным учётом и автоматизацией цифровых сервисов.
           </p>
 
@@ -209,20 +252,59 @@ export function AboutPage() {
             </div>
           )}
 
-          {/* Иконка + Commit: {hash} • Date: {date} */}
-          <div className="flex items-center justify-center gap-1.5 text-[11px] font-mono text-muted-foreground pt-1">
-            <GitBranch className="size-3.5 text-primary shrink-0" />
-            <span>
-              Commit: <strong className="font-semibold text-foreground">{effectiveCommit}</strong>
-            </span>
-            <span>•</span>
-            <span>
-              Date: <span className="text-foreground">{gitDate}</span>
-            </span>
+          {/* Метаданные сборки: Commit и Дата в аккуратных бейджах */}
+          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+            {/* Хеш коммита */}
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <div className="flex items-center gap-1.5 rounded-lg border border-border/70 bg-muted/30 px-2.5 py-1 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground">
+                    <GitBranch className="size-3.5 text-primary shrink-0" />
+                    <span className="text-muted-foreground/70">Commit:</span>
+                    <span className="font-semibold text-foreground">{shortCommit}</span>
+                    <button
+                      type="button"
+                      onClick={handleCopyCommit}
+                      className="ml-0.5 text-muted-foreground/60 hover:text-foreground transition-colors cursor-pointer"
+                      aria-label="Скопировать хеш коммита"
+                    >
+                      {copiedCommit ? (
+                        <Check className="size-3 text-emerald-500" />
+                      ) : (
+                        <Copy className="size-3" />
+                      )}
+                    </button>
+                  </div>
+                }
+              />
+              <TooltipContent>
+                {effectiveCommit !== "undefined"
+                  ? `Полный коммит: ${effectiveCommit}`
+                  : "Хеш коммита"}
+              </TooltipContent>
+            </Tooltip>
+
+            {/* Дата сборки */}
+            {formattedDate && formattedDate !== "undefined" && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <div className="flex items-center gap-1.5 rounded-lg border border-border/70 bg-muted/30 px-2.5 py-1 font-mono text-[11px] text-muted-foreground">
+                      <Calendar className="size-3.5 text-muted-foreground/70 shrink-0" />
+                      <span className="text-muted-foreground/70">Дата:</span>
+                      <span className="font-medium text-foreground">{formattedDate}</span>
+                    </div>
+                  }
+                />
+                <TooltipContent>
+                  {gitDate !== "undefined" ? `Дата сборки: ${gitDate}` : "Дата коммита"}
+                </TooltipContent>
+              </Tooltip>
+            )}
           </div>
 
           {/* Кастомные кнопки-ссылки с тултипом */}
-          <div className="flex items-center justify-center gap-2.5 pt-2">
+          <div className="flex items-center justify-center gap-3 pt-2">
             {/* GitHub */}
             <Tooltip>
               <TooltipTrigger
@@ -231,14 +313,14 @@ export function AboutPage() {
                     href="https://github.com/UNVISLATE/SaviorBill"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex size-10 items-center justify-center rounded-xl border bg-muted/30 hover:bg-muted text-muted-foreground hover:text-foreground transition-all hover:scale-105 active:scale-95 shadow-2xs hover:border-primary/40"
-                    aria-label="GitHub repo"
+                    className="flex size-10 items-center justify-center rounded-xl border border-border/80 bg-muted/30 hover:bg-muted text-muted-foreground hover:text-foreground transition-all hover:scale-105 active:scale-95 shadow-xs hover:border-primary/40 cursor-pointer"
+                    aria-label="GitHub репозиторий"
                   >
-                    <GithubIcon className="size-4.5" />
+                    <GithubIcon className="size-5" />
                   </a>
                 }
               />
-              <TooltipContent>GitHub repo</TooltipContent>
+              <TooltipContent>GitHub репозиторий</TooltipContent>
             </Tooltip>
 
             {/* Git Зеркало */}
@@ -249,14 +331,14 @@ export function AboutPage() {
                     href="https://git.unvi.xyz/UNVI/SaviorShop"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex size-10 items-center justify-center rounded-xl border bg-muted/30 hover:bg-muted text-muted-foreground hover:text-foreground transition-all hover:scale-105 active:scale-95 shadow-2xs hover:border-primary/40"
-                    aria-label="Mirror"
+                    className="flex size-10 items-center justify-center rounded-xl border border-border/80 bg-muted/30 hover:bg-muted text-muted-foreground hover:text-foreground transition-all hover:scale-105 active:scale-95 shadow-xs hover:border-primary/40 cursor-pointer"
+                    aria-label="Git зеркало (Forgejo)"
                   >
-                    <ForgejoIcon className="size-4.5" />
+                    <ForgejoIcon className="size-5" />
                   </a>
                 }
               />
-              <TooltipContent>Mirror</TooltipContent>
+              <TooltipContent>Git зеркало (Forgejo)</TooltipContent>
             </Tooltip>
 
             {/* unvi.xyz */}
@@ -267,8 +349,8 @@ export function AboutPage() {
                     href="https://unvi.xyz/"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex size-10 items-center justify-center rounded-xl border bg-muted/30 hover:bg-muted text-muted-foreground hover:text-foreground transition-all hover:scale-105 active:scale-95 shadow-2xs hover:border-primary/40"
-                    aria-label="Author"
+                    className="flex size-10 items-center justify-center rounded-xl border border-border/80 bg-muted/30 hover:bg-muted text-muted-foreground hover:text-foreground transition-all hover:scale-105 active:scale-95 shadow-xs hover:border-primary/40 cursor-pointer"
+                    aria-label="Сайт автора"
                   >
                     <img
                       src="/unvi/logo_1x1_128.webp"
@@ -278,13 +360,13 @@ export function AboutPage() {
                   </a>
                 }
               />
-              <TooltipContent>Author</TooltipContent>
+              <TooltipContent>Сайт автора (unvi.xyz)</TooltipContent>
             </Tooltip>
           </div>
         </div>
       </div>
 
-      {/* Внизу страницы отдельно от всего */}
+      {/* Внизу страницы */}
       <div className="text-xs text-muted-foreground text-center py-2 shrink-0">
         Made with{" "}
         <Heart className="size-3.5 text-red-500 fill-red-500 inline mx-0.5 animate-pulse" />{" "}
