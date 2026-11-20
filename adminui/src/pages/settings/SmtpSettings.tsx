@@ -67,7 +67,8 @@ interface SmtpData {
 }
 
 export function SmtpSettings() {
-  const { me } = useAuth()
+  const { me, can } = useAuth()
+  const canEdit = can("settings.raw.edit") || can("settings.edit") || can("smtp.edit")
   const qc = useQueryClient()
 
   const { data, isLoading } = useQuery({
@@ -245,8 +246,9 @@ export function SmtpSettings() {
           <div className="flex items-center gap-2 border-b border-border/60 pb-3">
             <button
               type="button"
+              disabled={!canEdit}
               onClick={() => setDriver("smtp")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${!canEdit ? "opacity-60 cursor-not-allowed" : "cursor-pointer"} ${
                 driver === "smtp"
                   ? "bg-primary text-primary-foreground shadow-xs"
                   : "text-muted-foreground hover:bg-muted"
@@ -256,8 +258,9 @@ export function SmtpSettings() {
             </button>
             <button
               type="button"
+              disabled={!canEdit}
               onClick={() => setDriver("lua")}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors flex items-center gap-1.5 ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors flex items-center gap-1.5 ${!canEdit ? "opacity-60 cursor-not-allowed" : "cursor-pointer"} ${
                 driver === "lua"
                   ? "bg-primary text-primary-foreground shadow-xs"
                   : "text-muted-foreground hover:bg-muted"
@@ -465,27 +468,33 @@ export function SmtpSettings() {
           </div>
         </CardContent>
 
-        <CardFooter className="flex items-center justify-between gap-2 border-t pt-4">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setIsResetDialogOpen(true)}
-            disabled={saveMutation.isPending || resetMutation.isPending || !data?.configured}
-            className="text-destructive border-destructive/30 hover:bg-destructive/10 gap-1.5"
-          >
-            <RotateCcw className="size-3.5" /> Сбросить настройки
-          </Button>
+        {canEdit ? (
+          <CardFooter className="flex items-center justify-between gap-2 border-t pt-4">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsResetDialogOpen(true)}
+              disabled={saveMutation.isPending || resetMutation.isPending || !data?.configured}
+              className="text-destructive border-destructive/30 hover:bg-destructive/10 gap-1.5"
+            >
+              <RotateCcw className="size-3.5" /> Сбросить настройки
+            </Button>
 
-          <Button
-            size="sm"
-            onClick={() => saveMutation.mutate()}
-            disabled={saveMutation.isPending || resetMutation.isPending}
-            className="gap-2"
-          >
-            {saveMutation.isPending && <Loader2 className="size-4 animate-spin" />}
-            Сохранить настройки
-          </Button>
-        </CardFooter>
+            <Button
+              size="sm"
+              onClick={() => saveMutation.mutate()}
+              disabled={saveMutation.isPending || resetMutation.isPending}
+              className="gap-2"
+            >
+              {saveMutation.isPending && <Loader2 className="size-4 animate-spin" />}
+              Сохранить настройки
+            </Button>
+          </CardFooter>
+        ) : (
+          <CardFooter className="border-t pt-4 text-xs text-muted-foreground">
+            Режим только для чтения. Для изменения настроек почты требуются права администратора.
+          </CardFooter>
+        )}
       </Card>
 
       {/* Карточка 2: Тестовая отправка */}

@@ -148,12 +148,14 @@ def _build_body(
 
     settings_tree = _unflatten_dict(flat_settings)
 
+    login_notice = raw.get(f"ui.{scope}.login_notice")
     ver = hashlib.md5(
-        f"{logo}:{favicon}:{mascot}:{mascot_not_found}:{catalog_banner}:{raw.get(f'ui.{scope}.name')}:{json.dumps(merged_theme, sort_keys=True)}:{json.dumps(settings_tree, sort_keys=True)}".encode()
+        f"{logo}:{favicon}:{mascot}:{mascot_not_found}:{catalog_banner}:{raw.get(f'ui.{scope}.name')}:{login_notice}:{json.dumps(merged_theme, sort_keys=True)}:{json.dumps(settings_tree, sort_keys=True)}".encode()
     ).hexdigest()[:8]
 
     return {
         "name": raw.get(f"ui.{scope}.name"),
+        "login_notice": login_notice or None,
         "logo_url": f"{_media_url(logo)}?v={ver}" if logo else None,
         "favicon_url": f"{_media_url(favicon)}?v={ver}" if favicon else None,
         "mascot_url": f"{_media_url(mascot)}?v={ver}" if mascot else None,
@@ -167,6 +169,7 @@ def _build_body(
 
 class BrandingUpdateIn(BaseModel):
     name: str | None = None
+    login_notice: str | None = None
     logo: str | None = None
     favicon: str | None = None
     mascot: str | None = None
@@ -197,6 +200,7 @@ async def get_branding(
     ready_tokens = await _existing_ready_tokens(session, candidate_tokens)
     body = _build_body(scope, raw, ready_tokens=ready_tokens)
     body["currency"] = (await mngr.get("billing.currency")) or DEFAULT_CURRENCY
+    body["registration_enabled"] = await mngr.get_bool("auth.registration_enabled", default=True)
     etag = f'W/"{hashlib.md5(json.dumps(body, sort_keys=True).encode()).hexdigest()}"'
 
     if request.headers.get("if-none-match") == etag:
@@ -229,6 +233,11 @@ async def update_branding(
     if body.name is not None:
         await mngr.set(f"ui.{scope}.name", body.name, is_secret=False)
         updated_fields.append("name")
+
+    if body.login_notice is not None:
+        clean_notice = body.login_notice.strip() if body.login_notice.strip() else None
+        await mngr.set(f"ui.{scope}.login_notice", clean_notice, is_secret=False)
+        updated_fields.append("login_notice")
 
     for asset in ("logo", "favicon", "mascot", "mascot_not_found", "catalog_banner"):
         val = getattr(body, asset)

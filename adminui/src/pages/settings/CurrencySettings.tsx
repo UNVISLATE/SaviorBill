@@ -42,6 +42,7 @@ import {
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
 import { toastError, toastSuccess } from "@/lib/toast"
+import { useAuth } from "@/hooks/use-auth"
 import { SettingsSection } from "./SettingsSection"
 import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
 import { CurrencySelect } from "@/components/common/CurrencySelect"
@@ -768,6 +769,7 @@ interface SortableSourceRowProps {
   src: FxSourceItem
   idx: number
   totalCount: number
+  canEdit?: boolean
   onEdit: () => void
   onToggleEnabled: () => void
   onMoveUp: () => void
@@ -781,6 +783,7 @@ function SortableSourceRow({
   src,
   idx,
   totalCount,
+  canEdit = true,
   onEdit,
   onToggleEnabled,
   onMoveUp,
@@ -810,25 +813,29 @@ function SortableSourceRow({
     <TableRow
       ref={setNodeRef}
       style={style}
-      onClick={onEdit}
-      className={`cursor-pointer transition-all duration-150 ${
+      onClick={canEdit ? onEdit : undefined}
+      className={`transition-all duration-150 ${
+        canEdit ? "cursor-pointer hover:bg-muted/40" : "cursor-default"
+      } ${
         isDragging
           ? "opacity-50 scale-[0.99] bg-accent/60 shadow-lg relative z-50"
-          : "hover:bg-muted/40"
+          : ""
       }`}
     >
       {/* Приоритет */}
       <TableCell className="py-2.5 pl-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-0.5 touch-none"
-            title="Перетащите для изменения приоритета"
-            {...attributes}
-            {...listeners}
-          >
-            <GripVertical className="size-3.5" />
-          </button>
+          {canEdit && (
+            <button
+              type="button"
+              className="cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground p-0.5 touch-none"
+              title="Перетащите для изменения приоритета"
+              {...attributes}
+              {...listeners}
+            >
+              <GripVertical className="size-3.5" />
+            </button>
+          )}
           <div className="flex flex-col items-center">
             <span className="text-[11px] font-mono font-bold">#{idx + 1}</span>
             {idx === 0 && (
@@ -942,6 +949,7 @@ function SortableSourceRow({
       <TableCell className="py-2.5 text-center" onClick={(e) => e.stopPropagation()}>
         <Switch
           checked={src.enabled}
+          disabled={!canEdit}
           onCheckedChange={onToggleEnabled}
           title={src.enabled ? "Включен" : "Отключен"}
         />
@@ -950,28 +958,30 @@ function SortableSourceRow({
       {/* Действия */}
       <TableCell className="py-2.5 text-right pr-4" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-end gap-1">
-          <div className="flex flex-col gap-0.5 mr-1">
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-5 h-4"
-              disabled={idx === 0}
-              onClick={onMoveUp}
-              title="Поднять приоритет"
-            >
-              <ArrowUp className="size-3" />
-            </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-5 h-4"
-              disabled={idx === totalCount - 1}
-              onClick={onMoveDown}
-              title="Понизить приоритет"
-            >
-              <ArrowDown className="size-3" />
-            </Button>
-          </div>
+          {canEdit && (
+            <div className="flex flex-col gap-0.5 mr-1">
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-5 h-4"
+                disabled={idx === 0}
+                onClick={onMoveUp}
+                title="Поднять приоритет"
+              >
+                <ArrowUp className="size-3" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-5 h-4"
+                disabled={idx === totalCount - 1}
+                onClick={onMoveDown}
+                title="Понизить приоритет"
+              >
+                <ArrowDown className="size-3" />
+              </Button>
+            </div>
+          )}
 
           <Button
             size="icon"
@@ -984,24 +994,28 @@ function SortableSourceRow({
             <RefreshCw className="size-3.5" />
           </Button>
 
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 text-xs px-2"
-            onClick={onEdit}
-          >
-            Изменить
-          </Button>
+          {canEdit && (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs px-2"
+                onClick={onEdit}
+              >
+                Изменить
+              </Button>
 
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-            onClick={onDelete}
-            title="Удалить источник"
-          >
-            <Trash2 className="size-3.5" />
-          </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={onDelete}
+                title="Удалить источник"
+              >
+                <Trash2 className="size-3.5" />
+              </Button>
+            </>
+          )}
         </div>
       </TableCell>
     </TableRow>
@@ -1010,6 +1024,8 @@ function SortableSourceRow({
 
 export function CurrencySettings() {
   const qc = useQueryClient()
+  const { can } = useAuth()
+  const canEdit = can("settings.raw.edit") || can("settings.edit")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingSource, setEditingSource] = useState<FxSourceItem | null>(null)
   const [currenciesModalOpen, setCurrenciesModalOpen] = useState(false)
@@ -1374,16 +1390,18 @@ export function CurrencySettings() {
               или перетаскивайте строки для настройки приоритета.
             </p>
           </div>
-          <Button
-            size="sm"
-            onClick={() => {
-              setEditingSource(null)
-              setDialogOpen(true)
-            }}
-            className="shrink-0 gap-1.5"
-          >
-            <Plus className="size-4" /> Добавить источник
-          </Button>
+          {canEdit && (
+            <Button
+              size="sm"
+              onClick={() => {
+                setEditingSource(null)
+                setDialogOpen(true)
+              }}
+              className="shrink-0 gap-1.5"
+            >
+              <Plus className="size-4" /> Добавить источник
+            </Button>
+          )}
         </div>
 
         {/* Панель инструментов: поиск и фильтрация */}
@@ -1473,6 +1491,7 @@ export function CurrencySettings() {
                         src={src}
                         idx={idx}
                         totalCount={sources?.length || 0}
+                        canEdit={canEdit}
                         onEdit={() => {
                           setEditingSource(src)
                           setDialogOpen(true)

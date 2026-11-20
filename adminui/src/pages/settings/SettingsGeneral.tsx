@@ -18,6 +18,12 @@ export function SettingsGeneral() {
         title="Безопасность"
         fields={[
           {
+            key: "auth.registration_enabled",
+            label: "Регистрация пользователей",
+            kind: "switch",
+            hint: "Разрешить новым пользователям самостоятельно регистрироваться в системе (включено по умолчанию).",
+          },
+          {
             key: "auth.2fa.required_for_admin",
             label: "Обязательная 2FA для админов",
             kind: "switch",

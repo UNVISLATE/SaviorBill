@@ -53,6 +53,7 @@ docker-compose.override.yml
 /AUDIT.md
 /CLOUD_PLAN.md
 /IMPLEMENTATION_PLAN.md
+/CLOUD_IMPLEMENTATION_PLAN.md
 /WS_ROUTES.md
 
 # Локальные тесты и инструменты временные

@@ -217,6 +217,14 @@ SETTINGS: tuple[SettingDef, ...] = (
         "фактор не включён, такие аккаунты не могут выполнять админские "
         "действия (кроме самой настройки 2FA)",
     ),
+    SettingDef(
+        "auth.registration_enabled",
+        None,
+        type="bool",
+        group="auth",
+        default=True,
+        desc="Разрешить самостоятельную регистрацию новых пользователей (по умолчанию включено)",
+    ),
     # Lua: таймаут вызова и ретраи (мягкая, настраиваемая изоляция вызовов воркера)
     SettingDef(
         "lua.call_timeout_sec",
@@ -435,6 +443,12 @@ SETTINGS: tuple[SettingDef, ...] = (
         protected=True,
         desc="Название в шапке/тайтле admin UI",
     ),
+    SettingDef(
+        "ui.admin.login_notice",
+        None,
+        group="ui",
+        desc="Кастомный текст / оповещение на экране входа в admin UI",
+    ),
     SettingDef("ui.admin.logo", None, group="ui", desc="Токен медиа логотипа admin UI"),
     SettingDef(
         "ui.admin.favicon", None, group="ui", desc="Токен медиа favicon admin UI"
@@ -516,6 +530,12 @@ SETTINGS: tuple[SettingDef, ...] = (
         group="ui",
         protected=True,
         desc="Название клиентского приложения",
+    ),
+    SettingDef(
+        "ui.client.login_notice",
+        None,
+        group="ui",
+        desc="Кастомный текст / оповещение на экране входа клиента",
     ),
     SettingDef("ui.client.logo", None, group="ui", desc="Токен медиа логотипа клиента"),
     SettingDef(

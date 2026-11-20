@@ -5,6 +5,7 @@ import { Info, Loader2, Plus, X } from "lucide-react"
 import { api } from "@/api/api.ts"
 import { cn } from "@/lib/utils"
 import { toastError, toastSuccess } from "@/lib/toast"
+import { useAuth } from "@/hooks/use-auth"
 import { useSettingsMap } from "@/hooks/use-settings-map"
 import { CurrencySelect } from "@/components/common/CurrencySelect"
 import { Button } from "@/components/shadsnui/button"
@@ -115,9 +116,11 @@ function serializeRates(rows: RateRow[]): string {
 function RatesEditor({
   value,
   onChange,
+  disabled,
 }: {
   value: string
   onChange: (next: string) => void
+  disabled?: boolean
 }) {
   const [rows, setRows] = useState<RateRow[]>(() => parseRates(value))
 
@@ -133,6 +136,7 @@ function RatesEditor({
     })()
 
   function update(next: RateRow[]) {
+    if (disabled) return
     setRows(next)
     onChange(serializeRates(next))
   }
@@ -143,7 +147,7 @@ function RatesEditor({
         <p className="text-xs text-destructive">
           Значение не является JSON. Почините через Raw settings.
         </p>
-        <Input value={value} onChange={(e) => onChange(e.target.value)} className="font-mono text-xs" />
+        <Input value={value} onChange={(e) => onChange(e.target.value)} disabled={disabled} className="font-mono text-xs" />
       </div>
     )
   }
@@ -154,6 +158,7 @@ function RatesEditor({
         <div key={i} className="grid grid-cols-[10rem_1fr_auto] items-center gap-2">
           <CurrencySelect
             value={r.code}
+            disabled={disabled}
             onChange={(code) => {
               const next = [...rows]
               next[i] = { ...r, code }
@@ -163,6 +168,7 @@ function RatesEditor({
           />
           <Input
             value={r.rate}
+            disabled={disabled}
             onChange={(e) => {
               const next = [...rows]
               next[i] = { ...r, rate: e.target.value }
@@ -172,25 +178,29 @@ function RatesEditor({
             inputMode="decimal"
             className="font-mono text-xs"
           />
-          <Button
-            type="button"
-            size="icon"
-            variant="ghost"
-            className="size-8 text-muted-foreground hover:text-destructive"
-            onClick={() => update(rows.filter((_, idx) => idx !== i))}
-          >
-            <X className="size-4" />
-          </Button>
+          {!disabled && (
+            <Button
+              type="button"
+              size="icon"
+              variant="ghost"
+              className="size-8 text-muted-foreground hover:text-destructive"
+              onClick={() => update(rows.filter((_, idx) => idx !== i))}
+            >
+              <X className="size-4" />
+            </Button>
+          )}
         </div>
       ))}
-      <Button
-        type="button"
-        size="sm"
-        variant="outline"
-        onClick={() => update([...rows, { code: "", rate: "" }])}
-      >
-        <Plus className="size-4" /> Добавить валюту
-      </Button>
+      {!disabled && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => update([...rows, { code: "", rate: "" }])}
+        >
+          <Plus className="size-4" /> Добавить валюту
+        </Button>
+      )}
       {rows.length === 0 && (
         <p className="text-xs text-muted-foreground">
           Курсов нет — оплата в другой валюте будет отклонена.
@@ -252,7 +262,7 @@ function FieldControl({
   }
 
   if (kind === "rates") {
-    return <RatesEditor value={value} onChange={onChange} />
+    return <RatesEditor value={value} onChange={onChange} disabled={spec.disabled} />
   }
 
   return (
@@ -301,6 +311,8 @@ export function SettingsSection({
   className?: string
 }) {
   const qc = useQueryClient()
+  const { can } = useAuth()
+  const canEdit = can("settings.raw.edit") || can("settings.edit")
   const { map, isLoading } = useSettingsMap()
 
   const saved = useMemo(() => {
@@ -329,6 +341,7 @@ export function SettingsSection({
 
   const save = useMutation({
     mutationFn: async () => {
+      if (!canEdit) return
       for (const key of changedKeys) {
         await api.put(`/v1/admin/settings/raw/${encodeURIComponent(key)}`, {
           value: current[key],
@@ -368,7 +381,7 @@ export function SettingsSection({
           const control = (
             <FieldControl
               key={`${f.key}:${resetToken}`}
-              spec={f}
+              spec={{ ...f, disabled: !canEdit || f.disabled }}
               value={current[f.key] ?? ""}
               onChange={(next) => setDraft({ ...current, [f.key]: next })}
             />
@@ -406,9 +419,9 @@ export function SettingsSection({
           )}
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground">
-              {dirty ? `Изменено полей: ${changedKeys.length}` : footerNote}
+              {dirty && canEdit ? `Изменено полей: ${changedKeys.length}` : footerNote}
             </span>
-            {dirty && (
+            {dirty && canEdit && (
               <div className="flex items-center gap-2">
                 <Button size="sm" variant="ghost" onClick={reset} disabled={save.isPending}>
                   Отменить

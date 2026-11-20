@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
 import { api } from "@/api/api.ts"
 import { toastError, toastSuccess } from "@/lib/toast"
+import { useAuth } from "@/hooks/use-auth"
 import { Button } from "@/components/shadsnui/button"
 import { Badge } from "@/components/shadsnui/badge"
 import { Input } from "@/components/shadsnui/input"
@@ -31,6 +32,8 @@ const KIND_LABEL: Record<string, string> = {
 
 export function RateLimitSettings() {
   const qc = useQueryClient()
+  const { can } = useAuth()
+  const canEdit = can("settings.raw.edit") || can("settings.edit")
   const [drafts, setDrafts] = useState<Record<string, { max_hits: string; window: string }>>({})
 
   const { data, isLoading } = useQuery({
@@ -104,6 +107,7 @@ export function RateLimitSettings() {
                       type="number"
                       min={1}
                       className="w-24"
+                      disabled={!canEdit}
                       value={draft.max_hits}
                       onChange={(e) =>
                         setDrafts((prev) => ({
@@ -118,6 +122,7 @@ export function RateLimitSettings() {
                       type="number"
                       min={1}
                       className="w-24"
+                      disabled={!canEdit}
                       value={draft.window}
                       onChange={(e) =>
                         setDrafts((prev) => ({
@@ -135,10 +140,12 @@ export function RateLimitSettings() {
                     )}
                   </TableCell>
                   <TableCell className="flex gap-2">
-                    <Button size="sm" onClick={() => save.mutate(r.kind)} disabled={save.isPending}>
-                      Сохранить
-                    </Button>
-                    {r.overridden && (
+                    {canEdit && (
+                      <Button size="sm" onClick={() => save.mutate(r.kind)} disabled={save.isPending}>
+                        Сохранить
+                      </Button>
+                    )}
+                    {canEdit && r.overridden && (
                       <Button
                         size="sm"
                         variant="outline"
@@ -147,6 +154,9 @@ export function RateLimitSettings() {
                       >
                         Сбросить
                       </Button>
+                    )}
+                    {!canEdit && (
+                      <span className="text-xs text-muted-foreground self-center">Только чтение</span>
                     )}
                   </TableCell>
                 </TableRow>
