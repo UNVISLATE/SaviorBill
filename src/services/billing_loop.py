@@ -312,6 +312,12 @@ class BillingLoop:
                     await session.commit()
                 except Exception:  # noqa: BLE001 — единичная задача не валит цикл
                     await session.rollback()
+                    if member.startswith(_MED):
+                        # med: не сидится из БД — возвращаем в очередь с backoff.
+                        nxt = utc_now() + timedelta(
+                            seconds=self.cfg.BILLING_PAY_RECHECK_INTERVAL
+                        )
+                        await self.vk.zadd(self._qkey, {member: _score(nxt)})
                     log.exception("billing-loop: %s task failed", member)
 
     async def _sleep_until_next(self) -> None:
@@ -364,15 +370,18 @@ class BillingLoop:
         за автоматическим рефандом мы не имеем права (,
         решение D7).
         """
-        usvc = await session.get(UserServicesModel, usvc_id)
-        if usvc is None or usvc.status != UsvcStatus.FAILED:
+        row = await session.get(UserServicesModel, usvc_id)
+        if row is None or row.status != UsvcStatus.FAILED:
+            return
+        acc = await lock_account(session, row.account_id)
+        usvc = await session.get(UserServicesModel, usvc_id, with_for_update=True)
+        if usvc is None or usvc.status != UsvcStatus.FAILED or acc is None:
             return
         max_attempts, backoff = await self._delivery_limits(session)
 
         if usvc.delivery_attempts < max_attempts:
             service = await session.get(ServiceModel, usvc.service_id)
-            acc = await lock_account(session, usvc.account_id)
-            if service is None or acc is None:
+            if service is None:
                 return
             mngr = await self._usvc_mngr(session)
             await mngr.deliver(usvc, service, acc)
@@ -390,14 +399,17 @@ class BillingLoop:
         self, session: AsyncSession, usvc: UserServicesModel
     ) -> None:
         """Зачислить стоимость проваленной выдачи на внутренний баланс (однократно)."""
+        locked = await session.get(UserServicesModel, usvc.id, with_for_update=True) if hasattr(session, "get") else None
+        if locked is not None:
+            usvc = locked
         private = usvc.private_data or {}
         if private.get("delivery_credit"):
             return
         acc = await lock_account(session, usvc.account_id)
         if acc is None or usvc.price <= 0:
             return
-        charged_bonus = Decimal(private.get("charged_bonus", "0"))
-        charged_balance = Decimal(private.get("charged_balance", "0"))
+        charged_bonus = Decimal(str(private.get("charged_bonus", "0")))
+        charged_balance = Decimal(str(private.get("charged_balance", "0")))
         if charged_bonus > 0 or charged_balance > 0:
             if hasattr(acc, "bonus_balance"):
                 acc.bonus_balance += charged_bonus
@@ -408,6 +420,8 @@ class BillingLoop:
             **private,
             "delivery_credit": {
                 "amount": str(usvc.price),
+                "bonus": str(charged_bonus),
+                "balance": str(charged_balance if (charged_bonus > 0 or charged_balance > 0) else usvc.price),
                 "at": utc_now().isoformat(),
             },
         }
@@ -440,7 +454,11 @@ class BillingLoop:
 
     async def _exec_svc_action(self, session: AsyncSession, usvc_id: int) -> None:
         member = f"{_SVC}{usvc_id}"
-        usvc = await session.get(UserServicesModel, usvc_id)
+        usvc = await session.scalar(
+            select(UserServicesModel)
+            .where(UserServicesModel.id == usvc_id)
+            .with_for_update()
+        )
         if usvc is None or usvc.status != UsvcStatus.ACTIVE:
             # Член уже извлечён claim'ом — просто выходим.
             return

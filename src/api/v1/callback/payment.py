@@ -53,6 +53,7 @@ async def _notify(svc: PayMngr, triggers: TriggerDispatcher, payment) -> None:
     acc = await svc.s.get(UserModel, payment.account_id)
     email = acc.email if acc else None
     base = {
+        "event_id": f"payment:{payment.id}:{payment.status}",
         "user": {
             "id": getattr(acc, "id", None),
             "login": getattr(acc, "login", None),
@@ -144,7 +145,9 @@ async def payment_callback(
         )
 
     await svc.s.commit()
-    await _notify(svc, triggers, payment)
+    # Уведомляем только при реальном переходе статуса и первой обработке вебхука
+    if getattr(payment, "_just_transitioned", True) and first_time:
+        await _notify(svc, triggers, payment)
     return payment
 
 

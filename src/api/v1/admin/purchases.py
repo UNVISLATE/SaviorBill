@@ -239,9 +239,16 @@ async def refund_payment(
     session: AsyncSession = Depends(get_db_session),
     svc: PayMngr = Depends(get_pay_mngr),
 ) -> PaymentAdmin:
-    pay = await session.get(UserPaymentsModel, payment_id)
+    pay = await svc.claim_refund(payment_id)
     if pay is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "payment not found")
+        exists = await session.get(UserPaymentsModel, payment_id)
+        if exists is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "payment not found")
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "refund already in progress or payment is not refundable",
+        )
+    await session.commit()
     pay = await svc.refund(pay)
     await session.commit()
     return PaymentAdmin.from_model(pay)

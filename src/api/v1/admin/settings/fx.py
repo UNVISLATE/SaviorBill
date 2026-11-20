@@ -531,6 +531,20 @@ async def get_rates_overview(
     box: SecBox = Depends(get_secbox),
 ) -> list[dict[str, Any]]:
     fx = FxRates(settings, request.app.state.valkey, bus=bus, session=session, box=box)
-    return await fx.get_rates_overview()
+    try:
+        return await fx.get_rates_overview()
+    except Exception:
+        try:
+            await session.rollback()
+        except Exception:
+            pass
+        base = (await settings.get("billing.currency")) or DEFAULT_CURRENCY
+        return [{
+            "currency": base,
+            "rate_to_base": "1.00",
+            "source_id": None,
+            "source_name": "Базовая валюта",
+            "priority": -1,
+        }]
 
 __all__ = ["router"]

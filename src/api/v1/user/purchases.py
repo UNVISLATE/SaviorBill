@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -43,7 +44,10 @@ router = APIRouter()
     response_model=list[PayProviderPublic],
     summary="Available payment providers",
     description="Enabled providers available for creating a payment.",
-    dependencies=[Depends(require_perm("user.purchases.read"))],
+    dependencies=[
+        Depends(require_perm("user.purchases.read")),
+        Depends(rate_limit("user.purchases.providers", LimitKind.DEFAULT, require_auth=True)),
+    ],
 )
 async def list_pay_providers(
     acc: UserModel = Depends(get_current_acc),
@@ -67,6 +71,33 @@ async def list_pay_providers(
         except Exception:
             available_fx = None
 
+    needed_currencies: set[str] = set()
+    for p in rows:
+        supported = [p.currency] + [c for c in (p.currencies or []) if c != p.currency]
+        if available_fx is not None:
+            filtered = [c for c in supported if c.upper() in available_fx]
+        else:
+            filtered = supported
+        for cur in filtered:
+            cur_u = cur.strip().upper()
+            if cur_u not in rate_cache:
+                needed_currencies.add(cur_u)
+
+    if needed_currencies and pay_mngr.fx is not None:
+        async def _fetch_rate(cur: str):
+            try:
+                rate = await asyncio.wait_for(
+                    pay_mngr.fx.rate_to_base(cur), timeout=1.5
+                )
+                return cur, float(rate)
+            except Exception:
+                return cur, None
+
+        results = await asyncio.gather(*(_fetch_rate(c) for c in needed_currencies))
+        for cur, rate in results:
+            if rate is not None:
+                rate_cache[cur] = rate
+
     res: list[PayProviderPublic] = []
     for p in rows:
         supported = [p.currency] + [c for c in (p.currencies or []) if c != p.currency]
@@ -78,11 +109,6 @@ async def list_pay_providers(
         prov_rates: dict[str, float] = {}
         for cur in filtered:
             cur_u = cur.strip().upper()
-            if cur_u not in rate_cache and pay_mngr.fx is not None:
-                try:
-                    rate_cache[cur_u] = float(await pay_mngr.fx.rate_to_base(cur_u))
-                except Exception:
-                    continue
             if cur_u in rate_cache:
                 prov_rates[cur_u] = rate_cache[cur_u]
 

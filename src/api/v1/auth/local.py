@@ -15,6 +15,7 @@ from dependencies.auth import (
 from dependencies.login_guard import LoginGuard, client_ip, get_login_guard
 from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.sec import make_secbox
+from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.triggers import get_dispatcher
 from errors import AuthSessionLimitError
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
@@ -65,8 +66,13 @@ async def register(
     banned_domains: BannedEmailDomainsMngr = Depends(get_banned_domains_mngr),
     tokens: TokenSvc = Depends(get_token_svc),
     triggers: TriggerDispatcher = Depends(get_dispatcher),
+    settings: SystemSettingsMngr = Depends(get_settings_mngr),
 ) -> TokenPair:
     """Создать локальный аккаунт и сразу выдать токены."""
+    if not await settings.get_bool("auth.registration_enabled", default=True):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "registration is disabled"
+        )
     if body.email and await banned_domains.is_banned(body.email):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "registration from this email domain is not allowed"

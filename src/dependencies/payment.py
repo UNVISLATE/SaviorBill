@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 _CENT = Decimal("0.01")
 
 from fastapi import Depends, HTTPException, Request, status
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from dependencies.db import get_db_session
@@ -287,21 +287,32 @@ class PayMngr:
         payment = await self._locate(priv, provider_slug, for_update=True)
         if payment is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "payment not found")
+        payment._just_transitioned = False
+        transitioned = False
+        if payment.status == PayStatus.REFUNDING:
+            if priv.get("refunded"):
+                await self._apply_refund(payment, priv)
+                transitioned = True
+            return payment
         if payment.status == PayStatus.REFUNDED:
             return payment  # идемпотентность
         if payment.status == PayStatus.PAID:
             if priv.get("refunded"):
                 await self._apply_refund(payment, priv)
+                transitioned = True
             else:
                 return payment  # идемпотентность
         elif priv.get("paid"):
             await self._settle(payment, priv)
+            transitioned = payment.status in (PayStatus.PAID, PayStatus.REVIEW)
         elif priv.get("failed"):
             payment.status = PayStatus.FAILED
             await self._fire_payment_trigger(payment, TriggerEvent.PAYMENT_FAILED)
+            transitioned = True
         elif priv.get("cancelled"):
             payment.status = PayStatus.CANCELLED
             await self._fire_payment_trigger(payment, TriggerEvent.PAYMENT_CANCELLED)
+            transitioned = True
 
         if res.get("public"):
             payment.public_data = {**(payment.public_data or {}), **res["public"]}
@@ -309,6 +320,7 @@ class PayMngr:
         payment.lua_script_version = script_version
 
         await self.s.flush()
+        payment._just_transitioned = transitioned
         return payment
 
     async def recheck(self, payment: UserPaymentsModel) -> UserPaymentsModel:
@@ -321,7 +333,7 @@ class PayMngr:
         :arg payment: платёж для перепроверки.
         :return: обновлённый платёж.
         """
-        if payment.status in (PayStatus.PAID, PayStatus.FAILED, PayStatus.REFUNDED):
+        if payment.status in (PayStatus.PAID, PayStatus.FAILED, PayStatus.REFUNDED, PayStatus.REFUNDING):
             return payment
         prov = await self._provider(payment.provider, enabled=False)
         script, filename, script_version = await self._script(prov, PayAction.CHECK)
@@ -344,7 +356,7 @@ class PayMngr:
         # ответ скрипта (сеть), его мог обработать параллельный
         # callback/recheck/refund.
         payment = await self.s.get(UserPaymentsModel, payment.id, with_for_update=True)
-        if payment.status in (PayStatus.PAID, PayStatus.FAILED, PayStatus.REFUNDED):
+        if payment.status in (PayStatus.PAID, PayStatus.FAILED, PayStatus.REFUNDED, PayStatus.REFUNDING):
             return payment
 
         if priv.get("ok") and priv.get("paid"):
@@ -363,42 +375,89 @@ class PayMngr:
         await self.s.flush()
         return payment
 
+    async def claim_refund(self, payment_id: int) -> UserPaymentsModel | None:
+        """Атомарно занять платёж под возврат: UPDATE ... WHERE status='paid' RETURNING ..."""
+        res = await self.s.execute(
+            update(UserPaymentsModel)
+            .where(
+                UserPaymentsModel.id == payment_id,
+                UserPaymentsModel.status == PayStatus.PAID,
+            )
+            .values(status=PayStatus.REFUNDING)
+            .returning(UserPaymentsModel)
+        )
+        return res.scalar_one_or_none()
+
     async def refund(self, payment: UserPaymentsModel) -> UserPaymentsModel:
         """Вернуть средства по платежу (action=refund).
 
         :arg payment: оплаченный платёж для возврата.
         :return: обновлённый платёж.
         """
-        if payment.status != PayStatus.PAID:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                "refund is only possible for a paid payment",
-            )
+        if payment.status != PayStatus.REFUNDING:
+            if payment.status == PayStatus.PAID:
+                claimed = await self.claim_refund(payment.id)
+                if claimed is None:
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        "refund is not possible or already in progress",
+                    )
+                payment = claimed
+            else:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "refund is only possible for a paid payment",
+                )
         prov = await self._provider(payment.provider, enabled=False)
         script, filename, script_version = await self._script(prov, PayAction.REFUND)
         acc = await self.s.get(UserModel, payment.account_id)
 
-        res = await self.runner.run_payment(
-            script,
-            PayAction.REFUND,
-            acc,
-            payment,
-            prov,
-            self._secrets(prov),
-            filename=filename,
-            version=script_version,
-            requested_version=prov.script_version,
-        )
+        try:
+            res = await self.runner.run_payment(
+                script,
+                PayAction.REFUND,
+                acc,
+                payment,
+                prov,
+                self._secrets(prov),
+                filename=filename,
+                version=script_version,
+                requested_version=prov.script_version,
+            )
+        except Exception:
+            # Не возвращаем PAID: провайдер мог выполнить возврат, но не ответить или упасть по таймауту.
+            # Оставляем REFUNDING до ручной сверки или refund-callback.
+            await audit(
+                self.s,
+                action="payment.refund_unconfirmed",
+                target_type="payment",
+                target_id=payment.id,
+                result="warn",
+                meta={"provider": payment.provider},
+            )
+            raise
+
         priv = res.get("private") or {}
 
         # Как и в recheck — блокируем и перечитываем статус перед мутацией
         # (сеть к провайдеру уже отработала без удержания лока).
         payment = await self.s.get(UserPaymentsModel, payment.id, with_for_update=True)
-        if payment.status != PayStatus.PAID:
+        if payment.status != PayStatus.REFUNDING:
             return payment  # уже обработан конкурентным запросом — идемпотентно
 
         if priv.get("ok") and priv.get("refunded"):
             await self._apply_refund(payment, priv)
+        elif priv.get("ok") is False or (priv.get("failed") and not priv.get("refunded")):
+            payment.status = PayStatus.PAID
+            await audit(
+                self.s,
+                action="payment.refund_rejected",
+                target_type="payment",
+                target_id=payment.id,
+                result="warn",
+                meta={"provider": payment.provider, "reason": priv.get("error", "provider rejected refund")},
+            )
+
         if res.get("public"):
             payment.public_data = {**(payment.public_data or {}), **res["public"]}
         payment.private_data = {**(payment.private_data or {}), **priv}
@@ -445,11 +504,33 @@ class PayMngr:
         payment.status = PayStatus.REFUNDED
 
         if payment.target == PayTarget.SERVICE and payment.user_svc_id:
-            usvc = await self.s.get(UserServicesModel, payment.user_svc_id)
+            usvc = await self.s.scalar(
+                select(UserServicesModel)
+                .where(UserServicesModel.id == payment.user_svc_id)
+                .with_for_update()
+            )
             if usvc is not None:
                 service = await self.s.get(ServiceModel, usvc.service_id)
                 acc = await lock_account(self.s, payment.account_id)
                 if service is not None and acc is not None:
+                    credit = (usvc.private_data or {}).get("delivery_credit") or {}
+                    if credit:
+                        bonus = Decimal(str(credit.get("bonus", "0")))
+                        balance = Decimal(str(credit.get("balance", credit.get("amount", "0"))))
+                        deduct_bonus = Decimal("0")
+                        if bonus > 0 and hasattr(acc, "bonus_balance"):
+                            deduct_bonus = min(acc.bonus_balance, bonus)
+                            acc.bonus_balance -= deduct_bonus
+                        deduct_balance = min(acc.balance, balance)
+                        acc.balance -= deduct_balance
+                        shortfall = (bonus + balance) - (deduct_bonus + deduct_balance)
+                        payment.private_data = {
+                            **(payment.private_data or {}),
+                            "refund": {
+                                "delivery_credit_reversed": str(deduct_bonus + deduct_balance),
+                                "shortfall": str(shortfall),
+                            },
+                        }
                     await UserServicesMngr(self.s, self.bus, self.box, dispatcher=self.dispatcher).revoke(
                         usvc, service, acc
                     )
@@ -508,11 +589,25 @@ class PayMngr:
         pid = priv.get("payment_id")
         if pid is not None:
             try:
-                return await self.s.get(
+                pay = await self.s.get(
                     UserPaymentsModel, int(pid), with_for_update=for_update
                 )
             except (TypeError, ValueError):
                 return None
+            if pay is None or pay.provider != provider_slug:
+                await audit(
+                    self.s,
+                    action="payment.callback_provider_mismatch",
+                    target_type="payment",
+                    target_id=int(pid),
+                    result="warn",
+                    meta={
+                        "expected_provider": provider_slug,
+                        "actual_provider": getattr(pay, "provider", None),
+                    },
+                )
+                return None
+            return pay
         ext = priv.get("external_id")
         if ext:
             stmt = select(UserPaymentsModel).where(
@@ -526,27 +621,65 @@ class PayMngr:
 
     async def _settle(self, payment: UserPaymentsModel, priv: dict) -> None:
         """Провести успешный платёж: баланс или выдача оплаченной услуги."""
-        payment.status = PayStatus.PAID
-        payment.paid_at = utc_now()
         if priv.get("external_id"):
             payment.external_id = str(priv["external_id"])
 
-        acc = await lock_account(self.s, payment.account_id)
-
         paid_currency = priv.get("paid_currency")
         if paid_currency and str(paid_currency).strip().upper() != payment.currency.strip().upper():
-            priv["currency_mismatch"] = {
-                "expected": payment.currency,
-                "got": str(paid_currency),
+            payment.status = PayStatus.REVIEW
+            payment.private_data = {
+                **(payment.private_data or {}),
+                "review_reason": "currency_mismatch",
+                "expected_currency": payment.currency,
+                "paid_currency": str(paid_currency),
             }
+            await audit(
+                self.s,
+                action="payment.currency_mismatch",
+                target_type="payment",
+                target_id=payment.id,
+                result="warn",
+                meta={"expected": payment.currency, "got": str(paid_currency)},
+            )
+            return
 
         raw_paid = priv.get("paid_amount")
         actual_paid: Decimal | None = None
         if raw_paid is not None and str(raw_paid).strip() != "":
             try:
                 actual_paid = Decimal(str(raw_paid).strip())
-            except InvalidOperation:
-                actual_paid = None
+            except (InvalidOperation, ValueError):
+                payment.status = PayStatus.REVIEW
+                payment.private_data = {
+                    **(payment.private_data or {}),
+                    "review_reason": "invalid_paid_amount",
+                    "raw_paid_amount": str(raw_paid)[:64],
+                }
+                return
+
+        if payment.target == PayTarget.SERVICE:
+            if actual_paid is not None and actual_paid < payment.amount:
+                payment.status = PayStatus.REVIEW
+                payment.private_data = {
+                    **(payment.private_data or {}),
+                    "review_reason": "underpayment",
+                    "expected": str(payment.amount),
+                    "paid": str(actual_paid),
+                }
+                await audit(
+                    self.s,
+                    action="payment.underpayment",
+                    target_type="payment",
+                    target_id=payment.id,
+                    result="warn",
+                    meta={"expected": str(payment.amount), "paid": str(actual_paid)},
+                )
+                return
+
+        payment.status = PayStatus.PAID
+        payment.paid_at = utc_now()
+
+        acc = await lock_account(self.s, payment.account_id)
         credited = await self._credited_amount(payment, actual_paid=actual_paid)
 
         if payment.target == PayTarget.SERVICE and payment.user_svc_id:
@@ -575,15 +708,20 @@ class PayMngr:
         """
         if payment.base_amount is not None:
             expected_paid = payment.amount
+            if expected_paid <= Decimal("0"):
+                raise HTTPException(
+                    status.HTTP_409_CONFLICT, "invalid payment amount"
+                )
+            if actual_paid is not None:
+                actual_paid = min(actual_paid, expected_paid)
             if actual_paid is None or actual_paid == expected_paid:
                 return payment.base_amount.quantize(_CENT, rounding=ROUND_HALF_UP)
-            if expected_paid > Decimal("0"):
-                ratio = actual_paid / expected_paid
-                credited = (payment.base_amount * ratio).quantize(
-                    _CENT, rounding=ROUND_HALF_UP
-                )
-                payment.base_amount = credited
-                return credited
+            ratio = actual_paid / expected_paid
+            credited = (payment.base_amount * ratio).quantize(
+                _CENT, rounding=ROUND_HALF_UP
+            )
+            payment.base_amount = credited
+            return credited
 
         paid = actual_paid if actual_paid is not None else payment.amount
         if self.fx is None:

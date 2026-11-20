@@ -343,10 +343,11 @@ class UserServicesMngr:
                 usvc.status = UsvcStatus.STOPPED
             elif action == ServiceAction.FREEZE:
                 usvc.status = UsvcStatus.FROZEN
-            elif action == ServiceAction.RENEW and usvc.duration:
-                base = usvc.expires_at or utc_now()
-                usvc.expires_at = base + timedelta(seconds=usvc.duration)
-                usvc.status = UsvcStatus.ACTIVE
+            elif action == ServiceAction.RENEW:
+                raise HTTPException(
+                    status.HTTP_402_PAYMENT_REQUIRED,
+                    "renewal requires a new paid order",
+                )
         await self.s.flush()
         return usvc
 

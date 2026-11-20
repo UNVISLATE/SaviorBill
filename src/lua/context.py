@@ -67,6 +67,7 @@ def build_service_ctx(
 
     ctx = {
         "action": action,
+        "idempotency_key": f"usvc:{usvc.id}:{action}",
         "lua": _lua_meta(script),
         "user": LuaUser.from_model(acc, usvc).model_dump(mode="json"),
         "service": service_data,

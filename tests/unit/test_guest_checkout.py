@@ -53,6 +53,25 @@ class _FakeValkey:
     async def expire(self, key: str, seconds: int) -> None:
         self._ttls[key] = seconds
 
+    async def eval(self, script: str, numkeys: int, *keys_and_args: str):
+        k1, k2, k3, arg1 = keys_and_args
+        raw = self._vals.get(k1)
+        if not raw:
+            return None
+        stored = self._vals.get(k2)
+        if not stored or stored != arg1:
+            fails = int(self._vals.get(k3, "0")) + 1
+            self._vals[k3] = str(fails)
+            if fails >= 5:
+                self._vals.pop(k1, None)
+                self._vals.pop(k2, None)
+                self._vals.pop(k3, None)
+            return False
+        self._vals.pop(k1, None)
+        self._vals.pop(k2, None)
+        self._vals.pop(k3, None)
+        return raw
+
 
 class _FakeSettings:
     def __init__(self, settings_dict: dict | None = None) -> None:

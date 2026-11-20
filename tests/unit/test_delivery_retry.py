@@ -19,8 +19,14 @@ class _FakeSession:
         self._objs = objs
         self.added: list = []
 
-    async def get(self, model, pk):
-        return self._objs.get((model.__name__, pk))
+    async def get(self, model, pk, **kwargs):
+        name = getattr(model, "__name__", str(model))
+        return self._objs.get((name, pk))
+
+    async def scalar(self, stmt):
+        for obj in self._objs.values():
+            return obj
+        return None
 
     async def flush(self) -> None:
         pass

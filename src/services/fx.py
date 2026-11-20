@@ -207,6 +207,33 @@ class FxRates:
         except Exception:
             return ""
 
+    async def _safe_flush_status(
+        self,
+        src: Any,
+        *,
+        rates: dict[str, Decimal] | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Безопасно зафиксировать статус опроса источника в БД без риска отравить сессию."""
+        if not hasattr(src, "type") or self.session is None:
+            return
+        try:
+            if rates is not None:
+                src.last_rates = {k: str(v) for k, v in rates.items()}
+                src.last_fetched_at = utc_now()
+                src.last_error = None
+                src.last_error_at = None
+            elif error is not None:
+                src.last_error = str(error)[:1024]
+                src.last_error_at = utc_now()
+            await self.session.flush()
+        except Exception as exc:
+            log.warning("fx: could not flush status for source %s: %s", getattr(src, "id", None), exc)
+            try:
+                await self.session.rollback()
+            except Exception:
+                pass
+
     async def _rates_for_source(self, src: Any) -> dict[str, Decimal]:
         """Получить курсы от одного источника (Valkey -> Live -> Fail-Open DB)."""
         is_orm = hasattr(src, "type")
@@ -226,12 +253,7 @@ class FxRates:
                         continue
             if not out:
                 out = await self._manual_rates()
-            if is_orm and self.session is not None:
-                src.last_rates = {k: str(v) for k, v in out.items()}
-                src.last_fetched_at = utc_now()
-                src.last_error = None
-                src.last_error_at = None
-                await self.session.flush()
+            await self._safe_flush_status(src, rates=out)
             return out
 
         cache_key = f"{_CACHE_KEY_PREFIX}{src_id}"
@@ -260,23 +282,15 @@ class FxRates:
 
             # Успешное получение — сохраняем кэш и статус в БД
             await self._cache_for(cache_key, rates)
-            if is_orm and self.session is not None:
-                src.last_rates = {k: str(v) for k, v in rates.items()}
-                src.last_fetched_at = utc_now()
-                src.last_error = None
-                src.last_error_at = None
-                await self.session.flush()
+            await self._safe_flush_status(src, rates=rates)
 
             return rates
 
         except Exception as exc:
             log.warning("fx: source %r failed: %s", src_id, exc)
 
-            # Фиксируем ошибку в БД
-            if is_orm and self.session is not None:
-                src.last_error = str(exc)[:1024]
-                src.last_error_at = utc_now()
-                await self.session.flush()
+            # Фиксируем ошибку в БД через безопасный flush
+            await self._safe_flush_status(src, error=str(exc))
 
             # Режим Fail-Open: если включен и есть последнее сохранённое состояние в БД
             fail_open = False
@@ -502,12 +516,7 @@ class FxRates:
                 out = await self._manual_rates()
             cache_key = f"{_CACHE_KEY_PREFIX}{src_id}"
             await self._cache_for(cache_key, out)
-            if is_orm and self.session is not None:
-                src.last_rates = {k: str(v) for k, v in out.items()}
-                src.last_fetched_at = utc_now()
-                src.last_error = None
-                src.last_error_at = None
-                await self.session.flush()
+            await self._safe_flush_status(src, rates=out)
             return out
 
         cache_key = f"{_CACHE_KEY_PREFIX}{src_id}"
@@ -530,19 +539,11 @@ class FxRates:
                 rates = {}
 
             await self._cache_for(cache_key, rates)
-            if is_orm and self.session is not None:
-                src.last_rates = {k: str(v) for k, v in rates.items()}
-                src.last_fetched_at = utc_now()
-                src.last_error = None
-                src.last_error_at = None
-                await self.session.flush()
+            await self._safe_flush_status(src, rates=rates)
             return rates
         except Exception as exc:
             log.warning("fx: refresh source %r failed: %s", src_id, exc)
-            if is_orm and self.session is not None:
-                src.last_error = str(exc)[:1024]
-                src.last_error_at = utc_now()
-                await self.session.flush()
+            await self._safe_flush_status(src, error=str(exc))
             raise
 
     async def get_rates_overview(self) -> list[dict[str, Any]]:

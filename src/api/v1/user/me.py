@@ -122,8 +122,16 @@ async def patch_me(
         conns = await oauth_mngr.list_for_account(acc.id)
         confirmed = _email_confirmed_by_oauth(new_email, [c.email for c in conns])
         acc.email = new_email
-        if not confirmed:
-            # Новый email никем не подтверждён — аккаунт снова неверифицирован.
+        is_admin_or_owner = bool(
+            acc.role
+            and (
+                acc.role.key in (BaseRole.OWNER, BaseRole.ADMIN)
+                or (acc.role.perms and any(p.startswith("admin.") for p in acc.role.perms))
+            )
+        )
+        if not confirmed and not is_admin_or_owner:
+            # Новый email никем не подтверждён — обычный аккаунт снова неверифицирован.
+            # Роли владельца и администраторов никогда не сбрасываются до guest.
             await mngr.set_role_key(acc, BaseRole.GUEST)
 
     try:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -294,3 +296,16 @@ async def test_fail_open_uses_last_rates():
     )
     _, rate, _ = await fx.to_base(Decimal("1"), "USD")
     assert rate == Decimal("95.5")
+
+
+@pytest.mark.asyncio
+async def test_safe_flush_status_recovers_from_flush_error() -> None:
+    session = AsyncMock()
+    session.flush.side_effect = Exception("UPDATE statement on table 'fx_sources' expected to update 1 row(s); 0 were matched.")
+    session.rollback = AsyncMock()
+
+    fx = FxRates(None, None, session=session)
+    src = SimpleNamespace(type="provider", id=99)
+
+    await fx._safe_flush_status(src, rates={"USD": Decimal("100")})
+    session.rollback.assert_awaited_once()

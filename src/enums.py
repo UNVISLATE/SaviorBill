@@ -26,6 +26,8 @@ class PayStatus:
 
     PENDING = "pending"
     PAID = "paid"
+    REFUNDING = "refunding"
+    REVIEW = "review"
     FAILED = "failed"
     REFUNDED = "refunded"
     WAIT = "wait"

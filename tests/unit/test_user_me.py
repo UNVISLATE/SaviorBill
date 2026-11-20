@@ -220,3 +220,67 @@ class TestAccountSchema:
         assert acc.avatar_media_id is None
         assert acc.avatar_url is None
         assert acc.oauth_providers == []
+
+
+class TestPatchMeEmailRolePreservation:
+    @pytest.mark.asyncio
+    async def test_owner_email_change_does_not_demote_to_guest(self) -> None:
+        from api.v1.user.me import patch_me
+        from enums import BaseRole
+
+        acc = SimpleNamespace(
+            id=1,
+            login="owner_admin",
+            email="old@example.com",
+            role=SimpleNamespace(key=BaseRole.OWNER, name="owner", perms=["*"]),
+        )
+        mngr = SimpleNamespace(
+            s=SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock()),
+            by_login=AsyncMock(return_value=None),
+            by_email=AsyncMock(return_value=None),
+            set_role_key=AsyncMock(),
+        )
+
+        # Mock UserOauthMngr list_for_account
+        from unittest.mock import patch
+        with patch("api.v1.user.me.UserOauthMngr") as mock_oauth_cls, \
+             patch("api.v1.user.me.account_response", new=AsyncMock(return_value=Account.from_account(_account_row(role=acc.role, email="new@example.com")))):
+            mock_oauth_cls.return_value.list_for_account = AsyncMock(return_value=[])
+            body = MePatch(email="new@example.com")
+            await patch_me(body=body, acc=acc, mngr=mngr)
+
+            assert acc.email == "new@example.com"
+            # Crucial: set_role_key must NOT be called for owner!
+            mngr.set_role_key.assert_not_called()
+            mngr.s.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_regular_user_email_change_demotes_to_guest_if_unconfirmed(self) -> None:
+        from api.v1.user.me import patch_me
+        from enums import BaseRole
+
+        acc = SimpleNamespace(
+            id=2,
+            login="regular_user",
+            email="old_user@example.com",
+            role=SimpleNamespace(key=BaseRole.USER, name="user", perms=["user.profile.edit"]),
+        )
+        mngr = SimpleNamespace(
+            s=SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock()),
+            by_login=AsyncMock(return_value=None),
+            by_email=AsyncMock(return_value=None),
+            set_role_key=AsyncMock(),
+        )
+
+        from unittest.mock import patch
+        with patch("api.v1.user.me.UserOauthMngr") as mock_oauth_cls, \
+             patch("api.v1.user.me.account_response", new=AsyncMock(return_value=Account.from_account(_account_row(role=acc.role, email="new_user@example.com")))):
+            mock_oauth_cls.return_value.list_for_account = AsyncMock(return_value=[])
+            body = MePatch(email="new_user@example.com")
+            await patch_me(body=body, acc=acc, mngr=mngr)
+
+            assert acc.email == "new_user@example.com"
+            # For regular user, set_role_key to GUEST is expected if unconfirmed
+            mngr.set_role_key.assert_awaited_once_with(acc, BaseRole.GUEST)
+            mngr.s.commit.assert_awaited_once()
+

@@ -307,6 +307,11 @@ class OAuthSvc:
 
                     pending = await self._start_pending_link(slug, user, existing)
                     return None, pending
+            if not await self.settings.get_bool("auth.registration_enabled", default=True):
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    "registration is disabled",
+                )
             if user.email and await BannedEmailDomainsMngr(self.s).is_banned(user.email):
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,

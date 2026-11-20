@@ -22,6 +22,26 @@ _ORDER_TOKEN_PREFIX = "guest:order_token:"
 _CLAIM_PREFIX = "guest:claim:"
 _CLAIM_CODE_PREFIX = "guest:claim:code:"
 _CLAIM_FAIL_PREFIX = "guest:claim:fail:"
+
+# Атомарно: проверить код, инкрементировать ошибки/сжечь сессию при неверном коде,
+# либо вернуть payload и удалить все ключи claim-сессии.
+_CONSUME_CLAIM_LUA = """
+local raw = redis.call('GET', KEYS[1])
+if not raw then return nil end
+local stored = redis.call('GET', KEYS[2])
+if not stored or stored ~= ARGV[1] then
+    local fails = redis.call('INCR', KEYS[3])
+    if fails == 1 then
+        redis.call('EXPIRE', KEYS[3], 600)
+    end
+    if fails >= 5 then
+        redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
+    end
+    return false
+end
+redis.call('DEL', KEYS[1], KEYS[2], KEYS[3])
+return raw
+"""
 _CLAIM_MAX_FAILS = 5
 _CODE_DIGITS = 6
 
@@ -128,25 +148,51 @@ class GuestCheckoutSvc:
         self, claim_token: str, code: str, password: str
     ) -> UserModel:
         """Проверить OTP-код, задать пароль и повысить роль гостя до user."""
-        raw = await self.vk.get(_CLAIM_PREFIX + claim_token)
-        if not raw:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST, "claim session not found or expired"
+        if hasattr(self.vk, "eval"):
+            res = await self.vk.eval(
+                _CONSUME_CLAIM_LUA,
+                3,
+                _CLAIM_PREFIX + claim_token,
+                _CLAIM_CODE_PREFIX + claim_token,
+                _CLAIM_FAIL_PREFIX + claim_token,
+                code.strip(),
+            )
+            if res is None:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST, "claim session not found or expired"
+                )
+            if res is False:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST, "invalid confirmation code"
+                )
+            raw = res
+        else:
+            raw = await self.vk.get(_CLAIM_PREFIX + claim_token)
+            if not raw:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST, "claim session not found or expired"
+                )
+
+            stored_code = await self.vk.get(_CLAIM_CODE_PREFIX + claim_token)
+            if stored_code is None or not hmac.compare_digest(stored_code, code.strip()):
+                fails = await self.vk.incr(_CLAIM_FAIL_PREFIX + claim_token)
+                if fails == 1:
+                    await self.vk.expire(_CLAIM_FAIL_PREFIX + claim_token, 600)
+                if fails >= _CLAIM_MAX_FAILS:
+                    await self.vk.delete(
+                        _CLAIM_PREFIX + claim_token,
+                        _CLAIM_CODE_PREFIX + claim_token,
+                        _CLAIM_FAIL_PREFIX + claim_token,
+                    )
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid confirmation code")
+            await self.vk.delete(
+                _CLAIM_PREFIX + claim_token,
+                _CLAIM_CODE_PREFIX + claim_token,
+                _CLAIM_FAIL_PREFIX + claim_token,
             )
 
-        stored_code = await self.vk.get(_CLAIM_CODE_PREFIX + claim_token)
-        if stored_code is None or not hmac.compare_digest(stored_code, code.strip()):
-            fails = await self.vk.incr(_CLAIM_FAIL_PREFIX + claim_token)
-            if fails == 1:
-                await self.vk.expire(_CLAIM_FAIL_PREFIX + claim_token, 600)
-            if fails >= _CLAIM_MAX_FAILS:
-                await self.vk.delete(
-                    _CLAIM_PREFIX + claim_token,
-                    _CLAIM_CODE_PREFIX + claim_token,
-                    _CLAIM_FAIL_PREFIX + claim_token,
-                )
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "invalid confirmation code")
-
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8")
         payload = json.loads(raw)
         acc = await self.s.get(UserModel, payload["account_id"])
         if not acc:
@@ -159,10 +205,5 @@ class GuestCheckoutSvc:
             acc.role = user_role
 
         acc.pass_hash = hash_pass(password)
-        await self.vk.delete(
-            _CLAIM_PREFIX + claim_token,
-            _CLAIM_CODE_PREFIX + claim_token,
-            _CLAIM_FAIL_PREFIX + claim_token,
-        )
         await self.s.flush()
         return acc

@@ -20,7 +20,7 @@ from dependencies.rbac import require_perm
 from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
-from enums import UsvcStatus, PromoKind
+from enums import UsvcStatus, PromoKind, ServiceAction
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.service import ServiceModel
 from models.user import UserModel
@@ -174,6 +174,17 @@ async def user_service_action(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog service not found")
 
     action_norm = body.action.strip().lower()
+    allowed = {ServiceAction.STOP, ServiceAction.FREEZE, "start", "unfreeze", ServiceAction.DELETE}
+    if action_norm == ServiceAction.RENEW:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "action is not allowed; renew requires a new paid order",
+        )
+    if action_norm not in allowed:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"action '{action_norm}' is not allowed",
+        )
     usvc = await usvc_mngr.run_action(usvc, service, acc, action_norm)
     await usvc_mngr.s.commit()
     return Order.from_model(usvc)
