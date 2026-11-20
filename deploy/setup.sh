@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# SaviorBill — Интерактивный мастер развертывания и управления (Deploy Wizard)
+# SaviorBill — Interactive Deployment & Stack Manager
 # ==============================================================================
-# Использование:
+# Usage:
 #   curl -fsSL https://get.saviorbill.com | bash
-# или:
+# or:
 #   bash <(curl -fsSL https://raw.githubusercontent.com/UNVISLATE/SaviorBill/master/deploy/setup.sh)
-# Скрипт автоматически гарантирует установку и работу стека в /opt/saviorbill
+#
+# This script manages installation, configuration, and lifecycle of the
+# SaviorBill billing and micro-services stack under /opt/saviorbill.
 # ==============================================================================
 
 set -euo pipefail
 
-# Если запуск через пайп (curl ... | bash), перенаправляем stdin на tty (если tty доступен)
-if [ ! -t 0 ] && (exec < /dev/tty) 2>/dev/null; then
-  exec < /dev/tty
+# If running via pipe (e.g. curl ... | bash), reconnect stdin to terminal if available
+if [ ! -t 0 ]; then
+  if (true < /dev/tty) 2>/dev/null; then
+    exec < /dev/tty
+  fi
 fi
 
-# ── Цвета и стили ─────────────────────────────────────────────────────────────
+# ── Colors and Typography ─────────────────────────────────────────────────────
 if [ -t 1 ]; then
   BOLD='\033[1m'
   CYAN='\033[0;36m'
@@ -49,7 +53,10 @@ prompt_default() {
   else
     printf "${BOLD}%s${RESET}: " "$prompt" >&2
   fi
-  read -r answer
+  if ! IFS= read -r answer; then
+    echo "${default}"
+    return 0
+  fi
   echo "${answer:-$default}"
 }
 
@@ -57,8 +64,11 @@ prompt_secret_or_gen() {
   local prompt="$1"
   local generated="$2"
   local answer=""
-  printf "${BOLD}%s${RESET} ${DIM}[Enter = использовать '%s']${RESET}: " "$prompt" "$generated" >&2
-  read -r answer
+  printf "${BOLD}%s${RESET} ${DIM}[Enter to use '%s']${RESET}: " "$prompt" "$generated" >&2
+  if ! IFS= read -r answer; then
+    echo "${generated}"
+    return 0
+  fi
   echo "${answer:-$generated}"
 }
 
@@ -88,6 +98,21 @@ generate_pass() {
   fi
 }
 
+detect_public_ip() {
+  local ip=""
+  ip="$(curl -s4 --connect-timeout 2 https://api.ipify.org 2>/dev/null || curl -s4 --connect-timeout 2 https://ifconfig.me 2>/dev/null || true)"
+  if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "$ip"
+    return
+  fi
+  ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+  if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "$ip"
+    return
+  fi
+  echo "localhost"
+}
+
 get_root_domain() {
   local dom="$1"
   dom="${dom%%:*}"
@@ -96,13 +121,11 @@ get_root_domain() {
     echo "localhost"
     return
   fi
-  # Если это IP
   if [[ "$dom" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     echo "$dom"
     return
   fi
-  # Иначе последние 2 части
-  local p1 p2
+  local p1
   p1=$(echo "$dom" | awk -F. '{if (NF>=2) print $(NF-1)"."$NF; else print $0}')
   echo "$p1"
 }
@@ -112,7 +135,6 @@ set_env_var() {
   local val="$2"
   local file="${3:-.env}"
   if grep -q "^${key}=" "$file" 2>/dev/null; then
-    # Используем sed с разделителем |
     local safe_val
     safe_val=$(printf '%s\n' "$val" | sed 's/[&/\]/\\&/g')
     sed -i "s|^${key}=.*|${key}=${safe_val}|" "$file"
@@ -135,13 +157,12 @@ docker_compose_cmd() {
   elif command -v docker-compose >/dev/null 2>&1; then
     docker-compose "$@"
   else
-    err "Команда 'docker compose' или 'docker-compose' не найдена."
+    err "Command 'docker compose' or 'docker-compose' not found."
     exit 1
   fi
 }
 
 print_banner() {
-  clear 2>/dev/null || true
   printf "${BOLD}${CYAN}"
   cat <<'EOF'
   ____              _             ____  _ _ _ 
@@ -151,48 +172,47 @@ print_banner() {
  |____/ \__,_| \_/ |_|\___/|_|   |____/|_|_|_|
 EOF
   printf "${RESET}"
-  printf "${DIM} Интерактивный мастер развертывания и управления стеком${RESET}\n\n"
+  printf "${DIM} Interactive Deployment & Production Stack Manager${RESET}\n\n"
 }
 
-# ── Проверка Docker ───────────────────────────────────────────────────────────
+# ── Docker Check ──────────────────────────────────────────────────────────────
 check_docker() {
   if ! command -v docker >/dev/null 2>&1; then
-    warn "Docker не обнаружен в системе."
+    warn "Docker is not installed on this system."
     local ans
-    ans=$(prompt_default "Установить Docker автоматически (get.docker.com)? [Y/n]" "Y")
+    ans=$(prompt_default "Install Docker automatically (via get.docker.com)? [Y/n]" "Y")
     case "$ans" in
       [yY]|[yY][eE][sS])
-        info "Установка Docker..."
+        info "Installing Docker..."
         if command -v curl >/dev/null 2>&1; then
           curl -fsSL https://get.docker.com | sudo sh
         elif command -v wget >/dev/null 2>&1; then
           wget -qO- https://get.docker.com | sudo sh
         fi
         sudo usermod -aG docker "$USER" 2>/dev/null || true
-        success "Docker успешно установлен!"
+        success "Docker installed successfully!"
         ;;
       *)
-        err "Для продолжения работы необходим Docker. Установите его и перезапустите скрипт."
+        err "Docker is required to run SaviorBill. Please install Docker and rerun this script."
         exit 1
         ;;
     esac
   else
     local d_ver
-    d_ver=$(docker --version 2>/dev/null || echo "установлен")
-    info "Docker: $d_ver"
+    d_ver=$(docker --version 2>/dev/null || echo "installed")
+    info "Docker detected: $d_ver"
   fi
 }
 
-# ── Гарантия установки строго в /opt/saviorbill ─────────────────────────────
+# ── Target Directory Guarantee (/opt/saviorbill) ──────────────────────────────
 ensure_install_dir() {
   local script_source=""
   if [ -n "${BASH_SOURCE[0]:-}" ] && [ -f "${BASH_SOURCE[0]}" ]; then
     script_source="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
   fi
 
-  # Создаем целевой каталог /opt/saviorbill
   if [ ! -d "$INSTALL_DIR" ]; then
-    info "Создание целевого каталога установки: $INSTALL_DIR..."
+    info "Creating target deployment directory: $INSTALL_DIR..."
     if [ "${EUID:-$(id -u)}" -ne 0 ] && command -v sudo >/dev/null 2>&1; then
       sudo mkdir -p "$INSTALL_DIR"
       sudo chown -R "$(id -u):$(id -g)" "$INSTALL_DIR"
@@ -201,9 +221,9 @@ ensure_install_dir() {
     fi
   fi
 
-  # Если вызов сделан из локального клона репозитория (deploy/)
+  # Copy files if running from a local git clone
   if [ -n "$script_source" ] && [ "$script_source" != "$INSTALL_DIR" ] && [ -f "$script_source/docker-compose.yml" ]; then
-    info "Копирование файлов деплоя из $script_source в $INSTALL_DIR..."
+    info "Copying deployment files from $script_source to $INSTALL_DIR..."
     cp -n "$script_source/docker-compose.yml" "$INSTALL_DIR/" 2>/dev/null || true
     cp -n "$script_source/Caddyfile" "$INSTALL_DIR/" 2>/dev/null || true
     cp -n "$script_source/.env.example" "$INSTALL_DIR/" 2>/dev/null || true
@@ -214,13 +234,11 @@ ensure_install_dir() {
     chmod +x "$INSTALL_DIR/setup.sh" 2>/dev/null || true
   fi
 
-  # Переходим в рабочий каталог установки
   cd "$INSTALL_DIR" || {
-    err "Не удалось перейти в каталог $INSTALL_DIR"
+    err "Failed to access directory $INSTALL_DIR"
     exit 1
   }
 
-  # Обеспечиваем наличие исполняемого setup.sh в самом каталоге установки
   if [ ! -f "$INSTALL_DIR/setup.sh" ]; then
     if [ -n "$script_source" ] && [ -f "$script_source/setup.sh" ]; then
       cp "$script_source/setup.sh" "$INSTALL_DIR/setup.sh" 2>/dev/null || true
@@ -231,13 +249,13 @@ ensure_install_dir() {
   fi
 }
 
-# ── Скачивание или подготовка базовых шаблонов ────────────────────────────────
+# ── Base Templates Download & Preparation ─────────────────────────────────────
 prepare_base_files() {
   mkdir -p caddy.d data data-private
   chmod 700 data-private 2>/dev/null || true
 
   if [ ! -f "docker-compose.yml" ]; then
-    info "Загрузка конфигурационных файлов из репозитория в $INSTALL_DIR..."
+    info "Downloading stack configuration files into $INSTALL_DIR..."
     curl -fsSL "$RAW_BASE/docker-compose.yml" -o docker-compose.yml
     curl -fsSL "$RAW_BASE/Caddyfile" -o Caddyfile
     curl -fsSL "$RAW_BASE/.env.example" -o .env.example
@@ -319,7 +337,7 @@ EOF
   fi
 }
 
-# ── Показ карточки доступа ────────────────────────────────────────────────────
+# ── Summary Access Card ───────────────────────────────────────────────────────
 show_summary_card() {
   local domain api_domain media_domain client_domain owner_login owner_pass owner_email client_profile http_port https_port debug_mode
   domain="$(get_env_var "DOMAIN")"
@@ -341,58 +359,69 @@ show_summary_card() {
 
   local proto="https"
   local port_suffix=""
-  if [ "$debug_mode" = "true" ] || [[ "$domain" == "localhost" || "$domain" == 127.0.0.1* || "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  if [ "$debug_mode" = "true" ] || [[ "$domain" == "localhost" || "$domain" == 127.0.0.1* || "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ || "$domain" == http://* ]]; then
     proto="http"
     if [ "$http_port" != "80" ]; then
       port_suffix=":$http_port"
     fi
+  elif [ "$https_port" != "443" ]; then
+    port_suffix=":$https_port"
   fi
 
+  local clean_domain="${domain#http://}"
+  clean_domain="${clean_domain#https://}"
+  local clean_api="${api_domain#http://}"
+  clean_api="${clean_api#https://}"
+  local clean_media="${media_domain#http://}"
+  clean_media="${clean_media#https://}"
+  local clean_client="${client_domain#http://}"
+  clean_client="${clean_client#https://}"
+
   printf "\n${BOLD}${GREEN}┌────────────────────────────────────────────────────────────────────────┐${RESET}\n"
-  printf "${BOLD}${GREEN}│                 ✓ SaviorBill настроен и готов к работе!               │${RESET}\n"
+  printf "${BOLD}${GREEN}│                 ✔ SaviorBill is deployed and operational!              │${RESET}\n"
   printf "${BOLD}${GREEN}├────────────────────────────────────────────────────────────────────────┤${RESET}\n"
-  printf "│  ${BOLD}Панель управления (Admin UI):${RESET} %-40s│\n" "${proto}://${domain}${port_suffix}/"
-  if [ "$api_domain" != "$domain" ]; then
-    printf "│  ${BOLD}REST API Gateway & Webhooks:${RESET}  %-40s│\n" "${proto}://${api_domain}${port_suffix}/api/"
-    printf "│  ${BOLD}REST API Swagger Docs:${RESET}        %-40s│\n" "${proto}://${api_domain}${port_suffix}/api/docs"
+  printf "│  ${BOLD}Admin Dashboard (Admin UI):${RESET}   %-39s│\n" "${proto}://${clean_domain}${port_suffix}/"
+  if [ "$clean_api" != "$clean_domain" ]; then
+    printf "│  ${BOLD}REST API Gateway & Webhooks:${RESET}  %-39s│\n" "${proto}://${clean_api}${port_suffix}/api/"
+    printf "│  ${BOLD}REST API Swagger Docs:${RESET}        %-39s│\n" "${proto}://${clean_api}${port_suffix}/api/docs"
   else
-    printf "│  ${BOLD}REST API Swagger Docs:${RESET}        %-40s│\n" "${proto}://${domain}${port_suffix}/api/docs"
-    printf "│  ${BOLD}API Health Check:${RESET}             %-40s│\n" "${proto}://${domain}${port_suffix}/api/health"
+    printf "│  ${BOLD}REST API Swagger Docs:${RESET}        %-39s│\n" "${proto}://${clean_domain}${port_suffix}/api/docs"
+    printf "│  ${BOLD}API Health Check:${RESET}             %-39s│\n" "${proto}://${clean_domain}${port_suffix}/api/health"
   fi
   if [[ "$client_profile" == *"client"* ]]; then
     local client_url=""
-    if [[ "$client_domain" == :* ]]; then
-      client_url="${proto}://${domain}${client_domain}/"
+    if [[ "$clean_client" == :* ]]; then
+      client_url="${proto}://${clean_domain}${clean_client}/"
     else
-      client_url="${proto}://${client_domain}${port_suffix}/"
+      client_url="${proto}://${clean_client}${port_suffix}/"
     fi
-    printf "│  ${BOLD}Личный Кабинет (Client UI):${RESET}   %-40s│\n" "$client_url"
+    printf "│  ${BOLD}Customer Portal (Client UI):${RESET}  %-39s│\n" "$client_url"
   fi
-  if [ "$media_domain" != "$domain" ] && [ "$media_domain" != "$api_domain" ]; then
-    printf "│  ${BOLD}Медиа-сервер (Media):${RESET}         %-40s│\n" "${proto}://${media_domain}${port_suffix}/"
+  if [ "$clean_media" != "$clean_domain" ] && [ "$clean_media" != "$clean_api" ]; then
+    printf "│  ${BOLD}Media Server (Mediaworker):${RESET}   %-39s│\n" "${proto}://${clean_media}${port_suffix}/"
   fi
   printf "${BOLD}${GREEN}├────────────────────────────────────────────────────────────────────────┤${RESET}\n"
-  printf "│  ${BOLD}Логин владельца (Owner):${RESET}      %-40s│\n" "${owner_login:-owner}"
-  printf "│  ${BOLD}Пароль владельца:${RESET}             %-40s│\n" "${owner_pass:-[задан в .env]}"
-  printf "│  ${BOLD}Email владельца:${RESET}              %-40s│\n" "${owner_email:-owner@example.com}"
+  printf "│  ${BOLD}Admin Login (Owner):${RESET}          %-39s│\n" "${owner_login:-owner}"
+  printf "│  ${BOLD}Admin Password:${RESET}               %-39s│\n" "${owner_pass:-[configured in .env]}"
+  printf "│  ${BOLD}Admin Email:${RESET}                  %-39s│\n" "${owner_email:-owner@example.com}"
   printf "${BOLD}${GREEN}├────────────────────────────────────────────────────────────────────────┤${RESET}\n"
-  printf "│  ${BOLD}Каталог установки:${RESET}            %-40s│\n" "$INSTALL_DIR"
-  printf "│  ${BOLD}Управление стеком:${RESET}            %-40s│\n" "cd $INSTALL_DIR && ./setup.sh"
-  printf "${BOLD}${GREEN}└────────────────────────────────────────────────────────────────────────┘${RESET}\n"
+  printf "│  ${BOLD}Installation Directory:${RESET}       %-39s│\n" "$INSTALL_DIR"
+  printf "│  ${BOLD}Stack Management CLI:${RESET}         %-39s│\n" "cd $INSTALL_DIR && ./setup.sh"
+  printf "${BOLD}${GREEN}└────────────────────────────────────────────────────────────────────────┘${RESET}\n\n"
 }
 
-# ── Мастер настройки (Wizard) ────────────────────────────────────────────────
+# ── Interactive Setup Wizard ──────────────────────────────────────────────────
 run_wizard() {
   print_banner
   check_docker
   prepare_base_files
 
-  step "1. Выбор режима окружения"
-  echo "   [1] Production — Боевой сервер со своими доменами и автоматическим HTTPS (SSL)"
-  echo "   [2] Local / IP — Локальный или тестовый запуск (localhost, 127.0.0.1 или IP без SSL)"
+  step "1. Environment Deployment Mode"
+  echo "   [1] Production — Live server with custom domain names and automated HTTPS (Let's Encrypt)"
+  echo "   [2] Local / IP Demo — Standalone demo / test stand (server IP address or localhost without SSL)"
   
   local env_choice
-  env_choice=$(prompt_default "Выберите вариант [1/2]" "1")
+  env_choice=$(prompt_default "Choose mode [1/2]" "1")
 
   local domain=""
   local api_domain=""
@@ -402,99 +431,130 @@ run_wizard() {
   local http_port="80"
   local https_port="443"
   local is_debug="false"
+  local eof_count=0
 
   case "$env_choice" in
     2)
-      # Local / IP
-      step "2. Настройка адресов (Local / IP)"
+      # Local / IP Demo Stand
+      step "2. Host & Network Setup (Local / IP)"
+      local detected_ip
+      detected_ip="$(detect_public_ip)"
       local host_input
-      host_input=$(prompt_default "Базовый адрес хоста (localhost, 127.0.0.1 или IP)" "localhost")
+      host_input=$(prompt_default "Server host address or IP" "$detected_ip")
       domain="$host_input"
       is_debug="true"
 
       if [[ "$domain" == "localhost" || "$domain" == *.localhost ]]; then
         echo ""
-        echo "   [1] Единый адрес для Админки и API: http://${domain}"
-        echo "   [2] Отдельный поддомен для API: http://api.${domain}"
+        echo "   [1] Unified address for Admin UI and API: http://${domain}"
+        echo "   [2] Dedicated subdomain for API: http://api.${domain}"
         local loc_api_ch
-        loc_api_ch=$(prompt_default "Размещение API [1/2]" "1")
+        loc_api_ch=$(prompt_default "API endpoint routing [1/2]" "1")
         if [ "$loc_api_ch" = "2" ]; then
           api_domain="api.${domain}"
         else
           api_domain="$domain"
         fi
         media_domain="media.${domain}"
-        owner_email=$(prompt_default "Email администратора" "owner@localhost.test")
+        owner_email=$(prompt_default "Administrator email" "admin@localhost.test")
       else
         api_domain="$domain"
         media_domain="$domain"
-        owner_email=$(prompt_default "Email администратора" "owner@${domain}.test")
+        owner_email=$(prompt_default "Administrator email" "admin@example.com")
       fi
 
-      http_port=$(prompt_default "HTTP порт для веб-сервера (Caddy)" "80")
+      http_port=$(prompt_default "HTTP external port for Caddy" "80")
       ;;
     *)
-      # Production
-      step "2. Настройка доменных имён (Production)"
-      info "Для боевого сервера укажите ваши зарегистрированные домены."
-      info "Вы можете использовать один общий домен или разнести компоненты по разным поддоменам."
+      # Production with Custom Domains & Automated HTTPS
+      step "2. Domain & Routing Configuration (Production)"
+      info "Configure registered domain names pointed to this server's public IP."
       echo ""
 
-      # 1. Админка
       while true; do
-        domain=$(prompt_default "1. Домен Панели управления (Admin UI, напр. admin.myshop.com или panel.myshop.ru)" "")
+        domain=$(prompt_default "1. Admin Dashboard domain (e.g. demo.saviorbill.com or panel.myshop.com)" "")
         if [ -n "$domain" ]; then break; fi
-        err "Домен панели управления не может быть пустым!"
+        eof_count=$((eof_count + 1))
+        if [ "$eof_count" -ge 3 ]; then
+          err "Input stream ended (EOF). Please run interactively."
+          exit 1
+        fi
+        err "Admin Dashboard domain cannot be empty!"
       done
+
+      # Clean leading schemes if typed
+      domain="${domain#http://}"
+      domain="${domain#https://}"
+      domain="${domain%%/*}"
 
       local root_d
       root_d="$(get_root_domain "$domain")"
 
+      # Suggest subdomains based on user input
+      local suggested_api="api.${domain}"
+      local suggested_media="media.${domain}"
+      if [ "$domain" = "$root_d" ]; then
+        suggested_api="api.${root_d}"
+        suggested_media="media.${root_d}"
+      fi
+
       # 2. REST API & Webhooks
       echo ""
-      echo "   [1] Единый домен для Админки и API: https://${domain}"
-      echo "       (REST API и вебхуки будут доступны по пути /api/* на этом же домене)"
-      echo "   [2] Выделить отдельный домен для API (напр. api.${root_d})"
+      echo "   [1] Shared domain with Admin UI: https://${domain}"
+      echo "       (REST API and webhooks available under /api/* on the same domain)"
+      echo "   [2] Dedicated subdomain for API (e.g. https://${suggested_api})"
       local api_choice
-      api_choice=$(prompt_default "Размещение REST API и вебхуков платежей [1/2]" "1")
+      api_choice=$(prompt_default "REST API & payment webhooks routing [1/2]" "1")
       if [ "$api_choice" = "2" ]; then
-        api_domain=$(prompt_default "Домен для REST API" "api.${root_d}")
+        api_domain=$(prompt_default "Domain for REST API" "${suggested_api}")
+        api_domain="${api_domain#http://}"
+        api_domain="${api_domain#https://}"
+        api_domain="${api_domain%%/*}"
       else
         api_domain="$domain"
       fi
 
-      # 3. Медиа-сервер
+      # 3. Media Server
       echo ""
-      echo "   [1] Общий домен API для картинок и файлов (путь /api/media/*)"
-      echo "   [2] Отдельный поддомен для медиа (напр. media.${root_d})"
+      echo "   [1] Shared domain for images and files (under /api/media/*)"
+      echo "   [2] Dedicated subdomain for Mediaworker (e.g. https://${suggested_media})"
       local media_choice
-      media_choice=$(prompt_default "Размещение медиа-сервера (Mediaworker) [1/2]" "1")
+      media_choice=$(prompt_default "Media storage endpoint routing [1/2]" "1")
       if [ "$media_choice" = "2" ]; then
-        media_domain=$(prompt_default "Домен для медиа" "media.${root_d}")
+        media_domain=$(prompt_default "Domain for Mediaworker" "${suggested_media}")
+        media_domain="${media_domain#http://}"
+        media_domain="${media_domain#https://}"
+        media_domain="${media_domain%%/*}"
       else
         media_domain="$api_domain"
       fi
 
       echo ""
+      local email_attempts=0
       while true; do
-        owner_email=$(prompt_default "Email владельца (используется для Let's Encrypt SSL)" "admin@${root_d}")
+        owner_email=$(prompt_default "Administrator email (used for Let's Encrypt SSL certificates)" "admin@${root_d}")
         if [[ "$owner_email" == *"@"* ]]; then break; fi
-        err "Пожалуйста, введите корректный адрес email."
+        email_attempts=$((email_attempts + 1))
+        if [ "$email_attempts" -ge 3 ]; then
+          owner_email="admin@${root_d}"
+          break
+        fi
+        err "Please enter a valid email address."
       done
 
-      http_port=$(prompt_default "Внешний HTTP порт Caddy" "80")
-      https_port=$(prompt_default "Внешний HTTPS порт Caddy" "443")
+      http_port=$(prompt_default "External HTTP port for Caddy" "80")
+      https_port=$(prompt_default "External HTTPS port for Caddy" "443")
       is_debug="false"
       ;;
   esac
 
-  # ── Клиентский фронтенд ─────────────────────────────────────────────────────
-  step "3. Клиентский фронтенд (Личный Кабинет / Витрина)"
-  echo "Личный Кабинет (SBPersonalAccountClient) позволяет покупателям просматривать витрину,"
-  echo "делать заказы, пополнять баланс и управлять своими услугами."
+  # ── Customer Portal (Client Storefront) ─────────────────────────────────────
+  step "3. Customer Portal (SBPersonalAccountClient Storefront)"
+  echo "The Customer Portal provides users with a modern self-service dashboard:"
+  echo "browsing the catalog, placing orders, balance top-ups, and subscription management."
   echo ""
   local want_client
-  want_client=$(prompt_default "Установить клиентский Личный Кабинет? [Y/n]" "Y")
+  want_client=$(prompt_default "Install Customer Portal? [Y/n]" "Y")
 
   local enable_client=0
   local client_override_port=""
@@ -505,38 +565,51 @@ run_wizard() {
         # Production
         local root_d
         root_d="$(get_root_domain "$domain")"
+        local suggested_client="my.${domain}"
+        if [ "$domain" = "$root_d" ]; then
+          suggested_client="shop.${root_d}"
+        fi
         echo ""
-        info "Клиентский кабинет размещается на отдельном домене от Панели управления."
-        echo "Примеры: основной сайт (${root_d}), витрина (shop.${root_d}), кабинет (client.${root_d} или my.${root_d})"
+        info "Customer Portal runs on a separate domain from the Admin Dashboard."
+        echo "Examples: ${suggested_client}, my.${root_d}, or client.${root_d}"
+        local cl_attempts=0
         while true; do
-          client_domain=$(prompt_default "Домен клиентского Личного Кабинета" "${root_d}")
+          client_domain=$(prompt_default "Customer Portal domain" "${suggested_client}")
+          client_domain="${client_domain#http://}"
+          client_domain="${client_domain#https://}"
+          client_domain="${client_domain%%/*}"
           if [ -n "$client_domain" ]; then
             if [ "$client_domain" = "$domain" ]; then
-              warn "Клиентский кабинет не может иметь такой же домен, как Панель управления ($domain)!"
-              warn "Пожалуйста, укажите другой домен или поддомен (напр. ${root_d} или shop.${root_d})."
+              warn "Customer Portal cannot use the exact same domain as Admin Dashboard ($domain)!"
+              warn "Please provide a different subdomain (e.g. ${suggested_client})."
             else
               break
             fi
+          fi
+          cl_attempts=$((cl_attempts + 1))
+          if [ "$cl_attempts" -ge 3 ]; then
+            client_domain="${suggested_client}"
+            break
           fi
         done
       else
         # Local / IP
         if [[ "$domain" == "localhost" || "$domain" == *.localhost ]]; then
           echo ""
-          echo "   [1] Отдельный поддомен (напр. client.localhost или my.localhost)"
-          echo "   [2] Отдельный порт на основном хосте (напр. :3000)"
+          echo "   [1] Dedicated subdomain: http://client.${domain}"
+          echo "   [2] Dedicated port on host: http://${domain}:3000"
           local cl_mode
-          cl_mode=$(prompt_default "Выберите вариант доступа для клиента [1/2]" "1")
+          cl_mode=$(prompt_default "Choose access mode for Customer Portal [1/2]" "1")
           if [ "$cl_mode" = "2" ]; then
-            client_override_port=$(prompt_default "Порт для клиентского интерфейса" "3000")
+            client_override_port=$(prompt_default "Port for Customer Portal" "3000")
             client_domain=":${client_override_port}"
           else
-            client_domain=$(prompt_default "Поддомен для клиента" "client.localhost")
+            client_domain=$(prompt_default "Subdomain for Customer Portal" "client.${domain}")
           fi
         else
           echo ""
           local custom_cl_port
-          custom_cl_port=$(prompt_default "Порт для клиентского интерфейса на IP $domain" "3000")
+          custom_cl_port=$(prompt_default "Port for Customer Portal on IP http://${domain}" "3000")
           client_domain=":${custom_cl_port}"
           client_override_port="$custom_cl_port"
         fi
@@ -544,31 +617,31 @@ run_wizard() {
       ;;
     *)
       enable_client=0
-      info "Клиентский фронтенд устанавливаться не будет (только API и Admin UI)."
+      info "Customer Portal skipped (Admin Dashboard & REST API only)."
       ;;
   esac
 
-  # ── Учётные данные и безопасность ───────────────────────────────────────────
-  step "4. Безопасность и пароли"
+  # ── Security & Credentials ──────────────────────────────────────────────────
+  step "4. Security & Administrator Credentials"
   
   local gen_db_pass
   gen_db_pass="$(generate_pass 24)"
   local db_pass
-  db_pass=$(prompt_secret_or_gen "Пароль базы данных PostgreSQL" "$gen_db_pass")
+  db_pass=$(prompt_secret_or_gen "PostgreSQL Database Password" "$gen_db_pass")
 
   local bus_key
   bus_key="$(generate_hex 32)"
 
   local owner_login
-  owner_login=$(prompt_default "Логин администратора" "owner")
+  owner_login=$(prompt_default "Administrator (Owner) login" "owner")
 
   local gen_owner_pass
-  gen_owner_pass="$(generate_pass 14)"
+  gen_owner_pass="$(generate_pass 16)"
   local owner_pass
-  owner_pass=$(prompt_secret_or_gen "Пароль администратора" "$gen_owner_pass")
+  owner_pass=$(prompt_secret_or_gen "Administrator (Owner) password" "$gen_owner_pass")
 
-  # ── Формирование .env ───────────────────────────────────────────────────────
-  step "5. Запись конфигурации"
+  # ── Write Configuration (.env) ──────────────────────────────────────────────
+  step "5. Writing Stack Configuration"
 
   if [ ! -f .env ]; then
     cp .env.example .env
@@ -589,6 +662,8 @@ run_wizard() {
   local pub_port=""
   if [ "$http_port" != "80" ] && [ "$proto_scheme" = "http" ]; then
     pub_port=":$http_port"
+  elif [ "$https_port" != "443" ] && [ "$proto_scheme" = "https" ]; then
+    pub_port=":$https_port"
   fi
 
   set_env_var "PUBLIC_URL" "${proto_scheme}://${domain}${pub_port}"
@@ -598,22 +673,20 @@ run_wizard() {
     set_env_var "MEDIA_PUBLIC_URL" "${proto_scheme}://${media_domain}${pub_port}"
   fi
 
-  # Автоматическая настройка CORS_ORIGINS при раздельных доменах
-  local cors_list=""
+  # Automated CORS origins configuration
+  local cors_list="${proto_scheme}://${domain}${pub_port}"
   if [ "$api_domain" != "$domain" ]; then
-    cors_list="${proto_scheme}://${domain}${pub_port}"
+    cors_list="${cors_list},${proto_scheme}://${api_domain}${pub_port}"
   fi
-  if [ "$enable_client" -eq 1 ] && [[ "$client_domain" != :* ]]; then
-    if [ -n "$cors_list" ]; then
-      cors_list="${cors_list},${proto_scheme}://${client_domain}${pub_port}"
+  if [ "$enable_client" -eq 1 ]; then
+    if [[ "$client_domain" == :* ]]; then
+      cors_list="${cors_list},${proto_scheme}://${domain}${client_domain}"
     else
-      cors_list="${proto_scheme}://${client_domain}${pub_port}"
+      cors_list="${cors_list},${proto_scheme}://${client_domain}${pub_port}"
     fi
   fi
-  if [ -n "$cors_list" ]; then
-    set_env_var "CORS_ORIGINS" "$cors_list"
-    info "Автоматически сконфигурирован CORS_ORIGINS: $cors_list"
-  fi
+  set_env_var "CORS_ORIGINS" "$cors_list"
+  info "Configured CORS_ORIGINS: $cors_list"
 
   set_env_var "DB_PASS" "$db_pass"
   set_env_var "BUS_SIGNING_KEY" "$bus_key"
@@ -626,25 +699,25 @@ run_wizard() {
 
   mkdir -p caddy.d
 
-  # Настройка Caddy для отдельного API домена
+  # API Subdomain Caddy config
   if [ "$api_domain" != "$domain" ]; then
     cp -f api.caddy.example caddy.d/api.caddy 2>/dev/null || true
-    info "Включён отдельный домен API: caddy.d/api.caddy ($api_domain)"
+    info "Dedicated API routing enabled: caddy.d/api.caddy ($api_domain)"
   else
     rm -f caddy.d/api.caddy
-    info "REST API маршрутизируется через общий домен (${domain}/api/*)"
+    info "REST API routed via shared domain (${domain}/api/*)"
   fi
 
-  # Настройка Caddy для Media
+  # Mediaworker Caddy config
   if [ "$media_domain" != "$domain" ] && [ "$media_domain" != "$api_domain" ]; then
     cp -f media.caddy.example caddy.d/media.caddy 2>/dev/null || true
-    info "Включён отдельный домен медиа: caddy.d/media.caddy ($media_domain)"
+    info "Dedicated Mediaworker routing enabled: caddy.d/media.caddy ($media_domain)"
   else
     rm -f caddy.d/media.caddy
-    info "Медиа маршрутизируется через домен API (/api/media/*)"
+    info "Media routed via API domain (/api/media/*)"
   fi
 
-  # Настройка Caddy и Compose для Client UI
+  # Client Storefront Caddy config & profiles
   if [ "$enable_client" -eq 1 ]; then
     set_env_var "COMPOSE_PROFILES" "client"
     set_env_var "CLIENT_DOMAIN" "$client_domain"
@@ -656,43 +729,43 @@ services:
     ports:
       - "${client_override_port}:${client_override_port}"
 EOF
-      info "Создан docker-compose.override.yml для проброса порта :${client_override_port}"
+      info "Created docker-compose.override.yml exposing Customer Portal port :${client_override_port}"
     else
       rm -f docker-compose.override.yml
     fi
-    info "Клиентский фронтенд включён (${client_domain})"
+    info "Customer Portal enabled (${client_domain})"
   else
     set_env_var "COMPOSE_PROFILES" ""
     rm -f caddy.d/client.caddy docker-compose.override.yml
   fi
 
   chmod 600 .env 2>/dev/null || true
-  success "Конфигурация .env успешно сгенерирована!"
+  success "Configuration successfully generated in .env!"
 
   show_summary_card
 
-  step "6. Запуск стека"
+  step "6. Launching SaviorBill Stack"
   local run_now
-  run_now=$(prompt_default "Запустить стек прямо сейчас? [Y/n]" "Y")
+  run_now=$(prompt_default "Start SaviorBill stack now? [Y/n]" "Y")
   case "$run_now" in
     [yY]|[yY][eE][sS])
-      info "Скачивание последних Docker-образов..."
+      info "Pulling latest container images..."
       docker_compose_cmd pull
-      info "Запуск контейнеров..."
+      info "Starting containers in background..."
       docker_compose_cmd up -d
-      success "Стек запущен!"
+      success "SaviorBill stack started successfully!"
       echo ""
       docker_compose_cmd ps
       echo ""
-      info "Для просмотра логов в реальном времени используйте: docker compose logs -f"
+      info "To stream live container logs: cd $INSTALL_DIR && ./setup.sh logs"
       ;;
     *)
-      info "Для запуска стека вручную выполните: docker compose up -d"
+      info "To start the stack manually later: cd $INSTALL_DIR && ./setup.sh up"
       ;;
   esac
 }
 
-# ── Главное меню (если .env уже существует) ──────────────────────────────────
+# ── Main CLI Menu (when .env already exists) ──────────────────────────────────
 main_menu() {
   print_banner
   local domain api_domain client_domain
@@ -700,57 +773,57 @@ main_menu() {
   api_domain="$(get_env_var "API_DOMAIN")"
   client_domain="$(get_env_var "CLIENT_DOMAIN")"
   if [ -n "$domain" ]; then
-    printf "${DIM}Панель управления (Admin): ${BOLD}%s${RESET}\n" "$domain"
+    printf "${DIM}Admin Dashboard: ${BOLD}%s${RESET}\n" "$domain"
     if [ -n "$api_domain" ] && [ "$api_domain" != "$domain" ]; then
-      printf "${DIM}REST API & Webhooks:       ${BOLD}%s${RESET}\n" "$api_domain"
+      printf "${DIM}REST API & Docs: ${BOLD}%s${RESET}\n" "$api_domain"
     fi
     if [ -n "$client_domain" ]; then
-      printf "${DIM}Личный Кабинет (Client):   ${BOLD}%s${RESET}\n" "$client_domain"
+      printf "${DIM}Customer Portal: ${BOLD}%s${RESET}\n" "$client_domain"
     fi
     echo ""
   fi
 
-  echo "   [1] Запустить стек (docker compose up -d)"
-  echo "   [2] Остановить стек (docker compose down)"
-  echo "   [3] Перезапустить стек (docker compose restart)"
-  echo "   [4] Просмотреть логи (docker compose logs -f)"
-  echo "   [5] Обновить образы до последней версии (pull & restart)"
-  echo "   [6] Показать учетные данные и ссылки"
-  echo "   [7] Перенастроить стек (запустить мастер настройки заново)"
-  echo "   [0] Выход"
+  echo "   [1] Start stack (docker compose up -d)"
+  echo "   [2] Stop stack (docker compose down)"
+  echo "   [3] Restart stack (docker compose restart)"
+  echo "   [4] Stream live logs (docker compose logs -f)"
+  echo "   [5] Pull latest updates & restart"
+  echo "   [6] Show credentials & endpoints summary"
+  echo "   [7] Reconfigure stack (run setup wizard)"
+  echo "   [0] Exit"
   echo ""
 
   local choice
-  choice=$(prompt_default "Выберите действие [1-7, 0]" "1")
+  choice=$(prompt_default "Select option [1-7, 0]" "1")
 
   case "$choice" in
     1)
-      info "Запуск контейнеров..."
+      info "Starting stack..."
       docker_compose_cmd up -d
-      success "Готово!"
+      success "Stack started!"
       docker_compose_cmd ps
       ;;
     2)
-      info "Остановка контейнеров..."
+      info "Stopping stack..."
       docker_compose_cmd down
-      success "Стек остановлен."
+      success "Stack stopped."
       ;;
     3)
-      info "Перезапуск..."
+      info "Restarting stack..."
       docker_compose_cmd restart
-      success "Стек перезапущен."
+      success "Stack restarted."
       docker_compose_cmd ps
       ;;
     4)
-      info "Открытие логов (Ctrl+C для выхода)..."
+      info "Streaming logs (press Ctrl+C to exit)..."
       docker_compose_cmd logs -f
       ;;
     5)
-      info "Скачивание обновлений..."
+      info "Checking for image updates..."
       docker_compose_cmd pull
-      info "Применение обновлений..."
+      info "Applying updates..."
       docker_compose_cmd up -d
-      success "Стек обновлён до актуальных версий!"
+      success "Stack updated to latest versions!"
       docker_compose_cmd ps
       ;;
     6)
@@ -763,16 +836,46 @@ main_menu() {
       exit 0
       ;;
     *)
-      warn "Неизвестный вариант."
+      warn "Unknown option: $choice"
       ;;
   esac
 }
 
-# ── Точка входа ───────────────────────────────────────────────────────────────
+# ── Entry Point & CLI Subcommands ─────────────────────────────────────────────
 ensure_install_dir
 
-if [ -f .env ] && [ -s .env ] && [ "${1:-}" != "--reconfigure" ] && [ "${1:-}" != "-r" ]; then
-  main_menu
-else
-  run_wizard
-fi
+case "${1:-}" in
+  up|--up)
+    docker_compose_cmd up -d
+    ;;
+  down|--down)
+    docker_compose_cmd down
+    ;;
+  restart|--restart)
+    docker_compose_cmd restart
+    ;;
+  logs|--logs)
+    docker_compose_cmd logs -f "${2:-}"
+    ;;
+  update|pull|--update|--pull)
+    docker_compose_cmd pull
+    docker_compose_cmd up -d
+    ;;
+  info|status|--info|--status)
+    show_summary_card
+    ;;
+  -r|--reconfigure)
+    run_wizard
+    ;;
+  -h|--help)
+    echo "SaviorBill Stack Manager"
+    echo "Usage: ./setup.sh [up|down|restart|logs|update|info|--reconfigure]"
+    ;;
+  *)
+    if [ -f .env ] && [ -s .env ]; then
+      main_menu
+    else
+      run_wizard
+    fi
+    ;;
+esac
