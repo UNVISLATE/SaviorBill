@@ -53,7 +53,7 @@ services:
       # mediaworker/luaworker.
       - ${PRIVATE_DATA_HOST_DIR:-../data-private}:/app/private:rw
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')\""]
       interval: 10s
       timeout: 3s
       retries: 10
@@ -123,7 +123,7 @@ services:
     image: ${IMAGE_PREFIX:-ghcr.io/unvislate/saviorbill}/adminui:${TAG:-latest}
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:80/ || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:80/ || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 5
