@@ -84,3 +84,14 @@ def test_default_defs_include_themes():
     keys = {d.key for d in default_defs()}
     assert "ui.admin.theme" in keys
     assert "ui.client.theme" in keys
+
+
+def test_all_setting_defaults_are_str_or_none():
+    """Все дефолтные значения настроек должны быть строками или None во избежание DataError в asyncpg/Postgres."""
+    invalid = [
+        (s.key, s.default, type(s.default))
+        for s in SETTINGS
+        if s.default is not None and not isinstance(s.default, str)
+    ]
+    assert invalid == [], f"Found non-string defaults: {invalid}"
+

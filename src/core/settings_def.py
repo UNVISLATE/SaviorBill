@@ -87,7 +87,7 @@ SETTINGS: tuple[SettingDef, ...] = (
         "SMTP_TIMEOUT",
         type="int",
         group="smtp",
-        default=10,
+        default="10",
         desc="Таймаут подключения к SMTP (сек)",
     ),
     # Почтовый транспорт (SMTP / Lua)
@@ -222,7 +222,7 @@ SETTINGS: tuple[SettingDef, ...] = (
         None,
         type="bool",
         group="auth",
-        default=True,
+        default="true",
         desc="Разрешить самостоятельную регистрацию новых пользователей (по умолчанию включено)",
     ),
     # Lua: таймаут вызова и ретраи (мягкая, настраиваемая изоляция вызовов воркера)

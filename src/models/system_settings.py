@@ -140,8 +140,20 @@ class SystemSettingsMngr:
             spec = by_key(key)
             is_secret = spec.secret if spec else False
 
+        # Гарантируем строковый тип для текстовой колонки settings.value в PostgreSQL/asyncpg
+        str_value: str | None = None
+        if value is not None:
+            if isinstance(value, bool):
+                str_value = "true" if value else "false"
+            elif isinstance(value, (int, float)):
+                str_value = str(value)
+            elif isinstance(value, str):
+                str_value = value
+            else:
+                str_value = str(value)
+
         row = await self.s.get(SystemSettingsModel, key)
-        stored = self.box.seal(value) if (is_secret and value is not None) else value
+        stored = self.box.seal(str_value) if (is_secret and str_value is not None) else str_value
         if row is None:
             row = SystemSettingsModel(key=key, value=stored, is_secret=is_secret)
             self.s.add(row)
@@ -150,10 +162,10 @@ class SystemSettingsMngr:
             row.is_secret = is_secret
         await self.s.flush()
 
-        if value is None:
+        if str_value is None:
             await self.vk.delete(_CACHE + key)
         else:
-            await self.vk.set(_CACHE + key, value, ex=self.cache_ttl)
+            await self.vk.set(_CACHE + key, str_value, ex=self.cache_ttl)
 
     async def invalidate(self, key: str) -> None:
         """Сбросить кэш настройки (например, после внешней правки в БД)."""
