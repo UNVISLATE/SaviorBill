@@ -73,5 +73,12 @@ class SettingsResolver:
             "media.quota.video_bytes", self.cfg.quota_video_bytes
         )
 
+    async def convert_timeout_sec(self) -> float:
+        """Таймаут конвертации (0 = без ограничений/бесконечный)."""
+        val = await self.get_int(
+            "media.convert_timeout_sec", int(self.cfg.convert_timeout_sec)
+        )
+        return float(val)
+
 
 __all__ = ["SettingsResolver"]

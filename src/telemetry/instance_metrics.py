@@ -198,6 +198,18 @@ async def list_instances(vk: valkey.Valkey) -> dict:
                     continue
                 cpu = _num(data, "cpu_percent")
                 rss = _num(data, "rss_mb")
+                subprocesses = []
+                if data.get("subprocesses"):
+                    try:
+                        subprocesses = json.loads(data["subprocesses"])
+                    except (ValueError, TypeError):
+                        subprocesses = []
+                current_job = None
+                if data.get("current_job"):
+                    try:
+                        current_job = json.loads(data["current_job"])
+                    except (ValueError, TypeError):
+                        current_job = None
                 instances.append(
                     {
                         "service": svc,
@@ -207,6 +219,8 @@ async def list_instances(vk: valkey.Valkey) -> dict:
                         "cpu_percent": cpu,
                         "rss_mb": rss,
                         "last_seen_at": _num(data, "last_seen_at"),
+                        "subprocesses": subprocesses,
+                        "current_job": current_job,
                     }
                 )
                 totals_by_service[svc]["count"] += 1
@@ -244,8 +258,14 @@ async def get_instance(vk: valkey.Valkey, service: str, consumer: str) -> dict |
         "last_seen_at": _num(data, "last_seen_at"),
         "cpu_percent": _num(data, "cpu_percent"),
         "rss_mb": _num(data, "rss_mb"),
+        "subprocesses": [],
         "raw": data,
     }
+    if data.get("subprocesses"):
+        try:
+            out["subprocesses"] = json.loads(data["subprocesses"])
+        except (ValueError, TypeError):
+            out["subprocesses"] = []
     current_job_token = None
     if service == "media" and data.get("current_job"):
         try:

@@ -64,11 +64,25 @@ class MetricsPusher:
 
         cpu = self._proc.cpu_percent()
         rss = self._proc.memory_info().rss
+        subprocesses: list[dict] = []
         try:
             for child in self._proc.children(recursive=True):
                 try:
-                    cpu += child.cpu_percent()
-                    rss += child.memory_info().rss
+                    child_cpu = child.cpu_percent()
+                    child_rss = child.memory_info().rss
+                    child_cmd = " ".join(child.cmdline())
+                    child_started = child.create_time()
+                    subprocesses.append({
+                        "pid": child.pid,
+                        "name": child.name(),
+                        "cmdline": child_cmd,
+                        "cpu_percent": round(child_cpu, 1),
+                        "rss_mb": round(child_rss / (1024 * 1024), 2),
+                        "started_at": child_started,
+                        "running_sec": max(0.0, round(time.time() - child_started, 1)),
+                    })
+                    cpu += child_cpu
+                    rss += child_rss
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
         except (psutil.NoSuchProcess, psutil.AccessDenied):
@@ -84,6 +98,7 @@ class MetricsPusher:
                 "cpu_percent": f"{cpu:.2f}",
                 "rss_mb": f"{rss / (1024 * 1024):.2f}",
                 "current_job": current_job,
+                "subprocesses": json.dumps(subprocesses),
             },
         )
         await self.vk.expire(key, self.cfg.metrics_ttl_sec)

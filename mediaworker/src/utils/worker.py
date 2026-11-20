@@ -13,9 +13,13 @@ import valkey.asyncio as valkey
 
 from .config import Config
 from .convert import (
+    ConvertCancelled,
     ConvertError,
     SIGNATURE_READ_BYTES,
     Variant,
+    cancel_active_job,
+    cancel_process_by_pid,
+    clear_cancelled_job,
     convert,
     detect_kind,
     make_preview,
@@ -110,6 +114,43 @@ class Worker:
     def active_jobs_count(self) -> int:
         return len(self._active_jobs)
 
+    async def _control_listener(self) -> None:
+        """Слушать сигналы управления (например отмена конвертации)."""
+        pubsub = self.vk.pubsub()
+        await pubsub.subscribe("media:control")
+        try:
+            async for msg in pubsub.listen():
+                if msg.get("type") != "message":
+                    continue
+                try:
+                    raw_data = msg.get("data")
+                    if isinstance(raw_data, bytes):
+                        raw_data = raw_data.decode("utf-8")
+                    data = json.loads(raw_data)
+                    if data.get("action") == "cancel":
+                        token = data.get("token")
+                        pid = data.get("pid")
+                        if token:
+                            cancel_active_job(token)
+                        if pid:
+                            if not cancel_process_by_pid(int(pid)):
+                                import psutil
+                                try:
+                                    p = psutil.Process(int(pid))
+                                    if any(name in p.name().lower() for name in ("ffmpeg", "ffprobe")):
+                                        p.terminate()
+                                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                                    pass
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[mediaworker] control message error: {exc}", flush=True)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            try:
+                await pubsub.unsubscribe("media:control")
+            except Exception:
+                pass
+
     async def _ensure_group(self) -> None:
         try:
             await self.vk.xgroup_create(
@@ -137,6 +178,7 @@ class Worker:
         доваривается видео.
         """
         await self._ensure_group()
+        asyncio.create_task(self._control_listener(), name="media-control-listener")
         running: set[asyncio.Task] = set()
         max_in_flight = max(
             1,
@@ -614,6 +656,9 @@ class Worker:
         )
         job_id = await self.proc_log.start_job(op="convert", token=token)
 
+        if hasattr(self.vk, "exists") and await self.vk.exists(f"media:cancel:{token}"):
+            cancel_active_job(token)
+
         async def sink(chunk: str) -> None:
             # Маскируем абсолютные пути — stderr ffmpeg
             # обычно содержит полный путь к input/output на сервере.
@@ -622,12 +667,9 @@ class Worker:
             )
 
         async def progress_sink(snapshot) -> None:  # noqa: ANN001 — ProgressSnapshot
-            # Прогресс — вспомогательная телеметрия, не часть контракта
-            # конвертации: ошибка здесь (например, временный сбой Valkey) не
-            # должна ронять и ретраить сам ffmpeg-конвейер (см. историю бага:
-            # неверная сериализация bool рушила весь _convert() и вызывала
-            # бесконечные повторные конвертации одного и того же файла).
             try:
+                if hasattr(self.vk, "exists") and await self.vk.exists(f"media:cancel:{token}"):
+                    cancel_active_job(token)
                 await self.proc_log.set_progress(
                     job_id,
                     percent=snapshot.percent,
@@ -638,10 +680,6 @@ class Worker:
                     out_time_sec=snapshot.out_time_sec,
                     done=snapshot.done,
                 )
-                # Тот же снимок — в основной статус-хэш (``media:status:*``),
-                # откуда его читают REST `/status/{token}` и WS `media/mine`
-                #. Раньше percent/eta_sec
-                # оседали только в ProcLog (debug-лог), клиент их не видел.
                 if snapshot.percent is not None:
                     await self._set_status(
                         token,
@@ -650,6 +688,11 @@ class Worker:
                     )
             except Exception as exc:  # noqa: BLE001
                 print(f"[mediaworker] progress sink error (non-fatal): {exc}", flush=True)
+
+        if hasattr(self.settings, "convert_timeout_sec"):
+            timeout = await self.settings.convert_timeout_sec()
+        else:
+            timeout = 1800.0
 
         try:
             # Вид медиа (image/video) больше не приходит от клиента — сервер
@@ -668,10 +711,25 @@ class Worker:
                 keep_animation=keep_animation,
                 video_preset=video_preset,
                 audio_bitrate=audio_bitrate,
+                timeout=timeout,
                 on_output=sink,
                 on_progress=progress_sink,
                 on_stage=lambda stage: self.proc_log.set_stage(job_id, stage),
             )
+        except ConvertCancelled as exc:
+            await self._set_status(token, state="cancelled", error="Cancelled by administrator")
+            await self.task_log.record(
+                kind="media",
+                op="convert",
+                token_or_cid=token,
+                state="cancelled",
+                detail="Cancelled by administrator",
+                owner_id=owner_id or None,
+            )
+            await self.proc_log.finish_job(job_id, "cancelled")
+            self._cleanup_partial(token, src)
+            clear_cancelled_job(token)
+            return
         except ConvertError as exc:
             await self._set_status(token, state="failed", error=str(exc))
             await self.task_log.record(
@@ -808,6 +866,7 @@ class Worker:
         )
         await self.proc_log.finish_job(job_id, "ready")
         await self.vk.delete(f"attempts:media:convert:{token}")
+        clear_cancelled_job(token)
 
         if not self.cfg.keep_original:
             self.storage._safe_unlink(src)

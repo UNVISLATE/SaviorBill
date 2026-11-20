@@ -188,3 +188,47 @@ async def test_convert_video_libx264_switches_webm_to_mp4(tmp_path, monkeypatch)
 
 async def _async_val(val):
     return val
+
+
+@pytest.mark.asyncio
+async def test_convert_cancellation():
+    from utils.convert import (
+        ConvertCancelled,
+        _run,
+        cancel_active_job,
+        cancel_process_by_pid,
+        clear_cancelled_job,
+        is_job_cancelled,
+    )
+
+    tok = "test_cancel_token_123"
+    assert not is_job_cancelled(tok)
+
+    cancel_active_job(tok)
+    assert is_job_cancelled(tok)
+
+    with pytest.raises(ConvertCancelled):
+        await _run(["ffmpeg", "-version"], token=tok)
+
+    clear_cancelled_job(tok)
+    assert not is_job_cancelled(tok)
+
+
+@pytest.mark.asyncio
+async def test_convert_zero_timeout_infinite(monkeypatch):
+    from unittest.mock import AsyncMock, MagicMock
+    import utils.convert as convert_mod
+
+    mock_proc = MagicMock()
+    mock_proc.returncode = 0
+    mock_proc.stderr = AsyncMock()
+    mock_proc.stderr.read = AsyncMock(return_value=b"")
+    mock_proc.wait = AsyncMock(return_value=0)
+
+    monkeypatch.setattr(convert_mod.asyncio, "create_subprocess_exec", AsyncMock(return_value=mock_proc))
+    monkeypatch.setattr(convert_mod.os.path, "exists", lambda _p: True)
+
+    # timeout=0 should proceed without raising TimeoutError
+    await convert_mod._run(["ffmpeg", "-y", "dummy.webp"], timeout=0)
+    mock_proc.wait.assert_called_once()
+

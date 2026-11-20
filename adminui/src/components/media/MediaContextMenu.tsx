@@ -20,6 +20,7 @@ import {
   ExternalLink,
   Pencil,
   SlidersHorizontal,
+  XCircle,
 } from "lucide-react"
 import { toastSuccess } from "@/lib/toast"
 
@@ -49,6 +50,7 @@ export interface MediaContextMenuProps {
   currentPlacement?: string
   canDelete?: boolean
   canSetAvatar?: boolean
+  onCancel?: () => void
 }
 
 export function MediaContextMenu({
@@ -60,6 +62,7 @@ export function MediaContextMenu({
   onRename,
   onSetAvatar,
   onDelete,
+  onCancel,
   onChangePlacement,
   placementOptions,
   currentPlacement,
@@ -200,6 +203,22 @@ export function MediaContextMenu({
           <Download className="size-4 text-muted-foreground" />
           <span>Скачать файл</span>
         </ContextMenuItem>
+
+        {onCancel && item.status === "processing" && (
+          <>
+            <ContextMenuSeparator />
+            <ContextMenuItem
+              onClick={(e) => {
+                e.stopPropagation()
+                onCancel()
+              }}
+              className="gap-2 cursor-pointer text-destructive focus:text-destructive focus:bg-destructive/10"
+            >
+              <XCircle className="size-4" />
+              <span>Отменить конвертацию</span>
+            </ContextMenuItem>
+          </>
+        )}
 
         {canDelete && onDelete && (
           <>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { Loader2 } from "lucide-react"
 
+import { useAuth } from "@/hooks/use-auth"
 import {
   Card,
   CardContent,
@@ -43,6 +44,8 @@ const DEFAULT_CONVERT_SETTINGS: MediaDialogDefaultSettings = {
 }
 
 export function MediaSettingsPage() {
+  const { can } = useAuth()
+  const canEdit = can("settings.raw.edit") || can("settings.edit") || can("media.edit")
   const { data, isLoading } = useAdminUiSettings()
   const updateMutation = useUpdateAdminUiSettings()
 
@@ -144,14 +147,14 @@ export function MediaSettingsPage() {
             <div className="w-full max-w-56 shrink-0 flex justify-end">
               <Switch
                 id="modal-toggle"
-                disabled={isLoading}
+                disabled={isLoading || !canEdit}
                 checked={modalEnabled}
                 onCheckedChange={setModalEnabled}
               />
             </div>
           </div>
         </CardContent>
-        {isModalDirty && (
+        {canEdit && isModalDirty && (
           <CardFooter className="flex-col items-stretch gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">Изменено полей: 1</span>
@@ -452,7 +455,7 @@ export function MediaSettingsPage() {
           </div>
         </CardContent>
 
-        {isDefaultsDirty && (
+        {canEdit && isDefaultsDirty && (
           <CardFooter className="flex-col items-stretch gap-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs text-muted-foreground">
@@ -486,6 +489,14 @@ export function MediaSettingsPage() {
         title="Ограничения медиа"
         description="Ограничения на загрузку и хранение файлов пользователями."
         fields={[
+          {
+            key: "media.convert_timeout_sec",
+            label: "Таймаут конвертации FFmpeg",
+            kind: "number",
+            suffix: "сек",
+            placeholder: "1800",
+            hint: "Максимальное время выполнения конвертации FFmpeg. 0 — отключить таймаут (ждать завершения даже огромных видео). По умолчанию 1800 сек.",
+          },
           {
             key: "media.quota.image_bytes",
             label: "Квота хранения (фото)",

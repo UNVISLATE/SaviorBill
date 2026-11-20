@@ -424,6 +424,30 @@ export function MediaLibraryPage() {
     onError: (e: unknown) => toastError("Не удалось выполнить очистку", getErrorDetail(e)),
   })
 
+  const scanOrphans = useMutation({
+    mutationFn: async () =>
+      api.post<{ scanned: number; recovered_count: number }>("/v1/admin/media/scan-orphans"),
+    onSuccess: (res) => {
+      if (res.data.recovered_count > 0) {
+        toastSuccess(`Найдено и добавлено файлов: ${res.data.recovered_count}`)
+      } else {
+        toastSuccess("Все файлы уже проиндексированы, потерянных не обнаружено")
+      }
+      void qc.invalidateQueries({ queryKey: ["admin-media"] })
+    },
+    onError: (e: unknown) => toastError("Ошибка при сканировании файлов", getErrorDetail(e)),
+  })
+
+  const cancelJob = useMutation({
+    mutationFn: async (token: string) =>
+      api.post("/v1/system/instances/media/cancel", { token }),
+    onSuccess: () => {
+      toastSuccess("Сигнал отмены отправлен")
+      void qc.invalidateQueries({ queryKey: ["admin-media"] })
+    },
+    onError: (e: unknown) => toastError("Не удалось отменить конвертацию", getErrorDetail(e)),
+  })
+
   const columns: DataTableColumn<MediaItem>[] = [
     {
       header: "",
@@ -720,6 +744,20 @@ export function MediaLibraryPage() {
               <Sparkles className="size-4" /> Очистить неиспользуемое
             </Button>
           )}
+
+          {can("media.write") && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={scanOrphans.isPending}
+              onClick={() => scanOrphans.mutate()}
+              className="gap-1.5"
+              title="Поиск и регистрация файлов на диске, не внесенных в базу данных"
+            >
+              <RotateCw className={scanOrphans.isPending ? "size-4 animate-spin" : "size-4"} />
+              <span>Синхронизация хранилища</span>
+            </Button>
+          )}
         </div>
       </div>
 
@@ -759,6 +797,7 @@ export function MediaLibraryPage() {
               }}
               onSetAvatar={canSetAvatar && row.kind === "image" ? () => setAvatar.mutate(row) : undefined}
               onDelete={canDelete ? () => del.mutate(row.id) : undefined}
+              onCancel={row.status === "processing" ? () => cancelJob.mutate(row.token) : undefined}
               canDelete={canDelete}
               canSetAvatar={canSetAvatar}
             >

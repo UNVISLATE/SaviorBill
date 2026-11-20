@@ -35,8 +35,53 @@ class ConvertError(RuntimeError):
     """Ошибка конвертации ffmpeg."""
 
 
+class ConvertCancelled(ConvertError):
+    """Конвертация отменена пользователем или администратором."""
+
+
 class SignatureError(ConvertError):
     """Сигнатура файла не распознана ни как один из известных форматов."""
+
+
+_active_procs: dict[str, set[asyncio.subprocess.Process]] = {}
+_cancelled_tokens: set[str] = set()
+
+
+def cancel_active_job(token: str) -> bool:
+    """Запросить отмену всех процессов, связанных с токеном."""
+    _cancelled_tokens.add(token)
+    procs = _active_procs.get(token, set())
+    found = False
+    for p in list(procs):
+        try:
+            p.kill()
+            found = True
+        except (ProcessLookupError, AttributeError):
+            pass
+    return found
+
+
+def cancel_process_by_pid(pid: int) -> bool:
+    """Запросить отмену процесса по PID."""
+    for token, procs in _active_procs.items():
+        for p in list(procs):
+            if getattr(p, "pid", None) == pid:
+                _cancelled_tokens.add(token)
+                try:
+                    p.kill()
+                except (ProcessLookupError, AttributeError):
+                    pass
+                return True
+    return False
+
+
+def is_job_cancelled(token: str) -> bool:
+    return token in _cancelled_tokens
+
+
+def clear_cancelled_job(token: str) -> None:
+    _cancelled_tokens.discard(token)
+    _active_procs.pop(token, None)
 
 
 # Первые байты (magic bytes) известных форматов — дешёвая проверка перед
@@ -174,11 +219,15 @@ def _thumb_vf(size: int) -> str:
 async def _run(
     args: list[str],
     *,
-    timeout: float = 1800.0,
+    token: str | None = None,
+    timeout: float | None = 1800.0,
     on_output: OutputSink | None = None,
     on_progress: ProgressSink | None = None,
     total_duration: float | None = None,
 ) -> None:
+    if token and token in _cancelled_tokens:
+        raise ConvertCancelled("Conversion was cancelled")
+
     # ``-progress pipe:1 -nostats`` — машинно-читаемый прогресс на stdout,
     # не мешает человеческому логу на stderr (для on_output/xterm.js).
     run_args = [args[0], "-progress", "pipe:1", "-nostats", *args[1:]] if on_progress else args
@@ -189,13 +238,12 @@ async def _run(
     )
     assert proc.stderr is not None
 
+    if token:
+        _active_procs.setdefault(token, set()).add(proc)
+
     async def _pump_stderr() -> bytes:
         if on_output is None:
             return await proc.stderr.read()
-        # Читаем сырыми кусками (не readline()) — прогресс-бар ffmpeg
-        # обновляет одну строку через "\r" без "\n", readline() завис бы до
-        # конца всей задачи. Так каждый кусок форвардится в реалтайме, как
-        # в терминале.
         chunks: list[bytes] = []
         while True:
             chunk = await proc.stderr.read(4096)
@@ -210,6 +258,12 @@ async def _run(
             return
         parser = ProgressParser(total_duration)
         while True:
+            if token and token in _cancelled_tokens:
+                try:
+                    proc.kill()
+                except (ProcessLookupError, AttributeError):
+                    pass
+                break
             line = await proc.stdout.readline()
             if not line:
                 break
@@ -220,7 +274,10 @@ async def _run(
     stderr_task = asyncio.create_task(_pump_stderr())
     progress_task = asyncio.create_task(_pump_progress())
     try:
-        await asyncio.wait_for(proc.wait(), timeout=timeout)
+        if timeout is not None and timeout > 0:
+            await asyncio.wait_for(proc.wait(), timeout=timeout)
+        else:
+            await proc.wait()
     except (asyncio.TimeoutError, TimeoutError):
         try:
             proc.kill()
@@ -229,9 +286,18 @@ async def _run(
         stderr_task.cancel()
         progress_task.cancel()
         raise ConvertError(f"FFmpeg execution timed out (limit: {int(timeout)}s)")
+    finally:
+        if token and token in _active_procs:
+            _active_procs[token].discard(proc)
+            if not _active_procs[token]:
+                _active_procs.pop(token, None)
 
     stderr = await stderr_task
     await progress_task
+
+    if token and token in _cancelled_tokens:
+        raise ConvertCancelled("Conversion cancelled by administrator")
+
     dst = args[-1]
     if proc.returncode != 0 or not os.path.exists(dst):
         raise ConvertError(stderr.decode("utf-8", "replace")[-500:] or "ffmpeg failed")
@@ -353,47 +419,70 @@ def _webp(src: str, dst: str, quality: int, vf: str | None = None, at: float | N
 
 
 async def convert_image(
-    cfg: Config, src: str, out_dir: str, token: str, *, on_output: OutputSink | None = None
+    cfg: Config,
+    src: str,
+    out_dir: str,
+    token: str,
+    *,
+    timeout: float | None = None,
+    on_output: OutputSink | None = None,
 ) -> list[Variant]:
-    """Изображение → только полный webp.
-
-    ``thumb`` для изображения здесь никогда не создаётся — это решает
-    вызывающая сторона (``worker.py::_convert``) по фактическому размеру
-    результата (маленькие фото не тумбятся, см. модуль-докстринг).
-    """
+    """Изображение → только полный webp."""
     main = Variant("main", *target_key(token, "image"))
-    await _run(_webp(src, os.path.join(out_dir, main.key), cfg.webp_quality), timeout=cfg.convert_timeout_sec, on_output=on_output)
+    eff_timeout = timeout if timeout is not None else getattr(cfg, "convert_timeout_sec", 1800.0)
+    await _run(
+        _webp(src, os.path.join(out_dir, main.key), getattr(cfg, "webp_quality", 82)),
+        token=token,
+        timeout=eff_timeout,
+        on_output=on_output,
+    )
     return [main]
 
 
 async def make_thumb(
-    cfg: Config, src: str, out_dir: str, token: str, *, on_output: OutputSink | None = None
+    cfg: Config,
+    src: str,
+    out_dir: str,
+    token: str,
+    *,
+    timeout: float | None = None,
+    on_output: OutputSink | None = None,
 ) -> Variant:
     """Собрать (или пересобрать) единственный квадратный thumb медиа."""
     thumb = Variant("thumb", f"{token}.thumb.{uuid.uuid4().hex[:8]}.webp", "image/webp")
+    eff_timeout = timeout if timeout is not None else getattr(cfg, "convert_timeout_sec", 1800.0)
     await _run(
         _webp(
             src,
             os.path.join(out_dir, thumb.key),
-            cfg.thumb_quality,
-            _thumb_vf(cfg.thumb_size),
+            getattr(cfg, "thumb_quality", 40),
+            _thumb_vf(getattr(cfg, "thumb_size", 96)),
         ),
-        timeout=cfg.convert_timeout_sec,
+        token=token,
+        timeout=eff_timeout,
         on_output=on_output,
     )
     return thumb
 
 
 async def make_preview(
-    cfg: Config, src: str, out_dir: str, token: str, *, at: float | None = None,
+    cfg: Config,
+    src: str,
+    out_dir: str,
+    token: str,
+    *,
+    at: float | None = None,
     vf: str | None = None,
+    timeout: float | None = None,
     on_output: OutputSink | None = None,
 ) -> Variant:
     suffix = uuid.uuid4().hex[:8]
     preview = Variant(f"preview.{suffix}", f"{token}.preview.{suffix}.webp", "image/webp")
+    eff_timeout = timeout if timeout is not None else getattr(cfg, "convert_timeout_sec", 1800.0)
     await _run(
-        _webp(src, os.path.join(out_dir, preview.key), cfg.webp_quality, vf=vf, at=at),
-        timeout=cfg.convert_timeout_sec,
+        _webp(src, os.path.join(out_dir, preview.key), getattr(cfg, "webp_quality", 82), vf=vf, at=at),
+        token=token,
+        timeout=eff_timeout,
         on_output=on_output,
     )
     return preview
@@ -474,11 +563,13 @@ async def convert_video(
     cpu_used: int | None = None,
     video_preset: str | None = None,
     audio_bitrate: str | None = None,
+    timeout: float | None = None,
     on_output: OutputSink | None = None,
     on_progress: ProgressSink | None = None,
     on_stage: StageSink | None = None,
 ) -> list[Variant]:
     """Видео → webm/mp4 + thumb + один превью-постер по умолчанию."""
+    eff_timeout = timeout if timeout is not None else getattr(cfg, "convert_timeout_sec", 1800.0)
     vf_poster = _parse_scale_filter(poster_scale, for_poster=True)
 
     if video_codec == "copy" or format_choice == "original":
@@ -493,10 +584,10 @@ async def convert_video(
         shutil.copyfile(src, os.path.join(out_dir, main.key))
         if on_stage:
             await on_stage("thumb")
-        thumb = await make_thumb(cfg, src, out_dir, token, on_output=on_output)
+        thumb = await make_thumb(cfg, src, out_dir, token, timeout=eff_timeout, on_output=on_output)
         if on_stage:
             await on_stage("preview")
-        preview = await make_preview(cfg, src, out_dir, token, vf=vf_poster, on_output=on_output)
+        preview = await make_preview(cfg, src, out_dir, token, vf=vf_poster, timeout=eff_timeout, on_output=on_output)
         return [main, thumb, preview]
 
     use_h264 = format_choice == "mp4" or video_codec == "libx264"
@@ -551,17 +642,18 @@ async def convert_video(
     cmd.append(os.path.join(out_dir, main.key))
     await _run(
         cmd,
-        timeout=cfg.convert_timeout_sec,
+        token=token,
+        timeout=eff_timeout,
         on_output=on_output,
         on_progress=on_progress,
         total_duration=duration,
     )
     if on_stage:
         await on_stage("thumb")
-    thumb = await make_thumb(cfg, src, out_dir, token, on_output=on_output)
+    thumb = await make_thumb(cfg, src, out_dir, token, timeout=eff_timeout, on_output=on_output)
     if on_stage:
         await on_stage("preview")
-    preview = await make_preview(cfg, src, out_dir, token, vf=vf_poster, on_output=on_output)
+    preview = await make_preview(cfg, src, out_dir, token, vf=vf_poster, timeout=eff_timeout, on_output=on_output)
     return [main, thumb, preview]
 
 
@@ -581,6 +673,7 @@ async def convert(
     cpu_used: int | None = None,
     video_preset: str | None = None,
     audio_bitrate: str | None = None,
+    timeout: float | None = None,
     on_output: OutputSink | None = None,
     on_progress: ProgressSink | None = None,
     on_stage: StageSink | None = None,
@@ -610,18 +703,21 @@ async def convert(
                 scale=scale,
                 poster_scale=poster_scale,
                 crf=crf,
+                timeout=timeout,
                 on_output=on_output,
                 on_progress=on_progress,
                 on_stage=on_stage,
             )
         if format_choice == "webp" or not keep_animation:
-            return "image", await convert_image(cfg, src, out_dir, token, on_output=on_output)
+            return "image", await convert_image(
+                cfg, src, out_dir, token, timeout=timeout, on_output=on_output
+            )
 
         # Default: keep original animated GIF!
         dst = os.path.join(out_dir, f"{token}.gif")
         shutil.copyfile(src, dst)
         main = Variant("main", f"{token}.gif", "image/gif")
-        thumb = await make_thumb(cfg, src, out_dir, token, on_output=on_output)
+        thumb = await make_thumb(cfg, src, out_dir, token, timeout=timeout, on_output=on_output)
         return "image", [main, thumb]
 
     if kind == "video":
@@ -639,11 +735,14 @@ async def convert(
             cpu_used=cpu_used,
             video_preset=video_preset,
             audio_bitrate=audio_bitrate,
+            timeout=timeout,
             on_output=on_output,
             on_progress=on_progress,
             on_stage=on_stage,
         )
-    return kind, await convert_image(cfg, src, out_dir, token, on_output=on_output)
+    return kind, await convert_image(
+        cfg, src, out_dir, token, timeout=timeout, on_output=on_output
+    )
 
 
 __all__ = [
@@ -660,6 +759,11 @@ __all__ = [
     "target_key",
     "Variant",
     "ConvertError",
+    "ConvertCancelled",
+    "cancel_active_job",
+    "cancel_process_by_pid",
+    "is_job_cancelled",
+    "clear_cancelled_job",
     "SignatureError",
     "SIGNATURE_READ_BYTES",
 ]
