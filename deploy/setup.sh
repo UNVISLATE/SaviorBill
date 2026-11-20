@@ -13,12 +13,8 @@
 
 set -euo pipefail
 
-# If running via pipe (e.g. curl ... | bash), reconnect stdin to terminal if available
-if [ ! -t 0 ]; then
-  if (true < /dev/tty) 2>/dev/null; then
-    exec < /dev/tty
-  fi
-fi
+# Note: When run via pipe (curl ... | bash), we intentionally preserve stdin for bash
+# so curl finishes streaming. Interactive prompts read directly from /dev/tty.
 
 # ── Colors and Typography ─────────────────────────────────────────────────────
 if [ -t 1 ]; then
@@ -53,9 +49,16 @@ prompt_default() {
   else
     printf "${BOLD}%s${RESET}: " "$prompt" >&2
   fi
-  if ! IFS= read -r answer; then
-    echo "${default}"
-    return 0
+  if [ -r /dev/tty ] && (true < /dev/tty) 2>/dev/null; then
+    if ! IFS= read -r answer < /dev/tty; then
+      echo "${default}"
+      return 0
+    fi
+  else
+    if ! IFS= read -r answer; then
+      echo "${default}"
+      return 0
+    fi
   fi
   echo "${answer:-$default}"
 }
@@ -65,9 +68,16 @@ prompt_secret_or_gen() {
   local generated="$2"
   local answer=""
   printf "${BOLD}%s${RESET} ${DIM}[Enter to use '%s']${RESET}: " "$prompt" "$generated" >&2
-  if ! IFS= read -r answer; then
-    echo "${generated}"
-    return 0
+  if [ -r /dev/tty ] && (true < /dev/tty) 2>/dev/null; then
+    if ! IFS= read -r answer < /dev/tty; then
+      echo "${generated}"
+      return 0
+    fi
+  else
+    if ! IFS= read -r answer; then
+      echo "${generated}"
+      return 0
+    fi
   fi
   echo "${answer:-$generated}"
 }
