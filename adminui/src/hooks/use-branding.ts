@@ -7,6 +7,7 @@ export const BRANDING_UPDATED_EVENT = "sb-admin:branding-updated"
 
 interface BrandingResponse {
   name: string | null
+  login_notice?: string | null
   logo_url: string | null
   favicon_url: string | null
   theme: Record<string, unknown>
@@ -36,6 +37,7 @@ export function useBranding() {
 
   return {
     name: data?.name || FALLBACK_NAME,
+    loginNotice: data?.login_notice ?? null,
     logoUrl: data?.logo_url ?? null,
     faviconUrl: data?.favicon_url ?? null,
     version: data?.version ?? "",

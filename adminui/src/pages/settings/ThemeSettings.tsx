@@ -86,7 +86,13 @@ function ColorField({
  * Цвета темы (`ui.{scope}.theme`) — раньше эту JSON-настройку можно было
  * задать только руками через Raw settings, не видя результата.
  */
-export function ThemeSettings({ scope }: { scope: "admin" | "client" }) {
+export function ThemeSettings({
+  scope,
+  embedded,
+}: {
+  scope: "admin" | "client"
+  embedded?: boolean
+}) {
   const qc = useQueryClient()
   const { map, isLoading } = useSettingsMap()
   const savedRaw = map.get(`ui.${scope}.theme`) ?? ""
@@ -122,6 +128,9 @@ export function ThemeSettings({ scope }: { scope: "admin" | "client" }) {
   })
 
   if (isLoading) {
+    if (embedded) {
+      return <Skeleton className="h-24 w-full" />
+    }
     return (
       <Card>
         <CardHeader>
@@ -131,6 +140,60 @@ export function ThemeSettings({ scope }: { scope: "admin" | "client" }) {
           <Skeleton className="h-24 w-full" />
         </CardContent>
       </Card>
+    )
+  }
+
+  if (embedded) {
+    return (
+      <div className="space-y-4 pt-1">
+        <div className="flex items-center justify-between">
+          <div>
+            <h4 className="text-sm font-medium">Цветовая палитра</h4>
+            <p className="text-xs text-muted-foreground">
+              Акцентные и фоновые оттенки интерфейса.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-xs text-muted-foreground hover:text-foreground"
+            disabled={save.isPending || isDefaults}
+            onClick={() => {
+              setDraft(defaults)
+              save.mutate("")
+            }}
+          >
+            <RotateCcw className="mr-1.5 size-3.5" /> Сбросить
+          </Button>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {colors.map((c) => (
+            <div key={c.key} className="rounded-lg border bg-muted/20 p-2.5">
+              <ColorField
+                key={c.key}
+                label={c.label}
+                value={current[c.key] ?? c.fallback}
+                onChange={(next) => setDraft({ ...current, [c.key]: next })}
+              />
+            </div>
+          ))}
+        </div>
+        {dirty && (
+          <div className="flex justify-end gap-2 pt-1">
+            <Button size="sm" variant="ghost" onClick={() => setDraft(null)}>
+              Отменить
+            </Button>
+            <Button
+              size="sm"
+              disabled={save.isPending}
+              onClick={() => save.mutate(JSON.stringify(current))}
+            >
+              {save.isPending && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+              Сохранить палитру
+            </Button>
+          </div>
+        )}
+      </div>
     )
   }
 

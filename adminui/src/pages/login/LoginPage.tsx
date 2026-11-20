@@ -2,10 +2,11 @@ import { useState, type FormEvent } from "react"
 import { Navigate, useLocation, useNavigate } from "react-router-dom"
 import { useQuery } from "@tanstack/react-query"
 import { api } from "@/api/api"
-import { KeyRound, ShieldCheck } from "lucide-react"
+import { Info, KeyRound, ShieldCheck } from "lucide-react"
 
 import { useAuth } from "@/hooks/use-auth"
 import { useBranding } from "@/hooks/use-branding"
+import { BackendUnavailablePage } from "@/pages/errors/BackendUnavailablePage"
 import { Button } from "@/components/shadsnui/button"
 import { Field, FieldError, FieldLabel } from "@/components/shadsnui/field"
 import { Input } from "@/components/shadsnui/input"
@@ -137,7 +138,7 @@ interface OAuthProviderPublic {
 }
 
 export function LoginPage() {
-  const { login, isAuthenticated } = useAuth()
+  const { login, isAuthenticated, isBackendUnavailable, refetchMe, error: authError } = useAuth()
   const branding = useBranding()
   const location = useLocation()
   const navigate = useNavigate()
@@ -157,6 +158,15 @@ export function LoginPage() {
 
   const searchParams = new URLSearchParams(location.search)
   const from = searchParams.get("from") || (location.state as { from?: string } | null)?.from || "/"
+
+  if (isBackendUnavailable) {
+    return (
+      <BackendUnavailablePage
+        onRetry={refetchMe}
+        errorMessage={authError instanceof Error ? authError.message : undefined}
+      />
+    )
+  }
 
   if (isAuthenticated) {
     return <Navigate to={from} replace />
@@ -242,6 +252,16 @@ export function LoginPage() {
                 Доступ только для сотрудников с ролью в системе.
               </p>
             </div>
+
+            {branding.loginNotice && (
+              <div className="rounded-lg border border-primary/30 bg-primary/10 p-3.5 text-xs text-foreground/90 backdrop-blur-sm">
+                <div className="flex items-center gap-1.5 font-semibold text-primary mb-1">
+                  <Info className="size-3.5 shrink-0" />
+                  <span>Объявление</span>
+                </div>
+                <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">{branding.loginNotice}</p>
+              </div>
+            )}
 
             <form onSubmit={onSubmit} className="space-y-5">
               <Field>

@@ -2,6 +2,7 @@ import axios, { type AxiosError, type InternalAxiosRequestConfig } from "axios"
 
 /** Событие: сессия истекла (refresh не удался) — слушает AuthProvider. */
 export const AUTH_LOGOUT_EVENT = "sb-admin:logout"
+export const BACKEND_UNAVAILABLE_EVENT = "sb-admin:backend-unavailable"
 /** Событие: 2FA обязательна настройкой инстанса, но не включена у аккаунта —
  * backend отвечает 403 `totp_setup_required` на ЛЮБОЕ админ-действие (кроме
  * /admin/me и самих роутов настройки 2FA), см. dependencies/twofa.py.
@@ -61,6 +62,13 @@ api.interceptors.response.use(
       (error.response.data as { detail?: string } | undefined)?.detail === "totp_setup_required"
     ) {
       window.dispatchEvent(new Event(TOTP_SETUP_REQUIRED_EVENT))
+    }
+    if (
+      error.response?.status === 503 ||
+      error.code === "ERR_NETWORK" ||
+      error.code === "ECONNABORTED"
+    ) {
+      window.dispatchEvent(new CustomEvent(BACKEND_UNAVAILABLE_EVENT, { detail: error }))
     }
     return Promise.reject(error)
   },

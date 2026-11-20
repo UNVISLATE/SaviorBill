@@ -1,7 +1,7 @@
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react"
+import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 
-import { api, AUTH_LOGOUT_EVENT } from "@/api/api.ts"
+import { api, AUTH_LOGOUT_EVENT, BACKEND_UNAVAILABLE_EVENT } from "@/api/api.ts"
 import { hasPerm, type PermNode } from "@/api/rbac.ts"
 import { getErrorDetail, getErrorStatus } from "@/lib/api-error.ts"
 
@@ -30,6 +30,8 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const qc = useQueryClient()
+  const [runtimeUnavailable, setRuntimeUnavailable] = useState<{ message?: string } | null>(null)
+
   // Токены — httpOnly cookies (JS их не видит вовсе, см. api/api.ts), поэтому
   // единственный способ узнать "залогинен ли клиент" — спросить сервер;
   // `enabled: true` всегда, состояние сессии полностью определяется этим
@@ -41,13 +43,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     staleTime: 60_000,
   })
 
+  useEffect(() => {
+    const onUnavailable = (e: Event) => {
+      const custom = e as CustomEvent<{ message?: string; response?: { status?: number } }>
+      const status = custom.detail?.response?.status
+      const msg =
+        custom.detail?.message ||
+        (status === 503 ? "Сервис временно недоступен (503 Service Unavailable)" : "Связь с сервером потеряна")
+      setRuntimeUnavailable({ message: msg })
+    }
+    window.addEventListener(BACKEND_UNAVAILABLE_EVENT, onUnavailable)
+    return () => window.removeEventListener(BACKEND_UNAVAILABLE_EVENT, onUnavailable)
+  }, [])
+
   const isBackendUnavailable = useMemo(() => {
+    if (runtimeUnavailable) return true
     if (!meQuery.isError) return false
     const err = meQuery.error as { response?: { status?: number }; code?: string } | undefined
     const status = err?.response?.status
     if (status && status < 500) return false
     return err?.code === "ERR_NETWORK" || (status !== undefined && status >= 500)
-  }, [meQuery.isError, meQuery.error])
+  }, [runtimeUnavailable, meQuery.isError, meQuery.error])
 
   useEffect(() => {
     // Сработавший refresh-фейл где-то в дереве запросов -> сбросить сессию и перенаправить на логин
@@ -68,8 +84,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isLoading: meQuery.isLoading,
       isAuthenticated: Boolean(meQuery.data),
       isBackendUnavailable,
-      error: meQuery.error,
-      refetchMe: () => void meQuery.refetch(),
+      error: runtimeUnavailable ? new Error(runtimeUnavailable.message) : meQuery.error,
+      refetchMe: () => {
+        setRuntimeUnavailable(null)
+        void meQuery.refetch()
+      },
       async login(login: string, password: string, totp?: string) {
         try {
           await api.post("/v1/auth/login", { login, password, totp })

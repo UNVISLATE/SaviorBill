@@ -1,11 +1,12 @@
 import { useRef, useState } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
-import { ImageOff, Loader2, Trash2, Upload } from "lucide-react"
+import { ImageOff, Loader2, ShieldAlert, Trash2, Upload, Users } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { uploadOwnMedia } from "@/api/media-upload.ts"
 import { toastError, toastSuccess } from "@/lib/toast"
 import { cn } from "@/lib/utils"
+import { useAuth } from "@/hooks/use-auth"
 import { useSettingsMap } from "@/hooks/use-settings-map"
 import { BRANDING_UPDATED_EVENT } from "@/hooks/use-branding"
 import { ThemeSettings } from "./ThemeSettings"
@@ -20,6 +21,7 @@ import {
 } from "@/components/shadsnui/card"
 import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
+import { Textarea } from "@/components/shadsnui/textarea"
 import { Skeleton } from "@/components/shadsnui/skeleton"
 
 type Scope = "admin" | "client"
@@ -33,6 +35,13 @@ const ASSET_TAG_MAP: Record<Asset, string> = {
   catalog_banner: "banner",
 }
 
+const CLIENT_LINKS = [
+  { key: "support_link", label: "Поддержка", placeholder: "https://t.me/support" },
+  { key: "telegram_channel", label: "Telegram канал", placeholder: "https://t.me/channel" },
+  { key: "telegram_chat", label: "Telegram чат", placeholder: "https://t.me/chat" },
+  { key: "discord_link", label: "Discord", placeholder: "https://discord.gg/..." },
+] as const
+
 function mediaUrl(token: string | undefined | null): string | null {
   return token ? `/api/media/${token}` : null
 }
@@ -44,6 +53,7 @@ function AssetSlot({
   label,
   note,
   token,
+  disabled,
   onDone,
 }: {
   scope: Scope
@@ -51,6 +61,7 @@ function AssetSlot({
   label: string
   note: string
   token: string
+  disabled?: boolean
   onDone: () => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
@@ -70,8 +81,6 @@ function AssetSlot({
 
   const upload = useMutation({
     mutationFn: async (file: File) => {
-      // tag — метка для админки; сервер требует до 16 символов, только
-      // латиница и цифры (никаких дефисов, см. mediaworker _TAG_RE).
       const { token: uploaded } = await uploadOwnMedia(file, {
         tag: `${scope}${ASSET_TAG_MAP[asset]}`,
       })
@@ -96,10 +105,10 @@ function AssetSlot({
   const shown = preview ?? mediaUrl(token)
 
   return (
-    <div className="flex items-center gap-4">
+    <div className="flex items-center gap-4 rounded-lg border bg-muted/10 p-3 transition-colors hover:bg-muted/20">
       <div
         className={cn(
-          "flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/30",
+          "flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border bg-muted/40",
           busy && "opacity-50",
         )}
       >
@@ -115,17 +124,22 @@ function AssetSlot({
         <p className="text-xs text-muted-foreground">{note}</p>
       </div>
 
-      <div className="flex shrink-0 gap-1">
-        <Button size="sm" variant="outline" disabled={busy} onClick={() => inputRef.current?.click()}>
+      <div className="flex shrink-0 gap-1.5">
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={busy || disabled}
+          onClick={() => inputRef.current?.click()}
+        >
           {busy ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
           {token ? "Заменить" : "Загрузить"}
         </Button>
-        {token && (
+        {token && !disabled && (
           <Button
             size="icon"
             variant="ghost"
             className="size-8 text-muted-foreground hover:text-destructive"
-            disabled={busy}
+            disabled={busy || disabled}
             onClick={() => write.mutate("")}
             title="Сбросить к значению по умолчанию"
           >
@@ -152,125 +166,170 @@ function AssetSlot({
   )
 }
 
-function ScopeCard({
-  scope,
-  title,
-  description,
-}: {
-  scope: Scope
-  title: string
-  description: string
-}) {
+/** Блок 1: Административная панель (Admin UI) */
+function AdminBrandingBlock() {
   const qc = useQueryClient()
+  const { can } = useAuth()
+  const canEdit = can("settings.raw.edit") || can("settings.edit") || can("branding")
   const { map, isLoading } = useSettingsMap()
-  const savedName = map.get(`ui.${scope}.name`) ?? ""
+
+  const savedName = map.get("ui.admin.name") ?? ""
+  const savedLoginNotice = map.get("ui.admin.login_notice") ?? ""
+
   const [name, setName] = useState<string | null>(null)
+  const [loginNotice, setLoginNotice] = useState<string | null>(null)
+
   const currentName = name ?? savedName
-  const dirty = currentName !== savedName
+  const currentLoginNotice = loginNotice ?? savedLoginNotice
+  const isDirty = currentName !== savedName || currentLoginNotice !== savedLoginNotice
 
   function refresh() {
     void qc.invalidateQueries({ queryKey: ["admin-settings-all"] })
     void qc.invalidateQueries({ queryKey: ["branding-admin"] })
+    window.dispatchEvent(new Event(BRANDING_UPDATED_EVENT))
   }
 
-  const saveName = useMutation({
-    mutationFn: async () => api.put(`/v1/branding/${scope}`, { name: currentName }),
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      await api.put("/v1/branding/admin", {
+        name: currentName,
+        login_notice: currentLoginNotice.trim() || "",
+      })
+    },
     onSuccess: () => {
-      toastSuccess("Название сохранено")
+      toastSuccess("Настройки панели управления сохранены")
       setName(null)
+      setLoginNotice(null)
       refresh()
     },
-    onError: () => toastError("Не удалось сохранить название"),
+    onError: () => toastError("Не удалось сохранить настройки панели управления"),
   })
 
   if (isLoading) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{title}</CardTitle>
+          <CardTitle>Панель управления (Admin UI)</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <Skeleton className="h-9 w-full" />
-          <Skeleton className="h-14 w-full" />
+        <CardContent className="space-y-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-20 w-full" />
         </CardContent>
       </Card>
     )
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        <CardDescription>{description}</CardDescription>
+    <Card className="border-border/60">
+      <CardHeader className="border-b bg-muted/20 pb-4">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <ShieldAlert className="size-4" />
+          </div>
+          <div>
+            <CardTitle className="text-base font-semibold">Административная панель (Admin UI)</CardTitle>
+            <CardDescription className="text-xs">
+              Персонализация рабочей области управления, системных заголовков, оповещений и темы.
+            </CardDescription>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent className="space-y-5">
-        <div className="flex items-center justify-between gap-6">
-          <Label htmlFor={`name-${scope}`} className="font-normal">
-            Название
-          </Label>
-          <Input
-            id={`name-${scope}`}
-            value={currentName}
-            onChange={(e) => setName(e.target.value)}
-            className="max-w-56"
-          />
+
+      <CardContent className="space-y-6 pt-6">
+        {/* Основные текстовые поля */}
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="admin-name" className="text-sm font-medium">
+              Название панели
+            </Label>
+            <Input
+              id="admin-name"
+              value={currentName}
+              disabled={!canEdit}
+              placeholder="SaviorBill Admin"
+              onChange={(e) => setName(e.target.value)}
+              className="max-w-md"
+            />
+            <p className="text-xs text-muted-foreground">
+              Отображается в заголовке вкладки браузера и шапке панели.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="admin-login-notice" className="text-sm font-medium">
+              Объявление на странице входа администраторов
+            </Label>
+            <Textarea
+              id="admin-login-notice"
+              value={currentLoginNotice}
+              disabled={!canEdit}
+              rows={3}
+              placeholder="Информационное сообщение или предупреждение при авторизации..."
+              onChange={(e) => setLoginNotice(e.target.value)}
+              className="max-w-2xl text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Кастомное уведомление, которое видят сотрудники при входе в панель управления. Поддерживает многострочный текст.
+            </p>
+          </div>
         </div>
 
-        <div className="space-y-4 border-t pt-4">
-          <AssetSlot
-            scope={scope}
-            asset="logo"
-            label="Логотип"
-            note="Показывается в шапке. PNG или WebP, отображается целиком без обрезки."
-            token={map.get(`ui.${scope}.logo`) ?? ""}
-            onDone={refresh}
-          />
-          <AssetSlot
-            scope={scope}
-            asset="favicon"
-            label="Favicon"
-            note="Иконка вкладки браузера. Квадратный PNG, лучше 32×32 или 64×64."
-            token={map.get(`ui.${scope}.favicon`) ?? ""}
-            onDone={refresh}
-          />
-          {scope === "client" && (
-            <>
-              <AssetSlot
-                scope={scope}
-                asset="mascot"
-                label="Маскот экрана входа"
-                note="Персонаж на левой части страницы авторизации. Рекомендуется PNG/WebP с прозрачным фоном."
-                token={map.get("ui.client.mascot") ?? ""}
-                onDone={refresh}
-              />
-              <AssetSlot
-                scope={scope}
-                asset="mascot_not_found"
-                label="Маскот страницы 404"
-                note="Иллюстрация на экране ошибки 404. PNG или WebP."
-                token={map.get("ui.client.mascot_not_found") ?? ""}
-                onDone={refresh}
-              />
-              <AssetSlot
-                scope={scope}
-                asset="catalog_banner"
-                label="Баннер каталога"
-                note="Фоновое изображение Hero-блока каталога в клиентском кабинете. Широкоформатный PNG/WebP/JPG."
-                token={map.get("ui.client.catalog_banner") ?? ""}
-                onDone={refresh}
-              />
-            </>
-          )}
+        {/* Графические ассеты */}
+        <div className="space-y-3 border-t pt-5">
+          <div>
+            <h4 className="text-sm font-medium">Графика и логотипы</h4>
+            <p className="text-xs text-muted-foreground">
+              Визуальные материалы административного интерфейса.
+            </p>
+          </div>
+          <div className="space-y-2.5">
+            <AssetSlot
+              scope="admin"
+              asset="logo"
+              label="Логотип панели"
+              note="Показывается в шапке панели и на экране входа. Рекомендуется прозрачный PNG или WebP."
+              token={map.get("ui.admin.logo") ?? ""}
+              disabled={!canEdit}
+              onDone={refresh}
+            />
+            <AssetSlot
+              scope="admin"
+              asset="favicon"
+              label="Favicon вкладки"
+              note="Иконка во вкладке браузера панели. Квадратный PNG, 32×32 или 64×64."
+              token={map.get("ui.admin.favicon") ?? ""}
+              disabled={!canEdit}
+              onDone={refresh}
+            />
+          </div>
+        </div>
+
+        {/* Тема оформления */}
+        <div className="border-t pt-5">
+          <ThemeSettings scope="admin" embedded />
         </div>
       </CardContent>
-      {dirty && (
-        <CardFooter className="justify-end gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setName(null)} disabled={saveName.isPending}>
+
+      {canEdit && isDirty && (
+        <CardFooter className="justify-end gap-2 border-t bg-muted/10 py-3">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setName(null)
+              setLoginNotice(null)
+            }}
+            disabled={saveMutation.isPending}
+          >
             Отменить
           </Button>
-          <Button size="sm" onClick={() => saveName.mutate()} disabled={saveName.isPending}>
-            {saveName.isPending && <Loader2 className="size-4 animate-spin" />}
-            Сохранить
+          <Button
+            size="sm"
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending}
+          >
+            {saveMutation.isPending && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+            Сохранить Admin UI
           </Button>
         </CardFooter>
       )}
@@ -278,82 +337,243 @@ function ScopeCard({
   )
 }
 
-const CLIENT_LINKS = [
-  { key: "support_link", label: "Поддержка", placeholder: "https://t.me/support" },
-  { key: "telegram_channel", label: "Telegram канал", placeholder: "https://t.me/channel" },
-  { key: "telegram_chat", label: "Telegram чат", placeholder: "https://t.me/chat" },
-  { key: "discord_link", label: "Discord", placeholder: "https://discord.gg/..." },
-] as const
-
-function ClientLinksCard() {
+/** Блок 2: Клиентский личный кабинет (Client UI) */
+function ClientBrandingBlock() {
   const qc = useQueryClient()
+  const { can } = useAuth()
+  const canEdit = can("settings.raw.edit") || can("settings.edit") || can("branding")
   const { map, isLoading } = useSettingsMap()
-  const [draft, setDraft] = useState<Record<string, string> | null>(null)
 
-  const saved: Record<string, string> = {}
+  const savedName = map.get("ui.client.name") ?? ""
+  const savedLoginNotice = map.get("ui.client.login_notice") ?? ""
+
+  const [name, setName] = useState<string | null>(null)
+  const [loginNotice, setLoginNotice] = useState<string | null>(null)
+
+  const savedLinks: Record<string, string> = {}
   for (const l of CLIENT_LINKS) {
-    saved[l.key] = map.get(`ui.client.settings.${l.key}`) ?? ""
+    savedLinks[l.key] = map.get(`ui.client.settings.${l.key}`) ?? ""
+  }
+  const [linksDraft, setLinksDraft] = useState<Record<string, string> | null>(null)
+
+  const currentName = name ?? savedName
+  const currentLoginNotice = loginNotice ?? savedLoginNotice
+  const currentLinks = linksDraft ?? savedLinks
+
+  const isLinksDirty = CLIENT_LINKS.some(
+    (l) => (currentLinks[l.key] ?? "") !== (savedLinks[l.key] ?? ""),
+  )
+  const isDirty =
+    currentName !== savedName ||
+    currentLoginNotice !== savedLoginNotice ||
+    isLinksDirty
+
+  function refresh() {
+    void qc.invalidateQueries({ queryKey: ["admin-settings-all"] })
+    void qc.invalidateQueries({ queryKey: ["branding-client"] })
+    window.dispatchEvent(new Event(BRANDING_UPDATED_EVENT))
   }
 
-  const current = draft ?? saved
-  const dirty = CLIENT_LINKS.some((l) => (current[l.key] ?? "") !== (saved[l.key] ?? ""))
-
-  const save = useMutation({
-    mutationFn: async () =>
-      api.put("/v1/branding/client", { settings: current }),
-    onSuccess: () => {
-      toastSuccess("Ссылки сообщества сохранены")
-      setDraft(null)
-      void qc.invalidateQueries({ queryKey: ["admin-settings-all"] })
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      await api.put("/v1/branding/client", {
+        name: currentName,
+        login_notice: currentLoginNotice.trim() || "",
+        settings: currentLinks,
+      })
     },
-    onError: () => toastError("Не удалось сохранить ссылки"),
+    onSuccess: () => {
+      toastSuccess("Настройки личного кабинета сохранены")
+      setName(null)
+      setLoginNotice(null)
+      setLinksDraft(null)
+      refresh()
+    },
+    onError: () => toastError("Не удалось сохранить настройки личного кабинета"),
   })
 
   if (isLoading) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Ссылки и сообщество клиента</CardTitle>
+          <CardTitle>Клиентский личный кабинет (Client UI)</CardTitle>
         </CardHeader>
-        <CardContent>
-          <Skeleton className="h-32 w-full" />
+        <CardContent className="space-y-4">
+          <Skeleton className="h-10 w-full" />
+          <Skeleton className="h-20 w-full" />
         </CardContent>
       </Card>
     )
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Ссылки и сообщество клиента</CardTitle>
-        <CardDescription>
-          Отображаются в подвале личного кабинета и на экране поддержки.
-        </CardDescription>
+    <Card className="border-border/60">
+      <CardHeader className="border-b bg-muted/20 pb-4">
+        <div className="flex items-center gap-2.5">
+          <div className="flex size-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-500">
+            <Users className="size-4" />
+          </div>
+          <div>
+            <CardTitle className="text-base font-semibold">Клиентский личный кабинет (Client UI)</CardTitle>
+            <CardDescription className="text-xs">
+              Брендирование витрины и кабинета пользователя: персонажи, баннеры, каналы поддержки и стили.
+            </CardDescription>
+          </div>
+        </div>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {CLIENT_LINKS.map((item) => (
-          <div key={item.key} className="flex items-center justify-between gap-6">
-            <Label htmlFor={`client-link-${item.key}`} className="font-normal">
-              {item.label}
+
+      <CardContent className="space-y-6 pt-6">
+        {/* Основные текстовые поля */}
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="client-name" className="text-sm font-medium">
+              Название сервиса / магазина
             </Label>
             <Input
-              id={`client-link-${item.key}`}
-              value={current[item.key] ?? ""}
-              placeholder={item.placeholder}
-              onChange={(e) => setDraft({ ...current, [item.key]: e.target.value })}
-              className="max-w-72"
+              id="client-name"
+              value={currentName}
+              disabled={!canEdit}
+              placeholder="SaviorBill Store"
+              onChange={(e) => setName(e.target.value)}
+              className="max-w-md"
+            />
+            <p className="text-xs text-muted-foreground">
+              Имя вашего проекта, отображаемое клиентам в шапке, письмах и уведомлениях.
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="client-login-notice" className="text-sm font-medium">
+              Объявление на странице входа клиентов
+            </Label>
+            <Textarea
+              id="client-login-notice"
+              value={currentLoginNotice}
+              disabled={!canEdit}
+              rows={3}
+              placeholder="Информационное сообщение, технические работы или приветствие для клиентов..."
+              onChange={(e) => setLoginNotice(e.target.value)}
+              className="max-w-2xl text-sm"
+            />
+            <p className="text-xs text-muted-foreground">
+              Кастомное уведомление в клиентском кабинете при авторизации. Поддерживает многострочный текст.
+            </p>
+          </div>
+        </div>
+
+        {/* Графические ассеты витрины */}
+        <div className="space-y-3 border-t pt-5">
+          <div>
+            <h4 className="text-sm font-medium">Графика, маскоты и баннеры</h4>
+            <p className="text-xs text-muted-foreground">
+              Изображения для экранов входа, ошибки 404, шапки каталога и браузера.
+            </p>
+          </div>
+          <div className="space-y-2.5">
+            <AssetSlot
+              scope="client"
+              asset="logo"
+              label="Логотип магазина"
+              note="Показывается в шапке клиентского кабинета и мобильном меню."
+              token={map.get("ui.client.logo") ?? ""}
+              disabled={!canEdit}
+              onDone={refresh}
+            />
+            <AssetSlot
+              scope="client"
+              asset="favicon"
+              label="Favicon витрины"
+              note="Иконка вкладки клиентского сайта. Рекомендуется 32×32 или 64×64."
+              token={map.get("ui.client.favicon") ?? ""}
+              disabled={!canEdit}
+              onDone={refresh}
+            />
+            <AssetSlot
+              scope="client"
+              asset="mascot"
+              label="Маскот экрана входа"
+              note="Персонаж на левой части страницы авторизации. Рекомендуется PNG/WebP с прозрачным фоном."
+              token={map.get("ui.client.mascot") ?? ""}
+              disabled={!canEdit}
+              onDone={refresh}
+            />
+            <AssetSlot
+              scope="client"
+              asset="mascot_not_found"
+              label="Маскот страницы 404"
+              note="Иллюстрация на экране отсутствующей страницы. Рекомендуется PNG или WebP."
+              token={map.get("ui.client.mascot_not_found") ?? ""}
+              disabled={!canEdit}
+              onDone={refresh}
+            />
+            <AssetSlot
+              scope="client"
+              asset="catalog_banner"
+              label="Баннер каталога услуг"
+              note="Фоновое изображение Hero-блока каталога услуг. Широкоформатный PNG/WebP/JPG."
+              token={map.get("ui.client.catalog_banner") ?? ""}
+              disabled={!canEdit}
+              onDone={refresh}
             />
           </div>
-        ))}
+        </div>
+
+        {/* Ссылки сообщества и соцсетей */}
+        <div className="space-y-3 border-t pt-5">
+          <div>
+            <h4 className="text-sm font-medium">Ссылки сообщества и поддержка</h4>
+            <p className="text-xs text-muted-foreground">
+              Отображаются в подвале личного кабинета, виджетах и на странице обратной связи.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {CLIENT_LINKS.map((item) => (
+              <div key={item.key} className="space-y-1.5 rounded-lg border bg-muted/15 p-3">
+                <Label htmlFor={`client-link-${item.key}`} className="text-xs font-medium">
+                  {item.label}
+                </Label>
+                <Input
+                  id={`client-link-${item.key}`}
+                  value={currentLinks[item.key] ?? ""}
+                  placeholder={item.placeholder}
+                  disabled={!canEdit}
+                  onChange={(e) =>
+                    setLinksDraft({ ...currentLinks, [item.key]: e.target.value })
+                  }
+                  className="h-9 text-xs"
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Тема оформления */}
+        <div className="border-t pt-5">
+          <ThemeSettings scope="client" embedded />
+        </div>
       </CardContent>
-      {dirty && (
-        <CardFooter className="justify-end gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setDraft(null)} disabled={save.isPending}>
+
+      {canEdit && isDirty && (
+        <CardFooter className="justify-end gap-2 border-t bg-muted/10 py-3">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setName(null)
+              setLoginNotice(null)
+              setLinksDraft(null)
+            }}
+            disabled={saveMutation.isPending}
+          >
             Отменить
           </Button>
-          <Button size="sm" onClick={() => save.mutate()} disabled={save.isPending}>
-            {save.isPending && <Loader2 className="size-4 animate-spin" />}
-            Сохранить
+          <Button
+            size="sm"
+            onClick={() => saveMutation.mutate()}
+            disabled={saveMutation.isPending}
+          >
+            {saveMutation.isPending && <Loader2 className="mr-1.5 size-4 animate-spin" />}
+            Сохранить Client UI
           </Button>
         </CardFooter>
       )}
@@ -362,26 +582,24 @@ function ClientLinksCard() {
 }
 
 /**
- * Брендирование admin-панели и клиентского приложения. Логотип/favicon
- * загружаются через обычный медиа-конвейер, в настройку пишется токен —
- * знать его и вводить руками, как раньше через Raw settings, больше не нужно.
+ * Брендирование SaviorBill:
+ * Разделено на 2 самодостаточных блока: Административная панель и Клиентский личный кабинет.
  */
 export function SettingsBranding() {
   return (
-    <div className="max-w-3xl space-y-4">
-      <ScopeCard
-        scope="admin"
-        title="Admin-панель"
-        description="Название и иконки этой панели — применяются к шапке, экрану входа и вкладке браузера."
-      />
-      <ThemeSettings scope="admin" />
-      <ScopeCard
-        scope="client"
-        title="Клиентское приложение"
-        description="Название, ассеты и персонажи витрины: клиент читает эти значения через публичный эндпоинт брендинга."
-      />
-      <ThemeSettings scope="client" />
-      <ClientLinksCard />
+    <div className="max-w-4xl space-y-8 pb-10">
+      <div>
+        <h2 className="text-xl font-bold tracking-tight">Брендирование и визуальное оформление</h2>
+        <p className="text-sm text-muted-foreground">
+          Управление внешним видом, названиями, баннерами объявлений, маскотами и палитрами для администраторов и клиентов.
+        </p>
+      </div>
+
+      {/* Блок 1: Административная панель */}
+      <AdminBrandingBlock />
+
+      {/* Блок 2: Клиентский личный кабинет */}
+      <ClientBrandingBlock />
     </div>
   )
 }
