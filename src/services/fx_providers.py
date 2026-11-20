@@ -183,7 +183,7 @@ async def fetch_rates(provider: FxProvider, base: str, api_key: str) -> dict[str
 
     url = provider.build_url(base, api_key)
     try:
-        def _check_safe_redirect(response: httpx.Response) -> None:
+        async def _check_safe_redirect(response: httpx.Response) -> None:
             if response.is_redirect:
                 location = response.headers.get("Location", "")
                 from urllib.parse import urlparse

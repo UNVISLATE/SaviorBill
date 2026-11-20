@@ -309,3 +309,38 @@ async def test_safe_flush_status_recovers_from_flush_error() -> None:
 
     await fx._safe_flush_status(src, rates={"USD": Decimal("100")})
     session.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_fetch_rates_cbr_event_hook(monkeypatch):
+    """Event hooks в httpx.AsyncClient должны быть корутинами (async def), чтобы не падать с TypeError."""
+    import httpx
+    from services.fx_providers import by_key, fetch_rates
+
+    cbr = by_key("cbr")
+    assert cbr is not None
+
+    async def mock_handler(request: httpx.Request):
+        return httpx.Response(
+            200,
+            json={
+                "Valute": {
+                    "USD": {"CharCode": "USD", "Value": 98.5, "Nominal": 1},
+                    "EUR": {"CharCode": "EUR", "Value": 105.2, "Nominal": 1},
+                }
+            },
+        )
+
+    transport = httpx.MockTransport(mock_handler)
+    orig_async_client = httpx.AsyncClient
+
+    def _mock_client(*args, **kwargs):
+        kwargs["transport"] = transport
+        return orig_async_client(*args, **kwargs)
+
+    monkeypatch.setattr("services.fx_providers.httpx.AsyncClient", _mock_client)
+
+    rates = await fetch_rates(cbr, "RUB", "")
+    assert "USD" in rates
+    assert rates["USD"] == Decimal("98.5")
+
