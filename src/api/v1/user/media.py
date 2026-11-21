@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import valkey.asyncio as valkey
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import Field
@@ -114,9 +115,53 @@ async def my_media_jobs(
                 finished_at=job.finished_at.isoformat() if job.finished_at else None,
                 percent=float(snap["percent"]) if snap.get("percent") else None,
                 eta_sec=float(snap["eta_sec"]) if snap.get("eta_sec") else None,
+                worker_id=snap.get("worker_id") or snap.get("instance_id") or job.worker_id,
             )
         )
     return result
+
+
+@router.post(
+    "/media/jobs/{token}/cancel",
+    status_code=status.HTTP_200_OK,
+    summary="Cancel own media job",
+    description="Cancels an active convert/processing job owned by the user.",
+    dependencies=[Depends(require_perm("user.media.create"))],
+)
+async def cancel_my_media_job(
+    token: str,
+    acc: UserModel = Depends(get_current_acc),
+    jobs: WorkerJobsMngr = Depends(get_worker_jobs_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+) -> dict:
+    active = await jobs.active_for_owner(acc.id)
+    job = next((j for j in active if j.subject_key == token), None)
+
+    owner_raw = await vk.hget(f"media:status:{token}", "owner_id")
+    owner_str = (
+        owner_raw.decode() if isinstance(owner_raw, bytes) else owner_raw
+    ) if owner_raw is not None else None
+
+    is_owner = (job is not None) or (owner_str and owner_str == str(acc.id))
+    if not is_owner and not has_perm(acc, "admin.media.manage_any") and not has_perm(acc, "system.stats.read"):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found or access denied")
+
+    await vk.set(f"media:cancel:{token}", "1", ex=120)
+    await vk.hset(
+        f"media:status:{token}",
+        mapping={"state": "cancelled", "error": "Cancelled by user"},
+    )
+    if job:
+        await jobs.apply(
+            kind="media",
+            op=job.op,
+            subject_key=token,
+            state="cancelled",
+            error="Cancelled by user",
+        )
+    payload = json.dumps({"action": "cancel", "token": token})
+    await vk.publish("media:control", payload)
+    return {"ok": True, "message": "Cancellation signal sent"}
 
 
 @router.delete(

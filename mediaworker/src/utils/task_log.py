@@ -48,6 +48,7 @@ class TaskLog:
         state: str,
         detail: str | None = None,
         owner_id: str | None = None,
+        worker_id: str | None = None,
     ) -> None:
         """Добавить факт в кольцевой буфер + опубликовать событие для WS."""
         entry = {
@@ -57,6 +58,7 @@ class TaskLog:
             "token_or_cid": token_or_cid,
             "state": state,
             "detail": detail,
+            "worker_id": worker_id,
             # None, если OTEL выключен (OTEL_ENABLED=false) — журнал работает
             # независимо от трейсинга, trace_id тут чисто для сшивки при
             # необходимости.
@@ -69,25 +71,19 @@ class TaskLog:
         await self.vk.expire(key, self.ttl)
         await self.vk.publish(f"{_EVENTS_PREFIX}{kind}", raw)
         if kind == "media" and self.job_events_stream:
+            payload = {
+                "op": op,
+                "token": token_or_cid,
+                "state": state,
+                "detail": detail or "",
+                "owner_id": owner_id or "",
+                "worker_id": worker_id or "",
+            }
             await self.vk.xadd(
                 self.job_events_stream,
                 sign_fields(
                     self.signing_key,
-                    {
-                        "op": op,
-                        "token": token_or_cid,
-                        "state": state,
-                        "detail": detail or "",
-                        # Владелец — только у ``convert`` известен сразу (из
-                        # исходной задачи в очереди, см. upload.py), у
-                        # preview_add/thumb_replace тоже передаётся явно (см.
-                        # serve.py — известен из _authorize_media_owner).
-                        # billing денормализует его в саму джобу (см.
-                        # models/worker_jobs.py::apply) — без ожидания
-                        # появления system_media (создаётся только по
-                        # результату конвертации).
-                        "owner_id": owner_id or "",
-                    },
+                    payload,
                 ),
                 maxlen=self.job_events_maxlen,
                 approximate=True,

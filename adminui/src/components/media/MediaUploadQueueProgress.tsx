@@ -1,3 +1,4 @@
+import { useState } from "react"
 import {
   Clock,
   Loader2,
@@ -7,10 +8,21 @@ import {
   FileImage,
   X,
   CheckCircle2,
+  Server,
 } from "lucide-react"
 import { Progress } from "@/components/shadsnui/progress"
 import { Button } from "@/components/shadsnui/button"
 import { Badge } from "@/components/shadsnui/badge"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/shadsnui/alert-dialog"
 import { fmtEta, fmtSize } from "@/api/media-format"
 import type { UploadJob } from "@/hooks/use-media-upload-queue"
 import { cn } from "@/lib/utils"
@@ -30,6 +42,8 @@ export function MediaUploadQueueProgress({
   className,
   compact = false,
 }: MediaUploadQueueProgressProps) {
+  const [confirmCancelJob, setConfirmCancelJob] = useState<UploadJob | null>(null)
+
   if (jobs.length === 0) return null
 
   if (compact) {
@@ -160,6 +174,12 @@ export function MediaUploadQueueProgress({
                       </span>
                     </>
                   )}
+                  {job.workerId && (
+                    <Badge variant="outline" className="text-[10px] font-mono py-0 px-1 text-muted-foreground gap-1 border-muted-foreground/30 shrink-0">
+                      <Server className="size-2.5" />
+                      <span>{job.workerId}</span>
+                    </Badge>
+                  )}
                 </div>
 
                 {job.phase === "processing" && eta && (
@@ -193,16 +213,61 @@ export function MediaUploadQueueProgress({
                   type="button"
                   variant="ghost"
                   size="icon-xs"
-                  onClick={() => onRemove(job.id)}
-                  title="Скрыть"
+                  onClick={() => {
+                    if (job.phase === "uploading" || job.phase === "queued" || job.phase === "processing") {
+                      setConfirmCancelJob(job)
+                    } else {
+                      onRemove(job.id)
+                    }
+                  }}
+                  title={
+                    job.phase === "uploading" || job.phase === "queued" || job.phase === "processing"
+                      ? "Отменить задачу"
+                      : "Убрать из списка"
+                  }
+                  className="hover:text-destructive transition-colors"
                 >
-                  <X className="size-3 text-muted-foreground" />
+                  <X className="size-3 text-muted-foreground hover:text-destructive" />
                 </Button>
               )}
             </div>
           </div>
         )
       })}
+
+      <AlertDialog open={Boolean(confirmCancelJob)} onOpenChange={(open) => !open && setConfirmCancelJob(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отменить задачу конвертации?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmCancelJob && (
+                <>
+                  Будет остановлен процесс обработки медиа «{confirmCancelJob.fileName}» на сервере.
+                  {confirmCancelJob.workerId && (
+                    <span className="block mt-1 font-mono text-xs">
+                      Выполняющий инстанс: {confirmCancelJob.workerId}
+                    </span>
+                  )}
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Продолжить обработку</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              onClick={() => {
+                if (confirmCancelJob && onRemove) {
+                  onRemove(confirmCancelJob.id)
+                }
+                setConfirmCancelJob(null)
+              }}
+            >
+              Отменить задачу
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

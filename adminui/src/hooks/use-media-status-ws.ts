@@ -6,6 +6,8 @@ export interface MediaStatusSnap {
   percent?: string
   eta_sec?: string
   error?: string
+  worker_id?: string
+  instance_id?: string
 }
 
 /**

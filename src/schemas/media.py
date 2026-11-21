@@ -146,6 +146,9 @@ class OpStatus(BaseModel):
     eta_sec: float | None = Field(
         default=None, description="Best-effort ETA seconds (video convert only)"
     )
+    worker_id: str | None = Field(
+        default=None, description="Worker / instance ID executing the task"
+    )
 
 
 class Attachment(BaseModel):

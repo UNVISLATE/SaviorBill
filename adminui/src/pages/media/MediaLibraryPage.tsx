@@ -178,7 +178,7 @@ export function MediaLibraryPage() {
     jobs: uploadJobs,
     uploadFile,
     retryJob,
-    removeJob,
+    cancelJob: cancelUploadJob,
     isBusy: uploading,
   } = useMediaUploadQueue({
     autoRestoreJobs: true,
@@ -188,6 +188,8 @@ export function MediaLibraryPage() {
       void qc.invalidateQueries({ queryKey: ["admin-media"] })
     },
   })
+
+  const [confirmCancelJob, setConfirmCancelJob] = useState<UploadJob | null>(null)
 
   const canDelete = can("media.delete")
   const canCleanup = can("media.cleanup")
@@ -566,9 +568,10 @@ export function MediaLibraryPage() {
                 />
                 <span className="relative z-10 flex items-center justify-center gap-1.5 font-mono tabular-nums text-xs font-semibold text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
                   <RotateCw className="size-3 animate-spin shrink-0 text-white" />
-                  <span>
+                  <span className="truncate max-w-[140px]">
                     {j.convertPct != null ? `${j.convertPct}%` : "Сжатие"}
                     {j.etaSec != null ? ` (${j.etaSec}с)` : ""}
+                    {j.workerId ? ` · ${j.workerId}` : ""}
                   </span>
                 </span>
               </Badge>
@@ -576,8 +579,8 @@ export function MediaLibraryPage() {
           }
           if (j.phase === "queued") {
             return (
-              <Badge variant="outline" className="w-[175px] justify-center text-muted-foreground border-border text-xs">
-                <span>В очереди…</span>
+              <Badge variant="outline" className="w-[175px] justify-center text-muted-foreground border-border text-xs truncate">
+                <span>В очереди…{j.workerId ? ` (${j.workerId})` : ""}</span>
               </Badge>
             )
           }
@@ -636,8 +639,9 @@ export function MediaLibraryPage() {
             <Button
               variant="ghost"
               size="icon"
-              className="size-8 text-muted-foreground"
-              onClick={() => removeJob(m._job!.id)}
+              className="size-8 text-muted-foreground hover:text-destructive transition-colors"
+              title="Отменить задачу"
+              onClick={() => setConfirmCancelJob(m._job!)}
             >
               <X className="size-4" />
             </Button>
@@ -891,6 +895,41 @@ export function MediaLibraryPage() {
             <AlertDialogCancel>Отмена</AlertDialogCancel>
             <AlertDialogAction disabled={cleanup.isPending} onClick={() => cleanup.mutate()}>
               Очистить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Cancel media job confirmation */}
+      <AlertDialog open={Boolean(confirmCancelJob)} onOpenChange={(open) => !open && setConfirmCancelJob(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отменить обработку медиа?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmCancelJob && (
+                <>
+                  Будет остановлен процесс конвертации файла «{confirmCancelJob.fileName}» на сервере.
+                  {confirmCancelJob.workerId && (
+                    <span className="block mt-1 font-mono text-xs text-foreground">
+                      Выполняющий инстанс: {confirmCancelJob.workerId}
+                    </span>
+                  )}
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Продолжить обработку</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              onClick={() => {
+                if (confirmCancelJob) {
+                  void cancelUploadJob(confirmCancelJob.id)
+                }
+                setConfirmCancelJob(null)
+              }}
+            >
+              Отменить задачу
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

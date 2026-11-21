@@ -157,6 +157,7 @@ class MediaJobEvents:
         detail = data.get("detail") or None
         owner_raw = data.get("owner_id") or None
         owner_id = int(owner_raw) if owner_raw and owner_raw.isdigit() else None
+        worker_id = data.get("worker_id") or None
         if not (op and token and state):
             return
         async with self.sm() as session:
@@ -166,6 +167,7 @@ class MediaJobEvents:
                 op=op,
                 subject_key=token,
                 state=state,
+                worker_id=worker_id,
                 error=detail if state in ("failed", "stale") else None,
                 owner_id=owner_id,
             )

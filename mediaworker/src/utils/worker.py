@@ -91,6 +91,15 @@ class Worker:
         self._active_jobs: dict[str, dict] = {}
         self._in_flight_msgs: set[str] = set()
 
+    @property
+    def consumer(self) -> str:
+        c = getattr(self.cfg, "consumer", None)
+        if callable(c):
+            return str(c())
+        if c:
+            return str(c)
+        return getattr(self.cfg, "MEDIA_CONSUMER", "media-1")
+
     async def _set_status(self, token: str, **fields: str) -> None:
         key = status_key(token)
         await self.vk.hset(key, mapping={k: v for k, v in fields.items() if v})
@@ -204,7 +213,7 @@ class Worker:
             try:
                 resp = await self.vk.xreadgroup(
                     self.cfg.group,
-                    self.cfg.consumer,
+                    self.consumer,
                     {self.cfg.task_stream: ">"},
                     count=count,
                     block=5000,
@@ -286,7 +295,7 @@ class Worker:
                     lock_key = job_lock_key(op, token)
                     got_lock = bool(
                         await self.vk.set(
-                            lock_key, self.cfg.consumer, nx=True, ex=self.cfg.job_lock_ttl_sec
+                            lock_key, self.consumer, nx=True, ex=self.cfg.job_lock_ttl_sec
                         )
                     )
                     if not got_lock:
@@ -426,7 +435,7 @@ class Worker:
             claimed = await self.vk.xclaim(
                 self.cfg.task_stream,
                 self.cfg.group,
-                self.cfg.consumer,
+                self.consumer,
                 min_idle_time=self.cfg.reclaim_min_idle_ms,
                 message_ids=[msg_id],
             )
@@ -649,10 +658,10 @@ class Worker:
                 self.storage._safe_unlink(src)
                 return
 
-        await self._set_status(token, state="processing")
+        await self._set_status(token, state="processing", worker_id=self.consumer, instance_id=self.consumer)
         await self.task_log.record(
             kind="media", op="convert", token_or_cid=token, state="processing",
-            owner_id=owner_id or None,
+            owner_id=owner_id or None, worker_id=self.consumer,
         )
         job_id = await self.proc_log.start_job(op="convert", token=token)
 
@@ -717,7 +726,7 @@ class Worker:
                 on_stage=lambda stage: self.proc_log.set_stage(job_id, stage),
             )
         except ConvertCancelled as exc:
-            await self._set_status(token, state="cancelled", error="Cancelled by administrator")
+            await self._set_status(token, state="cancelled", error="Cancelled by administrator", worker_id=self.consumer)
             await self.task_log.record(
                 kind="media",
                 op="convert",
@@ -725,6 +734,7 @@ class Worker:
                 state="cancelled",
                 detail="Cancelled by administrator",
                 owner_id=owner_id or None,
+                worker_id=self.consumer,
             )
             await self.proc_log.finish_job(job_id, "cancelled")
             self._cleanup_partial(token, src)
@@ -858,11 +868,11 @@ class Worker:
             result["owner_id"] = str(owner_id)
         await self._emit_result(result)
         await self._set_status(
-            token, state="ready", url=f"/api/media/{token}", mime=main.mime, tag=tag
+            token, state="ready", url=f"/api/media/{token}", mime=main.mime, tag=tag, worker_id=self.consumer
         )
         await self.task_log.record(
             kind="media", op="convert", token_or_cid=token, state="ready",
-            owner_id=owner_id or None,
+            owner_id=owner_id or None, worker_id=self.consumer,
         )
         await self.proc_log.finish_job(job_id, "ready")
         await self.vk.delete(f"attempts:media:convert:{token}")

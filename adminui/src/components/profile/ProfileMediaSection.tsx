@@ -107,6 +107,7 @@ interface UploadJob {
   convertPct: number | null
   etaSec: number | null
   error: string | null
+  workerId?: string | null
 }
 
 let jobSeq = 0
@@ -126,6 +127,7 @@ interface ActiveJobDto {
   error: string | null
   percent: number | null
   eta_sec: number | null
+  worker_id?: string | null
 }
 
 /** Императивный хендл секции — drag&drop живёт на уровне всего диалога
@@ -144,6 +146,19 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null)
   const [galleryToken, setGalleryToken] = useState<string | null>(null)
   const [jobs, setJobs] = useState<UploadJob[]>([])
+  const [confirmCancelJob, setConfirmCancelJob] = useState<UploadJob | null>(null)
+
+  const cancelJob = async (id: string) => {
+    const job = jobs.find((j) => j.id === id)
+    if (job?.token && (job.phase === "queued" || job.phase === "processing")) {
+      try {
+        await api.post(`/v1/user/media/jobs/${job.token}/cancel`)
+      } catch {
+        // Best-effort
+      }
+    }
+    setJobs((prev) => prev.filter((j) => j.id !== id))
+  }
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [pendingUploadFiles, setPendingUploadFiles] = useState<File[]>([])
   const [configModalOpen, setConfigModalOpen] = useState(false)
@@ -247,6 +262,7 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
       phase: snap.state === "queued" ? "queued" : "processing",
       convertPct: snap.percent != null ? Number(snap.percent) : j.convertPct,
       etaSec: snap.eta_sec != null ? Number(snap.eta_sec) : j.etaSec,
+      workerId: snap.worker_id || snap.instance_id || j.workerId,
     }
   })
 
@@ -287,6 +303,7 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
             convertPct: j.percent,
             etaSec: j.eta_sec,
             error: j.error,
+            workerId: j.worker_id ?? null,
           }))
         if (restored.length === 0) return
         setJobs((prev) => {
@@ -649,6 +666,7 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
                   onPointerUp={onCardPointerUp}
                   onDelete={() => cell.item && del.mutate(cell.item)}
                   onRetry={() => cell.job && retryJob(cell.job)}
+                  onCancelJob={(job) => setConfirmCancelJob(job)}
                   onOpenGallery={() => cell.item && setGalleryToken(cell.item.token)}
                   onCopyLink={() => cell.item && copyLink(cell.item)}
                   onSetAvatar={() => cell.item && setAvatar.mutate(cell.item)}
@@ -775,6 +793,40 @@ export const ProfileMediaSection = forwardRef<MediaSectionHandle, { mode: "own" 
           setPendingUploadFiles([])
         }}
       />
+
+      <AlertDialog open={Boolean(confirmCancelJob)} onOpenChange={(open) => !open && setConfirmCancelJob(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отменить конвертацию файла?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmCancelJob && (
+                <>
+                  Задача будет остановлена на сервере.
+                  {confirmCancelJob.workerId && (
+                    <span className="block mt-1 font-mono text-xs text-foreground">
+                      Выполняющий инстанс: {confirmCancelJob.workerId}
+                    </span>
+                  )}
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Продолжить обработку</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+              onClick={() => {
+                if (confirmCancelJob) {
+                  void cancelJob(confirmCancelJob.id)
+                }
+                setConfirmCancelJob(null)
+              }}
+            >
+              Отменить задачу
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 })
@@ -794,6 +846,7 @@ function MediaCard({
   onPointerUp,
   onDelete,
   onRetry,
+  onCancelJob,
   onOpenGallery,
   onCopyLink,
   onSetAvatar,
@@ -810,6 +863,7 @@ function MediaCard({
   onPointerUp: () => void
   onDelete: () => void
   onRetry: () => void
+  onCancelJob: (job: UploadJob) => void
   onOpenGallery: () => void
   onCopyLink: () => void
   onSetAvatar: () => void
@@ -821,7 +875,7 @@ function MediaCard({
   // Джоба ещё без токена/данных из /media — временная плитка-заглушка
   // (единственный оставшийся случай отдельного рендера, см. §5.2).
   if (job && !item) {
-    return <UploadPlaceholder job={job} onRetry={onRetry} />
+    return <UploadPlaceholder job={job} onRetry={onRetry} onCancel={() => onCancelJob(job)} />
   }
   if (!item) return null
 
@@ -913,7 +967,26 @@ function MediaCard({
       )}
 
       {showOverlay && (
-        <ProgressOverlay convertPct={job!.convertPct} etaSec={job!.etaSec} phase={job!.phase} error={job!.error} />
+        <>
+          <button
+            type="button"
+            title="Отменить задачу"
+            onClick={(e) => {
+              e.stopPropagation()
+              onCancelJob(job!)
+            }}
+            className="absolute top-1.5 right-1.5 z-20 flex size-5 items-center justify-center rounded-md border border-white/60 bg-black/60 text-white hover:bg-destructive hover:border-destructive transition-colors cursor-pointer"
+          >
+            <X className="size-3" />
+          </button>
+          <ProgressOverlay
+            convertPct={job!.convertPct}
+            etaSec={job!.etaSec}
+            phase={job!.phase}
+            error={job!.error}
+            workerId={job!.workerId}
+          />
+        </>
       )}
     </div>
   )
@@ -1023,7 +1096,15 @@ function FragmentRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-function UploadPlaceholder({ job, onRetry }: { job: UploadJob; onRetry: () => void }) {
+function UploadPlaceholder({
+  job,
+  onRetry,
+  onCancel,
+}: {
+  job: UploadJob
+  onRetry: () => void
+  onCancel: () => void
+}) {
   return (
     <div className="relative aspect-square overflow-hidden rounded-lg border bg-muted">
       {job.previewUrl ? (
@@ -1033,6 +1114,17 @@ function UploadPlaceholder({ job, onRetry }: { job: UploadJob; onRetry: () => vo
           <Video className="size-6 text-muted-foreground" />
         </div>
       )}
+      <button
+        type="button"
+        title="Отменить задачу"
+        onClick={(e) => {
+          e.stopPropagation()
+          onCancel()
+        }}
+        className="absolute top-1.5 right-1.5 z-20 flex size-5 items-center justify-center rounded-md border border-white/60 bg-black/60 text-white hover:bg-destructive hover:border-destructive transition-colors cursor-pointer"
+      >
+        <X className="size-3" />
+      </button>
       <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/40 p-2 text-center text-white">
         {job.phase === "error" ? (
           <>
@@ -1056,6 +1148,7 @@ function UploadPlaceholder({ job, onRetry }: { job: UploadJob; onRetry: () => vo
             phase={job.phase}
             error={job.error}
             uploadPct={job.uploadPct}
+            workerId={job.workerId}
           />
         )}
       </div>
@@ -1069,12 +1162,14 @@ function ProgressOverlayBody({
   convertPct,
   etaSec,
   error,
+  workerId,
 }: {
   phase: UploadJob["phase"]
   uploadPct?: number
   convertPct: number | null
   etaSec: number | null
   error: string | null
+  workerId?: string | null
 }) {
   const eta = fmtEta(etaSec)
   if (phase === "error") {
@@ -1093,6 +1188,7 @@ function ProgressOverlayBody({
       <>
         <Clock className="size-4" />
         <span className="text-[10px]">В очереди…</span>
+        {workerId && <span className="text-[9px] font-mono text-white/70">{workerId}</span>}
       </>
     )
   }
@@ -1105,6 +1201,7 @@ function ProgressOverlayBody({
       </span>
       <Progress value={phase === "uploading" ? uploadPct ?? 0 : convertPct ?? 0} className="w-full px-1" />
       {phase === "processing" && eta && <span className="text-[9px] text-white/70">{eta}</span>}
+      {workerId && <span className="text-[9px] font-mono text-white/70">{workerId}</span>}
     </>
   )
 }
@@ -1114,6 +1211,7 @@ function ProgressOverlay(props: {
   convertPct: number | null
   etaSec: number | null
   error: string | null
+  workerId?: string | null
 }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-black/40 p-2 text-center text-white">

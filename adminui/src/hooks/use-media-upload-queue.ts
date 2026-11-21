@@ -17,6 +17,7 @@ export interface UploadJob {
   convertPct: number | null
   etaSec: number | null
   error: string | null
+  workerId?: string | null
   mediaId?: number | null
   tag?: string | null
   config?: MediaUploadConfig | null
@@ -29,6 +30,7 @@ interface ActiveJobDto {
   error: string | null
   percent: number | null
   eta_sec: number | null
+  worker_id?: string | null
 }
 
 interface UserMediaItem {
@@ -79,6 +81,7 @@ export function useMediaUploadQueue(options: UseMediaUploadQueueOptions = {}) {
             convertPct: j.percent,
             etaSec: j.eta_sec,
             error: j.error,
+            workerId: j.worker_id ?? null,
           }))
 
         if (restored.length === 0) return
@@ -128,6 +131,7 @@ export function useMediaUploadQueue(options: UseMediaUploadQueueOptions = {}) {
         phase: snap.state === "queued" ? "queued" : "processing",
         convertPct: snap.percent != null ? Number(snap.percent) : j.convertPct,
         etaSec: snap.eta_sec != null ? Number(snap.eta_sec) : j.etaSec,
+        workerId: snap.worker_id || snap.instance_id || j.workerId,
       }
     })
   }, [jobs, statuses])
@@ -293,8 +297,20 @@ export function useMediaUploadQueue(options: UseMediaUploadQueueOptions = {}) {
     void uploadFile(target.file, target.config ?? undefined, target.tag ?? undefined)
   }
 
-  const removeJob = (id: string) => {
+  const cancelJob = async (id: string) => {
+    const target = jobs.find((j) => j.id === id)
+    if (target?.token && (target.phase === "queued" || target.phase === "processing")) {
+      try {
+        await api.post(`/v1/user/media/jobs/${target.token}/cancel`)
+      } catch {
+        // Fallback / best effort
+      }
+    }
     setJobs((prev) => prev.filter((j) => j.id !== id))
+  }
+
+  const removeJob = (id: string) => {
+    void cancelJob(id)
   }
 
   const clearDone = () => {
@@ -312,6 +328,7 @@ export function useMediaUploadQueue(options: UseMediaUploadQueueOptions = {}) {
     uploadBatch,
     retryJob,
     removeJob,
+    cancelJob,
     clearDone,
   }
 }
