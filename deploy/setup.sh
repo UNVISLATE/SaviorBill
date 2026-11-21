@@ -185,6 +185,47 @@ EOF
   printf "${DIM} Interactive Deployment & Production Stack Manager${RESET}\n\n"
 }
 
+# ── DPKG Lock Wait (Unattended Upgrades) ──────────────────────────────────────
+wait_for_dpkg_lock() {
+  local waited=0
+  local max_wait=180
+
+  while true; do
+    local is_locked=0
+
+    if command -v pgrep >/dev/null 2>&1; then
+      if pgrep -f "apt-get|apt|dpkg|unattended-upgr" >/dev/null 2>&1; then
+        is_locked=1
+      fi
+    fi
+
+    if [ "$is_locked" -eq 0 ] && command -v fuser >/dev/null 2>&1; then
+      if fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
+         fuser /var/lib/dpkg/lock >/dev/null 2>&1 || \
+         fuser /var/lib/apt/lists/lock >/dev/null 2>&1; then
+        is_locked=1
+      fi
+    fi
+
+    if [ "$is_locked" -eq 1 ]; then
+      if [ "$waited" -eq 0 ]; then
+        info "System package manager is currently busy (unattended-upgrades in background). Waiting for it to finish..."
+      fi
+      sleep 3
+      waited=$((waited + 3))
+      if [ "$waited" -ge "$max_wait" ]; then
+        warn "Waited ${max_wait}s for background package updates. Proceeding anyway..."
+        break
+      fi
+    else
+      if [ "$waited" -gt 0 ]; then
+        success "Package manager is now available!"
+      fi
+      break
+    fi
+  done
+}
+
 # ── Docker Check ──────────────────────────────────────────────────────────────
 check_docker() {
   if ! command -v docker >/dev/null 2>&1; then
@@ -193,6 +234,7 @@ check_docker() {
     ans=$(prompt_default "Install Docker automatically (via get.docker.com)? [Y/n]" "Y")
     case "$ans" in
       [yY]|[yY][eE][sS])
+        wait_for_dpkg_lock
         info "Installing Docker..."
         if command -v curl >/dev/null 2>&1; then
           curl -fsSL https://get.docker.com | sudo sh
