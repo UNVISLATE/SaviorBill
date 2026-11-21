@@ -229,26 +229,19 @@ wait_for_dpkg_lock() {
 # ── Docker Check ──────────────────────────────────────────────────────────────
 check_docker() {
   if ! command -v docker >/dev/null 2>&1; then
-    warn "Docker is not installed on this system."
-    local ans
-    ans=$(prompt_default "Install Docker automatically (via get.docker.com)? [Y/n]" "Y")
-    case "$ans" in
-      [yY]|[yY][eE][sS])
-        wait_for_dpkg_lock
-        info "Installing Docker..."
-        if command -v curl >/dev/null 2>&1; then
-          curl -fsSL https://get.docker.com | sudo sh
-        elif command -v wget >/dev/null 2>&1; then
-          wget -qO- https://get.docker.com | sudo sh
-        fi
-        sudo usermod -aG docker "$USER" 2>/dev/null || true
-        success "Docker installed successfully!"
-        ;;
-      *)
-        err "Docker is required to run SaviorBill. Please install Docker and rerun this script."
-        exit 1
-        ;;
-    esac
+    info "Docker is not installed on this system. Installing Docker automatically..."
+    wait_for_dpkg_lock
+    info "Installing Docker (via get.docker.com)..."
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsSL https://get.docker.com | sudo sh
+    elif command -v wget >/dev/null 2>&1; then
+      wget -qO- https://get.docker.com | sudo sh
+    else
+      err "Neither curl nor wget found. Please install curl or Docker manually."
+      exit 1
+    fi
+    sudo usermod -aG docker "$USER" 2>/dev/null || true
+    success "Docker installed successfully!"
   else
     local d_ver
     d_ver=$(docker --version 2>/dev/null || echo "installed")
@@ -524,7 +517,7 @@ run_wizard() {
       echo ""
 
       while true; do
-        domain=$(prompt_default "1. Admin Dashboard domain (e.g. demo.saviorbill.com or panel.myshop.com)" "")
+        domain=$(prompt_default "1. Admin Dashboard domain (e.g. panel.example.com or billing.example.com)" "")
         if [ -n "$domain" ]; then break; fi
         eof_count=$((eof_count + 1))
         if [ "$eof_count" -ge 3 ]; then
@@ -539,29 +532,22 @@ run_wizard() {
       domain="${domain#https://}"
       domain="${domain%%/*}"
 
-      local root_d
-      root_d="$(get_root_domain "$domain")"
-
-      # Suggest subdomains based on user input
-      local suggested_api="api.${domain}"
-      local suggested_media="media.${domain}"
-      if [ "$domain" = "$root_d" ]; then
-        suggested_api="api.${root_d}"
-        suggested_media="media.${root_d}"
-      fi
-
       # 2. REST API & Webhooks
       echo ""
       echo "   [1] Shared domain with Admin UI: https://${domain}"
       echo "       (REST API and webhooks available under /api/* on the same domain)"
-      echo "   [2] Dedicated subdomain for API (e.g. https://${suggested_api})"
+      echo "   [2] Dedicated subdomain for API"
       local api_choice
       api_choice=$(prompt_default "REST API & payment webhooks routing [1/2]" "1")
       if [ "$api_choice" = "2" ]; then
-        api_domain=$(prompt_default "Domain for REST API" "${suggested_api}")
-        api_domain="${api_domain#http://}"
-        api_domain="${api_domain#https://}"
-        api_domain="${api_domain%%/*}"
+        while true; do
+          api_domain=$(prompt_default "Domain for REST API (e.g. api.example.com)" "")
+          api_domain="${api_domain#http://}"
+          api_domain="${api_domain#https://}"
+          api_domain="${api_domain%%/*}"
+          if [ -n "$api_domain" ]; then break; fi
+          err "REST API domain cannot be empty!"
+        done
       else
         api_domain="$domain"
       fi
@@ -569,14 +555,18 @@ run_wizard() {
       # 3. Media Server
       echo ""
       echo "   [1] Shared domain for images and files (under /api/media/*)"
-      echo "   [2] Dedicated subdomain for Mediaworker (e.g. https://${suggested_media})"
+      echo "   [2] Dedicated subdomain for Mediaworker"
       local media_choice
       media_choice=$(prompt_default "Media storage endpoint routing [1/2]" "1")
       if [ "$media_choice" = "2" ]; then
-        media_domain=$(prompt_default "Domain for Mediaworker" "${suggested_media}")
-        media_domain="${media_domain#http://}"
-        media_domain="${media_domain#https://}"
-        media_domain="${media_domain%%/*}"
+        while true; do
+          media_domain=$(prompt_default "Domain for Mediaworker (e.g. media.example.com)" "")
+          media_domain="${media_domain#http://}"
+          media_domain="${media_domain#https://}"
+          media_domain="${media_domain%%/*}"
+          if [ -n "$media_domain" ]; then break; fi
+          err "Mediaworker domain cannot be empty!"
+        done
       else
         media_domain="$api_domain"
       fi
@@ -584,14 +574,14 @@ run_wizard() {
       echo ""
       local email_attempts=0
       while true; do
-        owner_email=$(prompt_default "Administrator email (used for Let's Encrypt SSL certificates)" "admin@${root_d}")
+        owner_email=$(prompt_default "Administrator email (used for Let's Encrypt SSL certificates, e.g. admin@example.com)" "")
         if [[ "$owner_email" == *"@"* ]]; then break; fi
         email_attempts=$((email_attempts + 1))
         if [ "$email_attempts" -ge 3 ]; then
-          owner_email="admin@${root_d}"
-          break
+          err "Please enter a valid email address."
+          exit 1
         fi
-        err "Please enter a valid email address."
+        err "Please enter a valid email address with '@'."
       done
 
       http_port=$(prompt_default "External HTTP port for Caddy" "80")
@@ -615,34 +605,22 @@ run_wizard() {
       enable_client=1
       if [ "$env_choice" = "1" ]; then
         # Production
-        local root_d
-        root_d="$(get_root_domain "$domain")"
-        local suggested_client="my.${domain}"
-        if [ "$domain" = "$root_d" ]; then
-          suggested_client="shop.${root_d}"
-        fi
         echo ""
         info "Customer Portal runs on a separate domain from the Admin Dashboard."
-        echo "Examples: ${suggested_client}, my.${root_d}, or client.${root_d}"
-        local cl_attempts=0
         while true; do
-          client_domain=$(prompt_default "Customer Portal domain" "${suggested_client}")
+          client_domain=$(prompt_default "Customer Portal domain (e.g. client.example.com or shop.example.com)" "")
           client_domain="${client_domain#http://}"
           client_domain="${client_domain#https://}"
           client_domain="${client_domain%%/*}"
           if [ -n "$client_domain" ]; then
             if [ "$client_domain" = "$domain" ]; then
               warn "Customer Portal cannot use the exact same domain as Admin Dashboard ($domain)!"
-              warn "Please provide a different subdomain (e.g. ${suggested_client})."
+              warn "Please provide a different subdomain or domain."
             else
               break
             fi
           fi
-          cl_attempts=$((cl_attempts + 1))
-          if [ "$cl_attempts" -ge 3 ]; then
-            client_domain="${suggested_client}"
-            break
-          fi
+          err "Customer Portal domain cannot be empty!"
         done
       else
         # Local / IP
