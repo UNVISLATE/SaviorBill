@@ -382,6 +382,7 @@ export function ServiceEditorPage() {
   const [instructionsMd, setInstructionsMd] = useState("")
   const [slugManuallyEdited, setSlugManuallyEdited] = useState(false)
   const [hasSubmitted, setHasSubmitted] = useState(false)
+  const [previewMode, setPreviewMode] = useState<"auto" | "order" | "view">("auto")
 
   const selectedLuaScript = useMemo(() => {
     if (!luaScriptId || !luaScripts) return null
@@ -392,9 +393,33 @@ export function ServiceEditorPage() {
     if (!selectedLuaScript?.settings) return null
     const s = selectedLuaScript.settings
     if (s.manifest && typeof s.manifest === "object") return s.manifest
-    if (s.client_order_form || s.settings_form || s.layout) return s
+    if (s.client_order_form || s.settings_form || s.layout || s.view_layout) return s
     return null
   }, [selectedLuaScript])
+
+  const manifestObj = selectedScriptManifest as Record<string, unknown> | null
+  const hasOrderForm = Boolean(
+    (Array.isArray(manifestObj?.client_order_form) && manifestObj.client_order_form.length > 0) ||
+    (Array.isArray(manifestObj?.order_form) && manifestObj.order_form.length > 0) ||
+    (manifestObj?.layout && typeof manifestObj.layout === "object")
+  )
+  const hasViewLayout = Boolean(
+    manifestObj?.view_layout ||
+    manifestObj?.view_manifest ||
+    manifestObj?.view_form ||
+    manifestObj?.service_view
+  )
+
+  const activePreviewType: "client_order_form" | "view_layout" =
+    previewMode === "view"
+      ? "view_layout"
+      : previewMode === "order"
+      ? "client_order_form"
+      : hasOrderForm
+      ? "client_order_form"
+      : hasViewLayout
+      ? "view_layout"
+      : "client_order_form"
 
   // Модальные окна
   const [mediaPickerOpen, setMediaPickerOpen] = useState(false)
@@ -2309,15 +2334,46 @@ export function ServiceEditorPage() {
                   )}
 
                   {(selectedScriptManifest || (priceType === "configurable" && compList.length > 0)) && (
-                    <div className="rounded-xl border border-border/80 bg-muted/20 p-3.5 space-y-3 mt-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-foreground">
-                          Витринный предпросмотр заказа
-                        </span>
-                        {selectedLuaScript?.slug && (
-                          <Badge variant="outline" className="text-[10px] text-muted-foreground font-mono">
-                            {selectedLuaScript.slug}
-                          </Badge>
+                    <div className="rounded-xl border border-border/70 bg-muted/20 p-3.5 space-y-3 mt-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-foreground">
+                            {activePreviewType === "view_layout"
+                              ? "Предпросмотр карточки выдачи (личный кабинет)"
+                              : "Витринный предпросмотр формы заказа"}
+                          </span>
+                          {selectedLuaScript?.slug && (
+                            <Badge variant="outline" className="text-[10px] text-muted-foreground font-mono">
+                              {selectedLuaScript.slug}
+                            </Badge>
+                          )}
+                        </div>
+
+                        {selectedScriptManifest && hasOrderForm && hasViewLayout && (
+                          <div className="flex items-center gap-1 rounded-lg border border-border/60 bg-background/60 p-0.5 text-xs">
+                            <button
+                              type="button"
+                              onClick={() => setPreviewMode("order")}
+                              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                                activePreviewType === "client_order_form"
+                                  ? "bg-primary text-primary-foreground shadow-sm"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              Форма заказа
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPreviewMode("view")}
+                              className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors ${
+                                activePreviewType === "view_layout"
+                                  ? "bg-primary text-primary-foreground shadow-sm"
+                                  : "text-muted-foreground hover:text-foreground"
+                              }`}
+                            >
+                              Карточка в ЛК
+                            </button>
+                          </div>
                         )}
                       </div>
 
@@ -2351,8 +2407,14 @@ export function ServiceEditorPage() {
                       )}
 
                       {selectedScriptManifest && (
-                        <div className="rounded-lg border border-border/60 bg-card/90 overflow-hidden p-2">
-                          <ManifestLivePreview manifest={selectedScriptManifest} previewType="client_order_form" />
+                        <div className="overflow-hidden">
+                          {activePreviewType === "client_order_form" && !hasOrderForm ? (
+                            <div className="py-4 px-3 text-center text-xs text-muted-foreground rounded-lg border border-dashed border-border/60">
+                              Скрипт не требует ввода данных от покупателя при оформлении заказа (аккаунт создаётся автоматически).
+                            </div>
+                          ) : (
+                            <ManifestLivePreview manifest={selectedScriptManifest} previewType={activePreviewType} />
+                          )}
                         </div>
                       )}
                     </div>
