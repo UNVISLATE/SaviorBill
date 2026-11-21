@@ -269,6 +269,8 @@ class PromoCodesMngr:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, "promo code is not a discount code"
             )
+        if (getattr(service, "settings", {}) or {}).get("allow_promotions", True) is False:
+            return Decimal("0")
         target_price = base_price if base_price is not None else service.price
         if catalog.discount_type == DiscountType.PERCENT:
             disc = (target_price * catalog.value / Decimal("100")).quantize(
@@ -295,6 +297,9 @@ class PromoCodesMngr:
         # позволяет перебором находить ещё не анонсированные промокоды по
         # факту их существования в БД.
         generic_invalid = "promo code is invalid"
+
+        if service is not None and (getattr(service, "settings", {}) or {}).get("allow_promotions", True) is False:
+            return False, Decimal("0"), "Товар не участвует в акциях"
 
         promo = await self.s.scalar(
             select(PromoCodesModel).where(PromoCodesModel.code == code)

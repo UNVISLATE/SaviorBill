@@ -71,6 +71,29 @@ async def my_services(
     )
 
 
+@router.get(
+    "/services/{service_id}",
+    response_model=Order,
+    summary="Get user service by ID",
+    dependencies=[Depends(require_perm("user.services.read"))],
+)
+async def get_user_service_by_id(
+    service_id: int,
+    acc: UserModel = Depends(get_current_acc),
+    usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
+) -> Order:
+    """Получить данные конкретного заказа/услуги пользователя по ID."""
+    usvc = await usvc_mngr.s.scalar(
+        select(UserServicesModel).where(
+            UserServicesModel.id == service_id,
+            UserServicesModel.account_id == acc.id,
+        )
+    )
+    if usvc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service order not found")
+    return Order.from_model(usvc)
+
+
 @router.post(
     "/services/create",
     response_model=Order,
@@ -105,6 +128,11 @@ async def create_service(
     discount = Decimal("0")
     promo = None
     if body.promocode:
+        if (getattr(service, "settings", {}) or {}).get("allow_promotions", True) is False:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "service does not participate in promotions",
+            )
         promo = await promo_mngr.load_valid(body.promocode, acc)
         catalog = await promo_mngr.catalog_of(promo)
         if catalog.kind != PromoKind.DISCOUNT:

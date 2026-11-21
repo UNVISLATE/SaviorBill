@@ -25,8 +25,16 @@ def test_discount_percent():
     catalog = SimpleNamespace(
         kind=PromoKind.DISCOUNT, discount_type=DiscountType.PERCENT, value=Decimal("10")
     )
-    service = SimpleNamespace(price=Decimal("200"))
+    service = SimpleNamespace(price=Decimal("200"), settings={"allow_promotions": True})
     assert _mngr().discount_for(catalog, service) == Decimal("20.00")
+
+
+def test_discount_disabled_when_allow_promotions_false():
+    catalog = SimpleNamespace(
+        kind=PromoKind.DISCOUNT, discount_type=DiscountType.PERCENT, value=Decimal("10")
+    )
+    service = SimpleNamespace(price=Decimal("200"), settings={"allow_promotions": False})
+    assert _mngr().discount_for(catalog, service) == Decimal("0")
 
 
 def test_discount_fixed_caps_at_price():

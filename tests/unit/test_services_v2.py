@@ -156,8 +156,42 @@ def test_custom_pricing_validation_and_resolution():
     assert resolved.effective_settings == {"vendor": "steam_direct"}
     assert resolved.order_config == {
         "amount": "350.00",
+        "nominal_amount": "350.00",
+        "markup_amount": "0.00",
         "form": {"steam_login": "alex_gamer", "promo_note": "bonus please"},
     }
+
+
+def test_custom_pricing_with_markup():
+    svc = ServiceModel(
+        id=20,
+        slug="steam-markup",
+        name="Steam Refill with Markup",
+        price=Decimal("100.00"),
+        currency="RUB",
+        price_type=PriceType.CUSTOM,
+        pricing_config={
+            "min": "100.00",
+            "max": "5000.00",
+            "markup_percent": "10.0",  # +10%
+            "markup_fixed": "25.00",  # +25 RUB fixed
+            "allow_sub_nominal_discount": False,
+            "max_loss_percent": "5.0",
+        },
+        duration=None,
+        settings={"vendor": "steam_direct"},
+    )
+    # custom_amount = 500
+    # markup = 500 * 0.10 + 25 = 75
+    # total charge = 575
+    resolved = resolve_service_order(svc, custom_amount=Decimal("500.00"))
+    assert resolved.price == Decimal("575.00")
+    assert resolved.order_config["amount"] == "575.00"
+    assert resolved.order_config["nominal_amount"] == "500.00"
+    assert resolved.order_config["markup_amount"] == "75.00"
+    assert resolved.order_config["markup_percent"] == "10.0"
+    assert resolved.order_config["markup_fixed"] == "25.00"
+    assert resolved.order_config["allow_sub_nominal_discount"] is False
 
 
 def test_tiered_pricing_validation_and_resolution():

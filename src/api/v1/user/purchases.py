@@ -207,6 +207,11 @@ async def create_purchase(
         discount = Decimal("0")
         promo_id: int | None = None
         if body.promocode:
+            if (getattr(service, "settings", {}) or {}).get("allow_promotions", True) is False:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "service does not participate in promotions",
+                )
             promo = await promo_mngr.load_valid(body.promocode, acc)
             catalog = await promo_mngr.catalog_of(promo)
             if catalog.kind != PromoKind.DISCOUNT:
@@ -216,7 +221,19 @@ async def create_purchase(
                 )
             discount = promo_mngr.discount_for(catalog, service, base_price=base_price)
             promo_id = promo.id
-        amount = base_price - discount
+
+        price_type = getattr(service, "price_type", PriceType.FIXED) or PriceType.FIXED
+        if price_type == PriceType.CUSTOM:
+            nominal_amount = Decimal(str(resolved.order_config.get("nominal_amount") or body.custom_amount or base_price))
+            allow_sub_nominal = bool(resolved.order_config.get("allow_sub_nominal_discount", False))
+            if not allow_sub_nominal:
+                amount = max(base_price - discount, nominal_amount)
+            else:
+                max_loss_p = Decimal(str(resolved.order_config.get("max_loss_percent", "0") or "0"))
+                min_floor = max(Decimal("0.01"), (nominal_amount * (Decimal("1") - max_loss_p / Decimal("100"))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+                amount = max(base_price - discount, min_floor)
+        else:
+            amount = base_price - discount
         if amount <= Decimal("0"):
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,
@@ -276,6 +293,17 @@ async def create_purchase(
             usvc.private_data = {**(usvc.private_data or {}), "promocode_id": promo_id}
         user_svc_id = usvc.id
 
+    effective_return_url = body.return_url
+    if user_svc_id is not None:
+        if effective_return_url:
+            if "{order_id}" in effective_return_url:
+                effective_return_url = effective_return_url.replace("{order_id}", str(user_svc_id))
+            elif effective_return_url.rstrip("/").endswith("/profile/services"):
+                effective_return_url = f"{effective_return_url.rstrip('/')}/{user_svc_id}"
+        else:
+            cfg: AppConfig = request.app.state.settings
+            effective_return_url = f"{cfg.PUBLIC_URL.rstrip('/')}/profile/services/{user_svc_id}"
+
     payment = await pay_mngr.create(
         acc,
         amount,
@@ -284,7 +312,7 @@ async def create_purchase(
         user_svc_id=user_svc_id,
         currency=body.currency,
         amount_in_payment_currency=body.amount_in_payment_currency,
-        return_url=body.return_url,
+        return_url=effective_return_url,
     )
     await pay_mngr.s.commit()
     if body.target == PayTarget.SERVICE:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import re
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException, status
@@ -160,12 +160,39 @@ def resolve_service_order(
                 )
 
         validated_form = validate_order_form(pricing_config, form)
+
+        markup_percent_raw = pricing_config.get("markup_percent")
+        markup_fixed_raw = pricing_config.get("markup_fixed")
+
+        markup_percent = Decimal(str(markup_percent_raw)) if markup_percent_raw not in (None, "") else Decimal("0")
+        markup_fixed = Decimal(str(markup_fixed_raw)) if markup_fixed_raw not in (None, "") else Decimal("0")
+
+        markup_amount = Decimal("0")
+        if markup_percent > Decimal("0"):
+            markup_amount += (custom_amount * markup_percent / Decimal("100"))
+        if markup_fixed > Decimal("0"):
+            markup_amount += markup_fixed
+
+        markup_amount = markup_amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        charge_amount = (custom_amount + markup_amount).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
         order_config = {
-            "amount": str(custom_amount),
+            "amount": str(charge_amount),
+            "nominal_amount": str(custom_amount),
+            "markup_amount": str(markup_amount),
             "form": validated_form,
         }
+        if markup_percent > Decimal("0"):
+            order_config["markup_percent"] = str(markup_percent)
+        if markup_fixed > Decimal("0"):
+            order_config["markup_fixed"] = str(markup_fixed)
+        if pricing_config.get("allow_sub_nominal_discount") is not None:
+            order_config["allow_sub_nominal_discount"] = bool(pricing_config.get("allow_sub_nominal_discount"))
+        if pricing_config.get("max_loss_percent") not in (None, "", "0", 0):
+            order_config["max_loss_percent"] = str(pricing_config.get("max_loss_percent"))
+
         return ResolvedOrder(
-            price=custom_amount,
+            price=charge_amount,
             duration=service.duration,
             effective_settings=dict(getattr(service, "settings", None) or {}),
             order_config=order_config,

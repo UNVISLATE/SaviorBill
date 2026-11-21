@@ -241,11 +241,17 @@ function buildServiceSnapshot(data: {
   customMin?: string | null
   customMax?: string | null
   customStep?: string | null
+  markupPercent?: string | null
+  markupFixed?: string | null
+  allowSubNominalDiscount?: boolean
+  maxLossPercent?: string | null
   tierPlans?: FlatTierPlan[]
   compList?: ConfigurableComponent[]
   delivery?: "key" | "lua"
   luaScriptId?: string | number | null
   isActive: boolean
+  isRecommended?: boolean
+  allowPromotions?: boolean
   paramsText?: string | null
   settingsText?: string | null
   instructionsMd?: string | null
@@ -264,6 +270,10 @@ function buildServiceSnapshot(data: {
     customMin: pType === "custom" ? normalizePrice(data.customMin ?? "100") : "",
     customMax: pType === "custom" ? normalizePrice(data.customMax ?? "5000") : "",
     customStep: pType === "custom" ? normalizePrice(data.customStep ?? "") : "",
+    markupPercent: pType === "custom" ? normalizePrice(data.markupPercent ?? "") : "",
+    markupFixed: pType === "custom" ? normalizePrice(data.markupFixed ?? "") : "",
+    allowSubNominalDiscount: Boolean(data.allowSubNominalDiscount),
+    maxLossPercent: pType === "custom" ? normalizePrice(data.maxLossPercent ?? "") : "",
     tierPlans:
       pType === "tiered"
         ? (data.tierPlans || []).map((t) => ({
@@ -280,6 +290,8 @@ function buildServiceSnapshot(data: {
     delivery,
     luaScriptId: delivery === "lua" && data.luaScriptId ? String(data.luaScriptId).trim() : "",
     isActive: Boolean(data.isActive),
+    isRecommended: Boolean(data.isRecommended),
+    allowPromotions: data.allowPromotions !== false,
     paramsText: normalizeJson(data.paramsText),
     settingsText: normalizeJson(data.settingsText),
     instructionsMd: (data.instructionsMd || "").trim(),
@@ -347,6 +359,10 @@ export function ServiceEditorPage() {
   const [customMin, setCustomMin] = useState("100")
   const [customMax, setCustomMax] = useState("5000")
   const [customStep, setCustomStep] = useState("1")
+  const [markupPercent, setMarkupPercent] = useState("")
+  const [markupFixed, setMarkupFixed] = useState("")
+  const [allowSubNominalDiscount, setAllowSubNominalDiscount] = useState(false)
+  const [maxLossPercent, setMaxLossPercent] = useState("")
 
   // Режим: Tiered
   const [tierPlans, setTierPlans] = useState<FlatTierPlan[]>([])
@@ -359,6 +375,8 @@ export function ServiceEditorPage() {
   const [delivery, setDelivery] = useState<"key" | "lua">("key")
   const [luaScriptId, setLuaScriptId] = useState<string>("")
   const [isActive, setIsActive] = useState(true)
+  const [isRecommended, setIsRecommended] = useState(false)
+  const [allowPromotions, setAllowPromotions] = useState(true)
   const [paramsText, setParamsText] = useState("{}")
   const [settingsText, setSettingsText] = useState("{}")
   const [instructionsMd, setInstructionsMd] = useState("")
@@ -503,9 +521,22 @@ export function ServiceEditorPage() {
         loadedComps = (cfg.components as ConfigurableComponent[]) || []
       }
 
+      const loadedMarkupPercent = cfg.markup_percent !== undefined && cfg.markup_percent !== null ? String(cfg.markup_percent) : ""
+      const loadedMarkupFixed = cfg.markup_fixed !== undefined && cfg.markup_fixed !== null ? String(cfg.markup_fixed) : ""
+      const loadedAllowSubNominal = Boolean(cfg.allow_sub_nominal_discount)
+      const loadedMaxLossPercent = cfg.max_loss_percent !== undefined && cfg.max_loss_percent !== null ? String(cfg.max_loss_percent) : ""
+      const loadedIsRecommended = Boolean(service.settings?.is_recommended)
+      const loadedAllowPromotions = service.settings?.allow_promotions !== false
+
       setCustomMin(loadedMin)
       setCustomMax(loadedMax)
       setCustomStep(loadedStep)
+      setMarkupPercent(loadedMarkupPercent)
+      setMarkupFixed(loadedMarkupFixed)
+      setAllowSubNominalDiscount(loadedAllowSubNominal)
+      setMaxLossPercent(loadedMaxLossPercent)
+      setIsRecommended(loadedIsRecommended)
+      setAllowPromotions(loadedAllowPromotions)
       setTierPlans(loadedTiers)
       setCompList(loadedComps)
 
@@ -520,11 +551,17 @@ export function ServiceEditorPage() {
         customMin: loadedMin,
         customMax: loadedMax,
         customStep: loadedStep,
+        markupPercent: loadedMarkupPercent,
+        markupFixed: loadedMarkupFixed,
+        allowSubNominalDiscount: loadedAllowSubNominal,
+        maxLossPercent: loadedMaxLossPercent,
         tierPlans: loadedTiers,
         compList: loadedComps,
         delivery: service.delivery as "key" | "lua",
         luaScriptId: scriptIdStr,
         isActive: service.is_active,
+        isRecommended: loadedIsRecommended,
+        allowPromotions: loadedAllowPromotions,
         paramsText: pText,
         settingsText: sText,
         instructionsMd: loadedInst,
@@ -572,11 +609,17 @@ export function ServiceEditorPage() {
         customMin: "100",
         customMax: "5000",
         customStep: "1",
+        markupPercent: "",
+        markupFixed: "",
+        allowSubNominalDiscount: false,
+        maxLossPercent: "",
         tierPlans: [],
         compList: [],
         delivery: initDelivery,
         luaScriptId: initLuaId,
         isActive: true,
+        isRecommended: false,
+        allowPromotions: true,
         paramsText: "{}",
         settingsText: "{}",
         instructionsMd: "",
@@ -620,11 +663,17 @@ export function ServiceEditorPage() {
       customMin,
       customMax,
       customStep,
+      markupPercent,
+      markupFixed,
+      allowSubNominalDiscount,
+      maxLossPercent,
       tierPlans,
       compList,
       delivery,
       luaScriptId,
       isActive,
+      isRecommended,
+      allowPromotions,
       paramsText,
       settingsText,
       instructionsMd,
@@ -641,11 +690,17 @@ export function ServiceEditorPage() {
     customMin,
     customMax,
     customStep,
+    markupPercent,
+    markupFixed,
+    allowSubNominalDiscount,
+    maxLossPercent,
     tierPlans,
     compList,
     delivery,
     luaScriptId,
     isActive,
+    isRecommended,
+    allowPromotions,
     paramsText,
     settingsText,
     instructionsMd,
@@ -794,12 +849,19 @@ export function ServiceEditorPage() {
         delete settings.instructions_md
       }
 
+      settings.is_recommended = isRecommended
+      settings.allow_promotions = allowPromotions
+
       let pricingConfig: Record<string, unknown> = {}
       if (priceType === "custom") {
         pricingConfig = {
           min: customMin,
           max: customMax,
           step: customStep.trim() ? customStep.trim() : undefined,
+          markup_percent: markupPercent.trim() ? parseFloat(markupPercent) : 0,
+          markup_fixed: markupFixed.trim() ? parseFloat(markupFixed) : 0,
+          allow_sub_nominal_discount: allowSubNominalDiscount,
+          max_loss_percent: maxLossPercent.trim() ? parseFloat(maxLossPercent) : 0,
         }
       } else if (priceType === "tiered") {
         const backendTiers = tierPlans.map((tp) => {
@@ -1347,6 +1409,75 @@ export function ServiceEditorPage() {
                         <p className="text-[11px] text-destructive flex items-center gap-1">
                           <AlertCircle className="size-3" /> {validationErrors.customStep}
                         </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-border/60">
+                    <h5 className="text-[11px] font-semibold text-foreground mb-2">Наценка и ценовая политика</h5>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Процентная наценка (%)</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.1"
+                          value={markupPercent}
+                          onChange={(e) => setMarkupPercent(e.target.value)}
+                          placeholder="Например, 10"
+                          className="font-mono text-xs"
+                        />
+                        <p className="text-[11px] text-muted-foreground">Добавляется поверх введенной покупателем суммы</p>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Фиксированная комиссия ({currency})</Label>
+                        <Input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={markupFixed}
+                          onChange={(e) => setMarkupFixed(e.target.value)}
+                          placeholder="Например, 25"
+                          className="font-mono text-xs"
+                        />
+                        <p className="text-[11px] text-muted-foreground">Фиксированная сумма комиссии к заказу</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 p-3 rounded-lg border bg-background/50 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <Label className="text-xs font-semibold cursor-pointer">
+                            Разрешить скидку ниже номинала
+                          </Label>
+                          <p className="text-[11px] text-muted-foreground">
+                            По умолчанию скидка по промокоду не может опустить цену ниже суммы зачисления
+                          </p>
+                        </div>
+                        <Switch
+                          checked={allowSubNominalDiscount}
+                          onCheckedChange={setAllowSubNominalDiscount}
+                        />
+                      </div>
+
+                      {allowSubNominalDiscount && (
+                        <div className="pt-2 border-t space-y-1.5">
+                          <Label className="text-xs">Макс. скидка ниже номинала (%)</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            max="99"
+                            step="0.5"
+                            value={maxLossPercent}
+                            onChange={(e) => setMaxLossPercent(e.target.value)}
+                            placeholder="Например, 5 (макс. 5% в минус)"
+                            className="font-mono text-xs"
+                          />
+                          <p className="text-[11px] text-muted-foreground">
+                            Ограничивает максимальный убыток по акции при применении промокода
+                          </p>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -2350,6 +2481,32 @@ export function ServiceEditorPage() {
                     </p>
                   </div>
                   <Switch checked={isActive} onCheckedChange={setIsActive} />
+                </div>
+
+                {/* Рекомендуемый товар */}
+                <div className="flex items-center justify-between p-3 rounded-xl border bg-muted/30">
+                  <div className="space-y-0.5">
+                    <Label className="text-xs font-semibold cursor-pointer">
+                      Рекомендуем
+                    </Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      {isRecommended ? "Отображается бейдж «Рекомендуем»" : "Обычный товар в каталоге"}
+                    </p>
+                  </div>
+                  <Switch checked={isRecommended} onCheckedChange={setIsRecommended} />
+                </div>
+
+                {/* Участие в акциях */}
+                <div className="flex items-center justify-between p-3 rounded-xl border bg-muted/30">
+                  <div className="space-y-0.5">
+                    <Label className="text-xs font-semibold cursor-pointer">
+                      Участие в акциях
+                    </Label>
+                    <p className="text-[11px] text-muted-foreground">
+                      {allowPromotions ? "Скидки, промокоды и бонусы разрешены" : "Промокоды и бонусы отключены"}
+                    </p>
+                  </div>
+                  <Switch checked={allowPromotions} onCheckedChange={setAllowPromotions} />
                 </div>
 
                 {/* Большая кнопка сохранения */}

@@ -22,7 +22,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
-from enums import ServiceAction, UsvcStatus
+from enums import PriceType, ServiceAction, UsvcStatus
 from lifecycle.delivery import get_issuer
 from utils.datetime_utils import utc_now
 from lua.bus import LuaBus
@@ -152,7 +152,7 @@ class UserServicesMngr:
 
     # --- деньги -----------------------------------------------------------
     @staticmethod
-    def _charge(acc, amount: Decimal) -> tuple[Decimal, Decimal]:
+    def _charge(acc, amount: Decimal, allow_bonus: bool = True) -> tuple[Decimal, Decimal]:
         """Списать сумму: сначала бонусы, затем основной баланс.
 
         Вызывающий обязан предварительно взять row-lock на аккаунт
@@ -162,6 +162,15 @@ class UserServicesMngr:
         if amount <= 0:
             return Decimal("0"), Decimal("0")
         amount = amount.quantize(_CENT, rounding=ROUND_HALF_UP)
+        if not allow_bonus:
+            if acc.balance < amount:
+                raise HTTPException(
+                    status.HTTP_402_PAYMENT_REQUIRED,
+                    "insufficient funds (bonus balance cannot be used for this service)",
+                )
+            acc.balance -= amount
+            return Decimal("0"), amount
+
         if acc.bonus_balance + acc.balance < amount:
             raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "insufficient funds")
         from_bonus = min(acc.bonus_balance, amount)
@@ -213,15 +222,27 @@ class UserServicesMngr:
         order_config["settings"] = resolved.effective_settings
 
         discount = max(Decimal("0"), min(discount, base_price))
-        price = base_price - discount
+        price_type = getattr(service, "price_type", PriceType.FIXED) or PriceType.FIXED
+        if price_type == PriceType.CUSTOM:
+            nominal_amount = Decimal(str(resolved.order_config.get("nominal_amount") or custom_amount or base_price))
+            allow_sub_nominal = bool(resolved.order_config.get("allow_sub_nominal_discount", False))
+            if not allow_sub_nominal:
+                price = max(base_price - discount, nominal_amount)
+            else:
+                max_loss_p = Decimal(str(resolved.order_config.get("max_loss_percent", "0") or "0"))
+                min_floor = max(Decimal("0.01"), (nominal_amount * (Decimal("1") - max_loss_p / Decimal("100"))).quantize(_CENT, rounding=ROUND_HALF_UP))
+                price = max(base_price - discount, min_floor)
+        else:
+            price = base_price - discount
 
+        allow_promotions = bool((getattr(service, "settings", {}) or {}).get("allow_promotions", True))
         charged_bonus = Decimal("0")
         charged_balance = Decimal("0")
         if charge:
             # Блокируем строку аккаунта до чтения баланса — иначе две
             # параллельные покупки уводят баланс в минус ().
             await lock_account(self.s, acc.id)
-            charged_bonus, charged_balance = self._charge(acc, price)
+            charged_bonus, charged_balance = self._charge(acc, price, allow_bonus=allow_promotions)
 
         merged = dict(service.params or {})
         if params:
