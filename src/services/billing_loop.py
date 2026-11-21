@@ -457,7 +457,7 @@ class BillingLoop:
         usvc = await session.scalar(
             select(UserServicesModel)
             .where(UserServicesModel.id == usvc_id)
-            .with_for_update()
+            .with_for_update(of=UserServicesModel)
         )
         if usvc is None or usvc.status != UsvcStatus.ACTIVE:
             # Член уже извлечён claim'ом — просто выходим.

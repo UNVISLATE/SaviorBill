@@ -129,7 +129,7 @@ class UserServicesModel(Base):
     # измениться). NULL — услуга не lua-delivery или ещё ни разу не исполнялась.
     lua_script_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
-    service: Mapped["ServiceModel"] = relationship(lazy="joined")
+    service: Mapped["ServiceModel"] = relationship(lazy="selectin")
 
 
 from models.service import ServiceModel

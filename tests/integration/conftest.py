@@ -156,10 +156,21 @@ async def new_user(http: httpx.AsyncClient):
 
 
 @pytest_asyncio.fixture
-async def seed(engine: AsyncEngine):
+async def seed(engine: AsyncEngine, cfg: AppConfig):
     """Набор хелперов сидинга прямо в БД (возвращают созданные id)."""
 
+    vk = valkey.from_url(cfg.valkey_url, decode_responses=True)
+
     class Seeder:
+        async def _bust_cache(self) -> None:
+            try:
+                keys = []
+                async for k in vk.scan_iter(match="cache:catalog:*"):
+                    keys.append(k)
+                if keys:
+                    await vk.delete(*keys)
+            except Exception:
+                pass
         async def key_service(self, price: str = "10.00", keys: int = 2) -> int:
             slug = uniq("key_svc")
             async with engine.begin() as c:
@@ -178,6 +189,7 @@ async def seed(engine: AsyncEngine):
                         ),
                         {"sid": sid, "val": f"KEY-{slug}-{i}"},
                     )
+            await self._bust_cache()
             return sid
 
         async def lua_service(self, price: str = "5.00") -> int:
@@ -199,6 +211,7 @@ async def seed(engine: AsyncEngine):
                     ),
                     {"slug": slug, "price": price, "script": script_id},
                 )
+            await self._bust_cache()
             return sid
 
         async def lua_service_timed(
@@ -237,6 +250,7 @@ async def seed(engine: AsyncEngine):
                         "dur": duration,
                     },
                 )
+            await self._bust_cache()
             return sid
 
         async def pay_provider(self, secret: str = "test-callback-secret") -> str:
@@ -302,4 +316,7 @@ async def seed(engine: AsyncEngine):
                     {"login": login},
                 )
 
-    return Seeder()
+    try:
+        yield Seeder()
+    finally:
+        await vk.aclose()

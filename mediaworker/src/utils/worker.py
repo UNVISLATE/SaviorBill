@@ -152,8 +152,10 @@ class Worker:
                                     pass
                 except Exception as exc:  # noqa: BLE001
                     print(f"[mediaworker] control message error: {exc}", flush=True)
-        except asyncio.CancelledError:
+        except (asyncio.CancelledError, valkey.ConnectionError, valkey.RedisError):
             pass
+        except Exception as exc:  # noqa: BLE001
+            print(f"[mediaworker] control listener stopped: {exc}", flush=True)
         finally:
             try:
                 await pubsub.unsubscribe("media:control")
