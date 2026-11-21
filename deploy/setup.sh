@@ -188,38 +188,41 @@ EOF
 # ── DPKG Lock Wait (Unattended Upgrades) ──────────────────────────────────────
 wait_for_dpkg_lock() {
   local waited=0
-  local max_wait=180
+  local max_wait=30
 
   while true; do
     local is_locked=0
 
+    # Check exact process names with -x (NEVER -f, to avoid matching tail, grep or log paths)
     if command -v pgrep >/dev/null 2>&1; then
-      if pgrep -f "apt-get|apt|dpkg|unattended-upgr" >/dev/null 2>&1; then
+      if pgrep -x "dpkg" >/dev/null 2>&1 || \
+         pgrep -x "apt-get" >/dev/null 2>&1 || \
+         pgrep -x "unattended-upgr" >/dev/null 2>&1; then
         is_locked=1
       fi
     fi
 
-    if [ "$is_locked" -eq 0 ] && command -v fuser >/dev/null 2>&1; then
-      if fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || \
-         fuser /var/lib/dpkg/lock >/dev/null 2>&1 || \
-         fuser /var/lib/apt/lists/lock >/dev/null 2>&1; then
-        is_locked=1
+    # Verify if fuser confirms the lock is actually held
+    if [ "$is_locked" -eq 1 ] && command -v fuser >/dev/null 2>&1; then
+      if ! fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 && \
+         ! fuser /var/lib/dpkg/lock >/dev/null 2>&1; then
+        is_locked=0
       fi
     fi
 
     if [ "$is_locked" -eq 1 ]; then
       if [ "$waited" -eq 0 ]; then
-        info "System package manager is currently busy (unattended-upgrades in background). Waiting for it to finish..."
+        info "Waiting for background package manager (unattended-upgrades) to release lock..."
       fi
-      sleep 3
-      waited=$((waited + 3))
+      sleep 2
+      waited=$((waited + 2))
       if [ "$waited" -ge "$max_wait" ]; then
-        warn "Waited ${max_wait}s for background package updates. Proceeding anyway..."
+        warn "Proceeding with Docker installation..."
         break
       fi
     else
       if [ "$waited" -gt 0 ]; then
-        success "Package manager is now available!"
+        success "Package manager lock released!"
       fi
       break
     fi
