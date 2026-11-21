@@ -60,11 +60,17 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute app version (setuptools_scm)
+      - name: Compute app version
         if: matrix.name != 'luaworker'
         run: |
-          pip install --quiet setuptools_scm
-          python -c "from setuptools_scm import get_version; open('VERSION', 'w').write(get_version(fallback_version='0.0.0-dev'))"
+          TAG="${{ github.event.release.tag_name }}"
+          CLEAN_VER="${TAG#v}"
+          if [ -n "$CLEAN_VER" ]; then
+            echo "$CLEAN_VER" > VERSION
+          else
+            pip install --quiet setuptools_scm
+            python -c "import sys; sys.path.insert(0, 'src'); from utils.version import resolve_app_version; from pathlib import Path; open('VERSION', 'w').write(resolve_app_version(Path('.')))"
+          fi
           if [ "${{ matrix.name }}" = "mediaworker" ]; then cp VERSION mediaworker/VERSION; fi
           echo "Resolved version: $(cat VERSION)"
 
