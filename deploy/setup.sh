@@ -82,6 +82,42 @@ prompt_secret_or_gen() {
   echo "${answer:-$generated}"
 }
 
+clean_and_validate_domain() {
+  local raw="$1"
+  local clean=""
+
+  # Strip leading/trailing whitespaces, tabs, carriage returns
+  clean="$(echo "$raw" | tr -d '\r\n\t ')"
+
+  # Strip schemes (http://, https://) and paths/ports
+  clean="${clean#http://}"
+  clean="${clean#https://}"
+  clean="${clean%%/*}"
+  clean="${clean%%:*}"
+
+  # Strip any non-printable ASCII control characters (bytes 0-31 and 127)
+  clean="$(echo "$clean" | tr -d '\000-\037\177')"
+
+  # Check if contains Cyrillic or non-ASCII characters
+  if LC_ALL=C echo "$clean" | grep -q '[^a-zA-Z0-9.-]'; then
+    err "Invalid characters in domain: '$clean'."
+    err "Only English Latin letters (a-z), numbers, dots (.), and hyphens (-) are allowed."
+    if echo "$raw" | grep -q '[а-яА-ЯёЁ]'; then
+      warn "Tip: Detected Cyrillic characters (e.g. 'ю' instead of '.'). Please switch to English keyboard layout."
+    fi
+    return 1
+  fi
+
+  # Basic syntax: at least one dot, valid hostname parts
+  if [[ ! "$clean" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$ ]]; then
+    err "Invalid domain format: '$clean'. Expected format like: panel.example.com"
+    return 1
+  fi
+
+  echo "$clean"
+  return 0
+}
+
 generate_hex() {
   local bytes="${1:-32}"
   if command -v openssl >/dev/null 2>&1; then
@@ -111,7 +147,7 @@ generate_pass() {
 detect_public_ip() {
   local ip=""
   ip="$(curl -s4 --connect-timeout 2 https://api.ipify.org 2>/dev/null || curl -s4 --connect-timeout 2 https://ifconfig.me 2>/dev/null || true)"
-  if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+.[0-9]+$ ]]; then
     echo "$ip"
     return
   fi
@@ -520,20 +556,21 @@ run_wizard() {
       echo ""
 
       while true; do
-        domain=$(prompt_default "1. Admin Dashboard domain (e.g. panel.example.com or billing.example.com)" "")
-        if [ -n "$domain" ]; then break; fi
-        eof_count=$((eof_count + 1))
-        if [ "$eof_count" -ge 3 ]; then
-          err "Input stream ended (EOF). Please run interactively."
-          exit 1
+        local raw_domain
+        raw_domain=$(prompt_default "1. Admin Dashboard domain (e.g. panel.example.com or billing.example.com)" "")
+        if [ -z "$raw_domain" ]; then
+          eof_count=$((eof_count + 1))
+          if [ "$eof_count" -ge 3 ]; then
+            err "Input stream ended (EOF). Please run interactively."
+            exit 1
+          fi
+          err "Admin Dashboard domain cannot be empty!"
+          continue
         fi
-        err "Admin Dashboard domain cannot be empty!"
+        if domain=$(clean_and_validate_domain "$raw_domain"); then
+          break
+        fi
       done
-
-      # Clean leading schemes if typed
-      domain="${domain#http://}"
-      domain="${domain#https://}"
-      domain="${domain%%/*}"
 
       # 2. REST API & Webhooks
       echo ""
@@ -544,12 +581,15 @@ run_wizard() {
       api_choice=$(prompt_default "REST API & payment webhooks routing [1/2]" "1")
       if [ "$api_choice" = "2" ]; then
         while true; do
-          api_domain=$(prompt_default "Domain for REST API (e.g. api.example.com)" "")
-          api_domain="${api_domain#http://}"
-          api_domain="${api_domain#https://}"
-          api_domain="${api_domain%%/*}"
-          if [ -n "$api_domain" ]; then break; fi
-          err "REST API domain cannot be empty!"
+          local raw_api
+          raw_api=$(prompt_default "Domain for REST API (e.g. api.example.com)" "")
+          if [ -z "$raw_api" ]; then
+            err "REST API domain cannot be empty!"
+            continue
+          fi
+          if api_domain=$(clean_and_validate_domain "$raw_api"); then
+            break
+          fi
         done
       else
         api_domain="$domain"
@@ -563,12 +603,15 @@ run_wizard() {
       media_choice=$(prompt_default "Media storage endpoint routing [1/2]" "1")
       if [ "$media_choice" = "2" ]; then
         while true; do
-          media_domain=$(prompt_default "Domain for Mediaworker (e.g. media.example.com)" "")
-          media_domain="${media_domain#http://}"
-          media_domain="${media_domain#https://}"
-          media_domain="${media_domain%%/*}"
-          if [ -n "$media_domain" ]; then break; fi
-          err "Mediaworker domain cannot be empty!"
+          local raw_media
+          raw_media=$(prompt_default "Domain for Mediaworker (e.g. media.example.com)" "")
+          if [ -z "$raw_media" ]; then
+            err "Mediaworker domain cannot be empty!"
+            continue
+          fi
+          if media_domain=$(clean_and_validate_domain "$raw_media"); then
+            break
+          fi
         done
       else
         media_domain="$api_domain"
@@ -611,11 +654,13 @@ run_wizard() {
         echo ""
         info "Customer Portal runs on a separate domain from the Admin Dashboard."
         while true; do
-          client_domain=$(prompt_default "Customer Portal domain (e.g. client.example.com or shop.example.com)" "")
-          client_domain="${client_domain#http://}"
-          client_domain="${client_domain#https://}"
-          client_domain="${client_domain%%/*}"
-          if [ -n "$client_domain" ]; then
+          local raw_client
+          raw_client=$(prompt_default "Customer Portal domain (e.g. client.example.com or shop.example.com)" "")
+          if [ -z "$raw_client" ]; then
+            err "Customer Portal domain cannot be empty!"
+            continue
+          fi
+          if client_domain=$(clean_and_validate_domain "$raw_client"); then
             if [ "$client_domain" = "$domain" ]; then
               warn "Customer Portal cannot use the exact same domain as Admin Dashboard ($domain)!"
               warn "Please provide a different subdomain or domain."
@@ -623,7 +668,6 @@ run_wizard() {
               break
             fi
           fi
-          err "Customer Portal domain cannot be empty!"
         done
       else
         # Local / IP
@@ -783,7 +827,11 @@ EOF
   case "$run_now" in
     [yY]|[yY][eE][sS])
       info "Pulling latest container images..."
-      docker_compose_cmd pull
+      if ! docker_compose_cmd pull; then
+        warn "Initial pull encountered an issue. Retrying in 3 seconds..."
+        sleep 3
+        docker_compose_cmd pull || true
+      fi
       info "Starting containers in background..."
       docker_compose_cmd up -d
       success "SaviorBill stack started successfully!"
