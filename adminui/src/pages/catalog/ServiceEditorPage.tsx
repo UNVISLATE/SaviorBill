@@ -897,6 +897,16 @@ export function ServiceEditorPage() {
         }
       }
 
+      const finalPricingConfig: Record<string, unknown> = {
+        ...pricingConfig,
+      }
+      const initialManifest = (service?.pricing_config as Record<string, unknown> | undefined)?.manifest
+      if (selectedScriptManifest) {
+        finalPricingConfig.manifest = selectedScriptManifest
+      } else if (initialManifest) {
+        finalPricingConfig.manifest = initialManifest
+      }
+
       const effectivePrice =
         priceType === "tiered" || priceType === "custom" ? calculatedBasePrice : price
 
@@ -907,7 +917,7 @@ export function ServiceEditorPage() {
         price: effectivePrice,
         currency,
         price_type: priceType,
-        pricing_config: pricingConfig,
+        pricing_config: finalPricingConfig,
         delivery,
         lua_script_id: delivery === "lua" && luaScriptId ? Number(luaScriptId) : null,
         params,

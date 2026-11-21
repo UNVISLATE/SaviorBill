@@ -124,17 +124,17 @@ export function AuditPage() {
       />
 
       <Dialog open={!!detail} onOpenChange={(open) => !open && setDetail(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg overflow-hidden">
           <DialogHeader>
             <DialogTitle>Запись аудита #{detail?.id}</DialogTitle>
           </DialogHeader>
           {detail && (
-            <div className="space-y-3 text-sm">
-              <dl className="grid grid-cols-[8rem_1fr] gap-y-1.5">
+            <div className="space-y-3 text-sm min-w-0">
+              <dl className="grid grid-cols-[8rem_1fr] gap-y-1.5 min-w-0 break-words">
                 <dt className="text-muted-foreground">Время</dt>
                 <dd>{new Date(detail.ts).toLocaleString()}</dd>
                 <dt className="text-muted-foreground">Актор</dt>
-                <dd>
+                <dd className="min-w-0 break-all">
                   {detail.actor_account_id != null ? (
                     <>
                       #{detail.actor_account_id}
@@ -145,9 +145,9 @@ export function AuditPage() {
                   )}
                 </dd>
                 <dt className="text-muted-foreground">Действие</dt>
-                <dd className="font-medium">{detail.action}</dd>
+                <dd className="font-medium break-all">{detail.action}</dd>
                 <dt className="text-muted-foreground">Цель</dt>
-                <dd>
+                <dd className="min-w-0 break-all">
                   {detail.target_type ? (
                     <>
                       {detail.target_type}
@@ -164,12 +164,12 @@ export function AuditPage() {
                 <dt className="text-muted-foreground">IP</dt>
                 <dd>{detail.ip ?? "—"}</dd>
               </dl>
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 min-w-0">
                 <p className="text-xs font-medium text-muted-foreground">
                   Технические детали (meta)
                 </p>
                 {Object.keys(detail.meta).length > 0 ? (
-                  <pre className="max-h-72 overflow-auto rounded-md border bg-muted/40 p-3 text-xs">
+                  <pre className="max-h-72 w-full min-w-0 overflow-auto rounded-md border bg-muted/40 p-3 text-xs font-mono whitespace-pre-wrap break-all">
                     {JSON.stringify(detail.meta, null, 2)}
                   </pre>
                 ) : (
