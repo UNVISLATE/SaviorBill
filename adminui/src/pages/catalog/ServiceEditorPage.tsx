@@ -6,6 +6,8 @@ import {
   ArrowLeft,
   Check,
   AlertCircle,
+  Archive,
+  ArchiveRestore,
   Coins,
   FileCode2,
   FileUp,
@@ -252,6 +254,8 @@ function buildServiceSnapshot(data: {
   isActive: boolean
   isRecommended?: boolean
   allowPromotions?: boolean
+  fullBonusOnly?: boolean
+  isArchived?: boolean
   paramsText?: string | null
   settingsText?: string | null
   instructionsMd?: string | null
@@ -292,6 +296,8 @@ function buildServiceSnapshot(data: {
     isActive: Boolean(data.isActive),
     isRecommended: Boolean(data.isRecommended),
     allowPromotions: data.allowPromotions !== false,
+    fullBonusOnly: Boolean(data.fullBonusOnly),
+    isArchived: Boolean(data.isArchived),
     paramsText: normalizeJson(data.paramsText),
     settingsText: normalizeJson(data.settingsText),
     instructionsMd: (data.instructionsMd || "").trim(),
@@ -377,6 +383,8 @@ export function ServiceEditorPage() {
   const [isActive, setIsActive] = useState(true)
   const [isRecommended, setIsRecommended] = useState(false)
   const [allowPromotions, setAllowPromotions] = useState(true)
+  const [fullBonusOnly, setFullBonusOnly] = useState(false)
+  const [isArchived, setIsArchived] = useState(false)
   const [paramsText, setParamsText] = useState("{}")
   const [settingsText, setSettingsText] = useState("{}")
   const [instructionsMd, setInstructionsMd] = useState("")
@@ -552,6 +560,8 @@ export function ServiceEditorPage() {
       const loadedMaxLossPercent = cfg.max_loss_percent !== undefined && cfg.max_loss_percent !== null ? String(cfg.max_loss_percent) : ""
       const loadedIsRecommended = Boolean(service.settings?.is_recommended)
       const loadedAllowPromotions = service.settings?.allow_promotions !== false
+      const loadedFullBonusOnly = Boolean((service.settings as any)?.full_bonus_only)
+      const loadedIsArchived = Boolean((service as any).is_archived || (service.settings as any)?.is_archived)
 
       setCustomMin(loadedMin)
       setCustomMax(loadedMax)
@@ -562,6 +572,8 @@ export function ServiceEditorPage() {
       setMaxLossPercent(loadedMaxLossPercent)
       setIsRecommended(loadedIsRecommended)
       setAllowPromotions(loadedAllowPromotions)
+      setFullBonusOnly(loadedFullBonusOnly)
+      setIsArchived(loadedIsArchived)
       setTierPlans(loadedTiers)
       setCompList(loadedComps)
 
@@ -587,6 +599,8 @@ export function ServiceEditorPage() {
         isActive: service.is_active,
         isRecommended: loadedIsRecommended,
         allowPromotions: loadedAllowPromotions,
+        fullBonusOnly: loadedFullBonusOnly,
+        isArchived: loadedIsArchived,
         paramsText: pText,
         settingsText: sText,
         instructionsMd: loadedInst,
@@ -699,6 +713,8 @@ export function ServiceEditorPage() {
       isActive,
       isRecommended,
       allowPromotions,
+      fullBonusOnly,
+      isArchived,
       paramsText,
       settingsText,
       instructionsMd,
@@ -726,6 +742,8 @@ export function ServiceEditorPage() {
     isActive,
     isRecommended,
     allowPromotions,
+    fullBonusOnly,
+    isArchived,
     paramsText,
     settingsText,
     instructionsMd,
@@ -876,6 +894,8 @@ export function ServiceEditorPage() {
 
       settings.is_recommended = isRecommended
       settings.allow_promotions = allowPromotions
+      settings.full_bonus_only = fullBonusOnly
+      settings.is_archived = isArchived
 
       let pricingConfig: Record<string, unknown> = {}
       if (priceType === "custom") {
@@ -1006,11 +1026,35 @@ export function ServiceEditorPage() {
   const deleteMutation = useMutation({
     mutationFn: async () => api.delete(`/v1/admin/services/${serviceId}`),
     onSuccess: () => {
-      toastSuccess("Услуга удалена")
+      toastSuccess("Услуга удалена (или перемещена в архив при наличии заказов)")
       void qc.invalidateQueries({ queryKey: ["admin-services"] })
       navigate("/services", { replace: true })
     },
     onError: (e) => toastError("Не удалось удалить услугу", getErrorDetail(e)),
+  })
+
+  // Архивирование и разархивирование
+  const archiveMutation = useMutation({
+    mutationFn: async () => api.post(`/v1/admin/services/${serviceId}/archive`),
+    onSuccess: () => {
+      toastSuccess("Услуга перемещена в архив")
+      setIsArchived(true)
+      setIsActive(false)
+      void qc.invalidateQueries({ queryKey: ["admin-service", serviceId] })
+      void qc.invalidateQueries({ queryKey: ["admin-services"] })
+    },
+    onError: (e) => toastError("Не удалось переместить в архив", getErrorDetail(e)),
+  })
+
+  const unarchiveMutation = useMutation({
+    mutationFn: async () => api.post(`/v1/admin/services/${serviceId}/unarchive`),
+    onSuccess: () => {
+      toastSuccess("Услуга восстановлена из архива")
+      setIsArchived(false)
+      void qc.invalidateQueries({ queryKey: ["admin-service", serviceId] })
+      void qc.invalidateQueries({ queryKey: ["admin-services"] })
+    },
+    onError: (e) => toastError("Не удалось восстановить услугу", getErrorDetail(e)),
   })
 
   // Быстрый импорт ключей
@@ -2542,46 +2586,53 @@ export function ServiceEditorPage() {
                 <CardTitle className="text-sm font-semibold">Управление товаром</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Группа переключателей товара в едином блоке */}
+                {/* Группа переключателей товара в едином компактном блоке */}
                 <div className="divide-y divide-border/60 rounded-xl border border-border/70 bg-muted/15 overflow-hidden">
                   {/* Активность товара */}
-                  <div className="flex items-center justify-between p-3 hover:bg-muted/20 transition-colors">
-                    <div className="space-y-0.5">
+                  <div className="flex items-center justify-between px-3 py-2.5 hover:bg-muted/20 transition-colors">
+                    <div className="flex items-center gap-1.5">
                       <Label className="text-xs font-semibold cursor-pointer">
                         Активность товара
                       </Label>
-                      <p className="text-[11px] text-muted-foreground">
-                        {isActive ? "Доступен к покупке" : "Скрыт из каталога"}
-                      </p>
+                      <InfoTip content="Доступен к покупке в каталоге или скрыт от клиентов." />
                     </div>
                     <Switch checked={isActive} onCheckedChange={setIsActive} />
                   </div>
 
                   {/* Рекомендуемый товар */}
-                  <div className="flex items-center justify-between p-3 hover:bg-muted/20 transition-colors">
-                    <div className="space-y-0.5">
+                  <div className="flex items-center justify-between px-3 py-2.5 hover:bg-muted/20 transition-colors">
+                    <div className="flex items-center gap-1.5">
                       <Label className="text-xs font-semibold cursor-pointer">
                         Рекомендуем
                       </Label>
-                      <p className="text-[11px] text-muted-foreground">
-                        {isRecommended ? "Отображается бейдж «Рекомендуем»" : "Обычный товар в каталоге"}
-                      </p>
+                      <InfoTip content="Отображает бейдж «Рекомендуем» и поднимает товар в выдаче каталога." />
                     </div>
                     <Switch checked={isRecommended} onCheckedChange={setIsRecommended} />
                   </div>
 
                   {/* Участие в акциях */}
-                  <div className="flex items-center justify-between p-3 hover:bg-muted/20 transition-colors">
-                    <div className="space-y-0.5">
+                  <div className="flex items-center justify-between px-3 py-2.5 hover:bg-muted/20 transition-colors">
+                    <div className="flex items-center gap-1.5">
                       <Label className="text-xs font-semibold cursor-pointer">
                         Участие в акциях
                       </Label>
-                      <p className="text-[11px] text-muted-foreground">
-                        {allowPromotions ? "Скидки, промокоды и бонусы разрешены" : "Промокоды и бонусы отключены"}
-                      </p>
+                      <InfoTip content="Разрешает применение скидок, промокодов и оплату бонусами для этого товара." />
                     </div>
                     <Switch checked={allowPromotions} onCheckedChange={setAllowPromotions} />
                   </div>
+
+                  {/* Только 100% бонусами (если акции включены) */}
+                  {allowPromotions && (
+                    <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/30 transition-colors">
+                      <div className="flex items-center gap-1.5">
+                        <Label className="text-xs font-medium cursor-pointer">
+                          Только 100% бонусами
+                        </Label>
+                        <InfoTip content="Покупатель может списать бонусы только если их хватает на полную стоимость (100%). Смешанная оплата (рубли + бонусы) запрещена." />
+                      </div>
+                      <Switch checked={fullBonusOnly} onCheckedChange={setFullBonusOnly} />
+                    </div>
+                  )}
                 </div>
 
                 {/* Большая кнопка сохранения */}
@@ -2612,6 +2663,35 @@ export function ServiceEditorPage() {
                       >
                         <KeyRound className="size-4 text-primary" />
                         Инвентарь ключей ({stock?.available ?? 0} шт.)
+                      </Button>
+                    )}
+
+                    {/* Поместить в архив / Восстановить из архива */}
+                    {can("services.update") && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full text-xs text-muted-foreground hover:text-foreground hover:bg-muted/40 justify-start gap-2 h-9"
+                        onClick={() => {
+                          if (isArchived) {
+                            unarchiveMutation.mutate()
+                          } else {
+                            archiveMutation.mutate()
+                          }
+                        }}
+                        disabled={archiveMutation.isPending || unarchiveMutation.isPending}
+                      >
+                        {isArchived ? (
+                          <>
+                            <ArchiveRestore className="size-4 text-amber-500" />
+                            Восстановить из архива
+                          </>
+                        ) : (
+                          <>
+                            <Archive className="size-4 text-muted-foreground" />
+                            Поместить в архив
+                          </>
+                        )}
                       </Button>
                     )}
 

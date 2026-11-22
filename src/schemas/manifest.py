@@ -17,6 +17,7 @@ class FieldType(StrEnum):
     RANGE = "range"
     SELECT = "select"
     TOGGLE = "toggle"
+    CHECKBOX = "checkbox"
     DATETIME = "datetime"
     TEXTAREA = "textarea"
 

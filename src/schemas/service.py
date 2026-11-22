@@ -154,6 +154,7 @@ class Service(BaseModel):
     is_active: bool
     is_recommended: bool = False
     allow_promotions: bool = True
+    full_bonus_only: bool = False
     orders_count: int = Field(
         default=0,
         description="Number of completed orders for this service",
@@ -189,6 +190,7 @@ class Service(BaseModel):
             is_active=m.is_active,
             is_recommended=bool((getattr(m, "settings", {}) or {}).get("is_recommended", False)),
             allow_promotions=bool((getattr(m, "settings", {}) or {}).get("allow_promotions", True)),
+            full_bonus_only=bool((getattr(m, "settings", {}) or {}).get("full_bonus_only", False)),
             orders_count=int(getattr(m, "orders_count", 0) or 0),
         )
 
@@ -208,6 +210,7 @@ class ServiceAdmin(Service):
     lua_script_version: int | None = None
     params: dict
     settings: dict
+    is_archived: bool = False
     warnings: list[str] = Field(
         default_factory=list,
         description="Non-blocking warnings",
@@ -235,6 +238,7 @@ class ServiceAdmin(Service):
             lua_script_version=m.lua_script_version,
             params=m.params,
             settings=m.settings,
+            is_archived=bool((getattr(m, "settings", {}) or {}).get("is_archived", False)),
             warnings=warnings or [],
         )
 

@@ -73,6 +73,34 @@ def test_charge_and_refund_bonus_split_integrity():
 
 
 @pytest.mark.unit
+def test_charge_full_bonus_only_mode():
+    """Тест режима full_bonus_only: либо 100% бонусами, либо 100% рублями (без смешивания)."""
+    from fastapi import HTTPException
+
+    # 1. Бонусов 100, цена 100 -> 100% с бонусов
+    acc1 = SimpleNamespace(id=1, bonus_balance=Decimal("100.00"), balance=Decimal("50.00"))
+    b, m = UserServicesMngr._charge(acc1, Decimal("100.00"), full_bonus_only=True)
+    assert b == Decimal("100.00")
+    assert m == Decimal("0.00")
+    assert acc1.bonus_balance == Decimal("0.00")
+    assert acc1.balance == Decimal("50.00")
+
+    # 2. Бонусов 99 (не хватает на 100%), основного баланса 150 -> 100% с основного баланса (бонусы не трогаем)
+    acc2 = SimpleNamespace(id=2, bonus_balance=Decimal("99.00"), balance=Decimal("150.00"))
+    b, m = UserServicesMngr._charge(acc2, Decimal("100.00"), full_bonus_only=True)
+    assert b == Decimal("0.00")
+    assert m == Decimal("100.00")
+    assert acc2.bonus_balance == Decimal("99.00")
+    assert acc2.balance == Decimal("50.00")
+
+    # 3. Бонусов 99, основного 50 -> суммарно 149 >= 100, но нигде нет 100% -> отказ (402)
+    acc3 = SimpleNamespace(id=3, bonus_balance=Decimal("99.00"), balance=Decimal("50.00"))
+    with pytest.raises(HTTPException) as exc:
+        UserServicesMngr._charge(acc3, Decimal("100.00"), full_bonus_only=True)
+    assert exc.value.status_code == 402
+
+
+@pytest.mark.unit
 def test_payment_url_extraction_and_schema():
     """Тест извлечения и нормализации payment_url в модели и публичной схеме."""
     m = UserPaymentsModel(

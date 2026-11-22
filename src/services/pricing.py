@@ -50,20 +50,40 @@ def unflatten_dot_dict(flat: dict) -> dict:
 
 
 def validate_order_form(
-    pricing_config: dict[str, Any], client_form: dict[str, Any] | None
+    pricing_config: dict[str, Any],
+    client_form: dict[str, Any] | None,
+    service: Any = None,
 ) -> dict[str, Any]:
-    """Валидация формы заказа покупателя по манифесту SDUI или списку полей."""
+    """Валидация формы заказа покупателя по манифесту SBUI или списку полей."""
     manifest_data = pricing_config.get("manifest")
-    if manifest_data:
-        from schemas.manifest import ScriptManifest
-        from services.manifest import validate_client_order_form
+    if not manifest_data and service is not None:
+        lua_script = getattr(service, "lua_script", None)
+        if lua_script and getattr(lua_script, "settings", None) and isinstance(lua_script.settings, dict):
+            manifest_data = lua_script.settings.get("manifest")
 
-        manifest = (
-            ScriptManifest.model_validate(manifest_data)
-            if isinstance(manifest_data, dict)
-            else manifest_data
-        )
-        return validate_client_order_form(manifest, client_form)
+    if manifest_data and isinstance(manifest_data, dict):
+        client_order_form = manifest_data.get("client_order_form")
+        if client_order_form:
+            from schemas.manifest import FieldDefinition, ScriptManifest
+            from services.manifest import validate_client_order_form
+
+            parsed_fields = []
+            for raw_fld in client_order_form:
+                try:
+                    parsed_fields.append(
+                        FieldDefinition.model_validate(raw_fld)
+                        if isinstance(raw_fld, dict)
+                        else raw_fld
+                    )
+                except Exception:
+                    continue
+            safe_manifest = ScriptManifest(
+                name=str(manifest_data.get("name") or "Service"),
+                slug=str(manifest_data.get("slug") or "service"),
+                client_order_form=parsed_fields,
+            )
+            return validate_client_order_form(safe_manifest, client_form)
+        return {}
 
     # Валидация по полям legacy-конфигурации формы
     form_defs = pricing_config.get("form")
@@ -127,7 +147,7 @@ def resolve_service_order(
 
     # 1. FIXED
     if price_type == PriceType.FIXED:
-        validated_form = validate_order_form(pricing_config, form)
+        validated_form = validate_order_form(pricing_config, form, service=service)
         order_config = {"form": validated_form} if validated_form else {}
         return ResolvedOrder(
             price=service.price,
@@ -159,7 +179,7 @@ def resolve_service_order(
                     f"custom_amount must be a multiple of {step_dec} starting from {min_amt}",
                 )
 
-        validated_form = validate_order_form(pricing_config, form)
+        validated_form = validate_order_form(pricing_config, form, service=service)
 
         markup_percent_raw = pricing_config.get("markup_percent")
         markup_fixed_raw = pricing_config.get("markup_fixed")
@@ -259,7 +279,7 @@ def resolve_service_order(
         if matched_group:
             order_config["group"] = matched_group
             tier_dict["group"] = matched_group.get("title")
-        validated_form = validate_order_form(pricing_config, form)
+        validated_form = validate_order_form(pricing_config, form, service=service)
         if validated_form:
             order_config["form"] = validated_form
         return ResolvedOrder(
@@ -384,7 +404,7 @@ def resolve_service_order(
                     "price_delta": str(delta),
                 }
 
-        validated_form = validate_order_form(pricing_config, form)
+        validated_form = validate_order_form(pricing_config, form, service=service)
         order_config = {
             "components": resolved_components,
         }

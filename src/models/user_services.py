@@ -152,8 +152,13 @@ class UserServicesMngr:
 
     # --- деньги -----------------------------------------------------------
     @staticmethod
-    def _charge(acc, amount: Decimal, allow_bonus: bool = True) -> tuple[Decimal, Decimal]:
-        """Списать сумму: сначала бонусы, затем основной баланс.
+    def _charge(
+        acc,
+        amount: Decimal,
+        allow_bonus: bool = True,
+        full_bonus_only: bool = False,
+    ) -> tuple[Decimal, Decimal]:
+        """Списать сумму: с учётом allow_bonus и full_bonus_only.
 
         Вызывающий обязан предварительно взять row-lock на аккаунт
         (:func:`services.account.lock_account`) — иначе две параллельные
@@ -170,6 +175,19 @@ class UserServicesMngr:
                 )
             acc.balance -= amount
             return Decimal("0"), amount
+
+        if full_bonus_only:
+            # Разрешено либо 100% списание бонусами, либо 100% с основного баланса
+            if acc.bonus_balance >= amount:
+                acc.bonus_balance -= amount
+                return amount, Decimal("0")
+            if acc.balance >= amount:
+                acc.balance -= amount
+                return Decimal("0"), amount
+            raise HTTPException(
+                status.HTTP_402_PAYMENT_REQUIRED,
+                "insufficient funds (bonus balance must cover 100% of price or pay from main balance)",
+            )
 
         if acc.bonus_balance + acc.balance < amount:
             raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "insufficient funds")
@@ -236,13 +254,19 @@ class UserServicesMngr:
             price = base_price - discount
 
         allow_promotions = bool((getattr(service, "settings", {}) or {}).get("allow_promotions", True))
+        full_bonus_only = bool((getattr(service, "settings", {}) or {}).get("full_bonus_only", False))
         charged_bonus = Decimal("0")
         charged_balance = Decimal("0")
         if charge:
             # Блокируем строку аккаунта до чтения баланса — иначе две
             # параллельные покупки уводят баланс в минус ().
             await lock_account(self.s, acc.id)
-            charged_bonus, charged_balance = self._charge(acc, price, allow_bonus=allow_promotions)
+            charged_bonus, charged_balance = self._charge(
+                acc,
+                price,
+                allow_bonus=allow_promotions,
+                full_bonus_only=full_bonus_only,
+            )
 
         merged = dict(service.params or {})
         if params:

@@ -270,15 +270,9 @@ class ServiceMngr:
         delivery = data.get("delivery", Delivery.KEY)
         lua_script_id = data.get("lua_script_id")
         await self._validate_lua_script(delivery, lua_script_id)
-        if delivery == Delivery.LUA and lua_script_id:
-            script = await self.s.get(SystemScriptsModel, lua_script_id)
-            if script and script.settings and isinstance(script.settings, dict):
-                manifest = script.settings.get("manifest")
-                if manifest and isinstance(manifest, dict):
-                    pricing_cfg = dict(data.get("pricing_config") or {})
-                    if not pricing_cfg.get("manifest"):
-                        pricing_cfg["manifest"] = manifest
-                        data["pricing_config"] = pricing_cfg
+        if "pricing_config" in data and isinstance(data["pricing_config"], dict):
+            # Манифест не хранится в pricing_config услуги — он резолвится динамически из скрипта/плагина
+            data["pricing_config"].pop("manifest", None)
 
         # Бэк автоматически подставляет минимальную цену для динамических режимов
         price_type = data.get("price_type", PriceType.FIXED)
@@ -305,16 +299,9 @@ class ServiceMngr:
             delivery = data.get("delivery", svc.delivery)
             lua_script_id = data.get("lua_script_id", svc.lua_script_id)
             await self._validate_lua_script(delivery, lua_script_id)
-            if delivery == Delivery.LUA and lua_script_id:
-                script = await self.s.get(SystemScriptsModel, lua_script_id)
-                if script and script.settings and isinstance(script.settings, dict):
-                    manifest = script.settings.get("manifest")
-                    if manifest and isinstance(manifest, dict):
-                        pricing_cfg = dict(data.get("pricing_config") or getattr(svc, "pricing_config", {}) or {})
-                        if not pricing_cfg.get("manifest"):
-                            pricing_cfg["manifest"] = manifest
-                            data["pricing_config"] = pricing_cfg
         if "pricing_config" in data and data["pricing_config"] is not None:
+            if isinstance(data["pricing_config"], dict):
+                data["pricing_config"].pop("manifest", None)
             target_pt = data.get("price_type", svc.price_type)
             from schemas.service import validate_pricing_config
             data["pricing_config"] = validate_pricing_config(target_pt, data["pricing_config"])

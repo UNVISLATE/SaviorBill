@@ -50,11 +50,23 @@ async def list_services(
     q: str | None = Depends(q_param),
     sort: str | None = Depends(sort_param),
     catalog_id: int | None = None,
+    archived: bool = False,
     mngr: ServiceMngr = Depends(get_service_mngr),
 ) -> Page[ServiceAdmin]:
+    from sqlalchemy.sql import or_
+
     stmt = apply_sort(mngr.stmt_all(), ServiceModel, sort, _SORT_FIELDS)
     if catalog_id is not None:
         stmt = stmt.where(ServiceModel.catalog_id == catalog_id)
+    if archived:
+        stmt = stmt.where(ServiceModel.settings["is_archived"].as_boolean() == True)
+    else:
+        stmt = stmt.where(
+            or_(
+                ServiceModel.settings["is_archived"].as_boolean() == False,
+                ServiceModel.settings["is_archived"].is_(None),
+            )
+        )
     items, total, has_more = await paginate_search(
         mngr.s,
         stmt,
@@ -154,6 +166,9 @@ async def delete_service(
         .where(UserServicesModel.service_id == service_id)
     )
     if has_orders:
+        new_settings = dict(svc.settings or {})
+        new_settings["is_archived"] = True
+        svc.settings = new_settings
         svc.is_active = False
     else:
         await mngr.s.delete(svc)
@@ -161,6 +176,57 @@ async def delete_service(
     await invalidate_service_entity(vk, service_id)
     await invalidate_catalog_indexes(vk)
     await invalidate_catalog_cache(vk)
+
+
+@router.post(
+    "/{service_id}/archive",
+    response_model=ServiceAdmin,
+    dependencies=[Depends(require_perm("services.update"))],
+    summary="Archive service",
+    description="Moves the service to the archive and deactivates it.",
+)
+async def archive_service(
+    service_id: int,
+    mngr: ServiceMngr = Depends(get_service_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+) -> ServiceAdmin:
+    svc = await mngr.by_id(service_id)
+    if svc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
+    new_settings = dict(svc.settings or {})
+    new_settings["is_archived"] = True
+    svc.settings = new_settings
+    svc.is_active = False
+    await mngr.s.commit()
+    await invalidate_service_entity(vk, service_id)
+    await invalidate_catalog_indexes(vk)
+    await invalidate_catalog_cache(vk)
+    return ServiceAdmin.from_model(svc)
+
+
+@router.post(
+    "/{service_id}/unarchive",
+    response_model=ServiceAdmin,
+    dependencies=[Depends(require_perm("services.update"))],
+    summary="Unarchive service",
+    description="Restores the service from the archive.",
+)
+async def unarchive_service(
+    service_id: int,
+    mngr: ServiceMngr = Depends(get_service_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+) -> ServiceAdmin:
+    svc = await mngr.by_id(service_id)
+    if svc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service not found")
+    new_settings = dict(svc.settings or {})
+    new_settings["is_archived"] = False
+    svc.settings = new_settings
+    await mngr.s.commit()
+    await invalidate_service_entity(vk, service_id)
+    await invalidate_catalog_indexes(vk)
+    await invalidate_catalog_cache(vk)
+    return ServiceAdmin.from_model(svc)
 
 
 @router.get(
