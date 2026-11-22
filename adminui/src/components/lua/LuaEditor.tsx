@@ -119,6 +119,7 @@ export function LuaEditor({
 
   const navigate = useNavigate()
   const [diffAgainst, setDiffAgainst] = useState<number | null>(null)
+  const [diffSideBySide, setDiffSideBySide] = useState(true)
   const [commitMessage, setCommitMessage] = useState("")
   const [settingsText, setSettingsText] = useState(() =>
     JSON.stringify(initialSettings, null, 2),
@@ -215,7 +216,11 @@ export function LuaEditor({
       theme: "vs-dark",
       automaticLayout: true,
       readOnly: true,
-      renderSideBySide: true,
+      renderSideBySide: diffSideBySide,
+      diffAlgorithm: "advanced",
+      ignoreTrimWhitespace: false,
+      renderIndicators: true,
+      originalEditable: false,
       fontSize: 13,
     })
     diffEditor.setModel({ original: originalModel, modified: modifiedModel })
@@ -227,7 +232,7 @@ export function LuaEditor({
       modifiedModel.dispose()
       diffEditorRef.current = null
     }
-  }, [diffAgainst, diffCode])
+  }, [diffAgainst, diffCode, diffSideBySide])
 
   const save = useMutation({
     mutationFn: async () => {
@@ -672,23 +677,64 @@ export function LuaEditor({
           </div>
         )}
 
-        <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border">
+        <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border flex flex-col">
           {!ready && (
             <div className="absolute inset-0 z-10 bg-background">
               <Skeleton className="h-full w-full" />
             </div>
           )}
+
+          {diffAgainst !== null && (
+            <div className="flex h-9 items-center justify-between border-b border-border/70 bg-muted/40 px-3 text-xs shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="font-semibold text-muted-foreground truncate">
+                  ← Версия №{diffAgainst}
+                </span>
+                <span className="text-muted-foreground/50">vs</span>
+                <span className="font-semibold text-foreground truncate">
+                  → {dirty ? "Текущий код (не сохранено)" : `Версия №${currentVersion} (активная)`}
+                </span>
+                {diffAgainst !== null &&
+                  diffCode !== undefined &&
+                  editorRef.current &&
+                  diffCode.trim() === editorRef.current.getValue().trim() && (
+                    <Badge variant="outline" className="text-emerald-500 border-emerald-500/40 bg-emerald-500/10 text-[10px] hidden sm:inline-flex">
+                      Код полностью идентичен (различий нет)
+                    </Badge>
+                  )}
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-6 text-[11px] px-2"
+                  onClick={() => setDiffSideBySide(!diffSideBySide)}
+                >
+                  {diffSideBySide ? "Построчно (Inline)" : "Рядом (Split)"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-6 text-[11px] px-2"
+                  onClick={() => setDiffAgainst(null)}
+                >
+                  ✕ Закрыть diff
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Оба хоста существуют всегда — просто скрываем неактивный,
               чтобы не терять состояние/выделение основного редактора при
               открытии diff-режима. */}
           <div
             ref={editorHostRef}
-            className="h-full w-full"
+            className="h-full w-full flex-1"
             style={{ display: diffAgainst !== null ? "none" : "block" }}
           />
           <div
             ref={diffHostRef}
-            className="h-full w-full"
+            className="h-full w-full flex-1"
             style={{ display: diffAgainst !== null ? "block" : "none" }}
           />
         </div>

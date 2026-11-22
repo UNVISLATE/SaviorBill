@@ -1,7 +1,7 @@
 import { useRef, useState, type DragEvent } from "react"
 import { useMutation, useQueryClient } from "@tanstack/react-query"
 import { useNavigate } from "react-router-dom"
-import { FileUp, UploadCloud } from "lucide-react"
+import { FileCode2, FileUp, UploadCloud, X } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -96,6 +96,7 @@ export function CreateLuaScriptDialog({
   const qc = useQueryClient()
   const navigate = useNavigate()
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const manifestInputRef = useRef<HTMLInputElement>(null)
 
   const [slug, setSlug] = useState("")
   const [name, setName] = useState("")
@@ -104,6 +105,8 @@ export function CreateLuaScriptDialog({
   const [code, setCode] = useState<string | null>(null)
   const [settingsText, setSettingsText] = useState("{}")
   const [fileName, setFileName] = useState<string | null>(null)
+  const [manifestText, setManifestText] = useState<string | null>(null)
+  const [manifestFileName, setManifestFileName] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
 
   function resetAndClose() {
@@ -114,6 +117,8 @@ export function CreateLuaScriptDialog({
     setCode(null)
     setSettingsText("{}")
     setFileName(null)
+    setManifestText(null)
+    setManifestFileName(null)
     onOpenChange(false)
   }
 
@@ -127,9 +132,37 @@ export function CreateLuaScriptDialog({
     setActions((prev) => (prev.includes(value) ? prev.filter((a) => a !== value) : [...prev, value]))
   }
 
+  async function loadManifestFile(file: File) {
+    try {
+      const text = await file.text()
+      const parsed = JSON.parse(text)
+      setManifestText(text)
+      setManifestFileName(file.name)
+
+      // Автозаполнение полей из манифеста, если они ещё не заполнены
+      if (!slug && (parsed.slug || parsed.id)) {
+        const s = String(parsed.slug || parsed.id).toLowerCase().replace(/[^a-z0-9_-]/g, "-")
+        if (SLUG_RE.test(s)) setSlug(s)
+      }
+      if (!name && parsed.name) {
+        setName(String(parsed.name))
+      }
+      if (Array.isArray(parsed.actions) && parsed.actions.length > 0) {
+        setActions(parsed.actions.map(String))
+      }
+      toastSuccess(`Манифест ${file.name} загружен`)
+    } catch {
+      toastError("Файл манифеста должен содержать валидный JSON")
+    }
+  }
+
   async function loadFile(file: File) {
+    if (file.name.endsWith(".json")) {
+      await loadManifestFile(file)
+      return
+    }
     if (!file.name.endsWith(".lua") && file.type && !file.type.startsWith("text/")) {
-      toastError("Ожидается текстовый файл .lua")
+      toastError("Ожидается текстовый файл .lua или .json")
       return
     }
     const text = await file.text()
@@ -144,21 +177,37 @@ export function CreateLuaScriptDialog({
   function onDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault()
     setDragActive(false)
-    const file = e.dataTransfer.files?.[0]
-    if (file) void loadFile(file)
+    const files = Array.from(e.dataTransfer.files || [])
+    for (const f of files) {
+      if (f.name.endsWith(".json")) {
+        void loadManifestFile(f)
+      } else if (f.name.endsWith(".lua") || (f.type && f.type.startsWith("text/"))) {
+        void loadFile(f)
+      }
+    }
   }
 
   const create = useMutation({
     mutationFn: async () => {
-      let settings: unknown
+      let settings: Record<string, unknown>
       try {
-        settings = JSON.parse(settingsText || "{}")
+        const parsed = JSON.parse(settingsText || "{}")
+        if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error("Настройки скрипта должны быть JSON-объектом")
+        }
+        settings = parsed as Record<string, unknown>
       } catch {
         throw new Error("Настройки скрипта должны быть валидным JSON")
       }
-      if (settings === null || typeof settings !== "object" || Array.isArray(settings)) {
-        throw new Error("Настройки скрипта должны быть JSON-объектом")
+
+      if (manifestText) {
+        try {
+          settings.manifest = JSON.parse(manifestText)
+        } catch {
+          throw new Error("Манифест содержит невалидный JSON")
+        }
       }
+
       return (
         await api.post<{ id: number }>("/v1/admin/lua", {
           slug,
@@ -299,6 +348,61 @@ export function CreateLuaScriptDialog({
                 }}
               />
             </div>
+          </Field>
+
+          {/* Манифест (manifest.json) */}
+          <Field>
+            <div className="flex items-center justify-between">
+              <FieldLabel>Манифест форм (manifest.json)</FieldLabel>
+              <span className="text-[11px] text-muted-foreground">Опционально</span>
+            </div>
+            {manifestFileName ? (
+              <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
+                <div className="flex items-center gap-2 min-w-0">
+                  <FileCode2 className="size-4 text-primary shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-foreground truncate">{manifestFileName}</p>
+                    <p className="text-[10px] text-emerald-500 font-medium">Манифест валиден (JSON OK)</p>
+                  </div>
+                </div>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-7"
+                  onClick={() => {
+                    setManifestText(null)
+                    setManifestFileName(null)
+                  }}
+                  title="Удалить манифест"
+                >
+                  <X className="size-3.5" />
+                </Button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="w-full text-xs gap-1.5 h-9"
+                  onClick={() => manifestInputRef.current?.click()}
+                >
+                  <FileCode2 className="size-3.5 text-primary" />
+                  <span>Прикрепить manifest.json</span>
+                </Button>
+                <input
+                  ref={manifestInputRef}
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0]
+                    if (file) void loadManifestFile(file)
+                    e.target.value = ""
+                  }}
+                />
+              </div>
+            )}
           </Field>
 
           <Field>

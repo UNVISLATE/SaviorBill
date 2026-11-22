@@ -2542,43 +2542,46 @@ export function ServiceEditorPage() {
                 <CardTitle className="text-sm font-semibold">Управление товаром</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Активность товара */}
-                <div className="flex items-center justify-between p-3 rounded-xl border bg-muted/30">
-                  <div className="space-y-0.5">
-                    <Label className="text-xs font-semibold cursor-pointer">
-                      Активность товара
-                    </Label>
-                    <p className="text-[11px] text-muted-foreground">
-                      {isActive ? "Доступен к покупке" : "Скрыт из каталога"}
-                    </p>
+                {/* Группа переключателей товара в едином блоке */}
+                <div className="divide-y divide-border/60 rounded-xl border border-border/70 bg-muted/15 overflow-hidden">
+                  {/* Активность товара */}
+                  <div className="flex items-center justify-between p-3 hover:bg-muted/20 transition-colors">
+                    <div className="space-y-0.5">
+                      <Label className="text-xs font-semibold cursor-pointer">
+                        Активность товара
+                      </Label>
+                      <p className="text-[11px] text-muted-foreground">
+                        {isActive ? "Доступен к покупке" : "Скрыт из каталога"}
+                      </p>
+                    </div>
+                    <Switch checked={isActive} onCheckedChange={setIsActive} />
                   </div>
-                  <Switch checked={isActive} onCheckedChange={setIsActive} />
-                </div>
 
-                {/* Рекомендуемый товар */}
-                <div className="flex items-center justify-between p-3 rounded-xl border bg-muted/30">
-                  <div className="space-y-0.5">
-                    <Label className="text-xs font-semibold cursor-pointer">
-                      Рекомендуем
-                    </Label>
-                    <p className="text-[11px] text-muted-foreground">
-                      {isRecommended ? "Отображается бейдж «Рекомендуем»" : "Обычный товар в каталоге"}
-                    </p>
+                  {/* Рекомендуемый товар */}
+                  <div className="flex items-center justify-between p-3 hover:bg-muted/20 transition-colors">
+                    <div className="space-y-0.5">
+                      <Label className="text-xs font-semibold cursor-pointer">
+                        Рекомендуем
+                      </Label>
+                      <p className="text-[11px] text-muted-foreground">
+                        {isRecommended ? "Отображается бейдж «Рекомендуем»" : "Обычный товар в каталоге"}
+                      </p>
+                    </div>
+                    <Switch checked={isRecommended} onCheckedChange={setIsRecommended} />
                   </div>
-                  <Switch checked={isRecommended} onCheckedChange={setIsRecommended} />
-                </div>
 
-                {/* Участие в акциях */}
-                <div className="flex items-center justify-between p-3 rounded-xl border bg-muted/30">
-                  <div className="space-y-0.5">
-                    <Label className="text-xs font-semibold cursor-pointer">
-                      Участие в акциях
-                    </Label>
-                    <p className="text-[11px] text-muted-foreground">
-                      {allowPromotions ? "Скидки, промокоды и бонусы разрешены" : "Промокоды и бонусы отключены"}
-                    </p>
+                  {/* Участие в акциях */}
+                  <div className="flex items-center justify-between p-3 hover:bg-muted/20 transition-colors">
+                    <div className="space-y-0.5">
+                      <Label className="text-xs font-semibold cursor-pointer">
+                        Участие в акциях
+                      </Label>
+                      <p className="text-[11px] text-muted-foreground">
+                        {allowPromotions ? "Скидки, промокоды и бонусы разрешены" : "Промокоды и бонусы отключены"}
+                      </p>
+                    </div>
+                    <Switch checked={allowPromotions} onCheckedChange={setAllowPromotions} />
                   </div>
-                  <Switch checked={allowPromotions} onCheckedChange={setAllowPromotions} />
                 </div>
 
                 {/* Большая кнопка сохранения */}

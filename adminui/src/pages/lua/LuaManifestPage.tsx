@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import { Link, useNavigate, useParams } from "react-router-dom"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import * as monaco from "monaco-editor"
-import { ArrowLeft, Check, Code2, Eye, Save, Sparkles } from "lucide-react"
+import { ArrowLeft, Check, Code2, Eye, LayoutList, QrCode, Save, Sliders, Sparkles } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -118,7 +118,7 @@ export function LuaManifestPage() {
   const [manifestJson, setManifestJson] = useState("{\n  \n}")
   const [parseError, setParseError] = useState<string | null>(null)
   const [dirty, setDirty] = useState(false)
-  const [activeTab, setActiveTab] = useState<string>("")
+  const [activeTab, setActiveTab] = useState<"settings_form" | "client_order_form" | "view_layout">("settings_form")
   const [previewSettingsData, setPreviewSettingsData] = useState<Record<string, unknown>>({})
 
   const parsedManifest = useMemo(() => {
@@ -129,32 +129,16 @@ export function LuaManifestPage() {
     }
   }, [manifestJson])
 
-  const availablePreviewTabs = useMemo(() => {
-    if (!parsedManifest || typeof parsedManifest !== "object") return []
-    const m = parsedManifest.manifest || parsedManifest
-    const tabs: Array<{ id: "client_order_form" | "settings_form" | "client_view_form"; label: string }> = []
-
-    if (Array.isArray(m.client_order_form) && m.client_order_form.length > 0) {
-      tabs.push({ id: "client_order_form", label: "Витрина (заказ)" })
-    }
-    if (Array.isArray(m.settings_form) && m.settings_form.length > 0) {
-      tabs.push({ id: "settings_form", label: "Настройки админки" })
-    }
-    if (Array.isArray(m.client_view_form) && m.client_view_form.length > 0) {
-      tabs.push({ id: "client_view_form", label: "Виджет в ЛК" })
-    }
-    return tabs
+  const manifestData = useMemo(() => {
+    if (!parsedManifest || typeof parsedManifest !== "object") return null
+    return (parsedManifest.manifest || parsedManifest) as Record<string, any>
   }, [parsedManifest])
 
-  useEffect(() => {
-    if (availablePreviewTabs.length === 0) {
-      setActiveTab("")
-      return
-    }
-    if (!availablePreviewTabs.some((t) => t.id === activeTab)) {
-      setActiveTab(availablePreviewTabs[0].id)
-    }
-  }, [availablePreviewTabs, activeTab])
+  const hasSettingsForm = Array.isArray(manifestData?.settings_form) && manifestData.settings_form.length > 0
+  const hasOrderForm =
+    (Array.isArray(manifestData?.client_order_form) && manifestData.client_order_form.length > 0) ||
+    (Array.isArray(manifestData?.order_form) && manifestData.order_form.length > 0)
+  const hasViewLayout = Boolean(manifestData?.view_layout || manifestData?.client_view_form || manifestData?.layout)
 
   // Fetch script details
   const { data: script } = useQuery({
@@ -372,61 +356,116 @@ export function LuaManifestPage() {
               <Eye className="size-3.5 text-primary" /> Превью
             </span>
 
-            {/* Вкладки форм — отображаются ТОЛЬКО если они есть в самом манифесте */}
-            {availablePreviewTabs.length > 1 && (
-              <div className="flex items-center rounded-lg border border-border/80 bg-muted/40 p-0.5">
-                {availablePreviewTabs.map((t) => (
-                  <button
-                    key={t.id}
-                    type="button"
-                    onClick={() => setActiveTab(t.id)}
-                    className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition-all cursor-pointer ${
-                      activeTab === t.id
-                        ? "bg-background text-foreground shadow-2xs"
-                        : "text-muted-foreground hover:text-foreground"
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            )}
-            {availablePreviewTabs.length === 1 && (
-              <span className="text-[11px] text-muted-foreground font-medium">
-                {availablePreviewTabs[0].label}
-              </span>
-            )}
+            {/* Вкладки переключения между типами форм */}
+            <div className="flex items-center rounded-lg border border-border/80 bg-muted/40 p-0.5">
+              <button
+                type="button"
+                onClick={() => setActiveTab("settings_form")}
+                className={`flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium transition-all cursor-pointer ${
+                  activeTab === "settings_form"
+                    ? "bg-background text-foreground shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span>Настройки админки</span>
+                {hasSettingsForm && <span className="size-1.5 rounded-full bg-emerald-500" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("client_order_form")}
+                className={`flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium transition-all cursor-pointer ${
+                  activeTab === "client_order_form"
+                    ? "bg-background text-foreground shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span>Форма заказа</span>
+                {hasOrderForm && <span className="size-1.5 rounded-full bg-emerald-500" />}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("view_layout")}
+                className={`flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[11px] font-medium transition-all cursor-pointer ${
+                  activeTab === "view_layout"
+                    ? "bg-background text-foreground shadow-2xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span>Карточка в ЛК</span>
+                {hasViewLayout && <span className="size-1.5 rounded-full bg-emerald-500" />}
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-6">
             <div className="max-w-xl mx-auto">
               {activeTab === "settings_form" ? (
-                /* Настройки для админки — чистые нативные поля админки без Card обёртки */
-                <KeySecretEditor
-                  title="Настройки интеграции"
-                  description="Сгенерированная форма параметров интеграции для администратора"
-                  value={previewSettingsData}
-                  schema={(parsedManifest?.manifest || parsedManifest)?.settings_form}
-                  variant="flat"
-                  onChange={(parsed) => setPreviewSettingsData(parsed)}
-                />
+                hasSettingsForm ? (
+                  /* Настройки для админки — чистые нативные поля админки */
+                  <KeySecretEditor
+                    title="Настройки интеграции"
+                    description="Сгенерированная форма параметров интеграции для администратора"
+                    value={previewSettingsData}
+                    schema={manifestData?.settings_form}
+                    variant="flat"
+                    onChange={(parsed) => setPreviewSettingsData(parsed)}
+                  />
+                ) : (
+                  <div className="rounded-xl border border-dashed border-border/80 bg-muted/10 p-6 text-center space-y-3">
+                    <div className="mx-auto size-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                      <Sliders className="size-5" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold text-foreground">Секция settings_form отсутствует в манифесте</h4>
+                      <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
+                        Секция <code className="text-primary font-mono">settings_form</code> задаёт форму параметров интеграции, которую настраивает администратор при привязке скрипта к услуге (домен панели, токены доступа, API-ключи, режим sandbox/mock).
+                      </p>
+                    </div>
+                  </div>
+                )
               ) : activeTab === "client_order_form" ? (
-                /* Форма заказа на витрине */
-                <ManifestLivePreview
-                  manifest={manifestJson}
-                  previewType="client_order_form"
-                />
-              ) : activeTab === "client_view_form" ? (
-                /* Виджет в личном кабинете */
-                <ManifestLivePreview
-                  manifest={manifestJson}
-                  previewType="client_order_form"
-                />
-              ) : (
-                <div className="py-12 text-center text-xs text-muted-foreground">
-                  Формы не описаны в манифесте
-                </div>
-              )}
+                hasOrderForm ? (
+                  /* Форма заказа на витрине */
+                  <ManifestLivePreview
+                    manifest={manifestJson}
+                    previewType="client_order_form"
+                  />
+                ) : (
+                  <div className="rounded-xl border border-dashed border-border/80 bg-muted/10 p-6 text-center space-y-3">
+                    <div className="mx-auto size-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                      <LayoutList className="size-5" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold text-foreground">Секция client_order_form отсутствует в манифесте</h4>
+                      <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
+                        Секция <code className="text-primary font-mono">client_order_form</code> генерирует интерактивную форму заказа на витрине магазина перед покупкой (логин, регион, публичный SSH-ключ, выбор ОС, конфигурация).
+                      </p>
+                    </div>
+                  </div>
+                )
+              ) : activeTab === "view_layout" ? (
+                hasViewLayout ? (
+                  /* Виджет карточки выданной услуги в личном кабинете */
+                  <ManifestLivePreview
+                    manifest={manifestJson}
+                    previewType="view_layout"
+                  />
+                ) : (
+                  <div className="rounded-xl border border-dashed border-border/80 bg-muted/10 p-6 text-center space-y-3">
+                    <div className="mx-auto size-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                      <QrCode className="size-5" />
+                    </div>
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold text-foreground">Схема view_layout отсутствует в манифесте</h4>
+                      <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
+                        Схема <code className="text-primary font-mono">view_layout</code> (Server-Driven UI) используется для отображения выданной услуги в личном кабинете покупателя (QR-код для подключения, кнопки копирования ссылок и ключей, бейджи статуса, инструкции).
+                      </p>
+                    </div>
+                  </div>
+                )
+              ) : null}
             </div>
           </div>
         </div>

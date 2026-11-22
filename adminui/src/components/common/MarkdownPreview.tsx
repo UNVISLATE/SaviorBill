@@ -4,6 +4,7 @@ import { Check, Copy } from "lucide-react"
 interface MarkdownPreviewProps {
   content: string
   className?: string
+  bare?: boolean
 }
 
 function sanitizeUrl(rawUrl: string): string {
@@ -19,27 +20,36 @@ function parseMarkdownToHtml(markdown: string): string {
 
   // Extract code blocks (fenced) prior to HTML escaping and formatting
   const codeBlocks: string[] = []
-  let html = markdown.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
-    const idx = codeBlocks.length
-    const escapedCode = code
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .trim()
-    codeBlocks.push(
-      `<div class="sb-code-block my-3 rounded-lg overflow-hidden border border-border/70 bg-zinc-950/80 font-mono text-xs">
-        ${lang ? `<div class="px-3 py-1 bg-zinc-900 border-b border-border/50 text-[10px] text-zinc-400 font-semibold tracking-wider uppercase">${lang}</div>` : ""}
-        <pre class="p-3 overflow-x-auto text-zinc-200 leading-relaxed"><code>${escapedCode}</code></pre>
-      </div>`
-    )
-    return `___CODE_BLOCK_${idx}___`
-  })
+  let html = markdown
+    .replace(/\r\n/g, "\n")
+    .replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, lang, code) => {
+      const idx = codeBlocks.length
+      const escapedCode = code
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .trim()
+      codeBlocks.push(
+        `<div class="sb-code-block my-3 rounded-lg overflow-hidden border border-border/70 bg-zinc-950/80 font-mono text-xs">
+          ${lang ? `<div class="px-3 py-1 bg-zinc-900 border-b border-border/50 text-[10px] text-zinc-400 font-semibold tracking-wider uppercase">${lang}</div>` : ""}
+          <pre class="p-3 overflow-x-auto text-zinc-200 leading-relaxed"><code>${escapedCode}</code></pre>
+        </div>`
+      )
+      return `___CODE_BLOCK_${idx}___`
+    })
 
   // Escape HTML on remainder to prevent injection
   html = html
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
+
+  // Support 2+ trailing spaces or a backslash at line end as hard line break (AFTER HTML escape!)
+  html = html.replace(/( {2,}|\\)\n/g, "<br/>")
+
+  // Ensure headings and dividers have clean paragraph boundaries
+  html = html.replace(/^(#{1,4}\s+.*$)/gm, "\n\n$1\n\n")
+  html = html.replace(/^(---\s*$)/gm, "\n\n$1\n\n")
 
   // Headers
   html = html.replace(/^#### (.*$)/gim, '<h4 class="text-xs font-semibold text-foreground mt-3 mb-1 uppercase tracking-wide">$1</h4>')
@@ -62,10 +72,16 @@ function parseMarkdownToHtml(markdown: string): string {
   // Inline code
   html = html.replace(/`([^`]+)`/g, '<code class="px-1.5 py-0.5 rounded bg-muted/60 font-mono text-[11px] text-primary font-medium">$1</code>')
 
+  // Images: ![alt](url) -> MUST be processed before links [label](url)
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) => {
+    const safeUrl = sanitizeUrl(url)
+    return `<div class="my-3"><img src="${safeUrl}" alt="${alt || ""}" class="max-w-full h-auto rounded-lg border border-border/50 object-cover shadow-2xs" loading="lazy" /></div>`
+  })
+
   // Links with safe URL sanitization
   html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
     const safeUrl = sanitizeUrl(url)
-    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-primary underline hover:text-primary/80 font-medium">${label}</a>`
+    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-primary underline underline-offset-2 hover:text-primary/80 font-medium">${label}</a>`
   })
 
   // Unordered list items
@@ -92,7 +108,7 @@ function parseMarkdownToHtml(markdown: string): string {
       ) {
         return trimmed
       }
-      return `<p class="my-2 leading-relaxed">${trimmed.replace(/\n/g, "<br/>")}</p>`
+      return `<p class="my-2 leading-relaxed">${trimmed.replace(/\n/g, " ")}</p>`
     })
     .join("\n")
 
@@ -105,7 +121,7 @@ function parseMarkdownToHtml(markdown: string): string {
   return html
 }
 
-export function MarkdownPreview({ content, className = "" }: MarkdownPreviewProps) {
+export function MarkdownPreview({ content, className = "", bare = false }: MarkdownPreviewProps) {
   const [copied, setCopied] = React.useState(false)
   const html = React.useMemo(() => parseMarkdownToHtml(content), [content])
 
@@ -116,10 +132,22 @@ export function MarkdownPreview({ content, className = "" }: MarkdownPreviewProp
   }
 
   if (!content || !content.trim()) {
+    if (bare) {
+      return null
+    }
     return (
       <div className={`p-6 text-center text-xs text-muted-foreground border border-dashed rounded-lg ${className}`}>
         Инструкция в формате Markdown пуста
       </div>
+    )
+  }
+
+  if (bare) {
+    return (
+      <div
+        className={`sb-markdown-content leading-relaxed text-sm text-foreground/90 ${className}`}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
     )
   }
 
