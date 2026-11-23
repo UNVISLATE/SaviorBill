@@ -183,6 +183,16 @@ async def delete_provider(
     prov = await session.get(PaymentProvidersModel, provider_id)
     if prov is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "provider not found")
+    has_payments = await session.scalar(
+        select(UserPaymentsModel.id)
+        .where(UserPaymentsModel.provider == prov.slug)
+        .limit(1)
+    )
+    if has_payments is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "provider has existing payments and cannot be deleted; disable it instead",
+        )
     await session.delete(prov)
     await session.commit()
 

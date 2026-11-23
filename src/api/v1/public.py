@@ -28,7 +28,11 @@ from schemas.guest import GuestPurchaseCreate, GuestPurchaseResult, PublicOrderV
 from schemas.payment_provider import PayProviderPublic
 from schemas.types import normalize_email
 from services.guest_checkout import mask_email
-from services.pricing import resolve_service_order
+from services.pricing import (
+    apply_discount_with_floor,
+    assert_promotions_allowed,
+    resolve_service_order,
+)
 from utils.urls import is_safe_return_url
 
 router = APIRouter(prefix="/api/v1/public", tags=["public"])
@@ -163,6 +167,7 @@ async def create_guest_purchase(
     discount = Decimal("0")
     promo_id: int | None = None
     if body.promocode:
+        assert_promotions_allowed(service)
         promo = await promo_mngr.load_valid(body.promocode, acc)
         catalog = await promo_mngr.catalog_of(promo)
         if catalog.kind != PromoKind.DISCOUNT:
@@ -172,7 +177,9 @@ async def create_guest_purchase(
         discount = promo_mngr.discount_for(catalog, service, base_price=base_price)
         promo_id = promo.id
 
-    amount = base_price - discount
+    amount = apply_discount_with_floor(
+        service, resolved, discount, custom_amount=body.custom_amount
+    )
     if amount <= Decimal("0"):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
@@ -194,6 +201,10 @@ async def create_guest_purchase(
     if promo_id is not None:
         usvc.private_data = {**(usvc.private_data or {}), "promocode_id": promo_id}
 
+    effective_return_url = body.return_url
+    if effective_return_url and "{order_id}" in effective_return_url:
+        effective_return_url = effective_return_url.replace("{order_id}", str(usvc.id))
+
     # 8. Создаём платёж
     payment = await pay_mngr.create(
         acc,
@@ -202,7 +213,7 @@ async def create_guest_purchase(
         target=PayTarget.SERVICE,
         user_svc_id=usvc.id,
         currency=body.currency,
-        return_url=body.return_url,
+        return_url=effective_return_url,
     )
 
     # 9. Генерируем защищённый разовый токен просмотра заказа

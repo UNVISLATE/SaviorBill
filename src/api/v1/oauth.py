@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -51,9 +51,12 @@ async def providers(
     dependencies=[Depends(rate_limit("oauth.start", LimitKind.AUTH))],
 )
 async def start(
-    provider: str, request: Request, svc: OAuthSvc = Depends(get_oauth_svc)
+    provider: str,
+    request: Request,
+    return_url: str | None = Query(default=None, description="Safe return URL after OAuth callback"),
+    svc: OAuthSvc = Depends(get_oauth_svc),
 ) -> OAuthStart:
-    return await svc.start(provider, request=request)
+    return await svc.start(provider, request=request, return_url=return_url)
 
 
 __all__ = ["router"]

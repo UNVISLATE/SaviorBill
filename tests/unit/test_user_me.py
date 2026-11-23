@@ -93,11 +93,12 @@ class TestReleaseOldAvatar:
     @pytest.mark.asyncio
     async def test_deletes_orphaned_own_media(self) -> None:
         old = SimpleNamespace(id=5, owner_id=1, backend="fs", path="5.webp")
-        session = SimpleNamespace(scalar=AsyncMock(side_effect=[None, None]))
+        session = SimpleNamespace(scalar=AsyncMock(side_effect=[None, None]), commit=AsyncMock())
         media = SimpleNamespace(s=session, delete=AsyncMock())
         vk = SimpleNamespace(xadd=AsyncMock())
         await _release_old_avatar(self._request(), vk, media, old, exclude_account_id=1)
         media.delete.assert_awaited_once_with(old)
+        session.commit.assert_awaited_once()
         vk.xadd.assert_awaited_once()
 
 

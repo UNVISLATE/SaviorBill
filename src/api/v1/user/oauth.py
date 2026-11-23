@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,11 +46,12 @@ async def my_connections(
 async def link_start(
     provider: str,
     request: Request,
+    return_url: str | None = Query(default=None, description="Safe return URL after OAuth callback"),
     acc: UserModel = Depends(get_current_acc),
     svc: OAuthSvc = Depends(get_oauth_svc),
 ) -> OAuthStart:
     """Инициировать привязку провайдера к вошедшему аккаунту."""
-    return await svc.start(provider, account_id=acc.id, request=request)
+    return await svc.start(provider, account_id=acc.id, request=request, return_url=return_url)
 
 
 @router.delete(

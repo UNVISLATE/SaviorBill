@@ -24,7 +24,7 @@ from dependencies.rbac import require_perm
 from dependencies.ratelimit import LimitKind, rate_limit
 from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
-from enums import PayStatus, PayTarget, PromoKind
+from enums import PayStatus, PayTarget, PriceType, PromoKind
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_payments import UserPaymentsModel
@@ -32,7 +32,11 @@ from models.user_services import UserServicesModel
 from schemas.page import Page
 from schemas.payment_provider import PayProviderPublic
 from schemas.payments import PaymentCreate, Payment
-from services.pricing import resolve_service_order
+from services.pricing import (
+    apply_discount_with_floor,
+    assert_promotions_allowed,
+    resolve_service_order,
+)
 from utils.pagination import PageParams, page_params, paginate
 from utils.urls import is_safe_return_url
 
@@ -207,11 +211,7 @@ async def create_purchase(
         discount = Decimal("0")
         promo_id: int | None = None
         if body.promocode:
-            if (getattr(service, "settings", {}) or {}).get("allow_promotions", True) is False:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    "service does not participate in promotions",
-                )
+            assert_promotions_allowed(service)
             promo = await promo_mngr.load_valid(body.promocode, acc)
             catalog = await promo_mngr.catalog_of(promo)
             if catalog.kind != PromoKind.DISCOUNT:
@@ -222,18 +222,9 @@ async def create_purchase(
             discount = promo_mngr.discount_for(catalog, service, base_price=base_price)
             promo_id = promo.id
 
-        price_type = getattr(service, "price_type", PriceType.FIXED) or PriceType.FIXED
-        if price_type == PriceType.CUSTOM:
-            nominal_amount = Decimal(str(resolved.order_config.get("nominal_amount") or body.custom_amount or base_price))
-            allow_sub_nominal = bool(resolved.order_config.get("allow_sub_nominal_discount", False))
-            if not allow_sub_nominal:
-                amount = max(base_price - discount, nominal_amount)
-            else:
-                max_loss_p = Decimal(str(resolved.order_config.get("max_loss_percent", "0") or "0"))
-                min_floor = max(Decimal("0.01"), (nominal_amount * (Decimal("1") - max_loss_p / Decimal("100"))).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
-                amount = max(base_price - discount, min_floor)
-        else:
-            amount = base_price - discount
+        amount = apply_discount_with_floor(
+            service, resolved, discount, custom_amount=body.custom_amount
+        )
         if amount <= Decimal("0"):
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST,

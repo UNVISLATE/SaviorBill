@@ -10,7 +10,7 @@ from dependencies.catalog import (
     get_attachment_mngr,
     get_service_mngr,
 )
-from dependencies.rbac import require_perm
+from dependencies.rbac import require_any_perm, require_perm
 from dependencies.valkey import get_valkey_client
 import valkey.asyncio as valkey
 from services.catalog_cache import (
@@ -181,7 +181,7 @@ async def delete_service(
 @router.post(
     "/{service_id}/archive",
     response_model=ServiceAdmin,
-    dependencies=[Depends(require_perm("services.update"))],
+    dependencies=[Depends(require_any_perm("services.edit", "services.update"))],
     summary="Archive service",
     description="Moves the service to the archive and deactivates it.",
 )
@@ -207,7 +207,7 @@ async def archive_service(
 @router.post(
     "/{service_id}/unarchive",
     response_model=ServiceAdmin,
-    dependencies=[Depends(require_perm("services.update"))],
+    dependencies=[Depends(require_any_perm("services.edit", "services.update"))],
     summary="Unarchive service",
     description="Restores the service from the archive.",
 )

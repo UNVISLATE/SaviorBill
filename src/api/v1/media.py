@@ -170,14 +170,17 @@ async def remove_preview(
     removed = await mngr.remove_preview(media, index)
     if removed is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "preview not found")
-    if removed.get("key"):
+    removed_key = removed.get("key")
+    removed_name = removed.get("name") or ""
+    backend = media.backend
+    await mngr.s.commit()
+    if removed_key:
         cfg: AppConfig = request.app.state.settings
         bus = MediaBus(vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN, signing_key=cfg.BUS_SIGNING_KEY)
-        await bus.enqueue_delete(media.backend, [removed["key"]])
+        await bus.enqueue_delete(backend, [removed_key])
         # Убрать осиротевший ключ из кэша вариантов mediaworker (media:file:*)
         # — тот же Valkey, тот же префикс, что и в mediaworker/utils/worker.py.
-        await vk.hdel(f"media:file:{token}", removed.get("name") or "")
-    await mngr.s.commit()
+        await vk.hdel(f"media:file:{token}", removed_name)
     return Media.from_model(media)
 
 

@@ -144,9 +144,15 @@ async def update_smtp_settings(
                 )
             if body.lua_script_version and body.lua_script_version.strip():
                 ver_clean = body.lua_script_version.strip()
+                if not ver_clean.isdigit() or int(ver_clean) < 1:
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        f"Invalid Lua script version '{ver_clean}': must be a positive integer",
+                    )
+                ver_int = int(ver_clean)
                 v_q = select(LuaScriptVersionModel).where(
                     LuaScriptVersionModel.script_id == body.lua_script_id,
-                    LuaScriptVersionModel.version == ver_clean,
+                    LuaScriptVersionModel.version == ver_int,
                 )
                 ver_row = await settings.s.scalar(v_q)
                 if not ver_row:

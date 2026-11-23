@@ -129,6 +129,7 @@ async def my_media_jobs(
     dependencies=[Depends(require_perm("user.media.create"))],
 )
 async def cancel_my_media_job(
+    request: Request,
     token: str,
     acc: UserModel = Depends(get_current_acc),
     jobs: WorkerJobsMngr = Depends(get_worker_jobs_mngr),
@@ -142,8 +143,17 @@ async def cancel_my_media_job(
         owner_raw.decode() if isinstance(owner_raw, bytes) else owner_raw
     ) if owner_raw is not None else None
 
+    app_token = getattr(request.state, "app_token", None)
+    if app_token is not None:
+        perms = app_token.perms_tree
+        is_owner_role = False
+    else:
+        perms = acc.role.perms if acc.role else None
+        is_owner_role = bool(acc.role and acc.role.key == "owner")
+
     is_owner = (job is not None) or (owner_str and owner_str == str(acc.id))
-    if not is_owner and not has_perm(acc, "admin.media.manage_any") and not has_perm(acc, "system.stats.read"):
+    can_manage_any = is_owner_role or has_perm(perms, "admin.media.manage_any") or has_perm(perms, "system.stats.read")
+    if not is_owner and not can_manage_any:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found or access denied")
 
     await vk.set(f"media:cancel:{token}", "1", ex=120)
@@ -209,9 +219,11 @@ async def delete_my_media(
     bus = MediaBus(
         vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN, signing_key=cfg.BUS_SIGNING_KEY
     )
-    await bus.enqueue_delete(media.backend, all_storage_keys(media))
+    backend = media.backend
+    keys = all_storage_keys(media)
     await mngr.delete(media)
     await mngr.s.commit()
+    await bus.enqueue_delete(backend, keys)
 
 
 __all__ = ["router"]

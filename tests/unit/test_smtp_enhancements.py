@@ -289,7 +289,7 @@ async def test_update_smtp_settings_lua_validation():
     body = SmtpSettingsIn(
         driver="lua",
         lua_script_id=999,
-        lua_script_version="1.0.0",
+        lua_script_version="1",
         from_email="noreply@example.com",
     )
     with pytest.raises(HTTPException) as exc_info:
@@ -297,16 +297,29 @@ async def test_update_smtp_settings_lua_validation():
     assert exc_info.value.status_code == 400
     assert "not found" in exc_info.value.detail
 
+    # Case 1b: Non-integer lua_script_version -> HTTPException 400
+    mock_settings.s.get.return_value = MagicMock(id=999)
+    bad_ver_body = SmtpSettingsIn(
+        driver="lua",
+        lua_script_id=999,
+        lua_script_version="1.0.0",
+        from_email="noreply@example.com",
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await update_smtp_settings(bad_ver_body, settings=mock_settings)
+    assert exc_info.value.status_code == 400
+    assert "positive integer" in exc_info.value.detail
+
     # Case 2: Script found, version not found -> HTTPException 400
     mock_settings.s.get.return_value = MagicMock(id=999)
     mock_settings.s.scalar.return_value = None
     with pytest.raises(HTTPException) as exc_info:
         await update_smtp_settings(body, settings=mock_settings)
     assert exc_info.value.status_code == 400
-    assert "Version '1.0.0' not found" in exc_info.value.detail
+    assert "Version '1' not found" in exc_info.value.detail
 
     # Case 3: Script found, version found -> Success
-    mock_settings.s.scalar.return_value = MagicMock(version="1.0.0")
+    mock_settings.s.scalar.return_value = MagicMock(version=1)
     res = await update_smtp_settings(body, settings=mock_settings)
     assert res == {"ok": True}
 

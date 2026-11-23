@@ -42,18 +42,15 @@ class KeyService(BaseIssuer):
 
         # Если ключи для услуги закончились, мгновенно сбрасываем кэш каталога (out_of_stock: True)
         if self.bus is not None and getattr(self.bus, "vk", None) is not None:
-            from sqlalchemy import func
-            from services.catalog_cache import invalidate_catalog_cache
-
-            rem_count = await self.s.scalar(
-                select(func.count())
-                .select_from(ServiceKeysModel)
+            has_unused = await self.s.scalar(
+                select(ServiceKeysModel.id)
                 .where(
                     ServiceKeysModel.service_id == service.id,
                     ServiceKeysModel.is_used.is_(False),
                 )
+                .limit(1)
             )
-            if rem_count == 0:
+            if has_unused is None:
                 from services.catalog_cache import invalidate_service_entity
                 await invalidate_service_entity(self.bus.vk, service.id)
 

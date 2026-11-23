@@ -145,6 +145,7 @@ class OAuthSvc:
         *,
         account_id: int | None = None,
         request: Request | None = None,
+        return_url: str | None = None,
     ) -> OAuthStart:
         """Собрать authorize_url через скрипт (action=start) и запомнить state.
 
@@ -155,8 +156,18 @@ class OAuthSvc:
             (метод/ip/заголовки/query), как и в callback, чтобы скрипт мог
             читать любые нестандартные данные запроса (не только то, что
             платформа явно выделила в отдельные поля контекста).
+        :arg return_url: опциональный безопасный URL возврата после callback.
         :return: authorize_url для редиректа + state.
         """
+        if return_url:
+            from utils.urls import is_safe_return_url
+
+            allowed = [*self.cfg.cors_origins_list, self.cfg.PUBLIC_URL.rstrip("/")]
+            if not is_safe_return_url(return_url, allowed):
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "return_url must be a relative path or a project origin",
+                )
         prov = await self._provider(slug)
         script, filename, script_version = await self._script(prov, AuthAction.START)
         state = generate_base_token()
@@ -187,7 +198,12 @@ class OAuthSvc:
                 status.HTTP_502_BAD_GATEWAY, "script did not return authorize_url"
             )
 
-        payload = {"slug": slug, "account_id": account_id, "nonce": nonce}
+        payload = {
+            "slug": slug,
+            "account_id": account_id,
+            "nonce": nonce,
+            "return_url": return_url,
+        }
         await self.vk.set(_STATE + state, json.dumps(payload), ex=_STATE_TTL)
         return OAuthStart(authorize_url=authorize_url, state=state)
 
@@ -217,6 +233,7 @@ class OAuthSvc:
         :return: кортеж (нормализованный профиль, account_id из state | None).
         """
         payload = await self._pop_state(slug, state)
+        self.last_return_url: str | None = payload.get("return_url")
         prov = await self._provider(slug)
         script, filename, script_version = await self._script(prov, AuthAction.CALLBACK)
 

@@ -422,3 +422,45 @@ def resolve_service_order(
             status.HTTP_400_BAD_REQUEST,
             f"unsupported price_type: {price_type!r}",
         )
+
+
+def assert_promotions_allowed(service: Any) -> None:
+    """Проверить, разрешены ли промокоды и скидки для услуги."""
+    if (getattr(service, "settings", None) or {}).get("allow_promotions", True) is False:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "service does not participate in promotions",
+        )
+
+
+def apply_discount_with_floor(
+    service: Any,
+    resolved: ResolvedOrder,
+    discount: Decimal,
+    *,
+    custom_amount: Decimal | None = None,
+) -> Decimal:
+    """Рассчитать итоговую цену после скидки с учётом защиты номинала для ``PriceType.CUSTOM``."""
+    base_price = resolved.price
+    clamped = max(Decimal("0"), min(discount, base_price))
+    price_type = getattr(service, "price_type", PriceType.FIXED) or PriceType.FIXED
+    if price_type == PriceType.CUSTOM:
+        nominal_amount = Decimal(
+            str(resolved.order_config.get("nominal_amount") or custom_amount or base_price)
+        )
+        allow_sub_nominal = bool(
+            resolved.order_config.get("allow_sub_nominal_discount", False)
+        )
+        if not allow_sub_nominal:
+            return max(base_price - clamped, nominal_amount)
+        max_loss_p = Decimal(
+            str(resolved.order_config.get("max_loss_percent", "0") or "0")
+        )
+        min_floor = max(
+            Decimal("0.01"),
+            (
+                nominal_amount * (Decimal("1") - max_loss_p / Decimal("100"))
+            ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+        )
+        return max(base_price - clamped, min_floor)
+    return base_price - clamped

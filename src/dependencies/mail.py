@@ -15,7 +15,7 @@ from lifecycle.notifications import EmailEvent, EmailSender
 from models.email_templates import EmailMngr
 from models.user import UserModel
 from core.config import AppConfig
-from utils.mail import MailSvc
+from utils.mail import LuaMailSvc, MailSvc
 from security.sec.crypt import generate_numeric_code
 
 # Ключи Valkey: код привязан к аккаунту (verify) + счётчик неверных попыток.
@@ -57,14 +57,17 @@ async def build_mail_svc(
 
     if driver == "lua":
         script_id = mail_grp.get("mail.lua_script_id") or (cfg.MAIL_LUA_SCRIPT_ID if cfg else None)
-        script_version = mail_grp.get("mail.lua_script_version") or (cfg.MAIL_LUA_SCRIPT_VERSION if cfg else None)
+        raw_version = mail_grp.get("mail.lua_script_version") or (cfg.MAIL_LUA_SCRIPT_VERSION if cfg else None)
+        script_version: int | None = None
+        if raw_version is not None and str(raw_version).strip():
+            ver_s = str(raw_version).strip()
+            if ver_s.isdigit():
+                script_version = int(ver_s)
         smtp_grp = await settings.get_group("smtp.")
         sender = smtp_grp.get("smtp.from") or (cfg.SMTP_FROM if cfg else None)
         from_name = smtp_grp.get("smtp.from_name") or (cfg.SMTP_FROM_NAME if cfg else None)
         sess = session or settings.s
         if bus and script_id and sess:
-            from utils.mail import LuaMailSvc
-
             return LuaMailSvc(
                 bus=bus,
                 session=sess,

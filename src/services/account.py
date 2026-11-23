@@ -102,8 +102,11 @@ async def release_old_avatar(
     bus = MediaBus(
         vk, cfg.MEDIA_TASK_STREAM, cfg.MEDIA_TASK_STREAM_MAXLEN, signing_key=cfg.BUS_SIGNING_KEY
     )
-    await bus.enqueue_delete(old.backend, all_storage_keys(old))
+    backend = old.backend
+    keys = all_storage_keys(old)
     await media.delete(old)
+    await media.s.commit()
+    await bus.enqueue_delete(backend, keys)
 
 
 async def drop_media(mngr: SystemMediaMngr, bus: MediaBus, media: SystemMediaModel) -> None:
@@ -113,8 +116,11 @@ async def drop_media(mngr: SystemMediaMngr, bus: MediaBus, media: SystemMediaMod
     Общий хелпер для ручной (``admin/media.py::cleanup_media``) и
     автоматической (``BillingLoop``) очистки осиротевших медиа.
     """
-    await bus.enqueue_delete(media.backend, all_storage_keys(media))
+    backend = media.backend
+    keys = all_storage_keys(media)
     await mngr.delete(media)
+    await mngr.s.commit()
+    await bus.enqueue_delete(backend, keys)
 
 
 __all__ = [

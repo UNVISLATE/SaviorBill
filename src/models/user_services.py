@@ -28,7 +28,7 @@ from utils.datetime_utils import utc_now
 from lua.bus import LuaBus
 from security.sec.box import SecBox
 from services.account import lock_account
-from services.pricing import resolve_service_order
+from services.pricing import apply_discount_with_floor, resolve_service_order
 
 log = logging.getLogger("saviorbill.user_services")
 
@@ -240,18 +240,9 @@ class UserServicesMngr:
         order_config["settings"] = resolved.effective_settings
 
         discount = max(Decimal("0"), min(discount, base_price))
-        price_type = getattr(service, "price_type", PriceType.FIXED) or PriceType.FIXED
-        if price_type == PriceType.CUSTOM:
-            nominal_amount = Decimal(str(resolved.order_config.get("nominal_amount") or custom_amount or base_price))
-            allow_sub_nominal = bool(resolved.order_config.get("allow_sub_nominal_discount", False))
-            if not allow_sub_nominal:
-                price = max(base_price - discount, nominal_amount)
-            else:
-                max_loss_p = Decimal(str(resolved.order_config.get("max_loss_percent", "0") or "0"))
-                min_floor = max(Decimal("0.01"), (nominal_amount * (Decimal("1") - max_loss_p / Decimal("100"))).quantize(_CENT, rounding=ROUND_HALF_UP))
-                price = max(base_price - discount, min_floor)
-        else:
-            price = base_price - discount
+        price = apply_discount_with_floor(
+            service, resolved, discount, custom_amount=custom_amount
+        )
 
         allow_promotions = bool((getattr(service, "settings", {}) or {}).get("allow_promotions", True))
         full_bonus_only = bool((getattr(service, "settings", {}) or {}).get("full_bonus_only", False))
@@ -345,6 +336,16 @@ class UserServicesMngr:
                     self._refund(acc, b_bonus, b_balance)
                 else:
                     self._refund(acc, Decimal("0"), refund_on_fail)
+                usvc.private_data = {
+                    **priv,
+                    "delivery_credit": {
+                        "amount": str(refund_on_fail),
+                        "bonus": str(b_bonus),
+                        "balance": str(b_balance if (b_bonus > 0 or b_balance > 0) else refund_on_fail),
+                        "reason": "instant_refund_on_fail",
+                        "at": utc_now().isoformat(),
+                    },
+                }
         await self.s.flush()
         return usvc
 
