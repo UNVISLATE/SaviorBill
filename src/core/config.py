@@ -181,6 +181,7 @@ class AppConfig(BaseSettings):
     # Prometheus (см. telemetry/lua_metrics.py).
     LUA_METRICS_PREFIX: str = Field(default="lua:metrics:")
     LUA_METRICS_POLL_INTERVAL_SEC: int = Field(default=15)
+    LUA_METRICS_COLLECTOR_ENABLED: bool = Field(default=True)
     # Собственный heartbeat billing-процесса (см. §1: billing тоже виден в
     # списке инстансов наравне с media/lua) — push раз в *_INTERVAL_SEC в
     # billing:metrics:{consumer}, TTL — *_TTL_SEC (> интервала, иначе умерший
@@ -202,12 +203,11 @@ class AppConfig(BaseSettings):
     # (bootstrap/safety.py), т.к. без подписи стрим не является trust-boundary.
     BUS_SIGNING_KEY: str = Field(default="")
 
-    # Billing-loop (планировщик истечений услуг и перепроверок платежей)
-    BILLING_LOOP_ENABLED: bool = Field(default=True)
-    # Размер «окна» очереди: сколько ближайших задач держать наготове.
-    BILLING_QUEUE_WINDOW: int = Field(default=100)
-    # Максимальная пауза сна планировщика (сек), даже если ближайшая задача далеко.
-    BILLING_IDLE_SECONDS: int = Field(default=30)
+    # Billing executor & scheduler outbox stream
+    BILLING_EXECUTOR_ENABLED: bool = Field(default=True)
+    BILLING_READY_STREAM: str = Field(default="billing:tasks:ready")
+    BILLING_READY_GROUP: str = Field(default="billingexecutors")
+    MEDIA_JOB_LOCAL_SWEEP_ENABLED: bool = Field(default=False)
     # Через сколько секунд «висящего» pending-платежа ставить перепроверку.
     BILLING_PAY_RECHECK_AFTER: int = Field(default=900)
     # Интервал авто-перепроверок платежа (сек) и их предел до статуса wait.
@@ -227,6 +227,7 @@ class AppConfig(BaseSettings):
 
     # Хранилище файлов (медиа товаров, аватарки, иконки)
     STORAGE_BACKEND: str = Field(default="fs")
+    EMAIL_SYNC_TO_FS: bool | None = Field(default=None)
     S3_ENDPOINT: str | None = Field(default=None)
     S3_BUCKET: str | None = Field(default=None)
     S3_REGION: str | None = Field(default=None)
@@ -414,7 +415,8 @@ class AppConfig(BaseSettings):
         if not self.PLUGINS_DIR:
             self.PLUGINS_DIR = str(Path(self.DATA_DIR) / "plugins")
         if not self.SECRETS_KEY_PATH:
-            self.SECRETS_KEY_PATH = str(Path(self.DATA_DIR) / "keys" / "secret.key")
+            # Мастер-ключ SecBox — billing-only (не должен монтироваться в data/ для воркеров).
+            self.SECRETS_KEY_PATH = str(Path(self.PRIVATE_DATA_DIR) / "secret.key")
         if not self.AUTH_SESSION_HASH_KEY_FILE:
             self.AUTH_SESSION_HASH_KEY_FILE = str(
                 Path(self.PRIVATE_DATA_DIR) / "auth_session_hash.key"
@@ -594,6 +596,23 @@ class AppConfig(BaseSettings):
             port=self.DB_PORT,
             database=self.DB_NAME,
         )
+
+    @property
+    def email_sync_to_fs(self) -> bool:
+        if self.EMAIL_SYNC_TO_FS is not None:
+            return self.EMAIL_SYNC_TO_FS
+        return (self.STORAGE_BACKEND or "fs").lower() == "fs"
+
+    @property
+    def s3_secret(self) -> str | None:
+        if self.S3_SECRET:
+            return self.S3_SECRET
+        if self.S3_SECRET_FILE:
+            try:
+                return Path(self.S3_SECRET_FILE).read_text(encoding="utf-8").strip() or None
+            except OSError:
+                return None
+        return None
 
     @property
     def valkey_url(self) -> str:

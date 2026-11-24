@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 _CENT = Decimal("0.01")
@@ -17,7 +18,7 @@ from dependencies.sec import make_secbox
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr
-from enums import PayAction, PayStatus, PayTarget
+from enums import PayAction, PayStatus, PayTarget, UsvcStatus
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.payment_providers import PaymentProvidersModel, PaymentProvidersMngr
 from models.promo_codes import PromoCodesModel
@@ -31,6 +32,12 @@ from lua.schemas import LuaRequest
 from services.account import lock_account
 from services.audit import audit
 from services.fx import FxRates
+from services.scheduler_outbox import (
+    cancel_service_expire,
+    schedule_delivery_retry,
+    schedule_payment_recheck,
+    schedule_service_expire,
+)
 from lua.context import LuaRunner
 from utils.datetime_utils import utc_now
 from lua.bus import LuaBus
@@ -243,6 +250,10 @@ class PayMngr:
             payment.status = PayStatus.FAILED
             payment.private_data = {"error": str(exc)[:512]}
 
+        if payment.status == PayStatus.PENDING:
+            await schedule_payment_recheck(
+                self.s, payment.id, utc_now() + timedelta(seconds=900)
+            )
         await self.s.flush()
         return payment
 
@@ -372,6 +383,10 @@ class PayMngr:
             payment.public_data = {**(payment.public_data or {}), **res["public"]}
         payment.private_data = {**(payment.private_data or {}), **priv}
         payment.lua_script_version = script_version
+        if payment.status == PayStatus.PENDING:
+            await schedule_payment_recheck(
+                self.s, payment.id, utc_now() + timedelta(seconds=900)
+            )
         await self.s.flush()
         return payment
 
@@ -462,6 +477,10 @@ class PayMngr:
             payment.public_data = {**(payment.public_data or {}), **res["public"]}
         payment.private_data = {**(payment.private_data or {}), **priv}
         payment.lua_script_version = script_version
+        if payment.status == PayStatus.PENDING:
+            await schedule_payment_recheck(
+                self.s, payment.id, utc_now() + timedelta(seconds=900)
+            )
         await self.s.flush()
         return payment
 
@@ -534,6 +553,7 @@ class PayMngr:
                     await UserServicesMngr(self.s, self.bus, self.box, dispatcher=self.dispatcher).revoke(
                         usvc, service, acc
                     )
+                    await cancel_service_expire(self.s, usvc.id)
         else:  # возврат пополнения баланса
             acc = await lock_account(self.s, payment.account_id)
             if acc is not None:
@@ -691,6 +711,11 @@ class PayMngr:
                 await UserServicesMngr(self.s, self.bus, self.box, dispatcher=self.dispatcher).deliver(
                     usvc, service, acc
                 )
+                expires_at = getattr(usvc, "expires_at", None)
+                if usvc.status == UsvcStatus.ACTIVE and expires_at is not None:
+                    await schedule_service_expire(self.s, usvc.id, expires_at)
+                elif usvc.status == UsvcStatus.FAILED:
+                    await schedule_delivery_retry(self.s, usvc.id, utc_now())
                 if promo_id:
                     await self._redeem_promo(promo_id, payment, usvc)
         else:  # пополнение баланса

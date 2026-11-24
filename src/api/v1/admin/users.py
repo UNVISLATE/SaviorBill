@@ -345,8 +345,24 @@ async def edit_user(
     # иначе любое новое поле UserPatch обошло бы точечные проверки ниже.
     assert_can_modify_account(caller, acc)
     data = body.model_dump(exclude_unset=True)
-    is_active_changed = "is_active" in data and data["is_active"] != acc.is_active
+    is_active_req = data.pop("is_active", None)
+    is_active_changed = is_active_req is not None and is_active_req != acc.is_active
     role_changed = "role_id" in data and data["role_id"] != acc.role_id
+    if is_active_req is not None and not role_changed:
+        target_role_key = "banned" if not is_active_req else (
+            "user" if (acc.role and acc.role.key == "banned") else None
+        )
+        if target_role_key is not None:
+            target_role = await session.scalar(
+                select(Role).where(Role.key == target_role_key)
+            )
+            if target_role is None:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"System role '{target_role_key}' not found",
+                )
+            acc.role_id = target_role.id
+            acc.role = target_role
     if role_changed:
         caller_perms = caller.role.perms if caller.role else None
         if not (caller.role and caller.role.key == "owner") and not has_perm(
@@ -367,15 +383,15 @@ async def edit_user(
                 status.HTTP_409_CONFLICT,
                 "Email is already taken by another user",
             )
-    if ("balance" in data or "bonus_balance" in data) and not (
-        caller.role and caller.role.key == "owner"
-    ):
-        caller_perms = caller.role.perms if caller.role else None
-        if not has_perm(caller_perms, "admin.user.balance.edit"):
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN,
-                "insufficient permissions: admin.user.balance.edit",
-            )
+    if "balance" in data or "bonus_balance" in data:
+        if not (caller.role and caller.role.key == "owner"):
+            caller_perms = caller.role.perms if caller.role else None
+            if not has_perm(caller_perms, "admin.user.balance.edit"):
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    "insufficient permissions: admin.user.balance.edit",
+                )
+        acc = await lock_account(session, user_id) or acc
     for field, value in data.items():
         setattr(acc, field, value)
     await audit(
@@ -386,7 +402,11 @@ async def edit_user(
         target_type="user",
         target_id=str(acc.id),
         ip=request.client.host if request.client else None,
-        meta={"fields": sorted(data.keys())},
+        meta={
+            "fields": sorted(
+                [*data.keys(), *(["is_active"] if is_active_req is not None else [])]
+            )
+        },
     )
     try:
         await session.commit()
@@ -719,6 +739,9 @@ async def set_user_avatar(
         # Тот же порядок, что и в self-service /me/avatar: подтверждение
         # снимает дедлайн авто-удаления кандидата ().
         await media.confirm(m)
+        from services.scheduler_outbox import cancel_media_expire
+
+        await cancel_media_expire(session, m.id)
 
     old_media_id = acc.avatar_media_id
     acc.avatar_media_id = body.media_id

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 
 from dependencies.auth import get_current_acc
 from dependencies.catalog import ServiceMngr, get_service_mngr
@@ -14,6 +14,7 @@ from enums import UsvcStatus, PromoKind
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from schemas.promo import PromoRedeem, PromoResult, PromoQuote
+from services.scheduler_outbox import schedule_service_expire
 
 router = APIRouter(prefix="/api/v1/promocodes", tags=["promocodes"])
 
@@ -56,6 +57,7 @@ async def quote(
 )
 async def redeem(
     body: PromoRedeem,
+    request: Request,
     acc: UserModel = Depends(get_current_acc),
     promo_mngr: PromoCodesMngr = Depends(get_promo_mngr),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
@@ -82,6 +84,8 @@ async def redeem(
                 status.HTTP_502_BAD_GATEWAY, f"service delivery failed: {order.error}"
             )
         await promo_mngr.record_use(promo, acc, order.id)
+        if order.expires_at is not None:
+            await schedule_service_expire(promo_mngr.s, order.id, order.expires_at)
         await promo_mngr.s.commit()
         await triggers.fire(
             TriggerEvent.ORDER_CREATED,

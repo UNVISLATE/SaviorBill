@@ -11,11 +11,13 @@ from dependencies.db import get_db_session
 from dependencies.rbac import require_perm
 from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
+from enums import UsvcStatus
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderAdmin, OrderGrant
 from schemas.page import Page
+from services.scheduler_outbox import schedule_service_expire
 from utils.pagination import (
     PageParams,
     apply_sort,
@@ -114,10 +116,14 @@ async def grant(
         form=body.form,
         charge=body.charge,
     )
+    if body.charge and usvc.status != UsvcStatus.ACTIVE:
+        await usvc_mngr.s.rollback()
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"service delivery failed: {usvc.error}"
+        )
+    if usvc.status == UsvcStatus.ACTIVE and usvc.expires_at is not None:
+        await schedule_service_expire(usvc_mngr.s, usvc.id, usvc.expires_at)
     await usvc_mngr.s.commit()
-    loop = getattr(request.app.state, "billing_loop", None)
-    if loop is not None and usvc.expires_at is not None:
-        await loop.enqueue_service(usvc.id, usvc.expires_at)
     await triggers.fire(
         TriggerEvent.ORDER_CREATED,
         {

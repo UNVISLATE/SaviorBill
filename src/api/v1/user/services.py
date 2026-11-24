@@ -27,7 +27,8 @@ from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.orders import OrderCreate, Order, OrderActionRequest
 from schemas.page import Page
-from services.pricing import resolve_service_order
+from services.pricing import assert_promotions_allowed, resolve_service_order
+from services.scheduler_outbox import cancel_service_expire, schedule_service_expire
 from utils.pagination import PageParams, page_params, paginate
 
 router = APIRouter()
@@ -128,11 +129,7 @@ async def create_service(
     discount = Decimal("0")
     promo = None
     if body.promocode:
-        if (getattr(service, "settings", {}) or {}).get("allow_promotions", True) is False:
-            raise HTTPException(
-                status.HTTP_400_BAD_REQUEST,
-                "service does not participate in promotions",
-            )
+        assert_promotions_allowed(service)
         promo = await promo_mngr.load_valid(body.promocode, acc)
         catalog = await promo_mngr.catalog_of(promo)
         if catalog.kind != PromoKind.DISCOUNT:
@@ -157,6 +154,8 @@ async def create_service(
         )
     if promo is not None:
         await promo_mngr.record_use(promo, acc, usvc.id)
+    if usvc.expires_at is not None:
+        await schedule_service_expire(usvc_mngr.s, usvc.id, usvc.expires_at)
     await usvc_mngr.s.commit()
     await triggers.fire(
         TriggerEvent.ORDER_CREATED,
@@ -165,10 +164,6 @@ async def create_service(
             "user": {"id": acc.id, "login": acc.login},
         },
     )
-    # Запланировать истечение (если срочная услуга) — планировщик подхватит и сам.
-    loop = getattr(request.app.state, "billing_loop", None)
-    if loop is not None and usvc.expires_at is not None:
-        await loop.enqueue_service(usvc.id, usvc.expires_at)
     return Order.from_model(usvc)
 
 
@@ -185,6 +180,7 @@ async def create_service(
 async def user_service_action(
     service_id: int,
     body: OrderActionRequest,
+    request: Request,
     acc: UserModel = Depends(get_current_acc),
     usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
@@ -214,6 +210,10 @@ async def user_service_action(
             f"action '{action_norm}' is not allowed",
         )
     usvc = await usvc_mngr.run_action(usvc, service, acc, action_norm)
+    if action_norm in (ServiceAction.FREEZE, ServiceAction.STOP, ServiceAction.DELETE):
+        await cancel_service_expire(usvc_mngr.s, usvc.id)
+    elif action_norm in ("start", "unfreeze") and usvc.expires_at is not None:
+        await schedule_service_expire(usvc_mngr.s, usvc.id, usvc.expires_at)
     await usvc_mngr.s.commit()
     return Order.from_model(usvc)
 

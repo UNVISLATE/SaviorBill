@@ -59,6 +59,33 @@ services:
       retries: 10
       start_period: 30s
 
+  scheduler:
+    container_name: saviorscheduler
+    image: ${IMAGE_PREFIX:-ghcr.io/unvislate/saviorbill}/scheduler:${TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      billing:
+        condition: service_healthy
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      VALKEY_HOST: valkey
+      VALKEY_PORT: 6379
+      VALKEY_DB: 0
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8090/healthz || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+
   luaworker:
     container_name: saviorlua
     image: ${IMAGE_PREFIX:-ghcr.io/unvislate/saviorbill}/luaworker:${TAG:-latest}

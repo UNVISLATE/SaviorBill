@@ -15,7 +15,7 @@ from core.config import AppConfig
 
 log = logging.getLogger("saviorbill.instance_metrics")
 
-SERVICES = ("lua", "media", "billing")
+SERVICES = ("lua", "media", "billing", "scheduler")
 
 lua_worker_processed_total = Gauge(
     "lua_worker_processed_total", "Задач, обработанных репликой LuaWorker", ["consumer"]

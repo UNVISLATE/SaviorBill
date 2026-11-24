@@ -4,7 +4,7 @@ from fastapi import FastAPI
 
 from dependencies.db import create_db_engine, create_db_sessionmaker
 from dependencies.valkey import create_valkey_client
-from services.billing_loop import BillingLoop
+from services.billing_consumer import BillingTaskConsumer
 from services.media_results import MediaResults
 from services.media_job_events import MediaJobEvents
 from services.stats_broadcaster import StatsBroadcaster
@@ -50,6 +50,17 @@ async def lifespan(app: FastAPI):
     )
     app.state.db_sessionmaker = create_db_sessionmaker(app.state.db_engine)
     app.state.valkey = create_valkey_client(config.valkey_url)
+    # Публикуем публичный key-ring (auth:jwks) в Valkey, чтобы mediaworker
+    # мог верифицировать JWT в мульти-серверном кластере без общего data/keys/.
+    try:
+        import json as _json
+
+        await app.state.valkey.set(
+            "auth:jwks",
+            _json.dumps({"keys": config.jwt_public_keys()}),
+        )
+    except Exception:  # noqa: BLE001 — fallback на локальные файлы сохраняется
+        pass
     app.state.task_log = TaskLog(
         app.state.valkey,
         max_len=config.TASKLOG_MAXLEN,
@@ -65,15 +76,14 @@ async def lifespan(app: FastAPI):
     await init_system(config, app.state.db_sessionmaker, app.state.valkey)
     await bootstrap(config, app.state.db_sessionmaker, app.state.valkey)
 
-    # Планировщик истечений услуг и перепроверок платежей (in-process).
-    app.state.billing_loop = BillingLoop(
-        app.state.db_engine,
+    # Консьюмер готовых задач планировщика (scheduler -> billing:tasks:ready).
+    app.state.billing_consumer = BillingTaskConsumer(
         app.state.db_sessionmaker,
         app.state.valkey,
         config,
         app.state.task_log,
     )
-    await app.state.billing_loop.start()
+    await app.state.billing_consumer.start()
 
     # Консьюмер результатов конвертации медиа (mediaworker -> billing пишет в БД).
     app.state.media_results = MediaResults(
@@ -93,8 +103,11 @@ async def lifespan(app: FastAPI):
 
     # Переэкспорт метрик LuaWorker (push в Valkey -> Prometheus Gauge, см.
     # telemetry/instance_metrics.py).
-    app.state.lua_metrics = LuaMetricsCollector(app.state.valkey, config)
-    await app.state.lua_metrics.start()
+    if config.LUA_METRICS_COLLECTOR_ENABLED:
+        app.state.lua_metrics = LuaMetricsCollector(app.state.valkey, config)
+        await app.state.lua_metrics.start()
+    else:
+        app.state.lua_metrics = None
 
     # Собственный heartbeat billing (см. §1: billing тоже виден в списке
     # инстансов наравне с media/lua, читает api/v1/system/stats.py).
@@ -126,9 +139,10 @@ async def lifespan(app: FastAPI):
     finally:
         await app.state.stats_broadcaster.stop()
         await app.state.self_metrics.stop()
-        await app.state.lua_metrics.stop()
+        if app.state.lua_metrics is not None:
+            await app.state.lua_metrics.stop()
         await app.state.media_job_events.stop()
         await app.state.media_results.stop()
-        await app.state.billing_loop.stop()
+        await app.state.billing_consumer.stop()
         await app.state.valkey.aclose()
         await app.state.db_engine.dispose()

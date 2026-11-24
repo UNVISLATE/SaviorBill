@@ -122,7 +122,11 @@ class MediaJobEvents:
         Отдельный механизм от Stream-level reclaim воркера (§3.1 плана) —
         покрывает случай, когда воркер упал уже после xack/до финального
         события и billing никогда не получит ready/failed для этой джобы.
+        По умолчанию выключено (``MEDIA_JOB_LOCAL_SWEEP_ENABLED=false``),
+        так как sweep запускается централизованно через ``scheduler``.
         """
+        if not getattr(self.cfg, "MEDIA_JOB_LOCAL_SWEEP_ENABLED", False):
+            return
         now = time.monotonic()
         if now - self._last_sweep < _SWEEP_INTERVAL_SEC:
             return

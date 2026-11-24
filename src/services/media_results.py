@@ -19,6 +19,7 @@ from telemetry.metrics import bus_signature_rejected_total
 from security.sec.bus_sign import verify_fields
 from dependencies.sec import make_secbox
 from models.system_settings import SystemSettingsMngr
+from services.scheduler_outbox import schedule_media_expire
 from utils.datetime_utils import utc_now
 from datetime import timedelta
 
@@ -222,10 +223,7 @@ class MediaResults:
                     expires_at=expires_at,
                 )
                 if expires_at is not None:
-                    await self.vk.zadd(
-                        self.cfg.BILLING_QUEUE_KEY,
-                        {f"{_MED_PREFIX}{media_row.id}": expires_at.timestamp()},
-                    )
+                    await schedule_media_expire(session, media_row.id, expires_at)
             await session.commit()
         await clear_attempts(self.vk, key)
 

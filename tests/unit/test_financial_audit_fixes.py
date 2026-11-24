@@ -16,7 +16,7 @@ from models.user_payments import UserPaymentsModel
 from models.user_services import UserServicesModel, UserServicesMngr
 from dependencies.payment import PayMngr
 from lua.context import build_service_ctx
-from services.billing_loop import BillingLoop
+from services.billing_consumer import BillingTaskConsumer
 from services.guest_checkout import GuestCheckoutSvc, _CLAIM_PREFIX, _CLAIM_CODE_PREFIX, _CLAIM_FAIL_PREFIX
 
 pytestmark = pytest.mark.unit
@@ -283,33 +283,41 @@ async def test_f08_apply_refund_reverses_delivery_credit():
 # ── F-11: Billing loop requeues med: task on error ───────────────────────────
 
 @pytest.mark.asyncio
-async def test_f11_billing_loop_requeues_med_task():
-    loop = BillingLoop.__new__(BillingLoop)
-    loop.cfg = SimpleNamespace(
+async def test_f11_billing_consumer_requeues_med_task_on_error():
+    cfg = SimpleNamespace(
         BILLING_CONCURRENCY=1,
-        BILLING_QUEUE_KEY="billing:queue",
-        BILLING_PAY_RECHECK_INTERVAL=60,
+        BILLING_READY_STREAM="billing:tasks:ready",
+        BILLING_READY_GROUP="billingexecutors",
+        BILLING_QUEUE_DLQ="billing:queue:dead",
     )
-    loop._sem = asyncio.Semaphore(1)
-    loop.sm = MagicMock()
-    loop.vk = AsyncMock()
-
-    readded = []
-    async def mock_zadd(key, mapping, **kwargs):
-        readded.append((key, mapping))
-
-    loop.vk.zadd = mock_zadd
-
-    # Simulate execute throwing an exception
-    loop._execute = AsyncMock(side_effect=RuntimeError("db connection failed"))
-
+    task = SimpleNamespace(
+        id=123,
+        dedup_key="med:123",
+        task_kind="med_expire",
+        ref_id=123,
+        status="dispatched",
+        version=1,
+        attempts=0,
+        max_attempts=5,
+        locked_until=None,
+        last_error=None,
+        run_at=None,
+        updated_at=None,
+    )
     session_mock = AsyncMock()
+    session_mock.scalar = AsyncMock(return_value=task)
     session_ctx = AsyncMock()
     session_ctx.__aenter__.return_value = session_mock
     session_ctx.__aexit__.return_value = None
-    loop.sm.return_value = session_ctx
+    sm = MagicMock(return_value=session_ctx)
 
-    await loop._process_one("med:123")
+    consumer = BillingTaskConsumer(sm, AsyncMock(), cfg)
+    consumer._dispatch_kind = AsyncMock(side_effect=RuntimeError("db connection failed"))
 
-    assert len(readded) == 1
-    assert "med:123" in list(readded[0][1].keys())
+    await consumer.handle_message({"task_id": "123", "task_kind": "med_expire", "version": "1"})
+
+    assert task.status == "pending"
+    assert task.attempts == 1
+    assert task.version == 2
+    assert task.run_at is not None
+    assert "RuntimeError" in (task.last_error or "")

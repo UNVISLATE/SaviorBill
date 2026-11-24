@@ -23,7 +23,7 @@ from lua.schemas import LuaRequest
 from middleware.request_tracker import _extract_user_telemetry
 from models.user_services import UserServicesMngr
 from schemas.manifest import FieldCondition, FieldDefinition, FieldOption, FieldType, ScriptManifest
-from services.billing_loop import BillingLoop
+from services.billing_executor import BillingExecutor
 from services.manifest import validate_client_order_form
 from services.pricing import resolve_service_order
 
@@ -338,14 +338,11 @@ async def test_user_service_deliver_applies_default_expiry(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_billing_loop_tick_seeds_pending_and_pay_mngr_passes_deps(monkeypatch):
+async def test_billing_executor_pay_mngr_passes_deps(monkeypatch):
     cfg = SimpleNamespace(
         BILLING_CONCURRENCY=1,
-        BILLING_QUEUE_KEY="billing:queue",
-        BILLING_QUEUE_WINDOW=100,
         SETTINGS_CACHE_TTL=1,
         SECRETS_KEY=None,
-        BILLING_PAY_RECHECK_AFTER=60,
         LUA_TASK_STREAM="lua:tasks",
         LUA_RESULT_STREAM="lua:results",
         LUA_RESULT_GROUP="billing",
@@ -353,30 +350,14 @@ async def test_billing_loop_tick_seeds_pending_and_pay_mngr_passes_deps(monkeypa
         BUS_SIGNING_KEY="",
         instance_id="test-1",
     )
-    loop = BillingLoop.__new__(BillingLoop)
-    loop.cfg = cfg
-    loop.vk = AsyncMock()
-    loop.vk.set = AsyncMock(return_value=True)
-    loop._claim_due = AsyncMock(return_value=[])
-    loop._refill = AsyncMock()
-    loop._seed_pending_payments = AsyncMock()
-    loop._seed_failed_deliveries = AsyncMock()
-    loop._maybe_auto_cleanup_media = AsyncMock()
-    loop._dlq = SimpleNamespace(refresh_metrics=AsyncMock())
-
+    executor = BillingExecutor(AsyncMock(), cfg)
     session = AsyncMock()
-    sm = MagicMock()
-    sm.return_value.__aenter__.return_value = session
-    loop.sm = sm
-
-    await loop._tick()
-    loop._seed_pending_payments.assert_awaited_once_with(session)
 
     # _pay_mngr передаёт bus, session и box в FxRates
-    loop._bus = AsyncMock(return_value="bus-obj")
-    loop._dispatcher = AsyncMock(return_value="disp-obj")
-    monkeypatch.setattr("services.billing_loop.make_secbox", lambda _c: "box-obj")
-    pm = await loop._pay_mngr(session)
+    executor._bus = AsyncMock(return_value="bus-obj")
+    executor._dispatcher = AsyncMock(return_value="disp-obj")
+    monkeypatch.setattr("services.billing_executor.make_secbox", lambda _c: "box-obj")
+    pm = await executor._pay_mngr(session)
     assert pm.fx.bus == "bus-obj"
     assert pm.fx.session is session
     assert pm.fx.box == "box-obj"

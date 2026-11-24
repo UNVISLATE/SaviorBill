@@ -34,7 +34,11 @@ DLQ_QUEUES = ("billing", "media_tasks", "media_results")
 
 def _specs(cfg: AppConfig) -> dict[str, DLQSpec]:
     return {
-        "billing": DLQSpec(cfg.BILLING_QUEUE_DLQ, cfg.BILLING_QUEUE_KEY, "zset"),
+        "billing": DLQSpec(
+            cfg.BILLING_QUEUE_DLQ,
+            getattr(cfg, "BILLING_READY_STREAM", "billing:tasks:ready"),
+            "outbox",
+        ),
         "media_tasks": DLQSpec(cfg.MEDIA_TASK_DLQ, cfg.MEDIA_TASK_STREAM, "stream"),
         "media_results": DLQSpec(
             cfg.MEDIA_RESULT_DLQ, cfg.MEDIA_RESULT_STREAM, "stream"
@@ -45,9 +49,15 @@ def _specs(cfg: AppConfig) -> dict[str, DLQSpec]:
 class DeadLetters:
     """Чтение и повтор задач из мёртвых очередей."""
 
-    def __init__(self, vk: valkey.Valkey, cfg: AppConfig) -> None:
+    def __init__(
+        self,
+        vk: valkey.Valkey,
+        cfg: AppConfig,
+        session=None,
+    ) -> None:
         self.vk = vk
         self.cfg = cfg
+        self.s = session
         self.specs = _specs(cfg)
 
     async def overview(self, limit: int = 50) -> dict:
@@ -88,7 +98,51 @@ class DeadLetters:
         if data is None:
             return False
 
-        if spec.kind == "zset":
+        if spec.kind == "outbox":
+            task_id = data.get("task_id")
+            dedup_key = data.get("dedup_key") or data.get("member")
+            if self.s is not None and (task_id or dedup_key):
+                from sqlalchemy import update
+                from models.scheduled_tasks import ScheduledTaskModel
+
+                cond = (
+                    ScheduledTaskModel.id == int(task_id)
+                    if task_id and str(task_id).isdigit()
+                    else ScheduledTaskModel.dedup_key == dedup_key
+                )
+                await self.s.execute(
+                    update(ScheduledTaskModel)
+                    .where(cond)
+                    .values(
+                        status="pending",
+                        attempts=0,
+                        run_at=utc_now(),
+                        locked_until=None,
+                        last_error=None,
+                        version=ScheduledTaskModel.version + 1,
+                        updated_at=utc_now(),
+                    )
+                )
+            elif task_id and data.get("task_kind"):
+                payload = {
+                    "task_id": str(task_id),
+                    "task_kind": str(data["task_kind"]),
+                    "ref_id": str(data.get("ref_id") or ""),
+                    "version": str(data.get("version") or "1"),
+                }
+                await self.vk.xadd(
+                    spec.target_key,
+                    sign_fields(self.cfg.BUS_SIGNING_KEY, payload),
+                    maxlen=10000,
+                    approximate=True,
+                )
+            else:
+                member = data.get("member")
+                if not member:
+                    return False
+                await self.vk.zadd(self.cfg.BILLING_QUEUE_KEY, {member: utc_now().timestamp()})
+                await self._clear_billing_attempts(member)
+        elif spec.kind == "zset":
             member = data.get("member")
             if not member:
                 return False

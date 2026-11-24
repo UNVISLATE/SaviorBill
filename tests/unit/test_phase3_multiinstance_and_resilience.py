@@ -17,7 +17,7 @@ import pytest
 
 from lifecycle.triggers import BaseAction, TriggerDispatcher
 from models.email_templates import EmailMngr, EmailModel
-from services.billing_loop import BillingLoop
+from services.billing_consumer import BillingTaskConsumer
 from services.media_job_events import MediaJobEvents
 from services.auth import TokenSvc
 
@@ -80,23 +80,23 @@ class _FakeTrigMngr:
         return [t for t in self._trigs if t.event == event]
 
 
-# --- 1. Тесты блокировок BillingLoop ---
+# --- 1. Тесты консьюмера BillingTaskConsumer и блокировок MediaJobEvents ---
 
 @pytest.mark.asyncio
-async def test_billing_loop_seed_lock_prevents_duplicate_seeding() -> None:
+async def test_billing_consumer_disabled_does_not_start_task() -> None:
     vk = _FakeValkey()
-    await vk.set("lock:billing:seed", "1", nx=True, ex=5)
-
-    loop = BillingLoop.__new__(BillingLoop)
-    loop.cfg = SimpleNamespace(BILLING_LOOP_ENABLED=True)
-    loop.vk = vk
-    loop.seed_on_start = AsyncMock()
+    cfg = SimpleNamespace(
+        BILLING_EXECUTOR_ENABLED=False,
+        BILLING_CONCURRENCY=2,
+        BILLING_READY_STREAM="billing:tasks:ready",
+        BILLING_READY_GROUP="billingexecutors",
+    )
+    consumer = BillingTaskConsumer(AsyncMock(), vk, cfg)
 
     with patch("asyncio.create_task") as mock_task:
-        mock_task.return_value = None
-        await loop.start()
+        await consumer.start()
 
-    loop.seed_on_start.assert_not_called()
+    mock_task.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -106,7 +106,10 @@ async def test_media_job_events_sweep_stale_lock() -> None:
 
     events = MediaJobEvents.__new__(MediaJobEvents)
     events.vk = vk
-    events.cfg = SimpleNamespace(MEDIA_JOB_STALE_AFTER_SEC=300)
+    events.cfg = SimpleNamespace(
+        MEDIA_JOB_STALE_AFTER_SEC=300,
+        MEDIA_JOB_LOCAL_SWEEP_ENABLED=True,
+    )
     events._last_sweep = 0.0
     events.sm = AsyncMock()
 
