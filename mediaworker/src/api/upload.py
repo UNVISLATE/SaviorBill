@@ -430,6 +430,8 @@ async def upload_file(request: Request, upload_token: str) -> dict:
 
     try:
         size = await storage.save_stream(media_token, body, max_bytes)
+        if hasattr(storage, "stage_orig"):
+            await storage.stage_orig(media_token)
     except ValueError:
         if is_large:
             # Аккаунт с media.upload.video соврал про Content-Length — не бан,
@@ -478,7 +480,10 @@ async def upload_file(request: Request, upload_token: str) -> dict:
             approximate=True,
         )
     except VALKEY_ERRORS as exc:
-        storage._safe_unlink(storage.orig_path(media_token))
+        if hasattr(storage, "release_orig"):
+            await storage.release_orig(media_token)
+        else:
+            storage._safe_unlink(storage.orig_path(media_token))
         raise _valkey_unavailable(exc) from None
     await task_log.record(
         kind="media", op="convert", token_or_cid=media_token, state="queued"

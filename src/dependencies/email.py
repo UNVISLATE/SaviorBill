@@ -17,7 +17,7 @@ def get_email_templates_mngr(
     request: Request, session: AsyncSession = Depends(get_db_session)
 ) -> EmailMngr:
     cfg: AppConfig = request.app.state.settings
-    return EmailMngr(session, cfg.EMAIL_TEMPLATES_DIR)
+    return EmailMngr(session, cfg.EMAIL_TEMPLATES_DIR, sync_to_fs=cfg.email_sync_to_fs)
 
 
 async def get_email_sender(
@@ -30,7 +30,7 @@ async def get_email_sender(
     cfg: AppConfig = request.app.state.settings
     bus = get_lua_bus(request)
     mail = await build_mail_svc(settings, cfg, bus=bus, session=session)
-    return EmailSender(mail, EmailMngr(session, cfg.EMAIL_TEMPLATES_DIR))
+    return EmailSender(mail, EmailMngr(session, cfg.EMAIL_TEMPLATES_DIR, sync_to_fs=cfg.email_sync_to_fs))
 
 
 __all__ = [

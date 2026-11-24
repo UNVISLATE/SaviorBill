@@ -41,6 +41,15 @@ def _new_kid() -> str:
     return _secrets.token_hex(8)
 
 
+def _norm_pem(pem: str | None) -> str | None:
+    """Нормализовать экранированные ``\\n`` в PEM-ключах, переданных через ENV."""
+    if not pem:
+        return pem
+    if "\\n" in pem and "\n" not in pem:
+        return pem.replace("\\n", "\n")
+    return pem
+
+
 def _ensure_jwt_keypair(
     res: SecretResolver, cfg: AppConfig, *, allow_env_fallback: bool
 ) -> tuple[str, str, str]:
@@ -50,11 +59,13 @@ def _ensure_jwt_keypair(
     и ``kid`` должны создаваться и сохраняться вместе за один проход — иначе
     можно получить несовпадающую тройку при частичном сбое между ``ensure()``.
     """
-    private_pem = res.store.get(SecretName.JWT_PRIVATE) or (
-        cfg.JWT_PRIVATE_KEY if allow_env_fallback else None
+    private_pem = _norm_pem(
+        res.store.get(SecretName.JWT_PRIVATE)
+        or (cfg.JWT_PRIVATE_KEY if allow_env_fallback else None)
     )
-    public_pem = res.store.get(SecretName.JWT_PUBLIC) or (
-        cfg.JWT_PUBLIC_KEY if allow_env_fallback else None
+    public_pem = _norm_pem(
+        res.store.get(SecretName.JWT_PUBLIC)
+        or (cfg.JWT_PUBLIC_KEY if allow_env_fallback else None)
     )
     kid = res.store.get(SecretName.JWT_KID) or (
         cfg.JWT_KID if allow_env_fallback else None
@@ -128,6 +139,18 @@ def resolve_secrets(cfg: AppConfig) -> str:
             return value
         return None
 
+    # Авто-миграция мастер-ключа из устаревшего data/keys/secret.key в data-private/secret.key
+    if store.name == "file" and cfg.SECRETS_KEY_PATH:
+        from pathlib import Path
+        import shutil
+
+        new_path = Path(cfg.SECRETS_KEY_PATH)
+        legacy_path = Path(cfg.DATA_DIR) / "keys" / "secret.key"
+        if not new_path.exists() and legacy_path.exists() and new_path.resolve() != legacy_path.resolve():
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(legacy_path), str(new_path))
+            log.warning("migrated legacy %s -> %s (billing-only private storage)", legacy_path, new_path)
+
     # Генерируемые секреты: создаются один раз, затем переиспользуются.
     # SECRETS_KEY сразу в версионированном формате (см. SecBox.new_versioned_key) —
     # будущая ротация не потребует миграции формата.
@@ -145,8 +168,9 @@ def resolve_secrets(cfg: AppConfig) -> str:
         res, cfg, allow_env_fallback=allow_env_fallback
     )
     # Предыдущий ключ (после ротации) — необязателен, только на чтение.
-    cfg.JWT_PUBLIC_KEY_PREV = res.store.get(SecretName.JWT_PUBLIC_PREV) or (
-        cfg.JWT_PUBLIC_KEY_PREV if allow_env_fallback else None
+    cfg.JWT_PUBLIC_KEY_PREV = _norm_pem(
+        res.store.get(SecretName.JWT_PUBLIC_PREV)
+        or (cfg.JWT_PUBLIC_KEY_PREV if allow_env_fallback else None)
     )
     cfg.JWT_KID_PREV = res.store.get(SecretName.JWT_KID_PREV) or (
         cfg.JWT_KID_PREV if allow_env_fallback else None

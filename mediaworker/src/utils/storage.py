@@ -42,11 +42,45 @@ class Storage:
             raise ValueError(f"unsafe storage key: {key!r}") from exc
         return str(target)
 
-    # ---- оригинал (всегда локально, до конвертации) ----
+    # ---- оригинал (локально при fs, _staging/ в S3 при s3) ----
 
     def orig_path(self, token: str) -> str:
-        """Путь к оригиналу загрузки."""
+        """Путь к оригиналу загрузки на локальном диске (или временному файлу при s3)."""
         return self._safe_fs_path(self.cfg.uploads_dir, f"{token}.orig")
+
+    @staticmethod
+    def staging_key(token: str) -> str:
+        """Ключ временного оригинала в S3 (удаляется после обработки)."""
+        return f"_staging/{token}.orig"
+
+    async def stage_orig(self, token: str) -> None:
+        """При backend=='s3' выгрузить оригинал в S3 staging и удалить локальный буфер."""
+        if self.cfg.backend != "s3":
+            return
+        local_path = self.orig_path(token)
+        await self._s3_upload(self.staging_key(token), local_path, "application/octet-stream")
+        self._safe_unlink(local_path)
+
+    async def acquire_orig(self, token: str) -> str:
+        """Вернуть локальный путь к оригиналу, скачав его из S3 staging при необходимости."""
+        local_path = self.orig_path(token)
+        if self.cfg.backend == "s3" and not os.path.exists(local_path):
+            try:
+                await self.download(self.staging_key(token), local_path)
+            except ClientError as exc:
+                code = str((getattr(exc, "response", {}) or {}).get("Error", {}).get("Code", ""))
+                if code in {"404", "NoSuchKey", "NotFound"}:
+                    self._safe_unlink(local_path)
+                    return local_path
+                raise
+        return local_path
+
+    async def release_orig(self, token: str, *, keep_local: bool = False) -> None:
+        """Удалить локальный оригинал (и объект в S3 staging при s3)."""
+        if not keep_local:
+            self._safe_unlink(self.orig_path(token))
+        if self.cfg.backend == "s3":
+            await self._s3_delete([self.staging_key(token)])
 
     async def save_stream(
         self, token: str, chunks: AsyncIterator[bytes], max_bytes: int

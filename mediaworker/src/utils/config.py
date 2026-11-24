@@ -162,6 +162,7 @@ class Config(BaseSettings):
     S3_REGION: str | None = Field(default=None)
     S3_KEY: str | None = Field(default=None)
     S3_SECRET: str | None = Field(default=None)
+    S3_SECRET_FILE: str | None = Field(default=None)
 
     # --- Роли ---
     ROLE_BANNED: str = Field(default="banned")
@@ -258,11 +259,14 @@ class Config(BaseSettings):
         return str(Path(self.DATA_DIR) / "media")
 
     def _read_or_env(self, env_val: str | None, file_path: str | None) -> str:
+        val = ""
         if env_val:
-            return env_val
-        if file_path and os.path.exists(file_path):
-            return Path(file_path).read_text(encoding="utf-8").strip()
-        return ""
+            val = env_val
+        elif file_path and os.path.exists(file_path):
+            val = Path(file_path).read_text(encoding="utf-8").strip()
+        if val and "\\n" in val and "\n" not in val:
+            val = val.replace("\\n", "\n")
+        return val
 
     def jwt_public_keys(self) -> dict[str, str]:
         """Key ring для верификации JWT: ``{kid: публичный_ключ_PEM}``.
@@ -474,7 +478,14 @@ class Config(BaseSettings):
 
     @property
     def s3_secret(self) -> str | None:
-        return self.S3_SECRET
+        if self.S3_SECRET:
+            return self.S3_SECRET
+        if self.S3_SECRET_FILE:
+            try:
+                return Path(self.S3_SECRET_FILE).read_text(encoding="utf-8").strip() or None
+            except OSError:
+                return None
+        return None
 
     @property
     def convert_timeout_sec(self) -> float:

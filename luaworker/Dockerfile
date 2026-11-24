@@ -26,6 +26,8 @@ RUN lua tests/sandbox_test.lua && lua tests/handlers_test.lua && lua tests/httpc
 
 FROM base AS runtime
 
+LABEL saviorbill.abi="alpine-3.20-musl-lua54"
+
 COPY --from=tests /app/.tests-passed /app/.tests-passed
 
 # /app/data монтируется read-only (см. deploy/docker-compose.yml) — chown не

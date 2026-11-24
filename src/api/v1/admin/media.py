@@ -16,11 +16,10 @@ from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
-from models.system_media import SystemMediaMngr, SystemMediaModel
+from models.system_media import SystemMediaMngr, SystemMediaModel, all_storage_keys
 from models.user import UserModel
 from schemas.media import Media
 from schemas.page import Page
-from services.account import drop_media
 from services.audit import audit
 from core.config import AppConfig
 from messaging.mediabus import MediaBus
@@ -102,7 +101,9 @@ async def delete_media(
     media = await mngr.by_id(media_id)
     if media is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "media not found")
-    await drop_media(mngr, _bus(request, vk), media)
+    backend = media.backend
+    keys = all_storage_keys(media)
+    await mngr.delete(media)
     await audit(
         mngr.s,
         action="media.delete",
@@ -114,6 +115,7 @@ async def delete_media(
         meta={"token": media.token, "backend": media.backend},
     )
     await mngr.s.commit()
+    await _bus(request, vk).enqueue_delete(backend, keys)
 
 
 @router.post(
@@ -347,9 +349,12 @@ async def cleanup_media(
     bus = _bus(request, vk)
     grace = await settings.get_int("media.cleanup_grace_sec", 3600)
     orphans = await mngr.orphans(grace_sec=grace or 0)
+    to_delete = [(m.backend, all_storage_keys(m)) for m in orphans]
     for media in orphans:
-        await drop_media(mngr, bus, media)
+        await mngr.delete(media)
     await mngr.s.commit()
+    for backend, keys in to_delete:
+        await bus.enqueue_delete(backend, keys)
     return {"deleted": len(orphans)}
 
 
@@ -390,11 +395,73 @@ def _sniff_kind_mime(filepath: str) -> tuple[str, str]:
     return "image", "application/octet-stream"
 
 
+def _guess_kind_mime_by_name(name: str) -> tuple[str, str]:
+    guessed, _ = mimetypes.guess_type(name)
+    if guessed:
+        if guessed == "image/svg+xml":
+            return "svg", guessed
+        if guessed.startswith("video/"):
+            return "video", guessed
+        if guessed.startswith("image/"):
+            return "image", guessed
+        return "image", guessed
+    return "image", "application/octet-stream"
+
+
+async def _list_storage_objects(cfg: AppConfig) -> list[tuple[str, str, str | None, int | None]]:
+    """Вернуть список ``(basename, storage_key, local_full_path_or_None, size_or_None)``."""
+    backend = (getattr(cfg, "STORAGE_BACKEND", "fs") or "fs").lower()
+    if backend == "s3":
+        if not cfg.S3_BUCKET:
+            return []
+        import aioboto3
+
+        items: list[tuple[str, str, str | None, int | None]] = []
+        session = aioboto3.Session()
+        async with session.client(
+            "s3",
+            endpoint_url=cfg.S3_ENDPOINT,
+            region_name=cfg.S3_REGION,
+            aws_access_key_id=cfg.S3_KEY,
+            aws_secret_access_key=cfg.s3_secret,
+        ) as client:
+            paginator = client.get_paginator("list_objects_v2")
+            async for page in paginator.paginate(Bucket=cfg.S3_BUCKET):
+                for obj in page.get("Contents", []) or []:
+                    key = str(obj.get("Key") or "")
+                    if (
+                        not key
+                        or key.endswith("/")
+                        or key.startswith("_staging/")
+                        or key.startswith("lua/")
+                        or key.startswith("plugins/")
+                    ):
+                        continue
+                    fname = key.rsplit("/", 1)[-1]
+                    if fname.endswith(".tmp") or fname.startswith("."):
+                        continue
+                    items.append((fname, key, None, int(obj.get("Size") or 0)))
+        return items
+
+    media_dir = cfg.media_dir
+    if not media_dir.exists() or not media_dir.is_dir():
+        return []
+    items = []
+    for root, _, files in os.walk(media_dir):
+        for f in files:
+            if f.endswith(".tmp") or f.startswith("."):
+                continue
+            full_p = os.path.join(root, f)
+            rel_p = os.path.relpath(full_p, media_dir).replace("\\", "/")
+            items.append((f, rel_p, full_p, None))
+    return items
+
+
 @router.post(
     "/scan-orphans",
     dependencies=[Depends(require_perm("media.write"))],
     summary="Sync storage with database",
-    description="Синхронизация хранилища: сканирует data/media на наличие не проиндексированных файлов (например, добавленных вручную или оставшихся после сброса БД), регистрирует их в системе, генерирует токены и кэш.",
+    description="Синхронизация хранилища: сканирует data/media (или S3 bucket) на наличие не проиндексированных файлов, регистрирует их в системе, генерирует токены и кэш.",
 )
 async def scan_orphaned_files(
     request: Request,
@@ -403,8 +470,9 @@ async def scan_orphaned_files(
     acc: UserModel = Depends(require_perm("media.write")),
 ) -> dict:
     cfg: AppConfig = request.app.state.settings
-    media_dir = cfg.media_dir
-    if not media_dir.exists() or not media_dir.is_dir():
+    backend = (getattr(cfg, "STORAGE_BACKEND", "fs") or "fs").lower()
+    disk_files = await _list_storage_objects(cfg)
+    if not disk_files:
         return {"scanned": 0, "recovered_count": 0, "recovered": []}
 
     existing_rows = list(
@@ -435,17 +503,8 @@ async def scan_orphaned_files(
 
     hex32_prefix_re = re.compile(r"^([a-f0-9]{32})\b", re.IGNORECASE)
 
-    disk_files = []
-    for root, _, files in os.walk(media_dir):
-        for f in files:
-            if f.endswith(".tmp") or f.startswith("."):
-                continue
-            full_p = os.path.join(root, f)
-            rel_p = os.path.relpath(full_p, media_dir).replace("\\", "/")
-            disk_files.append((f, rel_p, full_p))
-
     orphan_files = []
-    for fname, rel_p, full_p in disk_files:
+    for fname, rel_p, full_p, size_hint in disk_files:
         fn_lower = fname.lower()
         rel_lower = rel_p.lower()
         m = hex32_prefix_re.match(fname)
@@ -455,18 +514,43 @@ async def scan_orphaned_files(
             continue
         if token_prefix and token_prefix in known_tokens:
             continue
-        orphan_files.append((fname, rel_p, full_p, token_prefix))
+        orphan_files.append((fname, rel_p, full_p, size_hint, token_prefix))
 
-    groups: dict[str, list[tuple[str, str, str]]] = {}
-    standalone: list[tuple[str, str, str]] = []
+    groups: dict[str, list[tuple[str, str, str | None, int | None]]] = {}
+    standalone: list[tuple[str, str, str | None, int | None]] = []
 
-    for fname, rel_p, full_p, token_prefix in orphan_files:
+    for fname, rel_p, full_p, size_hint, token_prefix in orphan_files:
         if token_prefix:
-            groups.setdefault(token_prefix, []).append((fname, rel_p, full_p))
+            groups.setdefault(token_prefix, []).append((fname, rel_p, full_p, size_hint))
         else:
-            standalone.append((fname, rel_p, full_p))
+            standalone.append((fname, rel_p, full_p, size_hint))
 
     recovered = []
+
+    def _inspect_item(
+        fname: str, rel_p: str, full_p: str | None, size_hint: int | None
+    ) -> tuple[int, str, str, str | None] | None:
+        if full_p is None:
+            kind, mime = _guess_kind_mime_by_name(rel_p)
+            return int(size_hint or 0), kind, mime, None
+        try:
+            size_val = os.stat(full_p).st_size
+        except OSError:
+            return None
+        kind, mime = _sniff_kind_mime(full_p)
+        h = hashlib.sha256()
+        with open(full_p, "rb") as fh:
+            for chunk in iter(lambda: fh.read(65536), b""):
+                h.update(chunk)
+        return size_val, kind, mime, h.hexdigest()
+
+    def _item_size(full_p: str | None, size_hint: int | None) -> int | None:
+        if full_p is None:
+            return int(size_hint or 0)
+        try:
+            return os.stat(full_p).st_size
+        except OSError:
+            return None
 
     for tok, file_list in groups.items():
         main_tuple = next(
@@ -476,19 +560,11 @@ async def scan_orphaned_files(
         thumb_tuple = next((t for t in file_list if ".thumb." in t[0]), None)
         preview_tuples = [t for t in file_list if ".preview." in t[0]]
 
-        main_fname, main_rel, main_full = main_tuple
-        try:
-            stat = os.stat(main_full)
-            size = stat.st_size
-        except OSError:
+        main_fname, main_rel, main_full, main_size_hint = main_tuple
+        inspected = _inspect_item(main_fname, main_rel, main_full, main_size_hint)
+        if inspected is None:
             continue
-
-        kind, mime = _sniff_kind_mime(main_full)
-        h = hashlib.sha256()
-        with open(main_full, "rb") as fh:
-            for chunk in iter(lambda: fh.read(65536), b""):
-                h.update(chunk)
-        content_hash = h.hexdigest()
+        size, kind, mime, content_hash = inspected
 
         variants = {
             "media": {
@@ -501,45 +577,42 @@ async def scan_orphaned_files(
         vk_file_mapping = {"main": main_rel}
 
         if thumb_tuple:
-            _, t_rel, t_full = thumb_tuple
-            try:
-                t_stat = os.stat(t_full)
+            _, t_rel, t_full, t_hint = thumb_tuple
+            t_size = _item_size(t_full, t_hint)
+            if t_size is not None:
                 variants["thumb"] = {
                     "key": t_rel,
                     "mime": "image/webp",
-                    "size": t_stat.st_size,
+                    "size": t_size,
                     "url": f"/api/media/{tok}.thumb",
                 }
                 vk_file_mapping["thumb"] = t_rel
-            except OSError:
-                pass
 
         if preview_tuples:
             variants["previews"] = []
-            for p_fname, p_rel, p_full in preview_tuples:
-                try:
-                    p_stat = os.stat(p_full)
-                    marker = ".preview."
-                    suffix = (
-                        p_fname.split(marker)[-1].rsplit(".", 1)[0]
-                        if marker in p_fname
-                        else "1"
-                    )
-                    variants["previews"].append({
-                        "key": p_rel,
-                        "mime": "image/webp",
-                        "size": p_stat.st_size,
-                        "url": f"/api/media/{tok}.preview.{suffix}",
-                    })
-                    vk_file_mapping[f"preview.{suffix}"] = p_rel
-                except OSError:
-                    pass
+            for p_fname, p_rel, p_full, p_hint in preview_tuples:
+                p_size = _item_size(p_full, p_hint)
+                if p_size is None:
+                    continue
+                marker = ".preview."
+                suffix = (
+                    p_fname.split(marker)[-1].rsplit(".", 1)[0]
+                    if marker in p_fname
+                    else "1"
+                )
+                variants["previews"].append({
+                    "key": p_rel,
+                    "mime": "image/webp",
+                    "size": p_size,
+                    "url": f"/api/media/{tok}.preview.{suffix}",
+                })
+                vk_file_mapping[f"preview.{suffix}"] = p_rel
 
         row = SystemMediaModel(
             token=tok,
             kind=kind,
             path=main_rel,
-            backend="fs",
+            backend=backend,
             mime=mime,
             size=size,
             owner_id=None,
@@ -558,20 +631,12 @@ async def scan_orphaned_files(
         await vk.hset(f"media:status:{tok}", mapping={"state": "ready"})
         recovered.append({"token": tok, "filename": main_fname, "size": size, "kind": kind})
 
-    for fname, rel_p, full_p in standalone:
+    for fname, rel_p, full_p, size_hint in standalone:
         tok = uuid.uuid4().hex
-        try:
-            stat = os.stat(full_p)
-            size = stat.st_size
-        except OSError:
+        inspected = _inspect_item(fname, rel_p, full_p, size_hint)
+        if inspected is None:
             continue
-
-        kind, mime = _sniff_kind_mime(full_p)
-        h = hashlib.sha256()
-        with open(full_p, "rb") as fh:
-            for chunk in iter(lambda: fh.read(65536), b""):
-                h.update(chunk)
-        content_hash = h.hexdigest()
+        size, kind, mime, content_hash = inspected
 
         variants = {
             "media": {
@@ -587,7 +652,7 @@ async def scan_orphaned_files(
             token=tok,
             kind=kind,
             path=rel_p,
-            backend="fs",
+            backend=backend,
             mime=mime,
             size=size,
             owner_id=None,

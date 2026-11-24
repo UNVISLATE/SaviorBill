@@ -30,6 +30,8 @@ from .banned_email_domains import BannedEmailDomainModel, BannedEmailDomainsMngr
 from .auth_sessions import AuthSessionModel
 from .fx_sources import FxSourcesModel, FxSourcesMngr
 from .app_tokens import AppTokenModel, AppTokensMngr
+from .scheduled_tasks import ScheduledTaskModel
+from .system_plugins import SystemPluginModel
 
 __all__ = [
     "Base",
@@ -82,4 +84,6 @@ __all__ = [
     "FxSourcesMngr",
     "AppTokenModel",
     "AppTokensMngr",
+    "ScheduledTaskModel",
+    "SystemPluginModel",
 ]

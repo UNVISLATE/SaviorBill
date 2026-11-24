@@ -56,9 +56,16 @@ class EmailModel(Base):
 class EmailMngr:
     """Регистрация и хранение email-шаблонов в монтируемой папке."""
 
-    def __init__(self, session: AsyncSession, templates_dir: str) -> None:
+    def __init__(
+        self,
+        session: AsyncSession,
+        templates_dir: str,
+        *,
+        sync_to_fs: bool = True,
+    ) -> None:
         self.s = session
         self.dir = Path(templates_dir)
+        self.sync_to_fs = sync_to_fs
 
     async def list_all(self) -> list[EmailModel]:
         rows = await self.s.scalars(select(EmailModel).order_by(EmailModel.id))
@@ -98,12 +105,13 @@ class EmailMngr:
             raise HTTPException(status.HTTP_409_CONFLICT, "template slug already taken")
 
         filename = self._gen_filename()
-        target = self._safe_target(filename)
-        target.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            target.write_text(data.body, encoding="utf-8")
-        except Exception:
-            pass
+        if self.sync_to_fs:
+            target = self._safe_target(filename)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                target.write_text(data.body, encoding="utf-8")
+            except Exception:
+                pass
 
         row = EmailModel(
             slug=data.slug,
@@ -124,12 +132,13 @@ class EmailMngr:
         row = await self.by_id(tpl_id)
         if row is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "template not found")
-        try:
-            target = self._safe_target(row.filename)
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(body, encoding="utf-8")
-        except Exception:
-            pass
+        if self.sync_to_fs:
+            try:
+                target = self._safe_target(row.filename)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(body, encoding="utf-8")
+            except Exception:
+                pass
         row.body = body
         row.sha256 = hashlib.sha256(body.encode()).hexdigest()
         await self.s.flush()
@@ -164,9 +173,10 @@ class EmailMngr:
         row = await self.by_id(tpl_id)
         if row is None:
             raise HTTPException(status.HTTP_404_NOT_FOUND, "template not found")
-        target = self._safe_target(row.filename)
-        if target.exists():
-            target.unlink()
+        if self.sync_to_fs:
+            target = self._safe_target(row.filename)
+            if target.exists():
+                target.unlink()
         await self.s.delete(row)
         await self.s.flush()
 

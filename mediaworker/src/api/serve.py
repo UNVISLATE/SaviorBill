@@ -294,6 +294,8 @@ async def add_preview(
             )
         try:
             await storage.save_stream(f"{token}.preview_src", body, max_bytes)
+            if hasattr(storage, "stage_orig"):
+                await storage.stage_orig(f"{token}.preview_src")
         except ValueError:
             if is_large:
                 raise HTTPException(
@@ -352,6 +354,8 @@ async def replace_thumb(
         )
     try:
         await storage.save_stream(f"{token}.thumb_src", body, max_bytes)
+        if hasattr(storage, "stage_orig"):
+            await storage.stage_orig(f"{token}.thumb_src")
     except ValueError:
         if is_large:
             raise HTTPException(

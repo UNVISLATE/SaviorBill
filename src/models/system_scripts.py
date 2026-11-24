@@ -19,10 +19,12 @@ from sqlalchemy import (
     Index,
     Integer,
     JSON,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
     select,
+    text,
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
@@ -119,6 +121,15 @@ class LuaScriptVersionModel(Base):
     # Неизменяемый файл этой версии (относительно LUA_SCRIPTS_DIR).
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    code: Mapped[str | None] = mapped_column(Text, nullable=True)
+    artifact_backend: Mapped[str] = mapped_column(
+        String(16), default="fs", server_default="fs", nullable=False
+    )
+    artifact_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    artifact_blob: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    has_native: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
     commit_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -274,6 +285,8 @@ class SystemScriptsMngr:
                 version=1,
                 filename=filename,
                 sha256=sha256,
+                code=data.code,
+                artifact_backend="db",
                 commit_message=getattr(data, "commit_message", None) or "Начальная версия",
                 created_by=created_by,
             )
@@ -320,7 +333,16 @@ class SystemScriptsMngr:
         return await self.s.get(SystemScriptsModel, script_id)
 
     async def read_code(self, row: SystemScriptsModel) -> str:
-        """Прочитать тело скрипта из файла."""
+        """Прочитать тело скрипта: сначала из БД (``LuaScriptVersionModel.code``), иначе с диска."""
+        if self.s is not None:
+            ver = await self.s.scalar(
+                select(LuaScriptVersionModel).where(
+                    LuaScriptVersionModel.script_id == row.id,
+                    LuaScriptVersionModel.version == row.current_version,
+                )
+            )
+            if ver is not None and ver.code is not None:
+                return ver.code
         code = await self.read_code_at(
             row.filename, expected_sha256=getattr(row, "sha256", None)
         )
@@ -445,6 +467,8 @@ class SystemScriptsMngr:
                         version=new_version,
                         filename=filename,
                         sha256=sha256,
+                        code=code,
+                        artifact_backend="db",
                         commit_message=getattr(data, "commit_message", None),
                         created_by=actor_id,
                     )

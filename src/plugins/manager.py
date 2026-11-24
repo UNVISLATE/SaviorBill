@@ -81,6 +81,39 @@ class PluginMngr:
         await self.load_all()
         logger.info("PluginMngr initialized with %d active plugins", len(self.active_plugins))
 
+    async def _sync_ui_to_s3(self, slug: str, version: str, admin_dir: Path) -> None:
+        """Загрузить UI-статику плагина (``admin/``) в S3 при ``STORAGE_BACKEND=s3``."""
+        backend = (getattr(self.config, "STORAGE_BACKEND", "fs") or "fs").lower()
+        if backend != "s3" or not getattr(self.config, "S3_BUCKET", None):
+            return
+        try:
+            import mimetypes
+            import aioboto3
+
+            s3_sess = aioboto3.Session()
+            async with s3_sess.client(
+                "s3",
+                endpoint_url=self.config.S3_ENDPOINT,
+                region_name=self.config.S3_REGION,
+                aws_access_key_id=self.config.S3_KEY,
+                aws_secret_access_key=self.config.s3_secret,
+            ) as client:
+                for p in admin_dir.rglob("*"):
+                    if not p.is_file():
+                        continue
+                    rel = p.relative_to(admin_dir).as_posix()
+                    key = f"plugins/{slug}/{version}/admin/{rel}"
+                    ctype = mimetypes.guess_type(p.name)[0] or "application/octet-stream"
+                    await client.put_object(
+                        Bucket=self.config.S3_BUCKET,
+                        Key=key,
+                        Body=p.read_bytes(),
+                        ContentType=ctype,
+                    )
+            await self.valkey.set(f"plugins:version:{slug}", version)
+        except Exception:  # noqa: BLE001
+            logger.warning("Failed to sync plugin '%s' UI to S3", slug, exc_info=True)
+
     async def load_all(self) -> None:
         """Сканирование директории и загрузка всех плагинов."""
         if not self.plugins_dir.exists():
@@ -118,9 +151,27 @@ class PluginMngr:
 
         self.manifests[slug] = manifest
 
-        # 1. Применяем SQL-миграции схемы plugin_{slug}
+        # 1. Применяем SQL-миграции схемы plugin_{slug} под распределённым локом Valkey
         migrations_dir = plugin_dir / "migrations"
-        await self.migrator.apply_migrations(slug, migrations_dir)
+        lock_key = f"lock:plugin:migrate:{slug}"
+        got_lock = True
+        try:
+            got_lock = bool(await self.valkey.set(lock_key, "1", nx=True, ex=60))
+        except Exception:  # noqa: BLE001 — fallback без лока при деградации Valkey
+            got_lock = True
+        if got_lock:
+            try:
+                await self.migrator.apply_migrations(slug, migrations_dir)
+            finally:
+                try:
+                    await self.valkey.delete(lock_key)
+                except Exception:  # noqa: BLE001
+                    pass
+
+        # Синхронизация UI-статики в S3 (если STORAGE_BACKEND=s3)
+        admin_dir = plugin_dir / "admin"
+        if admin_dir.is_dir():
+            await self._sync_ui_to_s3(slug, manifest.version, admin_dir)
 
         # 2. Регистрируем права в системном реестре RBAC
         for perm in manifest.permissions:

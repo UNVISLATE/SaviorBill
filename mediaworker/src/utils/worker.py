@@ -607,7 +607,11 @@ class Worker:
         crf_raw = data.get("crf") or ""
         crf = int(crf_raw) if crf_raw.isdigit() else None
         keep_animation = data.get("keep_animation") != "0"
-        src = self.storage.orig_path(token)
+        src = (
+            await self.storage.acquire_orig(token)
+            if hasattr(self.storage, "acquire_orig")
+            else self.storage.orig_path(token)
+        )
 
         # Идемпотентность: at-least-once доставка (crash/redelivery) может
         # прислать эту задачу повторно ПОСЛЕ того, как оригинал уже был
@@ -840,7 +844,10 @@ class Worker:
                     detail="storage quota exceeded", owner_id=owner_id or None,
                 )
                 await self.proc_log.finish_job(job_id, "failed")
-                self.storage._safe_unlink(src)
+                if hasattr(self.storage, "release_orig"):
+                    await self.storage.release_orig(token)
+                else:
+                    self.storage._safe_unlink(src)
                 return
 
         result_variants = {
@@ -880,7 +887,9 @@ class Worker:
         await self.vk.delete(f"attempts:media:convert:{token}")
         clear_cancelled_job(token)
 
-        if not self.cfg.keep_original:
+        if hasattr(self.storage, "release_orig"):
+            await self.storage.release_orig(token, keep_local=self.cfg.keep_original)
+        elif not self.cfg.keep_original:
             self.storage._safe_unlink(src)
 
     async def _preview_add(self, data: dict) -> None:
@@ -900,7 +909,11 @@ class Worker:
         tmp_downloaded: str | None = None
         try:
             if source == "upload":
-                src = self.storage.orig_path(f"{token}.preview_src")
+                src = (
+                    await self.storage.acquire_orig(f"{token}.preview_src")
+                    if hasattr(self.storage, "acquire_orig")
+                    else self.storage.orig_path(f"{token}.preview_src")
+                )
                 if not os.path.exists(src):
                     raise ConvertError("исходный кадр для превью не найден")
                 # Defense-in-depth: kind уже проверен на приёме (serve.py,
@@ -953,7 +966,10 @@ class Worker:
             )
             await self.proc_log.finish_job(job_id, "failed")
             if source == "upload":
-                self.storage._safe_unlink(self.storage.orig_path(f"{token}.preview_src"))
+                if hasattr(self.storage, "release_orig"):
+                    await self.storage.release_orig(f"{token}.preview_src")
+                else:
+                    self.storage._safe_unlink(self.storage.orig_path(f"{token}.preview_src"))
             return
         finally:
             if tmp_downloaded:
@@ -974,7 +990,10 @@ class Worker:
         )
         await self.proc_log.finish_job(job_id, "ready")
         if source == "upload":
-            self.storage._safe_unlink(self.storage.orig_path(f"{token}.preview_src"))
+            if hasattr(self.storage, "release_orig"):
+                await self.storage.release_orig(f"{token}.preview_src")
+            else:
+                self.storage._safe_unlink(self.storage.orig_path(f"{token}.preview_src"))
 
     async def _thumb_replace(self, data: dict) -> None:
         """Перегенерировать (заменить) единственный thumb медиа.
@@ -993,7 +1012,11 @@ class Worker:
                 job_id, sanitize_paths(chunk, self.cfg.uploads_dir, self.cfg.media_dir)
             )
 
-        src = self.storage.orig_path(f"{token}.thumb_src")
+        src = (
+            await self.storage.acquire_orig(f"{token}.thumb_src")
+            if hasattr(self.storage, "acquire_orig")
+            else self.storage.orig_path(f"{token}.thumb_src")
+        )
         old_key = await self.vk.hget(file_key(token), "thumb")
         try:
             if not os.path.exists(src):
@@ -1016,7 +1039,10 @@ class Worker:
                 detail=str(exc),
             )
             await self.proc_log.finish_job(job_id, "failed")
-            self.storage._safe_unlink(src)
+            if hasattr(self.storage, "release_orig"):
+                await self.storage.release_orig(f"{token}.thumb_src")
+            else:
+                self.storage._safe_unlink(src)
             return
 
         key, size = await self._publish(thumb)
@@ -1033,7 +1059,10 @@ class Worker:
             kind="media", op="thumb_replace", token_or_cid=token, state="ready"
         )
         await self.proc_log.finish_job(job_id, "ready")
-        self.storage._safe_unlink(src)
+        if hasattr(self.storage, "release_orig"):
+            await self.storage.release_orig(f"{token}.thumb_src")
+        else:
+            self.storage._safe_unlink(src)
         if old_key and old_key != thumb.key:
             await self.storage.delete([old_key])
 

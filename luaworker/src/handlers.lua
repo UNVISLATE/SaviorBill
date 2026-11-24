@@ -121,18 +121,109 @@ local function strip_null(v)
   return v
 end
 
---- run_script: загрузить файл скрипта из монтируемой папки и выполнить его
--- handle(ctx). Скрипт изолирует внешнюю интеграцию (услуга/платёж) и обязан
--- вернуть таблицу вида { public = {...}, private = {...} }.
--- payload: { script = "services/x.lua", ctx = { ... } }
+-- Локальный иммутабельный кэш артефактов для кластера без общего диска.
+local function cache_dir_for(cache_key)
+  local base = env("LUA_CACHE_DIR", "/tmp/lua_cache")
+  return base .. "/" .. cache_key
+end
+
+local function fetch_artifact(payload)
+  local script_id = payload.script_id
+  local version = payload.script_version
+  if not script_id or not version then
+    return nil, "missing script_id/script_version for pull"
+  end
+
+  local cache_key = tostring(payload.script_sha256 or (tostring(script_id) .. "_v" .. tostring(version)))
+  if not cache_key:match("^[A-Za-z0-9_%-]+$") then
+    return nil, "invalid cache_key"
+  end
+  local dir = cache_dir_for(cache_key)
+  local init_path = dir .. "/init.lua"
+  local f = io.open(init_path, "r")
+  if f then
+    local code = f:read("*a")
+    f:close()
+    return code, dir
+  end
+
+  local billing_url = env("BILLING_URL", "http://billing:8000")
+  local token = billing._read_service_token()
+  local url = string.format("%s/api/v1/internal/lua/artifacts/%s/%s", billing_url, tostring(script_id), tostring(version))
+  local resp = httpc.request({
+    url = url,
+    method = "GET",
+    headers = {
+      ["Authorization"] = "Bearer " .. token,
+    },
+    timeout = 15,
+  })
+  if not resp or not resp.ok or not resp.body then
+    return nil, "artifact pull failed: " .. tostring(resp and (resp.error or resp.status) or "unknown")
+  end
+
+  local headers = resp.headers or {}
+  local art_type = headers["x-artifact-type"] or "lua"
+  local tmp_dir = dir .. ".tmp." .. tostring(os.time())
+  os.execute("mkdir -p " .. string.format("%q", tmp_dir))
+
+  if art_type == "tar.gz" then
+    local tgz = tmp_dir .. "/bundle.tar.gz"
+    local tf, terr = io.open(tgz, "wb")
+    if not tf then
+      return nil, "cannot write temp bundle: " .. tostring(terr)
+    end
+    tf:write(resp.body)
+    tf:close()
+    local ok = os.execute("tar -xzf " .. string.format("%q", tgz) .. " -C " .. string.format("%q", tmp_dir))
+    os.remove(tgz)
+    if not ok then
+      return nil, "failed to extract lua tar.gz bundle"
+    end
+  else
+    local lf, lerr = io.open(tmp_dir .. "/init.lua", "w")
+    if not lf then
+      return nil, "cannot write temp script: " .. tostring(lerr)
+    end
+    lf:write(resp.body)
+    lf:close()
+  end
+
+  os.execute("mv -f " .. string.format("%q", tmp_dir) .. " " .. string.format("%q", dir))
+  local rf = io.open(init_path, "r")
+  if not rf then
+    return nil, "init.lua missing in artifact"
+  end
+  local code = rf:read("*a")
+  rf:close()
+  return code, dir
+end
+
+--- run_script: загрузить файл скрипта из монтируемой папки (или кэша/HTTP pull)
+-- и выполнить его handle(ctx).
+-- payload: { script = "services/x.lua", script_id?, script_version?, script_sha256?, ctx = { ... } }
 function M.run_script(payload)
   local path = script_path(payload.script)
-  local source, rerr = io.open(path, "r")
-  if not source then
-    error("run_script: файл не найден: " .. tostring(rerr))
+  local code = nil
+  local artifact_dir = nil
+  local source = io.open(path, "r")
+  if source then
+    code = source:read("*a")
+    source:close()
+  else
+    local pull_err
+    code, artifact_dir = fetch_artifact(payload)
+    if not code then
+      error("run_script: файл не найден и pull не удался: " .. tostring(artifact_dir))
+    end
   end
-  local code = source:read("*a")
-  source:close()
+
+  if artifact_dir and env("ALLOW_NATIVE_LUA_MODULES", "false") == "true" then
+    local prev_cpath = package.cpath
+    if not prev_cpath:find(artifact_dir, 1, true) then
+      package.cpath = artifact_dir .. "/?.so;" .. prev_cpath
+    end
+  end
 
   -- Логгер выполнения, криптография и кэш для скрипта.
   local logger, log_entries = sbox.make_logger()
