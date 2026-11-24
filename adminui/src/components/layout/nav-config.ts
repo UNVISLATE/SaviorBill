@@ -1,6 +1,5 @@
 import {
   CreditCard,
-  FileClock,
   FolderTree,
   Gauge,
   Images,
@@ -106,7 +105,6 @@ export const navGroups: NavGroup[] = [
  * из общих групп навигации, как "Settings/Get Help/Search" в референсе.
  */
 export const footerNavItems: NavItem[] = [
-  { title: "Аудит", url: "/audit", icon: FileClock, anyPerm: ["audit.read", "audit"] },
   {
     title: "Система",
     url: "/system",
@@ -116,6 +114,8 @@ export const footerNavItems: NavItem[] = [
       "system.tasks.summary.read",
       "system.tasks.tail.read",
       "system.tasks.dlq.read",
+      "audit.read",
+      "audit",
       "system",
     ],
   },

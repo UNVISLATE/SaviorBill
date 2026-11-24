@@ -8,13 +8,13 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from schemas.types import OptNormEmail
+from schemas.types import NormEmail, OptNormEmail
 
 
 class GuestClaimRequest(BaseModel):
     """Запрос кода подтверждения для гостевого аккаунта."""
 
-    email: str = Field(min_length=3, max_length=255, description="Email гостевого аккаунта")
+    email: NormEmail = Field(min_length=3, max_length=255, description="Email гостевого аккаунта")
 
 
 class GuestClaimRequestResult(BaseModel):
@@ -35,7 +35,7 @@ class GuestClaimVerify(BaseModel):
 class GuestPurchaseCreate(BaseModel):
     """Создание заказа и инвойса через гостевой чекаут."""
 
-    email: str = Field(min_length=3, max_length=255, description="Email покупателя")
+    email: NormEmail = Field(min_length=3, max_length=255, description="Email покупателя")
     provider: str = Field(max_length=64, description="Слаг платёжного провайдера")
     service_id: int = Field(description="ID приобретаемой услуги")
     currency: str | None = Field(default=None, max_length=8, description="Желаемая валюта оплаты (опционально)")

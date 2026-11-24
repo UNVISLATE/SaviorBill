@@ -41,6 +41,7 @@ export const routeMeta: RouteMeta[] = [
   { path: "/system/tasks", title: "Задачи" },
   { path: "/system/tasks/archive", title: "Архив задач" },
   { path: "/system/dlq", title: "DLQ" },
+  { path: "/system/audit", title: "Аудит" },
 
   { path: "/settings", title: "Настройки" },
   { path: "/settings/general", title: "Основное" },

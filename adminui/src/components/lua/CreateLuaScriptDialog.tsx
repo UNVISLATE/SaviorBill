@@ -96,7 +96,6 @@ export function CreateLuaScriptDialog({
   const qc = useQueryClient()
   const navigate = useNavigate()
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const manifestInputRef = useRef<HTMLInputElement>(null)
 
   const [slug, setSlug] = useState("")
   const [name, setName] = useState("")
@@ -156,14 +155,14 @@ export function CreateLuaScriptDialog({
     }
   }
 
-  async function loadFile(file: File) {
-    if (file.name.endsWith(".json")) {
+  async function loadFile(file: File): Promise<boolean> {
+    const lower = file.name.toLowerCase()
+    if (lower.endsWith(".json")) {
       await loadManifestFile(file)
-      return
+      return true
     }
-    if (!file.name.endsWith(".lua") && file.type && !file.type.startsWith("text/")) {
-      toastError("Ожидается текстовый файл .lua или .json")
-      return
+    if (!lower.endsWith(".lua")) {
+      return false
     }
     const text = await file.text()
     setCode(text)
@@ -172,19 +171,24 @@ export function CreateLuaScriptDialog({
       const guess = file.name.replace(/\.lua$/i, "").toLowerCase().replace(/[^a-z0-9_-]/g, "-")
       if (SLUG_RE.test(guess)) setSlug(guess)
     }
+    return true
+  }
+
+  async function handleFiles(files: File[]) {
+    let accepted = 0
+    for (const f of files) {
+      if (await loadFile(f)) accepted += 1
+    }
+    if (files.length > 0 && accepted === 0) {
+      toastError("Не найдено подходящих файлов (.lua или .json)")
+    }
   }
 
   function onDrop(e: DragEvent<HTMLDivElement>) {
     e.preventDefault()
     setDragActive(false)
     const files = Array.from(e.dataTransfer.files || [])
-    for (const f of files) {
-      if (f.name.endsWith(".json")) {
-        void loadManifestFile(f)
-      } else if (f.name.endsWith(".lua") || (f.type && f.type.startsWith("text/"))) {
-        void loadFile(f)
-      }
-    }
+    void handleFiles(files)
   }
 
   const create = useMutation({
@@ -298,10 +302,13 @@ export function CreateLuaScriptDialog({
           )}
 
           <Field>
-            <FieldLabel>Код скрипта</FieldLabel>
+            <div className="flex items-center justify-between">
+              <FieldLabel>Файлы скрипта</FieldLabel>
+              <span className="text-[11px] text-muted-foreground">.lua и/или manifest.json</span>
+            </div>
             <div
               className={cn(
-                "flex flex-col items-center gap-2 rounded-md border border-dashed p-4 text-center transition-colors",
+                "flex flex-col items-center gap-2.5 rounded-md border border-dashed p-4 text-center transition-colors",
                 dragActive ? "border-primary bg-primary/5" : "border-muted-foreground/30",
               )}
               onDragOver={(e) => {
@@ -311,25 +318,82 @@ export function CreateLuaScriptDialog({
               onDragLeave={() => setDragActive(false)}
               onDrop={onDrop}
             >
-              {fileName ? (
-                <>
-                  <FileUp className="size-6 text-muted-foreground" />
-                  <p className="text-sm font-medium">{fileName}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {(code ?? "").length} символов — будет содержимым первой версии
-                  </p>
-                  <Button size="sm" variant="ghost" onClick={() => { setCode(null); setFileName(null) }}>
-                    Убрать файл
-                  </Button>
-                </>
+              {(fileName || manifestFileName) ? (
+                <div className="w-full space-y-2 text-left">
+                  {fileName && (
+                    <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileUp className="size-4 text-primary shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-foreground truncate">{fileName}</p>
+                          <p className="text-[10px] text-muted-foreground">
+                            {(code ?? "").length} символов — содержимое первой версии
+                          </p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 shrink-0"
+                        onClick={() => { setCode(null); setFileName(null) }}
+                        title="Убрать .lua-файл"
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </div>
+                  )}
+
+                  {manifestFileName && (
+                    <div className="flex items-center justify-between gap-2 rounded-md border bg-muted/20 px-3 py-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <FileCode2 className="size-4 text-emerald-500 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-xs font-semibold text-foreground truncate">{manifestFileName}</p>
+                          <p className="text-[10px] text-emerald-500 font-medium">Манифест валиден (JSON OK)</p>
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 shrink-0"
+                        onClick={() => {
+                          setManifestText(null)
+                          setManifestFileName(null)
+                        }}
+                        title="Удалить манифест"
+                      >
+                        <X className="size-3.5" />
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-[11px] text-muted-foreground">
+                      {!fileName || !manifestFileName
+                        ? "Перетащите или добавьте ещё файл"
+                        : "Оба файла прикреплены"}
+                    </span>
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      {!fileName || !manifestFileName ? "Добавить файл" : "Заменить файлы"}
+                    </Button>
+                  </div>
+                </div>
               ) : (
                 <>
                   <UploadCloud className="size-6 text-muted-foreground" />
                   <p className="text-sm text-muted-foreground">
-                    Перетащите .lua-файл сюда или
+                    Перетащите <span className="font-mono text-xs text-foreground">.lua</span> и/или{" "}
+                    <span className="font-mono text-xs text-foreground">manifest.json</span> сюда
                   </p>
-                  <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
-                    Выбрать файл
+                  <Button type="button" size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
+                    Выбрать файлы
                   </Button>
                   <p className="text-xs text-muted-foreground">
                     …или оставьте пустым — откроется чистый шаблон в редакторе
@@ -339,70 +403,16 @@ export function CreateLuaScriptDialog({
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".lua,text/plain"
+                multiple
+                accept=".lua,.json,text/plain,application/json"
                 className="hidden"
                 onChange={(e) => {
-                  const file = e.target.files?.[0]
-                  if (file) void loadFile(file)
+                  const files = Array.from(e.target.files || [])
+                  void handleFiles(files)
                   e.target.value = ""
                 }}
               />
             </div>
-          </Field>
-
-          {/* Манифест (manifest.json) */}
-          <Field>
-            <div className="flex items-center justify-between">
-              <FieldLabel>Манифест форм (manifest.json)</FieldLabel>
-              <span className="text-[11px] text-muted-foreground">Опционально</span>
-            </div>
-            {manifestFileName ? (
-              <div className="flex items-center justify-between p-3 rounded-lg border bg-muted/20">
-                <div className="flex items-center gap-2 min-w-0">
-                  <FileCode2 className="size-4 text-primary shrink-0" />
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold text-foreground truncate">{manifestFileName}</p>
-                    <p className="text-[10px] text-emerald-500 font-medium">Манифест валиден (JSON OK)</p>
-                  </div>
-                </div>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="size-7"
-                  onClick={() => {
-                    setManifestText(null)
-                    setManifestFileName(null)
-                  }}
-                  title="Удалить манифест"
-                >
-                  <X className="size-3.5" />
-                </Button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="w-full text-xs gap-1.5 h-9"
-                  onClick={() => manifestInputRef.current?.click()}
-                >
-                  <FileCode2 className="size-3.5 text-primary" />
-                  <span>Прикрепить manifest.json</span>
-                </Button>
-                <input
-                  ref={manifestInputRef}
-                  type="file"
-                  accept=".json,application/json"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0]
-                    if (file) void loadManifestFile(file)
-                    e.target.value = ""
-                  }}
-                />
-              </div>
-            )}
           </Field>
 
           <Field>

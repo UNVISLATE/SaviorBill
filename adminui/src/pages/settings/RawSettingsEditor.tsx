@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { ChevronLeft, ChevronRight } from "lucide-react"
+import { ChevronLeft, ChevronRight, Pencil, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { useDataTableQuery } from "@/hooks/use-data-table"
@@ -145,14 +145,17 @@ function GroupTable({ group, onBack }: { group: string; onBack: () => void }) {
   })
 
   const columns: DataTableColumn<SettingRow>[] = [
-    { key: "key", header: "Ключ", render: (r) => <span className="font-mono text-xs">{r.key}</span> },
+    { key: "key", header: "Ключ", render: (r) => <span className="block max-w-[220px] truncate font-mono text-xs">{r.key}</span> },
     {
       header: "Значение",
       render: (r) =>
         r.is_secret ? (
           <Badge variant="secondary">секрет — скрыто</Badge>
         ) : (
-          <span className="max-w-xs truncate font-mono text-xs text-muted-foreground">
+          <span
+            className="block max-w-[240px] sm:max-w-xs lg:max-w-md truncate font-mono text-xs text-muted-foreground"
+            title={r.value ?? undefined}
+          >
             {r.value ?? "—"}
           </span>
         ),
@@ -165,20 +168,29 @@ function GroupTable({ group, onBack }: { group: string; onBack: () => void }) {
     {
       header: "",
       render: (r) => (
-        <div className="flex justify-end gap-2">
+        <div className="flex justify-end gap-1.5">
           <Button
-            size="sm"
+            size="icon-sm"
             variant="outline"
             disabled={!r.editable}
+            title="Изменить"
+            aria-label="Изменить"
             onClick={() => {
               setDraftValue(r.value ?? "")
               setEditing(r)
             }}
           >
-            Изменить
+            <Pencil className="size-3.5" />
           </Button>
-          <Button size="sm" variant="destructive" disabled={!r.editable} onClick={() => setDeleting(r)}>
-            Удалить
+          <Button
+            size="icon-sm"
+            variant="destructive"
+            disabled={!r.editable}
+            title="Удалить"
+            aria-label="Удалить"
+            onClick={() => setDeleting(r)}
+          >
+            <Trash2 className="size-3.5" />
           </Button>
         </div>
       ),

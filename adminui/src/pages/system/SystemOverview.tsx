@@ -27,6 +27,7 @@ const SERVICE_LABEL: Record<string, string> = {
   billing: "Billing",
   media: "Mediaworker",
   lua: "Lua",
+  scheduler: "Scheduler",
 }
 
 // Живые "последние N точек" без сохранения истории на backend — проще и
@@ -67,7 +68,7 @@ export function SystemOverview() {
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Card>
           <CardHeader className="pb-2">
             <CardDescription>Всего инстансов</CardDescription>
@@ -90,15 +91,9 @@ export function SystemOverview() {
             </CardTitle>
           </CardHeader>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Обновление</CardDescription>
-            <CardTitle className="text-2xl">каждые {POLL_MS / 1000}с</CardTitle>
-          </CardHeader>
-        </Card>
       </div>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {Object.entries(data?.totals_by_service ?? {}).map(([svc, t]) => (
           <Card key={svc}>
             <CardHeader className="pb-2">
@@ -114,8 +109,7 @@ export function SystemOverview() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Потребление во времени (live)</CardTitle>
-          <CardDescription>Последние {MAX_POINTS} замеров, без сохранения истории</CardDescription>
+          <CardTitle className="text-base">Динамика нагрузки</CardTitle>
         </CardHeader>
         <CardContent>
           <ChartCardBody

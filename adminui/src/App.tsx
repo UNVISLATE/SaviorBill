@@ -16,7 +16,6 @@ import { ErrorBoundary } from "@/components/common/ErrorBoundary"
 
 const DashboardPage = lazy(() => import("@/pages/dashboard/DashboardPage").then((m) => ({ default: m.DashboardPage })))
 const UsersPage = lazy(() => import("@/pages/users/UsersPage").then((m) => ({ default: m.UsersPage })))
-const AuditPage = lazy(() => import("@/pages/audit/AuditPage").then((m) => ({ default: m.AuditPage })))
 const SystemPage = lazy(() => import("@/pages/system/SystemPage").then((m) => ({ default: m.SystemPage })))
 const SettingsPage = lazy(() => import("@/pages/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })))
 const LuaScriptsPage = lazy(() => import("@/pages/lua/LuaScriptsPage").then((m) => ({ default: m.LuaScriptsPage })))
@@ -69,7 +68,7 @@ export function App() {
                 <Route path="/" element={<DashboardPage />} />
                 <Route path="/users" element={<UsersPage />} />
                 <Route path="/users/:userId" element={<UsersPage />} />
-                <Route path="/audit" element={<AuditPage />} />
+                <Route path="/audit" element={<Navigate to="/system/audit" replace />} />
                 <Route path="/about" element={<AboutPage />} />
                 <Route path="/system/*" element={<SystemPage />} />
                 <Route path="/settings/*" element={<SettingsPage />} />

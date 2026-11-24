@@ -482,7 +482,13 @@ export function SmtpSettings() {
 
             <Button
               size="sm"
-              onClick={() => saveMutation.mutate()}
+              onClick={() => {
+                if (driver === "smtp" && (!host.trim() || !fromEmail.trim())) {
+                  toastError("Заполните обязательные поля: SMTP Host и From Email")
+                  return
+                }
+                saveMutation.mutate()
+              }}
               disabled={saveMutation.isPending || resetMutation.isPending}
               className="gap-2"
             >

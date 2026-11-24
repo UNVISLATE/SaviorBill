@@ -69,6 +69,7 @@ const SERVICE_LABEL: Record<string, string> = {
   billing: "Billing",
   media: "Mediaworker",
   lua: "Lua",
+  scheduler: "Scheduler",
 }
 
 function fmtUptime(sec: number): string {
@@ -127,7 +128,7 @@ export function SystemInstances() {
       <div>
         <h2 className="text-lg font-semibold">Инстансы</h2>
         <p className="text-sm text-muted-foreground">
-          Живые процессы billing/media/lua по heartbeat в Valkey. Для инстанса Mediaworker доступен детальный просмотр процессов.
+          Живые процессы billing/media/lua/scheduler по heartbeat в Valkey. Для инстанса Mediaworker доступен детальный просмотр процессов.
         </p>
       </div>
       <div className="rounded-lg border">

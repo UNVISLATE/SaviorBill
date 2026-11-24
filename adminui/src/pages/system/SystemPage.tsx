@@ -6,6 +6,7 @@ import {
   Bug,
   Clock,
   Database,
+  FileClock,
   ListTodo,
   Server,
   ShieldAlert,
@@ -13,6 +14,7 @@ import {
 
 import { useAuth } from "@/hooks/use-auth"
 import { SectionTabs } from "@/components/layout/SectionTabs"
+import { AuditPage } from "@/pages/audit/AuditPage"
 import { SystemOverview } from "./SystemOverview"
 import { SystemInstances } from "./SystemInstances"
 import { SystemTasks } from "./SystemTasks"
@@ -81,6 +83,15 @@ const SYSTEM_TABS: SystemTabDef[] = [
     element: <SystemErrorLogs />,
     group: "Безопасность",
     anyPerm: ["system.errors.read", "system.errors", "system"],
+  },
+  {
+    path: "audit",
+    title: "Аудит",
+    to: "/system/audit",
+    icon: <FileClock className="size-4" />,
+    element: <AuditPage embedded />,
+    group: "Безопасность",
+    anyPerm: ["audit.read", "audit"],
   },
 
   // Группа 3: Задачи

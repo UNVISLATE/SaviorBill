@@ -64,6 +64,18 @@ def compute_retention(
     accounts = df_accounts.with_columns(
         pl.col("created_at").dt.truncate(every).alias("cohort")
     )
+    if df_activity.is_empty():
+        df_activity = pl.DataFrame(
+            schema={
+                "account_id": accounts.schema["account_id"],
+                "activity_at": accounts.schema["created_at"],
+            }
+        )
+    elif df_activity.schema.get("account_id") == pl.Null:
+        df_activity = df_activity.with_columns(
+            pl.col("account_id").cast(accounts.schema["account_id"]),
+            pl.col("activity_at").cast(accounts.schema["created_at"]),
+        )
     cohorts = accounts.group_by("cohort").agg(pl.len().alias("cohort_size"))
 
     result = cohorts.clone()

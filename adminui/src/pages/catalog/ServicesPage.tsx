@@ -251,11 +251,11 @@ export function ServicesPage() {
 
         <div className="flex items-center gap-2">
           {/* Переключатель Каталог / Архив */}
-          <div className="flex items-center gap-1 p-0.5 bg-muted/60 rounded-lg border border-border/60">
+          <div className="inline-flex h-8 items-center gap-0.5 p-[3px] bg-muted/60 rounded-lg border border-border/60">
             <Button
               variant={!isArchiveView ? "secondary" : "ghost"}
-              size="sm"
-              className="h-8 text-xs font-medium gap-1.5"
+              size="xs"
+              className="h-full px-2.5 text-xs font-medium gap-1.5 rounded-md"
               onClick={() => {
                 const next = new URLSearchParams(searchParams)
                 next.delete("tab")
@@ -266,8 +266,8 @@ export function ServicesPage() {
             </Button>
             <Button
               variant={isArchiveView ? "secondary" : "ghost"}
-              size="sm"
-              className="h-8 text-xs font-medium gap-1.5"
+              size="xs"
+              className="h-full px-2.5 text-xs font-medium gap-1.5 rounded-md"
               onClick={() => {
                 const next = new URLSearchParams(searchParams)
                 next.set("tab", "archive")
@@ -281,17 +281,16 @@ export function ServicesPage() {
           {!isArchiveView && (
             <Button
               variant="outline"
-              size="sm"
               onClick={() => navigate("/service-keys")}
-              className="gap-1.5"
+              className="gap-1.5 text-xs"
             >
-              <KeyRound className="size-4 text-primary" /> Инвентарь ключей
+              <KeyRound className="size-3.5 text-primary" /> Инвентарь ключей
             </Button>
           )}
 
           {canCreate && !isArchiveView && (
-            <Button size="sm" onClick={() => navigate("/services/new")} className="gap-1.5 shadow-xs">
-              <Plus className="size-4" /> Создать услугу
+            <Button onClick={() => navigate("/services/new")} className="gap-1.5 text-xs shadow-xs">
+              <Plus className="size-3.5" /> Создать услугу
             </Button>
           )}
         </div>

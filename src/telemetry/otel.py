@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from typing import Iterator
 
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from prometheus_fastapi_instrumentator import Instrumentator
@@ -91,7 +92,7 @@ def _install_error_handlers(app: FastAPI) -> None:
     async def _validation_exc(
         request: Request, exc: RequestValidationError
     ) -> JSONResponse:
-        payload, headers = _with_trace({"detail": exc.errors()})
+        payload, headers = _with_trace({"detail": jsonable_encoder(exc.errors())})
         return JSONResponse(payload, status_code=422, headers=headers)
 
     from sqlalchemy.exc import DBAPIError, DataError

@@ -153,7 +153,7 @@ export function DashboardLayout() {
         </SidebarFooter>
         <SidebarRail />
       </Sidebar>
-      <SidebarInset>
+      <SidebarInset className="min-w-0">
         <header className="flex h-12 items-center justify-between border-b px-4">
           <div className="flex items-center gap-2 min-w-0">
             <SidebarTrigger />
@@ -170,6 +170,7 @@ export function DashboardLayout() {
                       <Button
                         variant="ghost"
                         size="xs"
+                        nativeButton={false}
                         className="rounded-full h-6 px-2.5 text-xs font-mono font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 gap-1.5 transition-colors"
                         render={<a href="/api/docs" target="_blank" rel="noreferrer" />}
                       >
@@ -189,6 +190,7 @@ export function DashboardLayout() {
                       <Button
                         variant="ghost"
                         size="xs"
+                        nativeButton={false}
                         className="rounded-full h-6 px-2.5 text-xs font-mono font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 gap-1.5 transition-colors"
                         render={<a href="/api/redoc" target="_blank" rel="noreferrer" />}
                       >
@@ -208,6 +210,7 @@ export function DashboardLayout() {
                       <Button
                         variant="ghost"
                         size="xs"
+                        nativeButton={false}
                         className="rounded-full h-6 px-2.5 text-xs font-mono font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 gap-1.5 transition-colors max-w-[170px]"
                         render={<Link to="/about" />}
                       >

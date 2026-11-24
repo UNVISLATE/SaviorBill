@@ -74,7 +74,7 @@ const columns: DataTableColumn<AuditEntry>[] = [
   { header: "IP", render: (e) => e.ip ?? "—" },
 ]
 
-export function AuditPage() {
+export function AuditPage({ embedded = false }: { embedded?: boolean }) {
   const table = useDataTableQuery()
   const [detail, setDetail] = useState<AuditEntry | null>(null)
 
@@ -97,7 +97,11 @@ export function AuditPage() {
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between">
-        <h1 className="text-xl font-semibold">Аудит</h1>
+        {embedded ? (
+          <h2 className="text-lg font-semibold">Аудит</h2>
+        ) : (
+          <h1 className="text-xl font-semibold">Аудит</h1>
+        )}
         {data && <span className="text-sm text-muted-foreground">Всего: {data.total}</span>}
       </div>
 
