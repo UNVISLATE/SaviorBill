@@ -193,7 +193,7 @@ async def user_service_action(
     )
     if usvc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "service order not found")
-    service = await svc_mngr.get(usvc.service_id)
+    service = await svc_mngr.s.get(ServiceModel, usvc.service_id)
     if service is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog service not found")
 
