@@ -12,6 +12,8 @@ from schemas.user import BalanceAdjust, UserCreateAdmin, UserPatch
 from schemas.app_tokens import AppTokenCreate
 from schemas.service import ServicePatch
 
+pytestmark = pytest.mark.unit
+
 
 def test_norm_email_validation():
     # Valid emails

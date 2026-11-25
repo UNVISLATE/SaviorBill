@@ -27,6 +27,7 @@ pytestmark = pytest.mark.unit
 @pytest.mark.asyncio
 async def test_f01_refund_single_flight_and_unconfirmed_handling():
     session = AsyncMock()
+    session.add = MagicMock()
     mngr = PayMngr(session, bus=MagicMock(), box=MagicMock())
     mngr.runner = SimpleNamespace()
 
@@ -62,6 +63,7 @@ async def test_f01_refund_single_flight_and_unconfirmed_handling():
 @pytest.mark.asyncio
 async def test_f02_settle_underpayment_and_currency_mismatch():
     session = AsyncMock()
+    session.add = MagicMock()
     mngr = PayMngr(session, bus=MagicMock(), box=MagicMock())
 
     payment = UserPaymentsModel(
@@ -95,6 +97,7 @@ async def test_f02_settle_underpayment_and_currency_mismatch():
 @pytest.mark.asyncio
 async def test_f02_credited_amount_caps_overpaid_balance():
     session = AsyncMock()
+    session.add = MagicMock()
     mngr = PayMngr(session, bus=MagicMock(), box=MagicMock())
 
     payment = UserPaymentsModel(
@@ -119,6 +122,7 @@ async def test_f02_credited_amount_caps_overpaid_balance():
 @pytest.mark.asyncio
 async def test_f03_locate_rejects_foreign_provider():
     session = AsyncMock()
+    session.add = MagicMock()
     mngr = PayMngr(session, bus=MagicMock(), box=MagicMock())
 
     payment = UserPaymentsModel(
@@ -138,6 +142,7 @@ async def test_f03_locate_rejects_foreign_provider():
 @pytest.mark.asyncio
 async def test_f04_callback_transition_flag():
     session = AsyncMock()
+    session.add = MagicMock()
     mngr = PayMngr(session, bus=MagicMock(), box=MagicMock())
 
     payment = UserPaymentsModel(
@@ -214,6 +219,7 @@ def test_f05_service_ctx_has_idempotency_key():
 @pytest.mark.asyncio
 async def test_f07_renew_action_raises_payment_required():
     session = AsyncMock()
+    session.add = MagicMock()
     mngr = UserServicesMngr(session, bus=MagicMock(), box=MagicMock())
 
     usvc = UserServicesModel(
@@ -239,6 +245,7 @@ async def test_f07_renew_action_raises_payment_required():
 @pytest.mark.asyncio
 async def test_f08_apply_refund_reverses_delivery_credit():
     session = AsyncMock()
+    session.add = MagicMock()
     mngr = PayMngr(session, bus=MagicMock(), box=MagicMock())
 
     payment = UserPaymentsModel(

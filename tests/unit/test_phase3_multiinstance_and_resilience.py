@@ -12,6 +12,9 @@ from __future__ import annotations
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
+import pytest
+
+pytestmark = pytest.mark.unit
 
 import pytest
 

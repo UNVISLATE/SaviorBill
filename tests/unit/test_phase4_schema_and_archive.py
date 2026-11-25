@@ -9,6 +9,8 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 from fastapi import HTTPException
 
+pytestmark = pytest.mark.unit
+
 from models.task_archive import TaskArchiveMngr, TaskArchiveModel
 from schemas.task_archive import (
     TaskArchiveDetail,

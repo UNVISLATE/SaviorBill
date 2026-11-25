@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 from app import app
 from core.config import AppConfig
 
+pytestmark = pytest.mark.unit
+
 
 @pytest.fixture
 def client():

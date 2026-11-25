@@ -10,6 +10,8 @@ from decimal import Decimal
 import pytest
 from fastapi import HTTPException
 
+pytestmark = pytest.mark.unit
+
 from enums import Delivery, PriceType, PayTarget
 from models.service import ServiceModel
 from models.user_services import UserServicesModel

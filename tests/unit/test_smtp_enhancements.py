@@ -283,6 +283,7 @@ async def test_update_smtp_settings_lua_validation():
 
     mock_settings = AsyncMock()
     mock_settings.s = AsyncMock()
+    mock_settings.s.add = MagicMock()
 
     # Case 1: Script not found -> HTTPException 400
     mock_settings.s.get.return_value = None

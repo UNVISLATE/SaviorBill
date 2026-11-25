@@ -35,3 +35,10 @@ async def test_ban_is_per_ip():
     vk = FakeVK()
     await ipban.ban(vk, "1.1.1.1", 60)
     assert await ipban.is_banned(vk, "2.2.2.2") is False
+
+
+async def test_shared_billing_ban_blocks_mediaworker():
+    vk = FakeVK()
+    await vk.set("security:banned_ips:3.3.3.3", '{"reason":"autoban"}', ex=900)
+    assert await ipban.is_banned(vk, "3.3.3.3") is True
+    assert await ipban.is_banned(vk, "4.4.4.4") is False

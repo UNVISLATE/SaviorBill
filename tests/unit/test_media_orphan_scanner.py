@@ -8,6 +8,8 @@ from types import SimpleNamespace
 
 from api.v1.admin.media import router, _sniff_kind_mime
 
+pytestmark = pytest.mark.unit
+
 
 def test_sniff_kind_mime():
     with tempfile.TemporaryDirectory() as tmpdir:

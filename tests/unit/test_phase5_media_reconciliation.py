@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import Request
 
+pytestmark = pytest.mark.unit
+
 from api.v1.admin.media import get_reconcile_batch_status, preview_orphaned_media
 from models.system_media import SystemMediaModel
 

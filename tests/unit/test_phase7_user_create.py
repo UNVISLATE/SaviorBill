@@ -3,6 +3,8 @@ from pydantic import ValidationError
 
 from schemas.user import UserCreateAdmin
 
+pytestmark = pytest.mark.unit
+
 
 def test_user_create_admin_with_avatar():
     # Valid login, password, and avatar_media_id
