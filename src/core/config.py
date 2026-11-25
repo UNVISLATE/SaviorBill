@@ -58,6 +58,7 @@ class AppConfig(BaseSettings):
     # Приложение
     HOST: str = Field(default="0.0.0.0")
     PORT: int = Field(default=8000)
+    RELEASE_CHANNEL: str = Field(default="latest")
     DEBUG: bool = Field(default=False)
     DOCS_ENABLED: bool = Field(default=True)
 

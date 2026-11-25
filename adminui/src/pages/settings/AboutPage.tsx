@@ -77,7 +77,14 @@ export function AboutPage() {
   // Динамическое получение версии с бэкенда /api/health
   const { data: health } = useQuery({
     queryKey: ["app-health"],
-    queryFn: async () => (await api.get<{ app_name: string; app_version: string }>("/health")).data,
+    queryFn: async () =>
+      (
+        await api.get<{
+          app_name: string
+          app_version: string
+          release_channel?: string
+        }>("/health")
+      ).data,
     staleTime: 60_000,
   })
 
@@ -131,20 +138,26 @@ export function AboutPage() {
     retry: false,
   })
 
-  const latestRelease = Array.isArray(releases) ? releases.find((r) => !r.draft) : undefined
+  const isNightly =
+    health?.release_channel === "nightly" ||
+    /-(rc|alpha|beta|nightly)/i.test(rawVersion)
 
-  // Сравнение версий
+  const latestRelease = Array.isArray(releases)
+    ? releases.find((r) => !r.draft && (isNightly || !r.prerelease))
+    : undefined
+
+  // Сравнение версий (учитывает prerelease суффиксы вроде -rc.1 vs финальный релиз)
   const isNewer = (latestTag?: string, currentVer?: string) => {
     if (!latestTag || !currentVer) return false
-    const clean = (v: string) => v.replace(/^v/, "").trim()
+    const clean = (v: string) => v.replace(/^v/, "").split("+")[0].trim()
     const c = clean(currentVer)
     const l = clean(latestTag)
     if (c === l) return false
 
-    const [cBase] = c.split("-")
-    const [lBase] = l.split("-")
-    const cParts = cBase.split(".").map(Number)
-    const lParts = lBase.split(".").map(Number)
+    const [cBase, cPre = ""] = c.split("-", 2)
+    const [lBase, lPre = ""] = l.split("-", 2)
+    const cParts = cBase.split(".").map((n) => Number(n) || 0)
+    const lParts = lBase.split(".").map((n) => Number(n) || 0)
 
     for (let i = 0; i < Math.max(cParts.length, lParts.length); i++) {
       const cp = cParts[i] || 0
@@ -153,9 +166,13 @@ export function AboutPage() {
       if (lp < cp) return false
     }
 
-    if (currentVer.includes("dev") || currentVer.includes("alpha") || currentVer.includes("beta")) {
+    if (currentVer.includes("dev") && !l.includes("dev")) {
       return true
     }
+    // Финальный релиз новее pre-release той же базовой версии
+    if (cPre && !lPre) return true
+    if (!cPre && lPre) return false
+    if (cPre && lPre) return lPre > cPre
     return false
   }
 
@@ -192,11 +209,19 @@ export function AboutPage() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="rounded-full bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 text-[10px] font-medium text-amber-500 hover:bg-amber-500/20 hover:text-amber-400 transition-colors flex items-center gap-1"
-                title={`Доступна новая версия: ${latestRelease.tag_name}`}
+                title={`Доступна новая версия (${latestRelease.prerelease ? "nightly" : "latest"}): ${latestRelease.tag_name}`}
               >
                 <span className="size-1.5 rounded-full bg-amber-500 animate-pulse" />
                 <span>{latestRelease.tag_name} ↗</span>
               </a>
+            ) : isNightly ? (
+              <span
+                className="rounded-full bg-amber-500/10 border border-amber-500/25 px-2 py-0.5 text-[10px] font-medium text-amber-500 flex items-center gap-1"
+                title="Установлена сборка канала nightly (включая pre-release)"
+              >
+                <span className="size-1.5 rounded-full bg-amber-500" />
+                nightly
+              </span>
             ) : (
               <span className="rounded-full bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-medium text-emerald-500 flex items-center gap-1">
                 <span className="size-1.5 rounded-full bg-emerald-500" />

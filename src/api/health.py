@@ -21,6 +21,7 @@ async def health(request: Request):
         status="ok",
         app_name=APP_NAME,
         app_version=APP_VERSION,
+        release_channel=(settings.RELEASE_CHANNEL or "latest").strip().lower() if settings else "latest",
         debug=bool(settings.DEBUG) if settings else False,
         docs_enabled=bool(settings.DOCS_ENABLED) if settings else True,
     )

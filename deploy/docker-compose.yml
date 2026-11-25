@@ -45,6 +45,7 @@ services:
       DB_PORT: 5432
       VALKEY_HOST: valkey
       VALKEY_PORT: 6379
+      RELEASE_CHANNEL: ${TAG:-latest}
       TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.16.0.0/12,10.0.0.0/8,192.168.0.0/16,127.0.0.1}
       PRIVATE_DATA_DIR: /app/private
     volumes:

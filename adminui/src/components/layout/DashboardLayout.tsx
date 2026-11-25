@@ -64,7 +64,16 @@ export function DashboardLayout() {
 
   const { data: health } = useQuery({
     queryKey: ["app-health"],
-    queryFn: async () => (await api.get<{ app_name: string; app_version: string; debug?: boolean; docs_enabled?: boolean }>("/health")).data,
+    queryFn: async () =>
+      (
+        await api.get<{
+          app_name: string
+          app_version: string
+          release_channel?: string
+          debug?: boolean
+          docs_enabled?: boolean
+        }>("/health")
+      ).data,
     staleTime: 60_000,
   })
   const versionInfo = useMemo(() => {
@@ -73,6 +82,9 @@ export function DashboardLayout() {
     return formatAppVersion(raw)
   }, [health?.app_version])
   const isDebug = Boolean(health?.debug)
+  const isNightly =
+    health?.release_channel === "nightly" ||
+    /-(rc|alpha|beta|nightly)/i.test(versionInfo.full)
 
   const { data: plugins = [] } = useQuery<PluginNavItemMeta[]>({
     queryKey: ["admin", "plugins"],
@@ -214,12 +226,23 @@ export function DashboardLayout() {
                         className="rounded-full h-6 px-2.5 text-xs font-mono font-medium text-muted-foreground hover:text-foreground hover:bg-muted/80 gap-1.5 transition-colors max-w-[170px]"
                         render={<Link to="/about" />}
                       >
-                        <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                        <span
+                          className={`size-1.5 rounded-full animate-pulse shrink-0 ${
+                            isNightly ? "bg-amber-500" : "bg-emerald-500"
+                          }`}
+                        />
                         <span className="truncate">{versionInfo.short}</span>
+                        {isNightly && (
+                          <span className="text-[10px] font-sans font-semibold text-amber-500 uppercase tracking-tight">
+                            nightly
+                          </span>
+                        )}
                       </Button>
                     }
                   />
-                  <TooltipContent>О системе SaviorBill ({versionInfo.full})</TooltipContent>
+                  <TooltipContent>
+                    О системе SaviorBill ({versionInfo.full}{isNightly ? " · nightly" : ""})
+                  </TooltipContent>
                 </Tooltip>
               </ButtonGroup>
             ) : (
@@ -230,12 +253,23 @@ export function DashboardLayout() {
                       to="/about"
                       className="flex items-center gap-1.5 rounded-full border border-border/70 bg-muted/30 hover:bg-muted px-2.5 py-1 text-xs font-mono font-medium text-muted-foreground hover:text-foreground transition-all hover:border-primary/40 shadow-2xs max-w-[170px]"
                     >
-                      <span className="size-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                      <span
+                        className={`size-1.5 rounded-full animate-pulse shrink-0 ${
+                          isNightly ? "bg-amber-500" : "bg-emerald-500"
+                        }`}
+                      />
                       <span className="truncate">{versionInfo.short}</span>
+                      {isNightly && (
+                        <span className="text-[10px] font-sans font-semibold text-amber-500 uppercase tracking-tight">
+                          nightly
+                        </span>
+                      )}
                     </Link>
                   }
                 />
-                <TooltipContent>О системе SaviorBill ({versionInfo.full})</TooltipContent>
+                <TooltipContent>
+                  О системе SaviorBill ({versionInfo.full}{isNightly ? " · nightly" : ""})
+                </TooltipContent>
               </Tooltip>
             )}
           </div>
