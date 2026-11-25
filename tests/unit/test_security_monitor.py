@@ -64,7 +64,8 @@ async def test_is_ip_banned_true():
 @pytest.mark.asyncio
 async def test_check_and_apply_autoban():
     vk = AsyncMock()
-    vk.incr.return_value = 5
+    vk.eval.return_value = 5
+    vk.exists.return_value = 0
 
     settings = AsyncMock()
     settings.get.side_effect = lambda key, default=None: {

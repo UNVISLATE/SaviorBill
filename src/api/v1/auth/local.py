@@ -23,7 +23,12 @@ from models.banned_email_domains import BannedEmailDomainsMngr
 from schemas.auth import Login, Refresh, Reg, TokenPair
 from security.sec import jwt as jwtu
 from security.sec.cookies import REFRESH_COOKIE, clear_auth_cookies, set_auth_cookies
-from security.sec.pwd import dummy_hash, hash_pass, needs_rehash, verify_pass
+from security.sec.pwd import (
+    dummy_hash,
+    hash_pass_async,
+    needs_rehash,
+    verify_pass_async,
+)
 from services.twofa import TotpSvc
 from utils.degrade import VALKEY_ERRORS, note_degraded
 
@@ -84,7 +89,7 @@ async def register(
         raise HTTPException(status.HTTP_409_CONFLICT, "account already exists")
 
     acc = await mngr.create(
-        body.login, hash_pass(body.password), body.email, ref_by=body.ref_code
+        body.login, await hash_pass_async(body.password), body.email, ref_by=body.ref_code
     )
     try:
         await mngr.s.commit()
@@ -144,7 +149,7 @@ async def login(
     # от существования аккаунта — иначе раннее замыкание раскрывает через
     # разницу во времени ответа, что логин занят (user enumeration).
     pass_hash = acc.pass_hash if (acc is not None and acc.has_pass) else dummy_hash()
-    pass_ok = verify_pass(pass_hash, body.password)
+    pass_ok = await verify_pass_async(pass_hash, body.password)
     if acc is None or not acc.has_pass or not pass_ok:
         await guard.record_fail(body.login, ip)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid login or password")
@@ -166,7 +171,7 @@ async def login(
                 "totp required" if not body.totp else "invalid totp",
             )
     if needs_rehash(acc.pass_hash):
-        acc.pass_hash = hash_pass(body.password)
+        acc.pass_hash = await hash_pass_async(body.password)
     await mngr.touch_login(acc)
     await mngr.s.commit()
     await guard.clear(body.login, ip)

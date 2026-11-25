@@ -22,6 +22,14 @@ PREFIX_BANNED_IP = "security:banned_ips:"
 PREFIX_VIOLATIONS = "security:violations:"
 MAX_EVENTS_STORED = 1000
 
+_INCR_WITH_TTL_LUA = """
+local count = redis.call('INCR', KEYS[1])
+if count == 1 then
+    redis.call('EXPIRE', KEYS[1], tonumber(ARGV[1]))
+end
+return count
+"""
+
 
 async def log_security_event(
     vk: valkey.Valkey,
@@ -173,11 +181,12 @@ async def check_and_apply_autoban(
         duration_sec = int(duration_raw)
 
         v_key = f"{PREFIX_VIOLATIONS}{ip}"
-        count = await vk.incr(v_key)
-        if count == 1:
-            await vk.expire(v_key, window_sec)
+        count = int(await vk.eval(_INCR_WITH_TTL_LUA, 1, v_key, window_sec))
 
         if count >= threshold:
+            # Не дублируем событие ip_banned, если конкурентный запрос уже успел забанить IP.
+            if await vk.exists(f"{PREFIX_BANNED_IP}{ip}"):
+                return True
             reason = f"Превышен порог нарушений: {count} за {window_sec}с (Auto-Ban)"
             await ban_ip(vk, ip, duration_sec=duration_sec, reason=reason, trace_id=trace_id)
             return True
