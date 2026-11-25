@@ -357,6 +357,10 @@ prepare_base_files() {
 		respond "not found" 404
 	}
 
+	handle /api/v1/internal/* {
+		respond "not found" 404
+	}
+
 	handle /api/media/* {
 		reverse_proxy mediaworker:8001
 	}
@@ -398,6 +402,10 @@ EOF
 	encode zstd gzip
 
 	handle /metrics {
+		respond "not found" 404
+	}
+
+	handle /api/v1/internal/* {
 		respond "not found" 404
 	}
 
@@ -492,6 +500,243 @@ show_summary_card() {
   printf "│  ${BOLD}Installation Directory:${RESET}       %-39s│\n" "$INSTALL_DIR"
   printf "│  ${BOLD}Stack Management CLI:${RESET}         %-39s│\n" "cd $INSTALL_DIR && ./setup.sh"
   printf "${BOLD}${GREEN}└────────────────────────────────────────────────────────────────────────┘${RESET}\n\n"
+}
+
+# ── Release Channel & Safe Update Helpers ─────────────────────────────────────
+choose_release_channel() {
+  local current="${1:-latest}"
+  local def_choice="1"
+  if [ "$current" = "nightly" ]; then
+    def_choice="2"
+  fi
+  echo "" >&2
+  echo "   [1] latest  — Stable release (recommended for production)" >&2
+  echo "   [2] nightly — Pre-release / nightly build (newest features)" >&2
+  local ch
+  ch=$(prompt_default "Release channel [1=latest, 2=nightly]" "$def_choice")
+  case "$ch" in
+    2|nightly|NIGHTLY)
+      echo "nightly"
+      ;;
+    1|latest|LATEST)
+      echo "latest"
+      ;;
+    *)
+      echo "$current"
+      ;;
+  esac
+}
+
+file_sha256() {
+  local f="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$f" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$f" | awk '{print $1}'
+  else
+    cksum "$f" | awk '{print $1}'
+  fi
+}
+
+record_caddy_checksum() {
+  local name="$1"
+  local target="caddy.d/${name}.caddy"
+  if [ -f "$target" ]; then
+    file_sha256 "$target" > ".caddy.d.${name}.sha256" 2>/dev/null || true
+  fi
+}
+
+sync_caddy_fragment() {
+  local name="$1"
+  local example="${name}.caddy.example"
+  local target="caddy.d/${name}.caddy"
+  local sum_file=".caddy.d.${name}.sha256"
+
+  [ -f "$target" ] && [ -f "$example" ] || return 0
+
+  if cmp -s "$target" "$example"; then
+    record_caddy_checksum "$name"
+    return 0
+  fi
+
+  local cur_sum old_sum=""
+  cur_sum="$(file_sha256 "$target")"
+  if [ -f "$sum_file" ]; then
+    old_sum="$(cat "$sum_file" 2>/dev/null || true)"
+  fi
+
+  if [ -n "$old_sum" ] && [ "$cur_sum" = "$old_sum" ]; then
+    cp -f "$example" "$target"
+    record_caddy_checksum "$name"
+    info "Updated $target from $example"
+  else
+    warn "Preserved customized $target (differs from template). Review $example if new routing rules are needed."
+  fi
+}
+
+sync_missing_env_vars() {
+  local example_file="${1:-.env.example}"
+  local env_file="${2:-.env}"
+  [ -f "$example_file" ] && [ -f "$env_file" ] || return 0
+
+  local added=0
+  local line key
+  while IFS= read -r line || [ -n "$line" ]; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ "$line" != *=* ]] && continue
+    key="${line%%=*}"
+    [[ ! "$key" =~ ^[A-Z0-9_]+$ ]] && continue
+    if ! grep -q "^${key}=" "$env_file" 2>/dev/null; then
+      printf '%s\n' "$line" >> "$env_file"
+      added=$((added + 1))
+    fi
+  done < "$example_file"
+
+  if [ "$added" -gt 0 ]; then
+    info "Added $added new default variable(s) from $example_file to $env_file"
+  fi
+}
+
+backup_stack_configs() {
+  local ts backup_dir
+  ts="$(date +%Y%m%d-%H%M%S 2>/dev/null || echo 'latest')"
+  backup_dir=".backups/update-${ts}"
+  mkdir -p "$backup_dir"
+  local f
+  for f in docker-compose.yml Caddyfile .env .env.example api.caddy.example media.caddy.example client.caddy.example; do
+    [ -f "$f" ] && cp -f "$f" "$backup_dir/" 2>/dev/null || true
+  done
+  if [ -d caddy.d ]; then
+    cp -r caddy.d "$backup_dir/" 2>/dev/null || true
+  fi
+  info "Saved config backup to $backup_dir"
+}
+
+download_checked() {
+  local url="$1"
+  local dest="$2"
+  local tmp="${dest}.tmp.$$"
+  if curl -fsSL "$url" -o "$tmp" && [ -s "$tmp" ]; then
+    mv -f "$tmp" "$dest"
+    return 0
+  fi
+  rm -f "$tmp"
+  return 1
+}
+
+update_stack() {
+  local self_updated=0
+  local auto_yes=0
+  local arg_tag=""
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --self-updated) self_updated=1 ;;
+      -y|--yes) auto_yes=1 ;;
+      --latest) arg_tag="latest" ;;
+      --nightly) arg_tag="nightly" ;;
+    esac
+  done
+
+  if [ "$self_updated" -eq 0 ]; then
+    local tmp_script=".setup.sh.new.$$"
+    if curl -fsSL "$RAW_BASE/setup.sh" -o "$tmp_script" 2>/dev/null && [ -s "$tmp_script" ]; then
+      if ! cmp -s "$tmp_script" "$INSTALL_DIR/setup.sh" 2>/dev/null; then
+        info "Updating setup.sh to latest version..."
+        chmod +x "$tmp_script"
+        mv -f "$tmp_script" "$INSTALL_DIR/setup.sh"
+        local pass_args=()
+        [ "$auto_yes" -eq 1 ] && pass_args+=("--yes")
+        [ -n "$arg_tag" ] && pass_args+=("--${arg_tag}")
+        exec "$INSTALL_DIR/setup.sh" update --self-updated "${pass_args[@]}"
+      fi
+    fi
+    rm -f "$tmp_script"
+  fi
+
+  step "Updating SaviorBill Stack"
+
+  if [ "$auto_yes" -eq 0 ]; then
+    echo "The following system files will be updated from GitHub:"
+    echo "  • docker-compose.yml"
+    echo "  • Caddyfile & *.caddy.example"
+    echo "  • caddy.d/*.caddy (only if unmodified; custom rules are preserved)"
+    echo "  • .env.example (new missing keys will be appended to .env)"
+    echo ""
+    echo "Preserved untouched: .env (existing values), docker-compose.override.yml, data/, data-private/"
+    echo ""
+    local confirm_upd
+    confirm_upd=$(prompt_default "Proceed with update? [Y/n]" "Y")
+    case "$confirm_upd" in
+      [yY]|[yY][eE][sS]) ;;
+      *)
+        info "Update cancelled."
+        return 0
+        ;;
+    esac
+  fi
+
+  local cur_tag target_tag
+  cur_tag="$(get_env_var "TAG")"
+  cur_tag="${cur_tag:-latest}"
+  if [ -n "$arg_tag" ]; then
+    target_tag="$arg_tag"
+  elif [ "$auto_yes" -eq 0 ]; then
+    info "Current release channel: $cur_tag"
+    target_tag=$(choose_release_channel "$cur_tag")
+  else
+    target_tag="$cur_tag"
+  fi
+
+  set_env_var "TAG" "$target_tag"
+  set_env_var "CLIENT_TAG" "$target_tag"
+  info "Using release channel: $target_tag"
+
+  backup_stack_configs
+
+  local new_compose="docker-compose.yml.new.$$"
+  info "Downloading latest docker-compose.yml..."
+  if ! curl -fsSL "$RAW_BASE/docker-compose.yml" -o "$new_compose" || [ ! -s "$new_compose" ]; then
+    rm -f "$new_compose"
+    err "Failed to download docker-compose.yml. Aborting without changes."
+    return 1
+  fi
+
+  if ! docker_compose_cmd -f "$new_compose" config -q; then
+    rm -f "$new_compose"
+    err "Downloaded docker-compose.yml failed validation. Aborting without changes."
+    return 1
+  fi
+
+  info "Pulling container images for channel '$target_tag'..."
+  if ! docker_compose_cmd -f "$new_compose" pull; then
+    rm -f "$new_compose"
+    set_env_var "TAG" "$cur_tag"
+    set_env_var "CLIENT_TAG" "$cur_tag"
+    err "Failed to pull images (release '$target_tag' may not be published yet). Working stack left untouched."
+    return 1
+  fi
+
+  mv -f "$new_compose" docker-compose.yml
+
+  download_checked "$RAW_BASE/Caddyfile" "Caddyfile" || warn "Could not update Caddyfile"
+  download_checked "$RAW_BASE/.env.example" ".env.example" || warn "Could not update .env.example"
+  download_checked "$RAW_BASE/api.caddy.example" "api.caddy.example" || true
+  download_checked "$RAW_BASE/media.caddy.example" "media.caddy.example" || true
+  download_checked "$RAW_BASE/client.caddy.example" "client.caddy.example" || true
+
+  sync_caddy_fragment "api"
+  sync_caddy_fragment "media"
+  sync_caddy_fragment "client"
+
+  sync_missing_env_vars ".env.example" ".env"
+
+  info "Applying updates (creating new services & removing obsolete containers)..."
+  docker_compose_cmd up -d --remove-orphans
+  docker_compose_cmd exec -T caddy caddy reload --config /etc/caddy/Caddyfile 2>/dev/null || true
+
+  success "Stack updated to '$target_tag'!"
+  docker_compose_cmd ps
 }
 
 # ── Interactive Setup Wizard ──────────────────────────────────────────────────
@@ -718,12 +963,17 @@ run_wizard() {
   owner_pass=$(prompt_secret_or_gen "Administrator (Owner) password" "$gen_owner_pass")
 
   # ── Write Configuration (.env) ──────────────────────────────────────────────
-  step "5. Writing Stack Configuration"
+  step "5. Release Channel & Writing Configuration"
+
+  local selected_tag
+  selected_tag=$(choose_release_channel "latest")
 
   if [ ! -f .env ]; then
     cp .env.example .env
   fi
 
+  set_env_var "TAG" "$selected_tag"
+  set_env_var "CLIENT_TAG" "$selected_tag"
   set_env_var "DEBUG" "$is_debug"
   set_env_var "DOMAIN" "$domain"
   set_env_var "API_DOMAIN" "$api_domain"
@@ -779,18 +1029,20 @@ run_wizard() {
   # API Subdomain Caddy config
   if [ "$api_domain" != "$domain" ]; then
     cp -f api.caddy.example caddy.d/api.caddy 2>/dev/null || true
+    record_caddy_checksum "api"
     info "Dedicated API routing enabled: caddy.d/api.caddy ($api_domain)"
   else
-    rm -f caddy.d/api.caddy
+    rm -f caddy.d/api.caddy .caddy.d.api.sha256
     info "REST API routed via shared domain (${domain}/api/*)"
   fi
 
   # Mediaworker Caddy config
   if [ "$media_domain" != "$domain" ] && [ "$media_domain" != "$api_domain" ]; then
     cp -f media.caddy.example caddy.d/media.caddy 2>/dev/null || true
+    record_caddy_checksum "media"
     info "Dedicated Mediaworker routing enabled: caddy.d/media.caddy ($media_domain)"
   else
-    rm -f caddy.d/media.caddy
+    rm -f caddy.d/media.caddy .caddy.d.media.sha256
     info "Media routed via API domain (/api/media/*)"
   fi
 
@@ -799,6 +1051,7 @@ run_wizard() {
     set_env_var "COMPOSE_PROFILES" "client"
     set_env_var "CLIENT_DOMAIN" "$client_domain"
     cp -f client.caddy.example caddy.d/client.caddy
+    record_caddy_checksum "client"
     if [ -n "$client_override_port" ]; then
       cat <<EOF > docker-compose.override.yml
 services:
@@ -900,12 +1153,7 @@ main_menu() {
       docker_compose_cmd logs -f
       ;;
     5)
-      info "Checking for image updates..."
-      docker_compose_cmd pull
-      info "Applying updates..."
-      docker_compose_cmd up -d
-      success "Stack updated to latest versions!"
-      docker_compose_cmd ps
+      update_stack
       ;;
     6)
       show_summary_card
@@ -939,8 +1187,8 @@ case "${1:-}" in
     docker_compose_cmd logs -f "${2:-}"
     ;;
   update|pull|--update|--pull)
-    docker_compose_cmd pull
-    docker_compose_cmd up -d
+    shift || true
+    update_stack "$@"
     ;;
   info|status|--info|--status)
     show_summary_card

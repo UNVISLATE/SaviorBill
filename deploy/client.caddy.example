@@ -6,6 +6,11 @@
 		respond "not found" 404
 	}
 
+	# Внутренние межсервисные эндпоинты (доступны только в private/Docker-сети)
+	handle /api/v1/internal/* {
+		respond "not found" 404
+	}
+
 	# Маршрутизация загрузки медиа в mediaworker
 	handle /api/media/* {
 		reverse_proxy mediaworker:8001
