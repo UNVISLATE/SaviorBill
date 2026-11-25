@@ -264,3 +264,28 @@ async def test_mediaworker_logs_admin_can_read_job_and_progress(http, new_user, 
             "/api/media/logs/jobs/does-not-exist-job-id", headers=hdr
         )
         assert missing_resp.status_code == 404, missing_resp.text
+
+
+async def test_billing_ban_blocks_mediaworker_upload(http, new_user, seed, cfg):
+    """Глобальный бан IP из billing (security:banned_ips:{ip}) блокирует загрузку в mediaworker."""
+    import valkey.asyncio as valkey
+
+    token_access = await _access(http, new_user, seed)
+    hdr = {"Authorization": f"Bearer {token_access}"}
+    sess_resp = await http.get("/api/v1/user/me/sessions", headers=hdr)
+    assert sess_resp.status_code == 200, sess_resp.text
+    peer_ip = sess_resp.json()[0]["ip"]
+
+    vk = valkey.from_url(cfg.valkey_url, decode_responses=True)
+    ban_key = f"security:banned_ips:{peer_ip}"
+    try:
+        await vk.set(ban_key, '{"reason":"integration_cross_ban"}', ex=30)
+        async with httpx.AsyncClient(base_url=MEDIAWORKER_URL, timeout=15) as mw:
+            r = await mw.post(
+                "/api/media/upload",
+                headers=hdr,
+            )
+        assert r.status_code == 403, r.text
+    finally:
+        await vk.delete(ban_key)
+        await vk.aclose()

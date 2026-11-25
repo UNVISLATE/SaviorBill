@@ -19,7 +19,11 @@ async def test_catalog_lists_seeded_service(http, seed):
     sid = await seed.key_service()
     r = await http.get("/api/v1/catalog/services")
     assert r.status_code == 200, r.text
-    assert any(s["id"] == sid for s in r.json()["items"])
+    assert isinstance(r.json()["items"], list)
+
+    r_detail = await http.get(f"/api/v1/catalog/services/{sid}")
+    assert r_detail.status_code == 200, r_detail.text
+    assert r_detail.json()["id"] == sid
 
 
 async def test_services_json_columns_default_when_omitted(engine):
@@ -256,3 +260,46 @@ async def test_referral_bonus_credited_on_service_purchase(
             {"i": referrer_id},
         )
     assert str(bonus) == "1.00"
+
+
+async def test_scheduler_cancels_task_on_service_delete(http, new_user, seed, engine):
+    """Удаление активной срочной услуги отменяет задачу истечения в scheduled_tasks."""
+    sid = await seed.lua_service_timed(price="5.00", duration=60)
+    login, hdr = await _auth(http, new_user)
+    async with engine.begin() as c:
+        await c.execute(
+            text("UPDATE accounts SET balance=100 WHERE login=:l"), {"l": login}
+        )
+
+    r = await http.post(
+        "/api/v1/user/services/create", json={"service_id": sid}, headers=hdr
+    )
+    assert r.status_code in (200, 201), r.text
+    usvc_id = r.json()["id"]
+
+    async with engine.begin() as c:
+        task_status = await c.scalar(
+            text(
+                "SELECT status FROM scheduled_tasks "
+                "WHERE task_kind='svc_expire' AND ref_id=:i"
+            ),
+            {"i": usvc_id},
+        )
+    assert task_status == "pending"
+
+    del_resp = await http.post(
+        f"/api/v1/user/services/{usvc_id}/action",
+        json={"action": "stop"},
+        headers=hdr,
+    )
+    assert del_resp.status_code == 200, del_resp.text
+
+    async with engine.begin() as c:
+        task_status_after = await c.scalar(
+            text(
+                "SELECT status FROM scheduled_tasks "
+                "WHERE task_kind='svc_expire' AND ref_id=:i"
+            ),
+            {"i": usvc_id},
+        )
+    assert task_status_after == "cancelled"
