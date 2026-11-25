@@ -18,10 +18,16 @@ from core.settings_def import SettingDef, by_key, default_defs, seed_defs
 
 # Префикс ключей кэша настроек в Valkey.
 _CACHE = "settings:"
-# Короткий in-process L1-кэш (снижает число Valkey roundtrip'ов на горячих роутах).
+# Короткий in-process L1-кэш только для горячих non-critical ключей (снижает
+# число Valkey roundtrip'ов на каталоге и rate-limit без задержки критичных флагов).
 _L1_TTL_SEC = 3.0
 _L1_MISS = object()
 _L1_CACHE: dict[tuple[int, str], tuple[float, Any]] = {}
+_L1_PREFIXES = ("ratelimit.", "security.autoban.", "catalog.", "cache.")
+
+
+def _is_l1_cacheable(key: str) -> bool:
+    return key.startswith(_L1_PREFIXES)
 
 
 class SystemSettingsModel(Base):
@@ -86,10 +92,11 @@ class SystemSettingsMngr:
 
     # чтение
     async def get(self, key: str, default: str | None = None) -> str | None:
-        """Получить строковое значение настройки (L1 3с + cache-aside через Valkey)."""
+        """Получить строковое значение настройки (L1 3с для горячих ключей + Valkey)."""
+        use_l1 = self.cache_ttl > 0 and _is_l1_cacheable(key)
         vk_ns = id(self.vk)
         l1_key = (vk_ns, key)
-        if self.cache_ttl > 0:
+        if use_l1:
             entry = _L1_CACHE.get(l1_key)
             if entry is not None:
                 exp, val = entry
@@ -99,19 +106,19 @@ class SystemSettingsMngr:
 
         cached = await self.vk.get(_CACHE + key)
         if cached is not None:
-            if self.cache_ttl > 0:
+            if use_l1:
                 _L1_CACHE[l1_key] = (time.monotonic() + min(_L1_TTL_SEC, self.cache_ttl), cached)
             return cached
 
         row = await self._db_get_row(key)
         if row is None or row.value is None:
-            if self.cache_ttl > 0:
+            if use_l1:
                 _L1_CACHE[l1_key] = (time.monotonic() + min(_L1_TTL_SEC, self.cache_ttl), _L1_MISS)
             return default
 
         value = self.box.open(row.value) if row.is_secret else row.value
         await self.vk.set(_CACHE + key, value, ex=self.cache_ttl)
-        if self.cache_ttl > 0:
+        if use_l1:
             _L1_CACHE[l1_key] = (time.monotonic() + min(_L1_TTL_SEC, self.cache_ttl), value)
         return value
 
