@@ -22,4 +22,20 @@ def get_settings_mngr(
     return SystemSettingsMngr(session, vk, make_secbox(cfg), cfg.SETTINGS_CACHE_TTL)
 
 
-__all__ = ["SystemSettingsMngr", "get_settings_mngr"]
+def get_settings_reader(
+    request: Request,
+    vk: valkey.Valkey = Depends(get_valkey_client),
+) -> SystemSettingsMngr:
+    """Лёгкий reader настроек: не создаёт AsyncSession при попадании в L1/Valkey кэш."""
+    cfg: AppConfig = request.app.state.settings
+    session_factory = getattr(request.app.state, "db_sessionmaker", None)
+    return SystemSettingsMngr(
+        None,
+        vk,
+        make_secbox(cfg),
+        cfg.SETTINGS_CACHE_TTL,
+        session_factory=session_factory,
+    )
+
+
+__all__ = ["SystemSettingsMngr", "get_settings_mngr", "get_settings_reader"]

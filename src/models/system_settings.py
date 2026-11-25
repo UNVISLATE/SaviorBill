@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import time
 from typing import Any
 
 import valkey.asyncio as valkey
@@ -17,6 +18,10 @@ from core.settings_def import SettingDef, by_key, default_defs, seed_defs
 
 # Префикс ключей кэша настроек в Valkey.
 _CACHE = "settings:"
+# Короткий in-process L1-кэш (снижает число Valkey roundtrip'ов на горячих роутах).
+_L1_TTL_SEC = 3.0
+_L1_MISS = object()
+_L1_CACHE: dict[tuple[int, str], tuple[float, Any]] = {}
 
 
 class SystemSettingsModel(Base):
@@ -59,29 +64,55 @@ class SystemSettingsMngr:
 
     def __init__(
         self,
-        session: AsyncSession,
+        session: AsyncSession | None,
         vk: valkey.Valkey,
         box: SecBox,
         cache_ttl: int = 300,
+        session_factory: Any = None,
     ) -> None:
         self.s = session
         self.vk = vk
         self.box = box
         self.cache_ttl = cache_ttl
+        self._session_factory = session_factory
+
+    async def _db_get_row(self, key: str) -> SystemSettingsModel | None:
+        if self.s is not None:
+            return await self.s.get(SystemSettingsModel, key)
+        if self._session_factory is not None:
+            async with self._session_factory() as session:
+                return await session.get(SystemSettingsModel, key)
+        return None
 
     # чтение
     async def get(self, key: str, default: str | None = None) -> str | None:
-        """Получить строковое значение настройки (cache-aside через Valkey)."""
+        """Получить строковое значение настройки (L1 3с + cache-aside через Valkey)."""
+        vk_ns = id(self.vk)
+        l1_key = (vk_ns, key)
+        if self.cache_ttl > 0:
+            entry = _L1_CACHE.get(l1_key)
+            if entry is not None:
+                exp, val = entry
+                if time.monotonic() < exp:
+                    return default if val is _L1_MISS else val
+                _L1_CACHE.pop(l1_key, None)
+
         cached = await self.vk.get(_CACHE + key)
         if cached is not None:
+            if self.cache_ttl > 0:
+                _L1_CACHE[l1_key] = (time.monotonic() + min(_L1_TTL_SEC, self.cache_ttl), cached)
             return cached
 
-        row = await self.s.get(SystemSettingsModel, key)
+        row = await self._db_get_row(key)
         if row is None or row.value is None:
+            if self.cache_ttl > 0:
+                _L1_CACHE[l1_key] = (time.monotonic() + min(_L1_TTL_SEC, self.cache_ttl), _L1_MISS)
             return default
 
         value = self.box.open(row.value) if row.is_secret else row.value
         await self.vk.set(_CACHE + key, value, ex=self.cache_ttl)
+        if self.cache_ttl > 0:
+            _L1_CACHE[l1_key] = (time.monotonic() + min(_L1_TTL_SEC, self.cache_ttl), value)
         return value
 
     async def get_typed(self, key: str, default: Any = None) -> Any:
@@ -139,6 +170,7 @@ class SystemSettingsMngr:
         if is_secret is None:
             spec = by_key(key)
             is_secret = spec.secret if spec else False
+        _L1_CACHE.pop((id(self.vk), key), None)
 
         # Гарантируем строковый тип для текстовой колонки settings.value в PostgreSQL/asyncpg
         str_value: str | None = None
@@ -152,7 +184,7 @@ class SystemSettingsMngr:
             else:
                 str_value = str(value)
 
-        row = await self.s.get(SystemSettingsModel, key)
+        row = await self._db_get_row(key)
         stored = self.box.seal(str_value) if (is_secret and str_value is not None) else str_value
         if row is None:
             row = SystemSettingsModel(key=key, value=stored, is_secret=is_secret)

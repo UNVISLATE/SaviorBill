@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from urllib.parse import urlsplit
 
-from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
-from starlette.responses import JSONResponse, Response
+from starlette.responses import JSONResponse
+from starlette.types import ASGIApp, Receive, Scope, Send
 
 from core.config import AppConfig
 from security.sec.cookies import ACCESS_COOKIE
@@ -102,28 +102,33 @@ def _request_origin_allowed(request: Request, cfg: object, origin: str) -> bool:
     return False
 
 
-class CookieCSRFMiddleware(BaseHTTPMiddleware):
-    """Отклонить небезопасный запрос с чужим ``Origin``, если auth — по cookie."""
+class CookieCSRFMiddleware:
+    """Отклонить небезопасный запрос с чужим ``Origin``, если auth — по cookie (pure ASGI)."""
 
-    def __init__(self, app, cfg: AppConfig) -> None:
-        super().__init__(app)
+    def __init__(self, app: ASGIApp, cfg: AppConfig) -> None:
+        self.app = app
         self._cfg = cfg
 
-    async def dispatch(
-        self, request: Request, call_next: RequestResponseEndpoint
-    ) -> Response:
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope.get("method", "GET") in _SAFE_METHODS:
+            await self.app(scope, receive, send)
+            return
+
+        request = Request(scope)
         if (
-            request.method not in _SAFE_METHODS
-            and not _is_exempt(request.url.path)
+            not _is_exempt(request.url.path)
             and not request.headers.get("authorization")
             and request.cookies.get(ACCESS_COOKIE)
         ):
             origin = request.headers.get("origin") or request.headers.get("referer")
             if not origin or not _request_origin_allowed(request, self._cfg, origin):
-                return JSONResponse(
+                resp = JSONResponse(
                     {"detail": "cross-origin request rejected"}, status_code=403
                 )
-        return await call_next(request)
+                await resp(scope, receive, send)
+                return
+
+        await self.app(scope, receive, send)
 
 
 __all__ = ["CookieCSRFMiddleware", "_is_exempt"]

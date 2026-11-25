@@ -65,6 +65,50 @@ return {0, 0, retry}
 """
 
 
+_DUAL_SCRIPT = """
+local b_key    = KEYS[1]
+local m_key    = KEYS[2]
+local now      = tonumber(ARGV[1])
+local b_win    = tonumber(ARGV[2])
+local b_lim    = tonumber(ARGV[3])
+local m_win    = tonumber(ARGV[4])
+local m_lim    = tonumber(ARGV[5])
+local member   = ARGV[6]
+
+redis.call('ZREMRANGEBYSCORE', b_key, 0, now - b_win)
+local b_count = redis.call('ZCARD', b_key)
+if b_count >= b_lim then
+    local oldest = redis.call('ZRANGE', b_key, 0, 0, 'WITHSCORES')
+    local retry = b_win
+    if oldest[2] then
+        retry = (tonumber(oldest[2]) + b_win) - now
+        if retry < 0 then retry = 0 end
+    end
+    redis.call('PEXPIRE', b_key, b_win)
+    return {0, 0, retry, 1}
+end
+
+redis.call('ZREMRANGEBYSCORE', m_key, 0, now - m_win)
+local m_count = redis.call('ZCARD', m_key)
+if m_count >= m_lim then
+    local oldest = redis.call('ZRANGE', m_key, 0, 0, 'WITHSCORES')
+    local retry = m_win
+    if oldest[2] then
+        retry = (tonumber(oldest[2]) + m_win) - now
+        if retry < 0 then retry = 0 end
+    end
+    redis.call('PEXPIRE', m_key, m_win)
+    return {0, 0, retry, 2}
+end
+
+redis.call('ZADD', b_key, now, member)
+redis.call('PEXPIRE', b_key, b_win)
+redis.call('ZADD', m_key, now, member)
+redis.call('PEXPIRE', m_key, m_win)
+return {1, m_lim - m_count - 1, 0, 0}
+"""
+
+
 class RateLimiter:
     """Скользящее окно частоты обращений поверх Valkey (ZSET + Lua)."""
 
@@ -99,6 +143,47 @@ class RateLimiter:
             remaining=remaining,
             retry_after=ceil(retry_ms / 1000) if retry_ms > 0 else 0,
         )
+
+    async def hit_dual(
+        self,
+        burst_scope: str,
+        main_scope: str,
+        ident: str,
+        burst_rule: LimitRule,
+        main_rule: LimitRule,
+    ) -> tuple[LimitResult, bool]:
+        """Атомарно проверить burst и основное окно за 1 Valkey roundtrip.
+
+        Возвращает ``(LimitResult, is_burst_violation)``.
+        """
+        b_key = f"{_PREFIX}{burst_scope}:{ident}"
+        m_key = f"{_PREFIX}{main_scope}:{ident}"
+        now = self._now()
+        member = f"{now}:{token_hex(8)}"
+        raw = await self.vk.eval(
+            _DUAL_SCRIPT,
+            2,
+            b_key,
+            m_key,
+            now,
+            burst_rule.window * 1000,
+            burst_rule.max_hits,
+            main_rule.window * 1000,
+            main_rule.max_hits,
+            member,
+        )
+        allowed, remaining, retry_ms, which = (
+            int(raw[0]),
+            int(raw[1]),
+            int(raw[2]),
+            int(raw[3]),
+        )
+        res = LimitResult(
+            allowed=bool(allowed),
+            remaining=remaining,
+            retry_after=ceil(retry_ms / 1000) if retry_ms > 0 else 0,
+        )
+        return res, (which == 1)
 
 
 __all__ = ["LimitRule", "LimitResult", "RateLimiter"]

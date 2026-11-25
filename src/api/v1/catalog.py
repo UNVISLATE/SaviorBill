@@ -14,8 +14,8 @@ from dependencies.catalog import (
     get_servicekeys_mngr,
 )
 from dependencies.promo import PromoCodesMngr, get_promo_mngr
-from dependencies.ratelimit import LimitKind, authenticated_ident, enforce_rate_limit
-from dependencies.settings import SystemSettingsMngr, get_settings_mngr
+from dependencies.ratelimit import LimitKind, authenticated_ident, enforce_rate_limit, rate_limit
+from dependencies.settings import SystemSettingsMngr, get_settings_reader
 from dependencies.valkey import get_valkey_client
 import valkey.asyncio as valkey
 from enums import Delivery
@@ -27,8 +27,10 @@ from schemas.promo import PromoQuote
 from schemas.service import Service
 from services.catalog_cache import (
     get_cached_catalogs,
+    get_cached_catalogs_raw,
     get_cached_catalog_ids,
     get_cached_service_entities,
+    get_cached_service_raw,
     set_cached_catalogs,
     set_cached_catalog_ids,
     set_cached_service_entities,
@@ -49,22 +51,28 @@ async def _with_stock(
     return svc.with_stock(available == 0)
 
 
-@router.get("/catalogs", response_model=list[CatalogResponse], summary="Catalog tree")
+@router.get(
+    "/catalogs",
+    response_model=list[CatalogResponse],
+    summary="Catalog tree",
+    dependencies=[Depends(rate_limit("catalog.read", LimitKind.DEFAULT))],
+)
 async def list_catalogs(
-    mngr: ServiceCatalogsMngr = Depends(get_catalog_mngr),
+    request: Request,
     vk: valkey.Valkey = Depends(get_valkey_client),
-    settings: SystemSettingsMngr = Depends(get_settings_mngr),
-) -> list[CatalogResponse]:
+    settings: SystemSettingsMngr = Depends(get_settings_reader),
+) -> list[CatalogResponse] | Response:
     """Все активные каталоги (плоско; иерархия — через parent_id). Кешируется в Valkey."""
     cache_enabled_raw = await settings.get("catalog.cache.enabled", "1")
     cache_enabled = cache_enabled_raw.strip().lower() in ("1", "true", "yes", "on")
 
     if cache_enabled:
-        cached = await get_cached_catalogs(vk)
-        if cached is not None:
-            return [CatalogResponse.model_validate(c) for c in cached]
+        raw_cached = await get_cached_catalogs_raw(vk)
+        if raw_cached is not None:
+            return Response(content=raw_cached, media_type="application/json")
 
-    rows = await mngr.list_all()
+    async with request.app.state.db_sessionmaker() as session:
+        rows = await ServiceCatalogsMngr(session).list_all()
     result = [CatalogResponse.from_model(c) for c in rows if c.is_active]
 
     if cache_enabled:
@@ -83,7 +91,7 @@ async def list_services(
     pp: PageParams = Depends(page_params),
     acc: UserModel | None = Depends(get_current_acc_optional),
     vk: valkey.Valkey = Depends(get_valkey_client),
-    settings: SystemSettingsMngr = Depends(get_settings_mngr),
+    settings: SystemSettingsMngr = Depends(get_settings_reader),
     mngr: ServiceMngr = Depends(get_service_mngr),
     keys_mngr: ServiceKeysMngr = Depends(get_servicekeys_mngr),
 ) -> Page[Service]:
@@ -208,7 +216,10 @@ async def list_services(
 
 
 @router.get(
-    "/services/{service_id}", response_model=Service, summary="Service details"
+    "/services/{service_id}",
+    response_model=Service,
+    summary="Service details",
+    dependencies=[Depends(rate_limit("catalog.read", LimitKind.DEFAULT))],
 )
 async def get_service(
     request: Request,
@@ -221,7 +232,7 @@ async def get_service(
     mngr: ServiceMngr = Depends(get_service_mngr),
     keys_mngr: ServiceKeysMngr = Depends(get_servicekeys_mngr),
     promo_mngr: PromoCodesMngr = Depends(get_promo_mngr),
-    settings: SystemSettingsMngr = Depends(get_settings_mngr),
+    settings: SystemSettingsMngr = Depends(get_settings_reader),
     vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> Service:
     """Получить активную услугу по идентификатору."""
@@ -232,9 +243,9 @@ async def get_service(
     ttl = int(ttl_raw) if ttl_raw and ttl_raw.isdigit() else 3600
 
     if cache_enabled and not promo:
-        entities, missing = await get_cached_service_entities(vk, [service_id])
-        if service_id in entities:
-            return Service.model_validate(entities[service_id])
+        raw_cached = await get_cached_service_raw(vk, service_id)
+        if raw_cached is not None:
+            return Response(content=raw_cached, media_type="application/json")
 
     svc = await mngr.get_active(service_id)
     result = await _with_stock(Service.from_model(svc), service_id, keys_mngr)

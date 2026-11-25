@@ -20,6 +20,16 @@ KEY_STATS_HITS = "cache:stats:hits"
 KEY_STATS_MISSES = "cache:stats:misses"
 KEY_STATS_INVALIDATIONS = "cache:stats:invalidations"
 
+_GET_WITH_STATS_LUA = """
+local v = redis.call('GET', KEYS[1])
+if v then
+    redis.call('INCR', KEYS[2])
+    return v
+end
+redis.call('INCR', KEYS[3])
+return nil
+"""
+
 
 def _format_bytes(bytes_count: int) -> str:
     """Человекочитаемый формат байтов."""
@@ -33,6 +43,34 @@ def _format_bytes(bytes_count: int) -> str:
         return f"{mb:.2f} MB"
     gb = mb / 1024
     return f"{gb:.2f} GB"
+
+
+async def get_cached_catalogs_raw(vk: valkey.Valkey) -> str | bytes | None:
+    """Получить сырую JSON-строку дерева каталогов за 1 Valkey roundtrip."""
+    try:
+        return await vk.eval(
+            _GET_WITH_STATS_LUA, 3, KEY_PREFIX_TREE, KEY_STATS_HITS, KEY_STATS_MISSES
+        )
+    except VALKEY_ERRORS as exc:
+        note_degraded("cache", exc)
+        return None
+
+
+async def get_cached_service_raw(
+    vk: valkey.Valkey, service_id: int
+) -> str | bytes | None:
+    """Получить сырую JSON-строку услуги по ID за 1 Valkey roundtrip."""
+    try:
+        return await vk.eval(
+            _GET_WITH_STATS_LUA,
+            3,
+            _service_entity_key(service_id),
+            KEY_STATS_HITS,
+            KEY_STATS_MISSES,
+        )
+    except VALKEY_ERRORS as exc:
+        note_degraded("cache", exc)
+        return None
 
 
 async def get_cached_catalogs(vk: valkey.Valkey) -> list[dict[str, Any]] | None:

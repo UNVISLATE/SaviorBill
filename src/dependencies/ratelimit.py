@@ -11,7 +11,7 @@ from fastapi import Depends, HTTPException, Request, Response, status
 
 from core.config import AppConfig
 from dependencies.auth import get_current_acc
-from dependencies.settings import get_settings_mngr
+from dependencies.settings import get_settings_reader
 from models.system_settings import SystemSettingsMngr
 from models.user import UserModel
 from security.ratelimit import LimitRule, RateLimiter
@@ -124,7 +124,7 @@ def rate_limit(
     async def _dep_public(
         request: Request,
         response: Response,
-        settings: SystemSettingsMngr = Depends(get_settings_mngr),
+        settings: SystemSettingsMngr = Depends(get_settings_reader),
     ) -> None:
         await _enforce(request, response, settings, _client_ip(request), scope, kind)
 
@@ -132,7 +132,7 @@ def rate_limit(
         request: Request,
         response: Response,
         acc: UserModel = Depends(get_current_acc),
-        settings: SystemSettingsMngr = Depends(get_settings_mngr),
+        settings: SystemSettingsMngr = Depends(get_settings_reader),
     ) -> None:
         await _enforce(
             request, response, settings, _authenticated_ident(acc), scope, kind
@@ -145,6 +145,46 @@ def rate_limit(
     _dep._rate_limit_scope = scope
     _dep._rate_limit_kind = kind
     return _dep
+
+
+async def _raise_rate_limit_exceeded(
+    request: Request,
+    settings: SystemSettingsMngr,
+    *,
+    scope: str,
+    kind: LimitKind,
+    action: str,
+    reason: str,
+    retry_after: int,
+) -> None:
+    """Зафиксировать нарушение лимита, проверить Auto-Ban и выбросить 403/429."""
+    client_ip = request.client.host if request.client else "unknown"
+    vk = request.app.state.valkey
+    trace_id = getattr(getattr(request, "state", None), "trace_id", None)
+    await log_security_event(
+        vk,
+        ip=client_ip,
+        action=action,
+        reason=reason,
+        scope=scope,
+        kind=kind.value,
+        details=f"Retry-After: {retry_after}s",
+        trace_id=trace_id,
+    )
+    was_banned = await check_and_apply_autoban(
+        vk, client_ip, settings, trace_id=trace_id
+    )
+    if was_banned:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail="too many rate limit violations: your IP has been temporarily blocked",
+            headers={"Retry-After": str(retry_after)},
+        )
+    raise HTTPException(
+        status.HTTP_429_TOO_MANY_REQUESTS,
+        detail="too many requests, try again later",
+        headers={"Retry-After": str(retry_after)},
+    )
 
 
 async def _enforce_ip_guard(
@@ -168,10 +208,14 @@ async def _enforce_ip_guard(
         note_degraded("ratelimit", exc)
         return
     if not res.allowed:
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="too many requests from your IP, try again later",
-            headers={"Retry-After": str(res.retry_after)},
+        await _raise_rate_limit_exceeded(
+            request,
+            settings,
+            scope=scope,
+            kind=kind,
+            action="ip_guard_rate_limited",
+            reason=f"Превышен IP-страж: {ip_rule.max_hits} за {ip_rule.window}с ({scope})",
+            retry_after=res.retry_after,
         )
 
 
@@ -191,40 +235,13 @@ async def _enforce(
         rule, burst_rule = await _resolve_rules(settings, cfg, scope, kind)
         limiter = RateLimiter(request.app.state.valkey)
 
-        # 1. Burst Rate Limit (1-секундный всплеск)
         if burst_rule is not None:
-            burst_res = await limiter.hit(f"{scope}:burst", ident, burst_rule)
-            if not burst_res.allowed:
-                client_ip = request.client.host if request.client else "unknown"
-                vk = request.app.state.valkey
-                trace_id = getattr(getattr(request, "state", None), "trace_id", None)
-                await log_security_event(
-                    vk,
-                    ip=client_ip,
-                    action="burst_rate_limited",
-                    reason=f"Превышен всплеск (burst): {burst_rule.max_hits} за {burst_rule.window}с ({scope})",
-                    scope=scope,
-                    kind=kind.value,
-                    details=f"Retry-After: {burst_res.retry_after}s",
-                    trace_id=trace_id,
-                )
-                was_banned = await check_and_apply_autoban(
-                    vk, client_ip, settings, trace_id=trace_id
-                )
-                if was_banned:
-                    raise HTTPException(
-                        status.HTTP_403_FORBIDDEN,
-                        detail="too many rate limit violations: your IP has been temporarily blocked",
-                        headers={"Retry-After": str(burst_res.retry_after)},
-                    )
-                raise HTTPException(
-                    status.HTTP_429_TOO_MANY_REQUESTS,
-                    detail="too many requests, try again later",
-                    headers={"Retry-After": str(burst_res.retry_after)},
-                )
-
-        # 2. Основное скользящее окно
-        res = await limiter.hit(scope, ident, rule)
+            res, is_burst = await limiter.hit_dual(
+                f"{scope}:burst", scope, ident, burst_rule, rule
+            )
+        else:
+            res = await limiter.hit(scope, ident, rule)
+            is_burst = False
     except VALKEY_ERRORS as exc:
         note_degraded("ratelimit", exc)
         if kind in (LimitKind.AUTH, LimitKind.SENSITIVE, LimitKind.CRITICAL):
@@ -236,32 +253,24 @@ async def _enforce(
         return
 
     if not res.allowed:
-        client_ip = request.client.host if request.client else "unknown"
-        vk = request.app.state.valkey
-        trace_id = getattr(getattr(request, "state", None), "trace_id", None)
-        await log_security_event(
-            vk,
-            ip=client_ip,
+        if is_burst and burst_rule is not None:
+            await _raise_rate_limit_exceeded(
+                request,
+                settings,
+                scope=scope,
+                kind=kind,
+                action="burst_rate_limited",
+                reason=f"Превышен всплеск (burst): {burst_rule.max_hits} за {burst_rule.window}с ({scope})",
+                retry_after=res.retry_after,
+            )
+        await _raise_rate_limit_exceeded(
+            request,
+            settings,
+            scope=scope,
+            kind=kind,
             action="rate_limited",
             reason=f"Превышен лимит {rule.max_hits} за {rule.window}с ({scope})",
-            scope=scope,
-            kind=kind.value,
-            details=f"Retry-After: {res.retry_after}s",
-            trace_id=trace_id,
-        )
-        was_banned = await check_and_apply_autoban(
-            vk, client_ip, settings, trace_id=trace_id
-        )
-        if was_banned:
-            raise HTTPException(
-                status.HTTP_403_FORBIDDEN,
-                detail="too many rate limit violations: your IP has been temporarily blocked",
-                headers={"Retry-After": str(res.retry_after)},
-            )
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="too many requests, try again later",
-            headers={"Retry-After": str(res.retry_after)},
+            retry_after=res.retry_after,
         )
 
     response.headers["X-RateLimit-Remaining"] = str(res.remaining)
