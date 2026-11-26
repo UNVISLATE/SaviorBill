@@ -150,7 +150,7 @@ local function fetch_artifact(payload)
   local billing_url = env("BILLING_URL", "http://billing:8000")
   local token = billing._read_service_token()
   local url = string.format("%s/api/v1/internal/lua/artifacts/%s/%s", billing_url, tostring(script_id), tostring(version))
-  local resp = httpc.request({
+  local resp = httpc.internal_request({
     url = url,
     method = "GET",
     headers = {
@@ -239,11 +239,24 @@ function M.run_script(payload)
     end,
   })
 
-  -- Песочница: даём json, http, crypto, cache, log (не os/io).
+  local function shallow_copy(t)
+    local out = {}
+    for k, v in pairs(t) do
+      out[k] = v
+    end
+    return out
+  end
+
+  local billing_api = {
+    import_keys = billing.import_keys,
+    send_email = billing.send_email,
+  }
+
+  -- Песочница: даём json, http, crypto, cache, log (не os/io и без приватных токенов).
   local sandbox = {
-    json = cjson,
+    json = shallow_copy(cjson),
     http = http_api,
-    billing = billing,
+    billing = billing_api,
     crypto = sbox.make_crypto(),
     cache = sbox.make_cache(),
     log = logger,
@@ -257,8 +270,8 @@ function M.run_script(payload)
     pcall = sbox.safe_pcall,
     xpcall = sbox.safe_xpcall,
     string = sbox.limited_string(),
-    table = table,
-    math = math,
+    table = shallow_copy(table),
+    math = shallow_copy(math),
     os = { time = os.time, date = os.date },
   }
   local chunk, lerr = load(code, "@" .. path, "t", sandbox)

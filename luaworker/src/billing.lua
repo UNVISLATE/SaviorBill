@@ -82,7 +82,7 @@ function M.import_keys(service, keys)
     timeout = 10,
   }
 
-  local resp = httpc.request(req)
+  local resp = httpc.internal_request(req)
   if not resp or not resp.ok then
     local err_msg = (resp and resp.error) or ("HTTP status " .. tostring(resp and resp.status))
     if resp and resp.body and #resp.body > 0 then
@@ -148,7 +148,7 @@ function M.send_email(opts)
     timeout = 10,
   }
 
-  local resp = httpc.request(req)
+  local resp = httpc.internal_request(req)
   if not resp or not resp.ok then
     local err_msg = (resp and resp.error) or ("HTTP status " .. tostring(resp and resp.status))
     if resp and resp.body and #resp.body > 0 then
