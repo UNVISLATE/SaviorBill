@@ -54,6 +54,18 @@ def test_discount_rejects_non_discount_kind():
         _mngr().discount_for(catalog, service)
 
 
+def test_discount_rejects_wrong_service_id():
+    catalog = SimpleNamespace(
+        kind=PromoKind.DISCOUNT,
+        discount_type=DiscountType.PERCENT,
+        value=Decimal("10"),
+        service_id=42,
+    )
+    service = SimpleNamespace(id=99, price=Decimal("100"))
+    with pytest.raises(HTTPException):
+        _mngr().discount_for(catalog, service)
+
+
 def test_behavior_lives_on_catalog_not_code():
     code_cols = set(PromoCodesModel.__table__.columns.keys())
     cat_cols = set(PromoCatalogsModel.__table__.columns.keys())

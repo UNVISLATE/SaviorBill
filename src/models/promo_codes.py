@@ -139,7 +139,9 @@ class PromoCodesMngr:
         body = secrets.token_urlsafe(9).replace("-", "").replace("_", "").upper()
         return f"{prefix}{body}"[:64]
 
-    async def load_valid(self, code: str, acc) -> PromoCodesModel:
+    async def load_valid(
+        self, code: str, acc, *, service_id: int | None = None
+    ) -> PromoCodesModel:
         """Найти код, заблокировать строку и проверить активность/срок/лимиты.
 
         Строка промокода блокируется (``SELECT ... FOR UPDATE``) до конца
@@ -179,6 +181,16 @@ class PromoCodesMngr:
             raise HTTPException(status.HTTP_409_CONFLICT, "usage limit reached")
 
         catalog = await self.catalog_of(promo)
+        catalog_service_id = getattr(catalog, "service_id", None)
+        if (
+            service_id is not None
+            and catalog_service_id is not None
+            and catalog_service_id != service_id
+        ):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "promo code is not valid for this service",
+            )
 
         # Правило 1: этот конкретный код пользователь уже гасил — всегда
         # запрещено, независимо от per_user каталога.
@@ -269,6 +281,14 @@ class PromoCodesMngr:
             raise HTTPException(
                 status.HTTP_400_BAD_REQUEST, "promo code is not a discount code"
             )
+        catalog_service_id = getattr(catalog, "service_id", None)
+        if catalog_service_id is not None and (
+            service is None or getattr(service, "id", None) != catalog_service_id
+        ):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "promo code is not valid for this service",
+            )
         if (getattr(service, "settings", {}) or {}).get("allow_promotions", True) is False:
             return Decimal("0")
         target_price = base_price if base_price is not None else service.price
@@ -318,6 +338,11 @@ class PromoCodesMngr:
         except HTTPException:
             return False, Decimal("0"), generic_invalid
         if catalog.kind != PromoKind.DISCOUNT:
+            return False, Decimal("0"), generic_invalid
+        catalog_service_id = getattr(catalog, "service_id", None)
+        if catalog_service_id is not None and (
+            service is None or getattr(service, "id", None) != catalog_service_id
+        ):
             return False, Decimal("0"), generic_invalid
 
         if acc is not None:

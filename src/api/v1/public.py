@@ -168,7 +168,7 @@ async def create_guest_purchase(
     promo_id: int | None = None
     if body.promocode:
         assert_promotions_allowed(service)
-        promo = await promo_mngr.load_valid(body.promocode, acc)
+        promo = await promo_mngr.load_valid(body.promocode, acc, service_id=service.id)
         catalog = await promo_mngr.catalog_of(promo)
         if catalog.kind != PromoKind.DISCOUNT:
             raise HTTPException(

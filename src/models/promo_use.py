@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, DateTime, ForeignKey, Integer
+from sqlalchemy import UniqueConstraint, func, DateTime, ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column
 
 from models import Base
@@ -15,6 +15,11 @@ class PromoUseModel(Base):
     """Факт применения промокода (аудит и лимиты per-user)."""
 
     __tablename__ = "promo_uses"
+    __table_args__ = (
+        UniqueConstraint(
+            "promocode_id", "account_id", name="uq_promo_uses_code_account"
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     created_at: Mapped[datetime] = mapped_column(
