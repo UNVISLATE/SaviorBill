@@ -71,9 +71,50 @@ class MediaJobEvents:
                 pass
             self._task = None
 
+    async def _process_entry(self, msg_id: object, data: dict) -> None:
+        try:
+            if not verify_fields(self.cfg.BUS_SIGNING_KEY, data):
+                bus_signature_rejected_total.labels(bus="media_job_events").inc()
+                log.warning(
+                    "media-job-events: сообщение %s отклонено — "
+                    "неверная подпись",
+                    msg_id,
+                )
+                return
+            with span_from_carrier("media.job_event.consume", data):
+                await self._handle(data)
+        except Exception:  # noqa: BLE001 — одна запись не валит цикл
+            log.exception("media-job-events: recording error")
+        finally:
+            await self.vk.xack(
+                self.cfg.MEDIA_JOB_EVENTS_STREAM,
+                self.cfg.MEDIA_JOB_EVENTS_GROUP,
+                msg_id,
+            )
+
+    async def _reclaim_pending(self, consumer: str) -> None:
+        """Забрать зависшие в PEL события джоб после перезапуска/сбоя."""
+        try:
+            res = await self.vk.xautoclaim(
+                self.cfg.MEDIA_JOB_EVENTS_STREAM,
+                self.cfg.MEDIA_JOB_EVENTS_GROUP,
+                consumer,
+                min_idle_time=15_000,
+                start_id="0-0",
+                count=20,
+            )
+            entries = res[1] if isinstance(res, (list, tuple)) and len(res) >= 2 else []
+            for msg_id, data in entries or []:
+                await self._process_entry(msg_id, data)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            log.exception("media-job-events: reclaim_pending error")
+
     async def _run(self) -> None:
         consumer = self.cfg.instance_id
         while not self._stopped:
+            await self._reclaim_pending(consumer)
             try:
                 resp = await self.vk.xreadgroup(
                     self.cfg.MEDIA_JOB_EVENTS_GROUP,
@@ -95,25 +136,7 @@ class MediaJobEvents:
                 continue
             for _stream, entries in resp or []:
                 for msg_id, data in entries:
-                    try:
-                        if not verify_fields(self.cfg.BUS_SIGNING_KEY, data):
-                            bus_signature_rejected_total.labels(bus="media_job_events").inc()
-                            log.warning(
-                                "media-job-events: сообщение %s отклонено — "
-                                "неверная подпись",
-                                msg_id,
-                            )
-                            continue
-                        with span_from_carrier("media.job_event.consume", data):
-                            await self._handle(data)
-                    except Exception:  # noqa: BLE001 — одна запись не валит цикл
-                        log.exception("media-job-events: recording error")
-                    finally:
-                        await self.vk.xack(
-                            self.cfg.MEDIA_JOB_EVENTS_STREAM,
-                            self.cfg.MEDIA_JOB_EVENTS_GROUP,
-                            msg_id,
-                        )
+                    await self._process_entry(msg_id, data)
             await self._maybe_sweep()
 
     async def _maybe_sweep(self) -> None:

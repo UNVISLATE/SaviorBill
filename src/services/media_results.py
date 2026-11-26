@@ -73,9 +73,65 @@ class MediaResults:
                 pass
             self._task = None
 
+    async def _process_entry(self, msg_id: object, data: dict) -> None:
+        try:
+            if not verify_fields(self.cfg.BUS_SIGNING_KEY, data):
+                # Результат с неверной/отсутствующей подписью — не
+                # доверяем содержимому: подделка
+                # или рассинхронизация BUS_SIGNING_KEY между
+                # сервисами. Не пишем в БД, просто ack и лог.
+                bus_signature_rejected_total.labels(bus="media_results").inc()
+                log.warning(
+                    "media-results: сообщение %s отклонено — "
+                    "неверная подпись",
+                    msg_id,
+                )
+                await self.vk.xack(
+                    self.cfg.MEDIA_RESULT_STREAM,
+                    self.cfg.MEDIA_RESULT_GROUP,
+                    msg_id,
+                )
+                return
+            with span_from_carrier("media.result.consume", data):
+                await self._handle(msg_id, data)
+            await self.vk.xack(
+                self.cfg.MEDIA_RESULT_STREAM,
+                self.cfg.MEDIA_RESULT_GROUP,
+                msg_id,
+            )
+        except Exception:  # noqa: BLE001 — одна запись не валит цикл
+            log.exception("media-results: recording error")
+            exhausted = await self._on_failure(msg_id, data)
+            if exhausted:
+                await self.vk.xack(
+                    self.cfg.MEDIA_RESULT_STREAM,
+                    self.cfg.MEDIA_RESULT_GROUP,
+                    msg_id,
+                )
+
+    async def _reclaim_pending(self, consumer: str) -> None:
+        """Повторно забрать зависшие в PEL сообщения после временного сбоя."""
+        try:
+            res = await self.vk.xautoclaim(
+                self.cfg.MEDIA_RESULT_STREAM,
+                self.cfg.MEDIA_RESULT_GROUP,
+                consumer,
+                min_idle_time=15_000,
+                start_id="0-0",
+                count=10,
+            )
+            entries = res[1] if isinstance(res, (list, tuple)) and len(res) >= 2 else []
+            for msg_id, data in entries or []:
+                await self._process_entry(msg_id, data)
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001
+            log.exception("media-results: reclaim_pending error")
+
     async def _run(self) -> None:
         consumer = self.cfg.instance_id
         while not self._stopped:
+            await self._reclaim_pending(consumer)
             try:
                 resp = await self.vk.xreadgroup(
                     self.cfg.MEDIA_RESULT_GROUP,
@@ -98,40 +154,7 @@ class MediaResults:
                 continue
             for _stream, entries in resp or []:
                 for msg_id, data in entries:
-                    try:
-                        if not verify_fields(self.cfg.BUS_SIGNING_KEY, data):
-                            # Результат с неверной/отсутствующей подписью — не
-                            # доверяем содержимому: подделка
-                            # или рассинхронизация BUS_SIGNING_KEY между
-                            # сервисами. Не пишем в БД, просто ack и лог.
-                            bus_signature_rejected_total.labels(bus="media_results").inc()
-                            log.warning(
-                                "media-results: сообщение %s отклонено — "
-                                "неверная подпись",
-                                msg_id,
-                            )
-                            await self.vk.xack(
-                                self.cfg.MEDIA_RESULT_STREAM,
-                                self.cfg.MEDIA_RESULT_GROUP,
-                                msg_id,
-                            )
-                            continue
-                        with span_from_carrier("media.result.consume", data):
-                            await self._handle(msg_id, data)
-                        await self.vk.xack(
-                            self.cfg.MEDIA_RESULT_STREAM,
-                            self.cfg.MEDIA_RESULT_GROUP,
-                            msg_id,
-                        )
-                    except Exception:  # noqa: BLE001 — одна запись не валит цикл
-                        log.exception("media-results: recording error")
-                        exhausted = await self._on_failure(msg_id, data)
-                        if exhausted:
-                            await self.vk.xack(
-                                self.cfg.MEDIA_RESULT_STREAM,
-                                self.cfg.MEDIA_RESULT_GROUP,
-                                msg_id,
-                            )
+                    await self._process_entry(msg_id, data)
 
     async def _on_failure(self, msg_id: str, data: dict) -> bool:
         """Учесть попытку; при исчерпании отправить результат в DLQ.
