@@ -180,10 +180,13 @@ set_env_var() {
   local key="$1"
   local val="$2"
   local file="${3:-.env}"
-  if grep -q "^${key}=" "$file" 2>/dev/null; then
-    local safe_val
-    safe_val=$(printf '%s\n' "$val" | sed 's/[&/\]/\\&/g')
-    sed -i "s|^${key}=.*|${key}=${safe_val}|" "$file"
+  if [ -f "$file" ] && grep -q "^${key}=" "$file" 2>/dev/null; then
+    local tmp_file="${file}.tmp.$$"
+    ENV_KEY="$key" ENV_VAL="$val" awk '
+      BEGIN { k = ENVIRON["ENV_KEY"]; v = ENVIRON["ENV_VAL"]; done = 0 }
+      index($0, k "=") == 1 && !done { print k "=" v; done = 1; next }
+      { print }
+    ' "$file" > "$tmp_file" && mv "$tmp_file" "$file"
   else
     printf '%s=%s\n' "$key" "$val" >> "$file"
   fi
@@ -984,6 +987,11 @@ run_wizard() {
   local proto_scheme="https"
   if [ "$is_debug" = "true" ] || [[ "$domain" == "localhost" || "$domain" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     proto_scheme="http"
+  fi
+  if [ "$proto_scheme" = "http" ]; then
+    set_env_var "CADDY_SCHEME" "http://"
+  else
+    set_env_var "CADDY_SCHEME" ""
   fi
 
   local pub_port=""
