@@ -677,6 +677,25 @@ class PayMngr:
                 }
                 return
 
+        if actual_paid is not None and (
+            not actual_paid.is_finite() or actual_paid <= Decimal("0")
+        ):
+            payment.status = PayStatus.REVIEW
+            payment.private_data = {
+                **(payment.private_data or {}),
+                "review_reason": "invalid_paid_amount",
+                "paid": str(actual_paid),
+            }
+            await audit(
+                self.s,
+                action="payment.invalid_paid_amount",
+                target_type="payment",
+                target_id=payment.id,
+                result="warn",
+                meta={"paid": str(actual_paid), "target": str(payment.target)},
+            )
+            return
+
         if payment.target == PayTarget.SERVICE:
             if actual_paid is not None and actual_paid < payment.amount:
                 payment.status = PayStatus.REVIEW
@@ -708,6 +727,16 @@ class PayMngr:
                 service = await self.s.get(ServiceModel, usvc.service_id)
                 usvc.payment_id = payment.id
                 promo_id = (usvc.private_data or {}).get("promocode_id")
+                if promo_id:
+                    ok, reason = await self._redeem_promo(promo_id, payment, usvc)
+                    if not ok:
+                        payment.status = PayStatus.REVIEW
+                        payment.paid_at = None
+                        payment.private_data = {
+                            **(payment.private_data or {}),
+                            "review_reason": reason,
+                        }
+                        return
                 await UserServicesMngr(self.s, self.bus, self.box, dispatcher=self.dispatcher).deliver(
                     usvc, service, acc
                 )
@@ -716,8 +745,6 @@ class PayMngr:
                     await schedule_service_expire(self.s, usvc.id, expires_at)
                 elif usvc.status == UsvcStatus.FAILED:
                     await schedule_delivery_retry(self.s, usvc.id, utc_now())
-                if promo_id:
-                    await self._redeem_promo(promo_id, payment, usvc)
         else:  # пополнение баланса
             if acc is not None:
                 acc.balance += credited
@@ -764,7 +791,7 @@ class PayMngr:
 
     async def _redeem_promo(
         self, promo_id: int, payment: UserPaymentsModel, usvc: UserServicesModel
-    ) -> None:
+    ) -> tuple[bool, str | None]:
         """Погасить промокод заказа ровно один раз.
 
         Блокировка строки промокода обязательна: в `purchases.py` лок берётся
@@ -772,21 +799,66 @@ class PayMngr:
         одним одноразовым кодом доходят сюда одновременно и без FOR UPDATE оба
         не видят чужой `PromoUseModel`.
         """
+        from models.promo_catalogs import PromoCatalogsModel
+
         promo = await self.s.scalar(
             select(PromoCodesModel)
             .where(PromoCodesModel.id == promo_id)
             .with_for_update()
         )
         if promo is None:
-            return
-        already = await self.s.scalar(
+            return True, None
+        already_order = await self.s.scalar(
             select(PromoUseModel).where(
                 PromoUseModel.promocode_id == promo.id,
                 PromoUseModel.order_id == usvc.id,
             )
         )
-        if already is not None:
-            return
+        if already_order is not None:
+            return True, None
+
+        already_user = await self.s.scalar(
+            select(PromoUseModel).where(
+                PromoUseModel.promocode_id == promo.id,
+                PromoUseModel.account_id == payment.account_id,
+            )
+        )
+        if already_user is not None:
+            await audit(
+                self.s,
+                action="promo_use_duplicate_user",
+                target_type="payment",
+                target_id=payment.id,
+                result="warn",
+                meta={"promocode_id": promo.id, "order_id": usvc.id},
+            )
+            return False, "promo_already_used"
+
+        catalog = await self.s.get(PromoCatalogsModel, promo.catalog_id)
+        if catalog is not None and catalog.per_user is not None:
+            distinct_codes_used = await self.s.scalar(
+                select(func.count(func.distinct(PromoUseModel.promocode_id)))
+                .select_from(PromoUseModel)
+                .join(
+                    PromoCodesModel,
+                    PromoUseModel.promocode_id == PromoCodesModel.id,
+                )
+                .where(
+                    PromoCodesModel.catalog_id == catalog.id,
+                    PromoUseModel.account_id == payment.account_id,
+                )
+            )
+            if (distinct_codes_used or 0) >= catalog.per_user:
+                await audit(
+                    self.s,
+                    action="promo_use_per_user_exhausted",
+                    target_type="payment",
+                    target_id=payment.id,
+                    result="warn",
+                    meta={"promocode_id": promo.id, "order_id": usvc.id},
+                )
+                return False, "promo_per_user_exhausted"
+
         if promo.max_uses is not None and promo.used_count >= promo.max_uses:
             await audit(
                 self.s,
@@ -796,7 +868,8 @@ class PayMngr:
                 result="warn",
                 meta={"promocode_id": promo.id, "order_id": usvc.id},
             )
-            return
+            return False, "promo_exhausted"
+
         self.s.add(
             PromoUseModel(
                 promocode_id=promo.id,
@@ -805,6 +878,7 @@ class PayMngr:
             )
         )
         promo.used_count += 1
+        return True, None
 
 
 def _blank_account() -> UserModel:

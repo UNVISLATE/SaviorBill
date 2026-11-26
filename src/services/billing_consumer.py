@@ -167,7 +167,9 @@ class BillingTaskConsumer:
                     session, task.task_kind, task.ref_id
                 )
 
-                # Хендлер мог перенести задачу обратно в pending (напр. retry/recheck).
+                # Хендлеры (exec_pay_recheck / exec_delivery_retry / exec_svc_expire)
+                # могут перепланировать задачу через Core upsert (в обход identity map).
+                await session.refresh(task)
                 if task.status == "processing":
                     task.status = "done"
                     task.locked_until = None

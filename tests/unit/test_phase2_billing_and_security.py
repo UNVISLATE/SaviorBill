@@ -170,7 +170,7 @@ async def test_pay_mngr_settle_reads_promocode_id_before_deliver(monkeypatch):
     )
 
     mngr = PayMngr(session, bus=MagicMock(), box=MagicMock())
-    mngr._redeem_promo = AsyncMock()
+    mngr._redeem_promo = AsyncMock(return_value=(True, None))
     mngr._credited_amount = AsyncMock(return_value=Decimal("100.00"))
     mngr._audit_balance_topup = AsyncMock()
 
@@ -190,6 +190,84 @@ async def test_pay_mngr_settle_reads_promocode_id_before_deliver(monkeypatch):
 
     await mngr._settle(payment, {"paid": True, "paid_amount": ""})
     mngr._redeem_promo.assert_awaited_once_with(77, payment, usvc)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad_paid", ["-50.00", "0", "NaN", "Infinity"])
+async def test_pay_mngr_settle_balance_rejects_non_positive_or_non_finite_paid_amount(
+    bad_paid: str, monkeypatch
+):
+    session = AsyncMock()
+    monkeypatch.setattr("dependencies.payment.audit", AsyncMock())
+    mngr = PayMngr(session, bus=MagicMock(), box=MagicMock())
+    payment = SimpleNamespace(
+        id=2,
+        account_id=1,
+        target=PayTarget.BALANCE,
+        user_svc_id=None,
+        currency="RUB",
+        amount=Decimal("100.00"),
+        base_amount=Decimal("100.00"),
+        fx_rate=Decimal("1"),
+        status=PayStatus.PENDING,
+        paid_at=None,
+        external_id=None,
+        private_data={},
+    )
+    await mngr._settle(payment, {"paid": True, "paid_amount": bad_paid})
+    assert payment.status == PayStatus.REVIEW
+    assert payment.private_data["review_reason"] == "invalid_paid_amount"
+    assert payment.paid_at is None
+
+
+@pytest.mark.asyncio
+async def test_pay_mngr_settle_stops_delivery_when_promo_redeem_fails(monkeypatch):
+    usvc = SimpleNamespace(
+        id=12,
+        service_id=4,
+        payment_id=None,
+        private_data={"promocode_id": 77},
+        status=UsvcStatus.PENDING,
+    )
+    service = SimpleNamespace(id=4)
+    acc = SimpleNamespace(id=1, balance=Decimal("0"))
+    session = AsyncMock()
+
+    async def _get(model, pk):
+        if model.__name__ == "UserServicesModel":
+            return usvc
+        if model.__name__ == "ServiceModel":
+            return service
+        return None
+
+    session.get = AsyncMock(side_effect=_get)
+    monkeypatch.setattr("dependencies.payment.lock_account", AsyncMock(return_value=acc))
+    deliver_mock = AsyncMock()
+    monkeypatch.setattr("dependencies.payment.UserServicesMngr.deliver", deliver_mock)
+
+    mngr = PayMngr(session, bus=MagicMock(), box=MagicMock())
+    mngr._redeem_promo = AsyncMock(return_value=(False, "promo_already_used"))
+    mngr._credited_amount = AsyncMock(return_value=Decimal("100.00"))
+
+    payment = SimpleNamespace(
+        id=3,
+        account_id=1,
+        target=PayTarget.SERVICE,
+        user_svc_id=12,
+        currency="RUB",
+        amount=Decimal("100.00"),
+        base_amount=Decimal("100.00"),
+        fx_rate=Decimal("1"),
+        status=PayStatus.PENDING,
+        paid_at=None,
+        external_id=None,
+        private_data={},
+    )
+    await mngr._settle(payment, {"paid": True, "paid_amount": ""})
+    assert payment.status == PayStatus.REVIEW
+    assert payment.private_data["review_reason"] == "promo_already_used"
+    assert payment.paid_at is None
+    deliver_mock.assert_not_awaited()
 
 
 # ── 2.3 & 2.4 & 2.9 PayMngr callback refund + credited_amount + edge-cases ──
