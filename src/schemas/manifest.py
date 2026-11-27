@@ -128,6 +128,46 @@ class SchemaNode(BaseModel):
     props: dict[str, Any] = Field(default_factory=dict, description="Дополнительные свойства узла")
 
 
+class CustomActionVerify(StrEnum):
+    """Уровень подтверждения для кастомного действия услуги."""
+
+    NONE = "none"
+    TWOFA = "2fa"
+    EMAIL = "email"
+    TWOFA_OR_EMAIL = "2fa_or_email"
+
+
+class CustomActionDef(BaseModel):
+    """Декларативное описание кастомного действия управления услугой."""
+
+    key: str = Field(
+        min_length=8,
+        max_length=38,
+        pattern=r"^custom\.[a-z][a-z0-9_]{1,31}$",
+        description="Идентификатор действия строго с префиксом custom.<action>",
+    )
+    label: str = Field(min_length=1, max_length=128, description="Отображаемое название действия")
+    variant: str = Field(
+        default="default",
+        pattern=r"^(default|primary|danger)$",
+        description="Стиль кнопки/пункта меню",
+    )
+    allowed_statuses: list[str] = Field(
+        default_factory=lambda: ["active"],
+        min_length=1,
+        description="Статусы услуги, в которых доступно действие",
+    )
+    confirm_text: str | None = Field(
+        default=None,
+        max_length=512,
+        description="Опциональный текст предупреждения перед выполнением",
+    )
+    verify: CustomActionVerify = Field(
+        default=CustomActionVerify.NONE,
+        description="Опциональная проверка (none | 2fa | email | 2fa_or_email)",
+    )
+
+
 class ScriptManifest(BaseModel):
     """Корневой манифест скрипта интеграции Lua (manifest.json)."""
 
@@ -169,6 +209,10 @@ class ScriptManifest(BaseModel):
         default=None,
         description="Скрыть стандартный блок key в карточке услуги (когда используется только форма просмотра)",
     )
+    custom_actions: list[CustomActionDef] = Field(
+        default_factory=list,
+        description="Кастомные действия управления услугой (с префиксом custom.<action>)",
+    )
 
 
 __all__ = [
@@ -179,5 +223,7 @@ __all__ = [
     "PrefillConfig",
     "MediaDownloadItem",
     "SchemaNode",
+    "CustomActionVerify",
+    "CustomActionDef",
     "ScriptManifest",
 ]

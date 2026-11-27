@@ -111,7 +111,26 @@ async def create_service(
     mngr: ServiceMngr = Depends(get_service_mngr),
     vk: valkey.Valkey = Depends(get_valkey_client),
 ) -> ServiceAdmin:
-    svc = await mngr.create(body.model_dump())
+    data = body.model_dump()
+    settings = dict(data.get("settings") or {})
+    if data.get("delivery") == "lua" and data.get("lua_script_id") and "custom_actions" not in settings:
+        from models.system_scripts import SystemScriptsModel
+        from schemas.manifest import CustomActionDef
+
+        script = await mngr.s.get(SystemScriptsModel, data["lua_script_id"])
+        if script and isinstance(script.settings, dict):
+            manifest_raw = script.settings.get("manifest")
+            if isinstance(manifest_raw, dict) and isinstance(manifest_raw.get("custom_actions"), list):
+                parsed = []
+                for item in manifest_raw["custom_actions"]:
+                    try:
+                        parsed.append(CustomActionDef.model_validate(item).model_dump(mode="json"))
+                    except Exception:
+                        continue
+                if parsed:
+                    settings["custom_actions"] = parsed
+                    data["settings"] = settings
+    svc = await mngr.create(data)
     await mngr.s.commit()
     await invalidate_catalog_indexes(vk)
     # commit истощает (expire) все атрибуты, включая attachments — их читает

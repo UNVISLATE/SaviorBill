@@ -58,6 +58,10 @@ class Order(BaseModel):
         default_factory=list,
         description="Supported service actions",
     )
+    custom_actions: list[dict] = Field(
+        default_factory=list,
+        description="Custom service actions from catalog service settings",
+    )
     expires_at: datetime | None = Field(
         default=None, description="Expiration time; null = no expiry"
     )
@@ -72,7 +76,13 @@ class Order(BaseModel):
         :arg m: модель выданной услуги.
         :return: схема ответа.
         """
-        return cls.model_validate(m)
+        obj = cls.model_validate(m)
+        svc = getattr(m, "service", None)
+        if svc is not None and isinstance(getattr(svc, "settings", None), dict):
+            raw_ca = svc.settings.get("custom_actions")
+            if isinstance(raw_ca, list):
+                obj.custom_actions = raw_ca
+        return obj
 
 
 class OrderAdmin(Order):
@@ -109,7 +119,29 @@ class OrderGrant(BaseModel):
 class OrderActionRequest(BaseModel):
     """Execute action on service order."""
 
-    action: str = Field(min_length=1, max_length=32, description="Action: renew, freeze, stop, resume")
+    action: str = Field(
+        min_length=1,
+        max_length=64,
+        description="Action: stop, start, freeze, unfreeze, delete, or custom.<action>",
+    )
+    verify_code: str | None = Field(
+        default=None,
+        max_length=32,
+        description="Optional 2FA TOTP or emailed verification code for step-up actions",
+    )
 
 
-__all__ = ["OrderCreate", "Order", "OrderAdmin", "OrderGrant", "OrderActionRequest"]
+class OrderActionChallengeRequest(BaseModel):
+    """Request an email verification code for a custom service action."""
+
+    action: str = Field(min_length=8, max_length=64, pattern=r"^custom\.[a-z][a-z0-9_]{1,31}$")
+
+
+__all__ = [
+    "OrderCreate",
+    "Order",
+    "OrderAdmin",
+    "OrderGrant",
+    "OrderActionRequest",
+    "OrderActionChallengeRequest",
+]

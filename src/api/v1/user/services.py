@@ -3,11 +3,13 @@ from __future__ import annotations
 """Выданные услуги текущего пользователя (/api/v1/user/services)."""
 
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
 from decimal import Decimal
 
+import valkey.asyncio as valkey
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import Text, cast, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,20 +17,31 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from dependencies.auth import get_current_acc
 from dependencies.catalog import ServiceMngr, get_service_mngr
 from dependencies.db import get_db_session
+from dependencies.email import get_email_sender
 from dependencies.promo import PromoCodesMngr, get_promo_mngr
 from dependencies.rbac import require_perm
 from dependencies.ratelimit import LimitKind, rate_limit
+from dependencies.sec import make_secbox
 from dependencies.triggers import get_dispatcher
 from dependencies.usersvc import UserServicesMngr, get_usersvc_mngr
+from dependencies.valkey import get_valkey_client
 from enums import UsvcStatus, PromoKind, ServiceAction
+from lifecycle.notifications import EmailSender
 from lifecycle.triggers import TriggerDispatcher, TriggerEvent
 from models.service import ServiceModel
 from models.user import UserModel
 from models.user_services import UserServicesModel
-from schemas.orders import OrderCreate, Order, OrderActionRequest
+from schemas.manifest import CustomActionVerify
+from schemas.orders import OrderCreate, Order, OrderActionRequest, OrderActionChallengeRequest
 from schemas.page import Page
+from services.audit import audit
 from services.pricing import assert_promotions_allowed, resolve_service_order
-from services.scheduler_outbox import cancel_service_expire, schedule_service_expire
+from services.scheduler_outbox import (
+    cancel_service_expire,
+    schedule_provision_poll,
+    schedule_service_expire,
+)
+from services.step_up import request_email_challenge, verify_step_up
 from utils.pagination import PageParams, page_params, paginate
 
 router = APIRouter()
@@ -179,11 +192,65 @@ async def create_service(
     return Order.from_model(usvc)
 
 
+_CUSTOM_ACTION_RE = re.compile(r"^custom\.[a-z][a-z0-9_]{1,31}$")
+
+
+def _find_custom_action(service: ServiceModel, action_key: str) -> dict | None:
+    raw = (service.settings or {}).get("custom_actions")
+    if not isinstance(raw, list):
+        return None
+    for item in raw:
+        if isinstance(item, dict) and item.get("key") == action_key:
+            return item
+    return None
+
+
+@router.post(
+    "/services/{service_id}/action/challenge",
+    summary="Request email verification code for custom service action",
+    dependencies=[
+        Depends(require_perm("user.services.create")),
+        Depends(rate_limit("services.action.challenge", LimitKind.SENSITIVE, require_auth=True)),
+    ],
+)
+async def user_service_action_challenge(
+    service_id: int,
+    body: OrderActionChallengeRequest,
+    acc: UserModel = Depends(get_current_acc),
+    usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
+    svc_mngr: ServiceMngr = Depends(get_service_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+    mail: EmailSender = Depends(get_email_sender),
+) -> dict:
+    usvc = await usvc_mngr.s.scalar(
+        select(UserServicesModel).where(
+            UserServicesModel.id == service_id,
+            UserServicesModel.account_id == acc.id,
+        )
+    )
+    if usvc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service order not found")
+    service = await svc_mngr.s.get(ServiceModel, usvc.service_id)
+    if service is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog service not found")
+    ca_def = _find_custom_action(service, body.action)
+    if ca_def is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"custom action '{body.action}' is not allowed")
+    verify_mode = ca_def.get("verify", CustomActionVerify.NONE)
+    if verify_mode not in (CustomActionVerify.EMAIL, CustomActionVerify.TWOFA_OR_EMAIL):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "email verification is not applicable for this action",
+        )
+    ttl = await request_email_challenge(vk, mail, acc, usvc.id, body.action)
+    return {"sent": True, "ttl": ttl}
+
+
 @router.post(
     "/services/{service_id}/action",
     response_model=Order,
     summary="Execute action on user service",
-    description="Performs lifecycle action: renew, freeze, stop, resume.",
+    description="Performs lifecycle action: stop, start, freeze, unfreeze, delete, or custom.<action>.",
     dependencies=[
         Depends(require_perm("user.services.create")),
         Depends(rate_limit("services.action", LimitKind.SENSITIVE, require_auth=True)),
@@ -196,6 +263,8 @@ async def user_service_action(
     acc: UserModel = Depends(get_current_acc),
     usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
+    vk: valkey.Valkey = Depends(get_valkey_client),
+    triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> Order:
     usvc = await usvc_mngr.s.scalar(
         select(UserServicesModel)
@@ -217,6 +286,66 @@ async def user_service_action(
         )
 
     action_norm = body.action.strip().lower()
+    if action_norm == ServiceAction.RENEW:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "action is not allowed; renew requires a new paid order or /renew endpoint",
+        )
+
+    if action_norm.startswith("custom."):
+        if not _CUSTOM_ACTION_RE.match(action_norm):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"invalid custom action '{action_norm}'")
+        ca_def = _find_custom_action(service, action_norm)
+        if ca_def is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, f"action '{action_norm}' is not allowed")
+        allowed_statuses = ca_def.get("allowed_statuses") or [UsvcStatus.ACTIVE]
+        if usvc.status not in allowed_statuses:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"action '{action_norm}' is not available in status '{usvc.status}'",
+            )
+        verify_mode = str(ca_def.get("verify") or CustomActionVerify.NONE)
+        if verify_mode != CustomActionVerify.NONE:
+            cfg = request.app.state.settings
+            await verify_step_up(
+                vk,
+                make_secbox(cfg),
+                acc,
+                usvc.id,
+                action_norm,
+                verify_mode,
+                body.verify_code,
+            )
+
+        usvc = await usvc_mngr.run_action(usvc, service, acc, action_norm)
+        if usvc.status == UsvcStatus.PROVISIONING:
+            poll_cfg = (usvc.private_data or {}).get("_provisioning") or {}
+            interval = int(poll_cfg.get("interval_sec") or 15)
+            from datetime import timedelta
+            from utils.datetime_utils import utc_now
+
+            await schedule_provision_poll(
+                usvc_mngr.s, usvc.id, utc_now() + timedelta(seconds=interval)
+            )
+        await audit(
+            usvc_mngr.s,
+            action="service.custom_action",
+            actor_id=acc.id,
+            target_type="user_service",
+            target_id=str(usvc.id),
+            meta={"service_id": service.id, "action_key": action_norm},
+        )
+        await usvc_mngr.s.commit()
+        await triggers.fire(
+            TriggerEvent.SERVICE_CUSTOM_ACTION,
+            {
+                "order": {"id": usvc.id, "service_id": service.id},
+                "action_key": action_norm,
+                "user": {"id": acc.id, "login": acc.login},
+            },
+        )
+        return Order.from_model(usvc)
+
     allowed = {
         ServiceAction.STOP,
         ServiceAction.START,
@@ -224,11 +353,6 @@ async def user_service_action(
         ServiceAction.UNFREEZE,
         ServiceAction.DELETE,
     }
-    if action_norm == ServiceAction.RENEW:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "action is not allowed; renew requires a new paid order",
-        )
     if action_norm not in allowed:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,

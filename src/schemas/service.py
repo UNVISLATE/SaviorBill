@@ -243,6 +243,29 @@ class ServiceAdmin(Service):
         )
 
 
+def _validate_service_settings(settings: dict) -> dict:
+    """Валидация custom_actions в настройках услуги."""
+    if not isinstance(settings, dict):
+        return {}
+    out = dict(settings)
+    raw_ca = out.get("custom_actions")
+    if raw_ca is not None:
+        if not isinstance(raw_ca, list):
+            raise ValueError("settings.custom_actions must be a list")
+        from schemas.manifest import CustomActionDef
+
+        seen: set[str] = set()
+        normalized: list[dict] = []
+        for item in raw_ca:
+            ca = CustomActionDef.model_validate(item)
+            if ca.key in seen:
+                raise ValueError(f"duplicate custom_action key: {ca.key!r}")
+            seen.add(ca.key)
+            normalized.append(ca.model_dump(mode="json"))
+        out["custom_actions"] = normalized
+    return out
+
+
 class ServiceCreate(BaseModel):
     """Create service."""
 
@@ -286,6 +309,7 @@ class ServiceCreate(BaseModel):
         if self.delivery == "key" and self.price_type != PriceType.FIXED:
             raise ValueError("delivery 'key' is only supported for price_type='fixed'")
         self.pricing_config = validate_pricing_config(self.price_type, self.pricing_config)
+        self.settings = _validate_service_settings(self.settings)
         return self
 
 
@@ -323,6 +347,7 @@ class ServicePatch(BaseModel):
             raise ValueError("delivery 'key' is only supported for price_type='fixed'")
         if self.price_type is not None and self.pricing_config is not None:
             self.pricing_config = validate_pricing_config(self.price_type, self.pricing_config)
+        self.settings = _validate_service_settings(self.settings)
         return self
 
 
