@@ -134,10 +134,10 @@ function TaskDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[85vh] max-w-3xl overflow-y-auto">
+      <DialogContent className="max-h-[85vh] sm:max-w-3xl overflow-y-auto overflow-x-hidden">
         <DialogHeader>
-          <div className="flex items-center gap-2">
-            <DialogTitle className="font-mono text-base">Задача {taskId}</DialogTitle>
+          <div className="flex flex-wrap items-center gap-2 pr-6">
+            <DialogTitle className="font-mono text-base break-all">Задача {taskId}</DialogTitle>
             {task && (
               <Badge variant={STATE_VARIANT[task.status] ?? "outline"}>{task.status}</Badge>
             )}
@@ -190,7 +190,7 @@ function TaskDetailDialog({
                   <AlertCircle className="size-4 shrink-0" />
                   <span>Ошибка выполнения</span>
                 </div>
-                <pre className="mt-1 max-h-36 overflow-auto font-mono text-xs whitespace-pre-wrap">
+                <pre className="mt-1 max-h-36 overflow-y-auto font-mono text-xs whitespace-pre-wrap break-all">
                   {task.error_message}
                 </pre>
               </div>
@@ -207,7 +207,7 @@ function TaskDetailDialog({
                   </Button>
                 )}
               </div>
-              <div className="max-h-64 overflow-auto rounded-lg bg-neutral-950 p-3 font-mono text-xs text-neutral-200">
+              <div className="max-h-64 overflow-y-auto rounded-lg bg-neutral-950 p-3 font-mono text-xs text-neutral-200 whitespace-pre-wrap break-all">
                 {!task.logs || task.logs.length === 0 ? (
                   <span className="text-neutral-500">Логов нет</span>
                 ) : Array.isArray(task.logs) ? (
@@ -217,7 +217,7 @@ function TaskDetailDialog({
                     </div>
                   ))
                 ) : (
-                  <pre>{String(task.logs)}</pre>
+                  <pre className="whitespace-pre-wrap break-all">{String(task.logs)}</pre>
                 )}
               </div>
             </div>
@@ -225,7 +225,7 @@ function TaskDetailDialog({
             {task.meta && Object.keys(task.meta).length > 0 && (
               <div>
                 <p className="mb-1 font-medium">Метаданные</p>
-                <pre className="max-h-36 overflow-auto rounded-lg bg-muted p-2 font-mono text-xs">
+                <pre className="max-h-48 overflow-y-auto rounded-lg bg-muted p-2 font-mono text-xs whitespace-pre-wrap break-all">
                   {JSON.stringify(task.meta, null, 2)}
                 </pre>
               </div>
