@@ -462,9 +462,9 @@ export function LuaEditor({
   )
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-4 md:flex-row">
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
-        <div className="flex items-center justify-between gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-4 xl:flex-row">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline">Lua</Badge>
             {scriptKind && <Badge variant="secondary">{scriptKind}</Badge>}
@@ -557,7 +557,7 @@ export function LuaEditor({
             <Button
               size="sm"
               variant="outline"
-              className="md:hidden"
+              className="xl:hidden"
               onClick={() => setVersionsSheetOpen(true)}
             >
               <History className="size-4" /> Версии
@@ -677,7 +677,7 @@ export function LuaEditor({
           </div>
         )}
 
-        <div className="relative min-h-0 flex-1 overflow-hidden rounded-md border flex flex-col">
+        <div className="relative flex min-h-[360px] flex-1 flex-col overflow-hidden rounded-md border">
           {!ready && (
             <div className="absolute inset-0 z-10 bg-background">
               <Skeleton className="h-full w-full" />
@@ -753,10 +753,10 @@ export function LuaEditor({
 
       </div>
 
-      <Separator orientation="vertical" className="hidden h-full md:block" />
+      <Separator orientation="vertical" className="hidden h-full xl:block" />
 
-      {/* Десктоп — постоянная колонка справа. */}
-      <div className="hidden w-72 shrink-0 flex-col gap-2 md:flex">
+      {/* Десктоп (xl+) — постоянная колонка справа. */}
+      <div className="hidden w-72 shrink-0 flex-col gap-2 xl:flex">
         {versionsList}
         {canEdit && (
           <div className="space-y-2 border-t pt-3">

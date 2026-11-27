@@ -126,7 +126,7 @@ export function LuaScriptsPage() {
   const showEditor = !isMobile || selectedId !== null
 
   const listPane = (
-    <div className="flex w-full min-w-0 flex-col gap-2 md:w-80 md:shrink-0">
+    <div className="flex w-full min-w-0 flex-col gap-2 md:w-64 lg:w-72 md:shrink-0">
       <div className="flex items-center gap-2">
         <Input
           placeholder="Поиск скриптов..."
@@ -281,7 +281,7 @@ export function LuaScriptsPage() {
   )
 
   const editorPane = (
-    <div className="min-w-0 flex-1 rounded-md border p-3">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col rounded-md border p-3">
       {isMobile && selectedId !== null && (
         <Button
           size="sm"

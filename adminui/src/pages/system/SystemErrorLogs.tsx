@@ -152,10 +152,14 @@ export function SystemErrorLogs() {
           />
         </div>
 
-        <div className="w-full sm:w-44">
+        <div className="w-full sm:w-48">
           <Select value={statusCodeFilter} onValueChange={(v) => v && setStatusCodeFilter(v)}>
             <SelectTrigger className="h-9">
-              <SelectValue />
+              <SelectValue>
+                {statusCodeFilter === "all"
+                  ? "Все статусы (4xx+5xx)"
+                  : statusCodeFilter}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Все статусы (4xx+5xx)</SelectItem>
@@ -169,10 +173,10 @@ export function SystemErrorLogs() {
           </Select>
         </div>
 
-        <div className="w-full sm:w-32">
+        <div className="w-full sm:w-36">
           <Select value={limit} onValueChange={(v) => v && setLimit(v)}>
             <SelectTrigger className="h-9">
-              <SelectValue />
+              <SelectValue>{`${limit} записей`}</SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="50">50 записей</SelectItem>
@@ -184,7 +188,7 @@ export function SystemErrorLogs() {
       </div>
 
       {/* Таблица журнала ошибок */}
-      <div className="rounded-lg border bg-card overflow-hidden">
+      <div className="rounded-lg border bg-card overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -237,14 +241,16 @@ export function SystemErrorLogs() {
                       {new Date(err.timestamp).toLocaleString("ru-RU")}
                     </TableCell>
                     <TableCell>{getStatusBadge(err.status_code)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="font-mono text-xs font-semibold px-1 py-0.5 rounded bg-muted">
+                    <TableCell className="max-w-[260px]">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-mono text-xs font-semibold px-1 py-0.5 rounded bg-muted shrink-0">
                           {err.method}
                         </span>
-                        <code className="text-xs font-mono font-medium text-foreground">{err.path}</code>
+                        <code className="text-xs font-mono font-medium text-foreground truncate" title={err.path}>
+                          {err.path}
+                        </code>
                         {err.query_params && (
-                          <span className="text-[11px] text-muted-foreground font-mono truncate max-w-[150px]">
+                          <span className="text-[11px] text-muted-foreground font-mono truncate max-w-[120px] shrink-0">
                             ?{err.query_params}
                           </span>
                         )}

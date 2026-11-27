@@ -295,8 +295,10 @@ export function SystemTasksArchive() {
               setPage(1)
             }}
           >
-            <SelectTrigger size="sm" className="w-32">
-              <SelectValue placeholder="Тип" />
+            <SelectTrigger size="sm" className="w-36">
+              <SelectValue placeholder="Тип">
+                {kind === "all" ? "Все типы" : kind === "media" ? "Media" : kind === "lua" ? "Lua" : "Billing"}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Все типы</SelectItem>
@@ -313,8 +315,12 @@ export function SystemTasksArchive() {
               setPage(1)
             }}
           >
-            <SelectTrigger size="sm" className="w-32">
-              <SelectValue placeholder="Статус" />
+            <SelectTrigger size="sm" className="w-36">
+              <SelectValue placeholder="Статус">
+                {statusFilter === "all"
+                  ? "Все статусы"
+                  : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Все статусы</SelectItem>
@@ -366,7 +372,7 @@ export function SystemTasksArchive() {
                 </TableCell>
                 <TableCell className="font-medium text-xs">{item.kind}</TableCell>
                 <TableCell className="text-xs">{item.operation}</TableCell>
-                <TableCell className="font-mono text-xs text-primary underline underline-offset-4">
+                <TableCell className="max-w-[160px] truncate font-mono text-xs text-primary underline underline-offset-4" title={item.task_id}>
                   {item.task_id}
                 </TableCell>
                 <TableCell>

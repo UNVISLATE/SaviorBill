@@ -55,7 +55,6 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@/components/shadsnui/tooltip"
 import { CatalogTreeSelect, type CatalogItem } from "@/components/common/CatalogTreeSelect"
@@ -166,19 +165,20 @@ function translit(str: string): string {
 
 function InfoTip({ content }: { content: React.ReactNode }) {
   return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger
-          className="inline-flex items-center justify-center text-muted-foreground/70 hover:text-foreground transition-colors p-0.5 rounded-full cursor-help"
-          onClick={(e: React.MouseEvent) => e.stopPropagation()}
-        >
-          <Info className="size-3.5" />
-        </TooltipTrigger>
-        <TooltipContent side="top" className="max-w-xs text-xs font-normal leading-relaxed">
-          {content}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        aria-label="Подсказка"
+        title={typeof content === "string" ? content : undefined}
+        className="inline-flex items-center justify-center text-muted-foreground/70 hover:text-foreground transition-colors p-0.5 rounded-full cursor-help"
+        onClick={(e: React.MouseEvent) => e.stopPropagation()}
+      >
+        <Info className="size-3.5" />
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-xs text-xs font-normal leading-relaxed">
+        {content}
+      </TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -1663,9 +1663,9 @@ export function ServiceEditorPage() {
                             className="p-3.5 rounded-xl border border-border/70 bg-card/70 space-y-3"
                           >
                             {/* Верхняя строка: Название, Группа (опц.), Код (slug), и действия */}
-                            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                            <div className="flex flex-wrap items-start gap-3">
                               {/* Название */}
-                              <div className="flex-1 w-full space-y-1">
+                              <div className="min-w-[180px] flex-[2] space-y-1">
                                 <Label className="text-xs">Название тарифа *</Label>
                                 <Input
                                   value={plan.title}
@@ -1684,7 +1684,7 @@ export function ServiceEditorPage() {
                               </div>
 
                               {/* Группа (опционально) */}
-                              <div className="w-full sm:w-36 space-y-1">
+                              <div className="min-w-[120px] flex-1 space-y-1">
                                 <Label className="text-xs text-muted-foreground">Группа (опц.)</Label>
                                 <Input
                                   value={plan.group || ""}
@@ -1699,7 +1699,7 @@ export function ServiceEditorPage() {
                               </div>
 
                               {/* Код (slug) */}
-                              <div className="w-full sm:w-44 space-y-1">
+                              <div className="min-w-[140px] flex-1 space-y-1">
                                 <Label className="text-xs">Код (slug) *</Label>
                                 <Input
                                   value={plan.code}
@@ -1715,7 +1715,7 @@ export function ServiceEditorPage() {
                               </div>
 
                               {/* Действия */}
-                              <div className="flex items-center gap-1 self-end sm:self-center pt-2 sm:pt-5 shrink-0">
+                              <div className="flex items-center justify-end gap-1 pt-5 shrink-0">
                                 <Button
                                   type="button"
                                   variant="outline"
@@ -2397,11 +2397,26 @@ export function ServiceEditorPage() {
                         size="sm"
                         className="h-7 text-xs gap-1.5 shrink-0"
                         onClick={() => {
+                          let filteredText = settingsText
+                          try {
+                            const parsed = JSON.parse(settingsText || "{}")
+                            if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+                              const cleaned = { ...parsed }
+                              delete cleaned.allow_early_renew
+                              delete cleaned.allow_renew_config_change
+                              delete cleaned.allow_auto_renew
+                              delete cleaned.renew_price_policy
+                              delete cleaned.allow_instant_upgrade
+                              filteredText = JSON.stringify(cleaned, null, 2)
+                            }
+                          } catch {
+                            // keep raw text if invalid JSON
+                          }
                           setJsonModalConfig({
                             open: true,
                             title: "Настройки скрипта (Settings JSON)",
-                            description: "Конфигурация сервиса, передаваемая в скрипт",
-                            text: settingsText,
+                            description: "Конфигурация сервиса, передаваемая в скрипт (опции продления и апгрейда настраиваются в правой панели)",
+                            text: filteredText,
                             target: "settings",
                           })
                         }}

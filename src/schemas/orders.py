@@ -78,6 +78,22 @@ class Order(BaseModel):
         default_factory=list,
         description="Custom service actions from catalog service settings",
     )
+    allow_early_renew: bool = Field(
+        default=False,
+        description="Whether early balance renewal is enabled for this service",
+    )
+    allow_auto_renew: bool = Field(
+        default=False,
+        description="Whether auto-renewal from balance is enabled for this service",
+    )
+    allow_renew_config_change: bool = Field(
+        default=False,
+        description="Whether tier/config change on renewal is enabled",
+    )
+    allow_instant_upgrade: bool = Field(
+        default=False,
+        description="Whether instant proration upgrade is enabled",
+    )
     expires_at: datetime | None = Field(
         default=None, description="Expiration time; null = no expiry"
     )
@@ -98,6 +114,10 @@ class Order(BaseModel):
             raw_ca = svc.settings.get("custom_actions")
             if isinstance(raw_ca, list):
                 obj.custom_actions = raw_ca
+            obj.allow_early_renew = bool(svc.settings.get("allow_early_renew", False))
+            obj.allow_auto_renew = bool(svc.settings.get("allow_auto_renew", False))
+            obj.allow_renew_config_change = bool(svc.settings.get("allow_renew_config_change", False))
+            obj.allow_instant_upgrade = bool(svc.settings.get("allow_instant_upgrade", False))
         return obj
 
 
