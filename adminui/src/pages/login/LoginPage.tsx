@@ -157,7 +157,8 @@ export function LoginPage() {
   })
 
   const searchParams = new URLSearchParams(location.search)
-  const from = searchParams.get("from") || (location.state as { from?: string } | null)?.from || "/"
+  const rawFrom = searchParams.get("from") || (location.state as { from?: string } | null)?.from || "/"
+  const from = rawFrom.startsWith("/") && !/^\/[/\\]/.test(rawFrom) ? rawFrom : "/"
 
   if (isBackendUnavailable) {
     return (
@@ -177,7 +178,18 @@ export function LoginPage() {
     try {
       const res = await api.get<{ authorize_url: string }>(`/v1/oauth/${slug}`)
       if (res.data.authorize_url) {
-        window.location.assign(res.data.authorize_url)
+        try {
+          const parsed = new URL(res.data.authorize_url, window.location.origin)
+          if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+            window.location.assign(parsed.toString())
+          } else {
+            setError("Некорректный URL авторизации OAuth")
+            setPendingOAuth(null)
+          }
+        } catch {
+          setError("Некорректный URL авторизации OAuth")
+          setPendingOAuth(null)
+        }
       }
     } catch {
       setError("Не удалось запустить авторизацию через OAuth")

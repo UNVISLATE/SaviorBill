@@ -364,10 +364,15 @@ async def edit_user(
             acc.role_id = target_role.id
             acc.role = target_role
     if role_changed:
-        caller_perms = caller.role.perms if caller.role else None
-        if not (caller.role and caller.role.key == "owner") and not has_perm(
-            caller_perms, "admin.user.role.edit"
-        ):
+        app_token = getattr(request.state, "app_token", None)
+        if app_token is not None:
+            allowed_role_edit = has_perm(app_token.perms_tree, "admin.user.role.edit")
+        else:
+            caller_perms = caller.role.perms if caller.role else None
+            allowed_role_edit = bool(caller.role and caller.role.key == "owner") or has_perm(
+                caller_perms, "admin.user.role.edit"
+            )
+        if not allowed_role_edit:
             raise HTTPException(
                 status.HTTP_403_FORBIDDEN,
                 "insufficient permissions: admin.user.role.edit",
@@ -384,13 +389,19 @@ async def edit_user(
                 "Email is already taken by another user",
             )
     if "balance" in data or "bonus_balance" in data:
-        if not (caller.role and caller.role.key == "owner"):
+        app_token = getattr(request.state, "app_token", None)
+        if app_token is not None:
+            allowed_balance_edit = has_perm(app_token.perms_tree, "admin.user.balance.edit")
+        else:
             caller_perms = caller.role.perms if caller.role else None
-            if not has_perm(caller_perms, "admin.user.balance.edit"):
-                raise HTTPException(
-                    status.HTTP_403_FORBIDDEN,
-                    "insufficient permissions: admin.user.balance.edit",
-                )
+            allowed_balance_edit = bool(caller.role and caller.role.key == "owner") or has_perm(
+                caller_perms, "admin.user.balance.edit"
+            )
+        if not allowed_balance_edit:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "insufficient permissions: admin.user.balance.edit",
+            )
         acc = await lock_account(session, user_id) or acc
     for field, value in data.items():
         setattr(acc, field, value)

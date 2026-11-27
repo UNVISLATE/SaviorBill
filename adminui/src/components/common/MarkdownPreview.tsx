@@ -9,8 +9,8 @@ interface MarkdownPreviewProps {
 
 function sanitizeUrl(rawUrl: string): string {
   const trimmed = rawUrl.trim()
-  if (/^(https?:|\/|mailto:)/i.test(trimmed)) {
-    return trimmed.replace(/"/g, "&quot;")
+  if (/^(https?:|mailto:|\/(?![/\\]))/i.test(trimmed) || trimmed === "/") {
+    return trimmed.replace(/"/g, "&quot;").replace(/'/g, "&#39;")
   }
   return "#"
 }
@@ -43,6 +43,8 @@ function parseMarkdownToHtml(markdown: string): string {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;")
 
   // Support 2+ trailing spaces or a backslash at line end as hard line break (AFTER HTML escape!)
   html = html.replace(/( {2,}|\\)\n/g, "<br/>")

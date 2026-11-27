@@ -299,7 +299,11 @@ export function ProfileOverviewSection({
     try {
       const res = await api.get<{ authorize_url: string }>(`/v1/user/oauth/${providerSlug}/link`)
       if (res.data.authorize_url) {
-        window.location.assign(res.data.authorize_url)
+        const parsed = new URL(res.data.authorize_url, window.location.origin)
+        if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+          throw new Error("Некорректный URL авторизации OAuth")
+        }
+        window.location.assign(parsed.toString())
       }
     } catch (err) {
       toastError("Не удалось инициировать привязку", getErrorDetail(err))
