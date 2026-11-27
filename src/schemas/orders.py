@@ -45,6 +45,22 @@ class Order(BaseModel):
         default_factory=dict,
         description="Snapshot of user selection (tier, components, form)",
     )
+    pending_order_config: dict | None = Field(
+        default=None,
+        description="Scheduled config for next billing period",
+    )
+    pending_apply_at: datetime | None = Field(
+        default=None,
+        description="Timestamp when pending_order_config will be applied",
+    )
+    auto_renew: bool = Field(
+        default=False,
+        description="Whether automatic balance renewal is enabled",
+    )
+    auto_renew_last_error: str | None = Field(
+        default=None,
+        description="Last auto-renewal error if any",
+    )
     public_data: dict
     product_key: str | None = Field(
         default=None,
@@ -151,6 +167,14 @@ class OrderRenewRequest(BaseModel):
     )
 
 
+class OrderUpgradeRequest(BaseModel):
+    """Instant upgrade of an active user service from balance (prorated)."""
+
+    tier_code: str | None = Field(default=None, max_length=64)
+    components: dict[str, Any] | None = Field(default=None)
+    promocode: str | None = Field(default=None, max_length=64)
+
+
 __all__ = [
     "OrderCreate",
     "Order",
@@ -159,4 +183,5 @@ __all__ = [
     "OrderActionRequest",
     "OrderActionChallengeRequest",
     "OrderRenewRequest",
+    "OrderUpgradeRequest",
 ]

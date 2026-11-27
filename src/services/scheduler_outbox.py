@@ -157,6 +157,21 @@ async def cancel_provision_poll(session: AsyncSession, usvc_id: int) -> None:
     await ScheduledTasksMngr(session).cancel(f"poll:{usvc_id}")
 
 
+async def schedule_apply_config(
+    session: AsyncSession, usvc_id: int, run_at: datetime
+) -> None:
+    await ScheduledTasksMngr(session).upsert(
+        dedup_key=f"cfg:{usvc_id}",
+        task_kind="svc_apply_config",
+        ref_id=usvc_id,
+        run_at=run_at,
+    )
+
+
+async def cancel_apply_config(session: AsyncSession, usvc_id: int) -> None:
+    await ScheduledTasksMngr(session).cancel(f"cfg:{usvc_id}")
+
+
 async def schedule_payment_recheck(
     session: AsyncSession, pay_id: int, run_at: datetime
 ) -> None:

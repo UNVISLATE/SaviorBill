@@ -65,6 +65,10 @@ def build_service_ctx(
         "components": order_cfg.get("components"),
         "form": order_form,
     }
+    reconfig_ctx = getattr(usvc, "_reconfigure_ctx", None)
+    if isinstance(reconfig_ctx, dict):
+        order_data["old_config"] = reconfig_ctx.get("old_config")
+        order_data["new_config"] = reconfig_ctx.get("new_config")
 
     idem_key = (
         f"usvc:{usvc.id}:{action}"

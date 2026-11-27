@@ -17,6 +17,8 @@ class TriggerEvent:
     SERVICE_PROVISIONING_STARTED = "service.provisioning.started"  # запущен асинхронный провижининг
     SERVICE_PROVISIONING_FAILED = "service.provisioning.failed"  # асинхронный провижининг завершился ошибкой
     SERVICE_CUSTOM_ACTION = "service.custom_action"  # выполнено кастомное действие услуги
+    SERVICE_CONFIG_SCHEDULED = "service.config.scheduled"  # запланирована смена конфигурации на следующий период
+    SERVICE_CONFIG_APPLIED = "service.config.applied"  # применена новая конфигурация услуги
     SERVICE_KEYS_LOW = "service.keys.low"  # остаток ключей опустился ниже порога
     SERVICE_KEYS_EMPTY = "service.keys.empty"  # цифровые ключи для услуги закончились
     KEY_STOCK_LOW = "key.stock.low"  # остаток ключей в пуле ниже порогового N
@@ -38,6 +40,8 @@ ALL_EVENTS = [
     TriggerEvent.SERVICE_PROVISIONING_STARTED,
     TriggerEvent.SERVICE_PROVISIONING_FAILED,
     TriggerEvent.SERVICE_CUSTOM_ACTION,
+    TriggerEvent.SERVICE_CONFIG_SCHEDULED,
+    TriggerEvent.SERVICE_CONFIG_APPLIED,
     TriggerEvent.SERVICE_KEYS_LOW,
     TriggerEvent.SERVICE_KEYS_EMPTY,
     TriggerEvent.KEY_STOCK_LOW,

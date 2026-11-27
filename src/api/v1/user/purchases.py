@@ -32,7 +32,7 @@ from models.user_services import UserServicesModel
 from schemas.page import Page
 from schemas.payment_provider import PayProviderPublic
 from schemas.payments import PaymentCreate, Payment
-from services.lifecycle_pricing import assert_renew_allowed, resolve_renew_quote
+from services.lifecycle_pricing import assert_renew_allowed, resolve_renew_quote, resolve_upgrade_quote
 from services.pricing import (
     apply_discount_with_floor,
     assert_promotions_allowed,
@@ -363,6 +363,52 @@ async def create_purchase(
     )
     if renew_meta is not None:
         payment.private_data = {**(payment.private_data or {}), "renew": renew_meta}
+
+    if body.target == PayTarget.UPGRADE:
+        usvc = await pay_mngr.s.scalar(
+            select(UserServicesModel).where(
+                UserServicesModel.id == body.user_svc_id,
+                UserServicesModel.account_id == acc.id,
+            )
+        )
+        if usvc is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "service order not found")
+        service = await svc_mngr.s.get(
+            type(usvc).service.property.mapper.class_, usvc.service_id
+        )
+        if service is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog service not found")
+        quote = resolve_upgrade_quote(
+            usvc,
+            service,
+            tier_code=body.tier_code,
+            components=body.components,
+        )
+        discount = Decimal("0")
+        promo_id = None
+        if body.promocode:
+            assert_promotions_allowed(service)
+            promo = await promo_mngr.load_valid(body.promocode, acc, service_id=service.id)
+            catalog = await promo_mngr.catalog_of(promo)
+            if catalog.kind != PromoKind.DISCOUNT:
+                raise HTTPException(status.HTTP_400_BAD_REQUEST, "promo code is not a discount code")
+            discount = promo_mngr.discount_for(catalog, service, base_price=quote.delta_price)
+            promo_id = promo.id
+        amount = max(Decimal("0.00"), quote.delta_price - discount)
+        if amount <= Decimal("0"):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "upgrade has zero delta, apply it via /api/v1/user/services/{id}/upgrade",
+            )
+        user_svc_id = usvc.id
+        upgrade_meta = {
+            "new_price": str(quote.new_price),
+            "promocode_id": promo_id,
+            "new_config": {**quote.resolved.order_config, "settings": quote.resolved.effective_settings},
+        }
+        payment.user_svc_id = user_svc_id
+        payment.amount = amount
+        payment.private_data = {**(payment.private_data or {}), "upgrade": upgrade_meta}
     await pay_mngr.s.commit()
     if body.target == PayTarget.SERVICE:
         await triggers.fire(

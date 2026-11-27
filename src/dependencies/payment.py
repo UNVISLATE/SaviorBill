@@ -804,10 +804,43 @@ class PayMngr:
                         }
                         return
                 period = int(renew_meta.get("period") or getattr(usvc, "duration", 0) or 0)
+                target_config = renew_meta.get("target_config") if renew_meta.get("config_changed") else None
                 if service is not None and period > 0:
                     await UserServicesMngr(
                         self.s, self.bus, self.box, dispatcher=self.dispatcher
-                    ).apply_renew(usvc, service, acc, duration=period)
+                    ).apply_renew(
+                        usvc,
+                        service,
+                        acc,
+                        duration=period,
+                        target_config=target_config if isinstance(target_config, dict) else None,
+                    )
+        elif payment.target == PayTarget.UPGRADE and payment.user_svc_id:
+            usvc = await self.s.scalar(
+                select(UserServicesModel)
+                .where(UserServicesModel.id == payment.user_svc_id)
+                .with_for_update()
+            )
+            if usvc is not None:
+                service = await self.s.get(ServiceModel, usvc.service_id)
+                up_meta = (payment.private_data or {}).get("upgrade") or {}
+                promo_id = up_meta.get("promocode_id")
+                if promo_id:
+                    ok, reason = await self._redeem_promo(promo_id, payment, usvc)
+                    if not ok:
+                        payment.status = PayStatus.REVIEW
+                        payment.paid_at = None
+                        payment.private_data = {
+                            **(payment.private_data or {}),
+                            "review_reason": reason,
+                        }
+                        return
+                new_cfg = up_meta.get("new_config")
+                new_price = Decimal(str(up_meta.get("new_price") or usvc.price))
+                if service is not None and isinstance(new_cfg, dict):
+                    await UserServicesMngr(
+                        self.s, self.bus, self.box, dispatcher=self.dispatcher
+                    ).apply_upgrade(usvc, service, acc, new_config=new_cfg, new_price=new_price)
         else:  # пополнение баланса
             if acc is not None:
                 acc.balance += credited

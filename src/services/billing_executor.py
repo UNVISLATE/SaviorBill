@@ -324,6 +324,57 @@ class BillingExecutor:
                 session, usvc, "service.provisioning.completed", meta={"attempts": attempts + 1}
             )
 
+    # --- отложенная смена конфигурации (reconfigure) ----------------------
+    async def exec_svc_apply_config(self, session: AsyncSession, usvc_id: int) -> None:
+        row = await session.get(UserServicesModel, usvc_id)
+        if row is None or row.pending_order_config is None:
+            return
+        if row.status in (UsvcStatus.CANCELLED, UsvcStatus.EXPIRED, UsvcStatus.FAILED):
+            return
+        acc = await lock_account(session, row.account_id)
+        usvc = await session.get(UserServicesModel, usvc_id, with_for_update=True)
+        if (
+            usvc is None
+            or usvc.pending_order_config is None
+            or acc is None
+            or usvc.status in (UsvcStatus.CANCELLED, UsvcStatus.EXPIRED, UsvcStatus.FAILED)
+        ):
+            return
+
+        service = await session.get(ServiceModel, usvc.service_id)
+        if service is None:
+            return
+
+        old_cfg = dict(usvc.order_config or {})
+        new_cfg = dict(usvc.pending_order_config or {})
+        usvc._reconfigure_ctx = {"old_config": old_cfg, "new_config": new_cfg}
+
+        mngr = await self._usvc_mngr(session)
+        try:
+            await mngr.run_action(usvc, service, acc, ServiceAction.RECONFIGURE)
+        except NotImplementedError:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            await self._audit_delivery(
+                session, usvc, "service.config.apply_failed", meta={"error": str(exc)[:256]}
+            )
+            raise
+
+        usvc.order_config = new_cfg
+        usvc.pending_order_config = None
+        usvc.pending_apply_at = None
+        await self._audit_delivery(session, usvc, "service.config.applied")
+        if mngr.dispatcher is not None:
+            from lifecycle.triggers import TriggerEvent
+
+            await mngr.dispatcher.fire(
+                TriggerEvent.SERVICE_CONFIG_APPLIED,
+                {
+                    "order": {"id": usvc.id, "service_id": service.id},
+                    "user": {"id": acc.id, "login": acc.login},
+                },
+            )
+
     async def _compensate_delivery(
         self, session: AsyncSession, usvc: UserServicesModel
     ) -> None:

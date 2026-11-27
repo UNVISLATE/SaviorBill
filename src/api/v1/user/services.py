@@ -38,11 +38,12 @@ from schemas.orders import (
     OrderActionRequest,
     OrderActionChallengeRequest,
     OrderRenewRequest,
+    OrderUpgradeRequest,
 )
 from schemas.page import Page
 from services.account import lock_account
 from services.audit import audit
-from services.lifecycle_pricing import assert_renew_allowed, resolve_renew_quote
+from services.lifecycle_pricing import assert_renew_allowed, resolve_renew_quote, resolve_upgrade_quote
 from services.pricing import apply_discount_with_floor, assert_promotions_allowed, resolve_service_order
 from services.scheduler_outbox import (
     cancel_service_expire,
@@ -393,6 +394,7 @@ async def renew_user_service(
     usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
     promo_mngr: PromoCodesMngr = Depends(get_promo_mngr),
+    triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> Order:
     # Строгий порядок блокировок: сначала аккаунт, затем услуга.
     await lock_account(usvc_mngr.s, acc.id)
@@ -431,6 +433,17 @@ async def renew_user_service(
             )
         discount = promo_mngr.discount_for(catalog, service, base_price=quote.price)
 
+    target_config = (
+        {**quote.resolved.order_config, "settings": quote.resolved.effective_settings}
+        if quote.config_changed
+        else None
+    )
+    if target_config is not None and usvc.pending_order_config is not None:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "another configuration change is already scheduled for the next period",
+        )
+
     final_price = apply_discount_with_floor(service, quote.resolved, discount)
     settings = dict(service.settings or {})
     allow_bonus = bool(settings.get("allow_promotions", True))
@@ -442,7 +455,13 @@ async def renew_user_service(
         full_bonus_only=full_bonus_only,
     )
 
-    await usvc_mngr.apply_renew(usvc, service, acc, duration=quote.duration)
+    await usvc_mngr.apply_renew(
+        usvc,
+        service,
+        acc,
+        duration=quote.duration,
+        target_config=target_config,
+    )
     if promo is not None:
         await promo_mngr.record_use(promo, acc, usvc.id)
     await audit(
@@ -451,7 +470,96 @@ async def renew_user_service(
         actor_id=acc.id,
         target_type="user_service",
         target_id=str(usvc.id),
-        meta={"service_id": service.id, "price": str(final_price), "duration": quote.duration},
+        meta={
+            "service_id": service.id,
+            "price": str(final_price),
+            "duration": quote.duration,
+            "config_changed": quote.config_changed,
+        },
+    )
+    await usvc_mngr.s.commit()
+    if target_config is not None and usvc.pending_apply_at is not None:
+        await triggers.fire(
+            TriggerEvent.SERVICE_CONFIG_SCHEDULED,
+            {
+                "order": {"id": usvc.id, "service_id": service.id},
+                "apply_at": usvc.pending_apply_at.isoformat(),
+                "user": {"id": acc.id, "login": acc.login},
+            },
+        )
+    return Order.from_model(usvc)
+
+
+@router.post(
+    "/services/{service_id}/upgrade",
+    response_model=Order,
+    summary="Instant upgrade of an active user service from balance",
+    dependencies=[
+        Depends(require_perm("user.services.create")),
+        Depends(rate_limit("services.upgrade", LimitKind.SENSITIVE, require_auth=True)),
+    ],
+)
+async def upgrade_user_service(
+    service_id: int,
+    body: OrderUpgradeRequest,
+    acc: UserModel = Depends(get_current_acc),
+    usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
+    svc_mngr: ServiceMngr = Depends(get_service_mngr),
+    promo_mngr: PromoCodesMngr = Depends(get_promo_mngr),
+) -> Order:
+    await lock_account(usvc_mngr.s, acc.id)
+    usvc = await usvc_mngr.s.scalar(
+        select(UserServicesModel)
+        .where(
+            UserServicesModel.id == service_id,
+            UserServicesModel.account_id == acc.id,
+        )
+        .with_for_update()
+    )
+    if usvc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service order not found")
+    service = await svc_mngr.s.get(ServiceModel, usvc.service_id)
+    if service is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog service not found")
+
+    quote = resolve_upgrade_quote(
+        usvc,
+        service,
+        tier_code=body.tier_code,
+        components=body.components,
+    )
+    discount = Decimal("0")
+    promo = None
+    if body.promocode:
+        assert_promotions_allowed(service)
+        promo = await promo_mngr.load_valid(body.promocode, acc, service_id=service.id)
+        catalog = await promo_mngr.catalog_of(promo)
+        if catalog.kind != PromoKind.DISCOUNT:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "promo code is not a discount code")
+        discount = promo_mngr.discount_for(catalog, service, base_price=quote.delta_price)
+
+    charge_amt = max(Decimal("0.00"), quote.delta_price - discount)
+    settings = dict(service.settings or {})
+    UserServicesMngr._charge(
+        acc,
+        charge_amt,
+        allow_bonus=bool(settings.get("allow_promotions", True)),
+        full_bonus_only=bool(settings.get("full_bonus_only", False)),
+    )
+
+    new_cfg = {**quote.resolved.order_config, "settings": quote.resolved.effective_settings}
+    await usvc_mngr.apply_upgrade(
+        usvc, service, acc, new_config=new_cfg, new_price=quote.new_price
+    )
+    if promo is not None:
+        await promo_mngr.record_use(promo, acc, usvc.id)
+    await audit(
+        usvc_mngr.s,
+        action="service.upgrade",
+        actor_id=acc.id,
+        target_type="user_service",
+        target_id=str(usvc.id),
+        meta={"service_id": service.id, "delta_price": str(charge_amt), "new_price": str(quote.new_price)},
     )
     await usvc_mngr.s.commit()
     return Order.from_model(usvc)

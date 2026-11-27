@@ -189,4 +189,94 @@ def resolve_renew_quote(
     )
 
 
-__all__ = ["RenewQuote", "assert_renew_allowed", "resolve_renew_quote"]
+@dataclass
+class UpgradeQuote:
+    """Результат расчёта мгновенного апгрейда услуги (proration)."""
+
+    delta_price: Decimal
+    new_price: Decimal
+    old_price: Decimal
+    duration: int | None
+    resolved: ResolvedOrder
+
+
+def resolve_upgrade_quote(
+    usvc,
+    service: ServiceModel,
+    *,
+    tier_code: str | None = None,
+    components: dict[str, Any] | None = None,
+    now: datetime | None = None,
+) -> UpgradeQuote:
+    """Рассчитать доплату (proration) для мгновенного апгрейда активной услуги."""
+    now = now or utc_now()
+    settings = dict(getattr(service, "settings", None) or {})
+    if not settings.get("allow_instant_upgrade", False):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "instant upgrade is not enabled for this service",
+        )
+    if usvc.status != UsvcStatus.ACTIVE:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"instant upgrade is only available for active services (current: '{usvc.status}')",
+        )
+    if not service.is_active or settings.get("is_archived", False):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "instant upgrade is not available for inactive or archived service",
+        )
+
+    cur_tier, cur_comps = _extract_current_tier_and_components(usvc)
+    usvc_cfg = dict(getattr(usvc, "order_config", None) or {})
+    target_tier = tier_code if tier_code is not None else cur_tier
+    target_comps = components if components is not None else cur_comps
+
+    resolved = resolve_service_order(
+        service,
+        tier_code=target_tier,
+        components=target_comps,
+        form=usvc_cfg.get("form") if isinstance(usvc_cfg.get("form"), dict) else None,
+    )
+    if not _configs_differ(usvc_cfg, resolved.order_config):
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "target configuration is identical to current",
+        )
+
+    old_price = Decimal(str(getattr(usvc, "price", "0") or "0")).quantize(_CENT, rounding=ROUND_HALF_UP)
+    new_price = resolved.price.quantize(_CENT, rounding=ROUND_HALF_UP)
+    if new_price < old_price:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "instant downgrade is not allowed; schedule plan change on renewal instead",
+        )
+
+    if usvc.expires_at is None or not usvc.duration or usvc.duration <= 0:
+        delta = (new_price - old_price).quantize(_CENT, rounding=ROUND_HALF_UP)
+    else:
+        remaining_sec = max(0.0, (usvc.expires_at - now).total_seconds())
+        if remaining_sec <= 0:
+            raise HTTPException(status.HTTP_409_CONFLICT, "service has already expired")
+        ratio = min(Decimal("1"), Decimal(str(remaining_sec)) / Decimal(str(usvc.duration)))
+        delta = ((new_price - old_price) * ratio).quantize(_CENT, rounding=ROUND_HALF_UP)
+
+    if delta < Decimal("0"):
+        delta = Decimal("0.00")
+
+    return UpgradeQuote(
+        delta_price=delta,
+        new_price=new_price,
+        old_price=old_price,
+        duration=resolved.duration,
+        resolved=resolved,
+    )
+
+
+__all__ = [
+    "RenewQuote",
+    "UpgradeQuote",
+    "assert_renew_allowed",
+    "resolve_renew_quote",
+    "resolve_upgrade_quote",
+]

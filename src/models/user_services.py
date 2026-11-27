@@ -8,6 +8,7 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from fastapi import HTTPException, status
 from sqlalchemy import (
+    Boolean,
     func,
     DateTime,
     ForeignKey,
@@ -29,7 +30,11 @@ from lua.bus import LuaBus
 from security.sec.box import SecBox
 from services.account import lock_account
 from services.pricing import apply_discount_with_floor, resolve_service_order
-from services.scheduler_outbox import schedule_provision_poll, schedule_service_expire
+from services.scheduler_outbox import (
+    schedule_apply_config,
+    schedule_provision_poll,
+    schedule_service_expire,
+)
 
 log = logging.getLogger("saviorbill.user_services")
 
@@ -87,6 +92,19 @@ class UserServicesModel(Base):
     order_config: Mapped[dict] = mapped_column(
         JSON, default=dict, server_default="{}", nullable=False
     )
+    # Отложенная смена тарифа/параметров на следующий период.
+    pending_order_config: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    pending_apply_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Автопродление с баланса.
+    auto_renew: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    auto_renew_attempts: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False
+    )
+    auto_renew_last_error: Mapped[str | None] = mapped_column(String(256), nullable=True)
     price: Mapped[Decimal] = mapped_column(
         Numeric(18, 2), default=Decimal("0"), server_default="0", nullable=False
     )
@@ -423,15 +441,30 @@ class UserServicesMngr:
         acc,
         *,
         duration: int,
+        target_config: dict | None = None,
     ) -> UserServicesModel:
-        """Применить оплаченное продление к существующей услуге и перепланировать истечение."""
+        """Применить оплаченное продление к существующей услуге и перепланировать истечение.
+
+        Если передан ``target_config``:
+        - для активной/остановленной услуги с будущим ``expires_at`` — сохраняет
+          ``pending_order_config`` и планирует ``svc_apply_config`` на старый ``expires_at``;
+        - для уже истёкшей услуги — применяет сразу через ``reconfigure``.
+        """
         now = utc_now()
-        if (
+        is_future = (
             usvc.status in (UsvcStatus.ACTIVE, UsvcStatus.STOPPED)
             and usvc.expires_at is not None
             and usvc.expires_at > now
-        ):
-            new_expires = usvc.expires_at + timedelta(seconds=duration)
+        )
+        old_expires = usvc.expires_at
+        if target_config is not None and is_future and getattr(usvc, "pending_order_config", None):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "another configuration change is already scheduled for the next period",
+            )
+
+        if is_future:
+            new_expires = old_expires + timedelta(seconds=duration)
         else:
             new_expires = now + timedelta(seconds=duration)
             if usvc.status == UsvcStatus.EXPIRED:
@@ -441,17 +474,64 @@ class UserServicesMngr:
         usvc.expires_at = new_expires
         usvc.duration = duration
 
+        if target_config is not None:
+            if is_future and old_expires is not None:
+                usvc.pending_order_config = target_config
+                usvc.pending_apply_at = old_expires
+                await schedule_apply_config(self.s, usvc.id, old_expires)
+            else:
+                old_cfg = dict(usvc.order_config or {})
+                usvc._reconfigure_ctx = {"old_config": old_cfg, "new_config": target_config}
+                usvc.order_config = target_config
+                usvc.pending_order_config = None
+                usvc.pending_apply_at = None
+                if service.delivery == Delivery.LUA:
+                    try:
+                        await self.run_action(usvc, service, acc, ServiceAction.RECONFIGURE)
+                    except NotImplementedError:
+                        pass
+
         if service.delivery == Delivery.LUA:
             try:
                 await self.run_action(usvc, service, acc, ServiceAction.RENEW)
             except NotImplementedError:
                 pass
-            # Если Lua-скрипт сам не сдвинул expires_at, оставляем вычисленный new_expires
             if usvc.expires_at == prev_expires:
                 usvc.expires_at = new_expires
 
         if usvc.status in (UsvcStatus.ACTIVE, UsvcStatus.STOPPED) and usvc.expires_at is not None:
             await schedule_service_expire(self.s, usvc.id, usvc.expires_at)
+        await self.s.flush()
+        return usvc
+
+    async def apply_upgrade(
+        self,
+        usvc: UserServicesModel,
+        service: ServiceModel,
+        acc,
+        *,
+        new_config: dict,
+        new_price: Decimal,
+    ) -> UserServicesModel:
+        """Мгновенный апгрейд активной услуги (с поддержкой PROVISIONING + poll)."""
+        old_cfg = dict(usvc.order_config or {})
+        usvc._reconfigure_ctx = {"old_config": old_cfg, "new_config": new_config}
+        usvc.order_config = new_config
+        usvc.price = new_price
+        usvc.pending_order_config = None
+        usvc.pending_apply_at = None
+
+        if service.delivery == Delivery.LUA:
+            try:
+                await self.run_action(usvc, service, acc, ServiceAction.UPGRADE)
+            except NotImplementedError:
+                pass
+            if usvc.status == UsvcStatus.PROVISIONING:
+                poll_cfg = (usvc.private_data or {}).get("_provisioning") or {}
+                interval = int(poll_cfg.get("interval_sec") or 15)
+                await schedule_provision_poll(
+                    self.s, usvc.id, utc_now() + timedelta(seconds=interval)
+                )
         await self.s.flush()
         return usvc
 
