@@ -42,9 +42,30 @@ class _FakeSession:
 
 
 def test_idempotency_key_unique_for_repeatable_actions():
-    acc = SimpleNamespace(id=1, login="u1", email="u1@example.com", balance=Decimal("100"))
+    acc = SimpleNamespace(
+        id=1,
+        login="u1",
+        email="u1@example.com",
+        balance=Decimal("100"),
+        bonus_balance=Decimal("0"),
+        is_verified=True,
+        is_active=True,
+        role=None,
+        created_at=utc_now(),
+    )
     service = SimpleNamespace(
-        id=2, name="VPS", slug="vps", currency="RUB", settings={}, params={}, price=Decimal("100")
+        id=2,
+        name="VPS",
+        slug="vps",
+        description="VPS",
+        catalog_id=None,
+        delivery=Delivery.LUA,
+        lua_script_id=1,
+        duration=86400,
+        currency="RUB",
+        settings={},
+        params={},
+        price=Decimal("100"),
     )
     usvc = SimpleNamespace(
         id=10,

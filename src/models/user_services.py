@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from models import Base
-from enums import PriceType, ServiceAction, UsvcStatus
+from enums import Delivery, PriceType, ServiceAction, UsvcStatus
 from lifecycle.delivery import get_issuer
 from utils.datetime_utils import utc_now
 from lua.bus import LuaBus

@@ -110,9 +110,10 @@ async def test_step_up_email_challenge_binding_and_one_time_use():
 @pytest.mark.asyncio
 async def test_step_up_totp_replay_and_bruteforce_guard():
     import pyotp
+    from cryptography.fernet import Fernet
 
     vk = _FakeValkey()
-    box = SecBox(b"a" * 32)
+    box = SecBox(Fernet.generate_key().decode())
     totp = TotpSvc(box)
     acc = SimpleNamespace(id=22, login="u22", email="u22@example.com", totp_enabled=False, totp_secret=None, totp_recovery=[])
     secret, _ = totp.start_enrollment(acc)
