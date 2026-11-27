@@ -25,12 +25,15 @@ class PaymentCreate(BaseModel):
         default=False,
         description="When true (target=balance only), amount is specified in selected payment currency",
     )
-    target: Literal["balance", "service"] = Field(
+    target: Literal["balance", "service", "renew", "upgrade"] = Field(
         default=PayTarget.BALANCE,
-        description="Target: balance | service",
+        description="Target: balance | service | renew | upgrade",
     )
     service_id: int | None = Field(
         default=None, ge=1, description="Service ID for target=service"
+    )
+    user_svc_id: int | None = Field(
+        default=None, ge=1, description="Existing user service ID for target=renew|upgrade"
     )
     custom_amount: Decimal | None = Field(
         default=None, gt=0, description="Arbitrary sum for price_type=custom (target=service only)"
@@ -54,15 +57,15 @@ class PaymentCreate(BaseModel):
 
     @model_validator(mode="after")
     def _check_amount(self) -> "PaymentCreate":
-        if self.target not in (PayTarget.BALANCE, PayTarget.SERVICE):
-            raise ValueError(f"invalid target: {self.target!r}, must be 'balance' or 'service'")
+        if self.target not in (PayTarget.BALANCE, PayTarget.SERVICE, PayTarget.RENEW, PayTarget.UPGRADE):
+            raise ValueError(f"invalid target: {self.target!r}, must be 'balance', 'service', 'renew' or 'upgrade'")
         if self.target == PayTarget.BALANCE:
             if self.amount is None or self.amount <= 0:
                 raise ValueError("positive amount is required for target=balance")
-            if self.service_id is not None:
-                raise ValueError("service_id must not be supplied for target=balance")
+            if self.service_id is not None or self.user_svc_id is not None:
+                raise ValueError("service_id/user_svc_id must not be supplied for target=balance")
             if self.promocode is not None:
-                raise ValueError("promocode is only valid for target=service")
+                raise ValueError("promocode is only valid for target=service|renew|upgrade")
             if (
                 self.custom_amount is not None
                 or self.tier_code is not None
@@ -71,7 +74,7 @@ class PaymentCreate(BaseModel):
             ):
                 raise ValueError(
                     "service options (custom_amount, tier_code, components, form) "
-                    "are only valid for target=service"
+                    "are only valid for target=service|renew|upgrade"
                 )
         if self.target == PayTarget.SERVICE:
             if not self.service_id or self.service_id < 1:
@@ -80,6 +83,17 @@ class PaymentCreate(BaseModel):
                 raise ValueError(
                     "amount must not be supplied for target=service; "
                     "price is taken from the service or custom_amount"
+                )
+            if self.amount_in_payment_currency:
+                raise ValueError(
+                    "amount_in_payment_currency is only valid for target=balance"
+                )
+        if self.target in (PayTarget.RENEW, PayTarget.UPGRADE):
+            if not self.user_svc_id or self.user_svc_id < 1:
+                raise ValueError(f"valid user_svc_id is required for target={self.target}")
+            if self.amount is not None:
+                raise ValueError(
+                    f"amount must not be supplied for target={self.target}; price is calculated server-side"
                 )
             if self.amount_in_payment_currency:
                 raise ValueError(

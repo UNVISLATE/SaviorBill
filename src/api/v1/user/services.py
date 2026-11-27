@@ -32,10 +32,18 @@ from models.service import ServiceModel
 from models.user import UserModel
 from models.user_services import UserServicesModel
 from schemas.manifest import CustomActionVerify
-from schemas.orders import OrderCreate, Order, OrderActionRequest, OrderActionChallengeRequest
+from schemas.orders import (
+    OrderCreate,
+    Order,
+    OrderActionRequest,
+    OrderActionChallengeRequest,
+    OrderRenewRequest,
+)
 from schemas.page import Page
+from services.account import lock_account
 from services.audit import audit
-from services.pricing import assert_promotions_allowed, resolve_service_order
+from services.lifecycle_pricing import assert_renew_allowed, resolve_renew_quote
+from services.pricing import apply_discount_with_floor, assert_promotions_allowed, resolve_service_order
 from services.scheduler_outbox import (
     cancel_service_expire,
     schedule_provision_poll,
@@ -365,6 +373,86 @@ async def user_service_action(
         await cancel_service_expire(usvc_mngr.s, usvc.id)
     elif action_norm == ServiceAction.UNFREEZE and usvc.expires_at is not None:
         await schedule_service_expire(usvc_mngr.s, usvc.id, usvc.expires_at)
+    await usvc_mngr.s.commit()
+    return Order.from_model(usvc)
+
+
+@router.post(
+    "/services/{service_id}/renew",
+    response_model=Order,
+    summary="Renew existing user service from balance",
+    dependencies=[
+        Depends(require_perm("user.services.create")),
+        Depends(rate_limit("services.renew", LimitKind.SENSITIVE, require_auth=True)),
+    ],
+)
+async def renew_user_service(
+    service_id: int,
+    body: OrderRenewRequest,
+    acc: UserModel = Depends(get_current_acc),
+    usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
+    svc_mngr: ServiceMngr = Depends(get_service_mngr),
+    promo_mngr: PromoCodesMngr = Depends(get_promo_mngr),
+) -> Order:
+    # Строгий порядок блокировок: сначала аккаунт, затем услуга.
+    await lock_account(usvc_mngr.s, acc.id)
+    usvc = await usvc_mngr.s.scalar(
+        select(UserServicesModel)
+        .where(
+            UserServicesModel.id == service_id,
+            UserServicesModel.account_id == acc.id,
+        )
+        .with_for_update()
+    )
+    if usvc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service order not found")
+    service = await svc_mngr.s.get(ServiceModel, usvc.service_id)
+    if service is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog service not found")
+
+    quote = resolve_renew_quote(
+        usvc,
+        service,
+        tier_code=body.tier_code,
+        components=body.components,
+    )
+    assert_renew_allowed(usvc, service, duration_sec=quote.duration)
+
+    discount = Decimal("0")
+    promo = None
+    if body.promocode:
+        assert_promotions_allowed(service)
+        promo = await promo_mngr.load_valid(body.promocode, acc, service_id=service.id)
+        catalog = await promo_mngr.catalog_of(promo)
+        if catalog.kind != PromoKind.DISCOUNT:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "promo code is not a discount code",
+            )
+        discount = promo_mngr.discount_for(catalog, service, base_price=quote.price)
+
+    final_price = apply_discount_with_floor(service, quote.resolved, discount)
+    settings = dict(service.settings or {})
+    allow_bonus = bool(settings.get("allow_promotions", True))
+    full_bonus_only = bool(settings.get("full_bonus_only", False))
+    UserServicesMngr._charge(
+        acc,
+        final_price,
+        allow_bonus=allow_bonus,
+        full_bonus_only=full_bonus_only,
+    )
+
+    await usvc_mngr.apply_renew(usvc, service, acc, duration=quote.duration)
+    if promo is not None:
+        await promo_mngr.record_use(promo, acc, usvc.id)
+    await audit(
+        usvc_mngr.s,
+        action="service.renew",
+        actor_id=acc.id,
+        target_type="user_service",
+        target_id=str(usvc.id),
+        meta={"service_id": service.id, "price": str(final_price), "duration": quote.duration},
+    )
     await usvc_mngr.s.commit()
     return Order.from_model(usvc)
 

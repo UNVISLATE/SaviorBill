@@ -32,6 +32,7 @@ from models.user_services import UserServicesModel
 from schemas.page import Page
 from schemas.payment_provider import PayProviderPublic
 from schemas.payments import PaymentCreate, Payment
+from services.lifecycle_pricing import assert_renew_allowed, resolve_renew_quote
 from services.pricing import (
     apply_discount_with_floor,
     assert_promotions_allowed,
@@ -284,6 +285,61 @@ async def create_purchase(
             usvc.private_data = {**(usvc.private_data or {}), "promocode_id": promo_id}
         user_svc_id = usvc.id
 
+    renew_meta: dict | None = None
+    if body.target == PayTarget.RENEW:
+        usvc = await pay_mngr.s.scalar(
+            select(UserServicesModel).where(
+                UserServicesModel.id == body.user_svc_id,
+                UserServicesModel.account_id == acc.id,
+            )
+        )
+        if usvc is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "service order not found")
+        service = await svc_mngr.s.get(
+            type(usvc).service.property.mapper.class_, usvc.service_id
+        )
+        if service is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog service not found")
+        quote = resolve_renew_quote(
+            usvc,
+            service,
+            tier_code=body.tier_code,
+            components=body.components,
+        )
+        assert_renew_allowed(usvc, service, duration_sec=quote.duration)
+
+        discount = Decimal("0")
+        promo_id = None
+        if body.promocode:
+            assert_promotions_allowed(service)
+            promo = await promo_mngr.load_valid(body.promocode, acc, service_id=service.id)
+            catalog = await promo_mngr.catalog_of(promo)
+            if catalog.kind != PromoKind.DISCOUNT:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "promo code is not a discount code",
+                )
+            discount = promo_mngr.discount_for(catalog, service, base_price=quote.price)
+            promo_id = promo.id
+
+        amount = apply_discount_with_floor(service, quote.resolved, discount)
+        if amount <= Decimal("0"):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "renewal is fully discounted, renew it via /api/v1/user/services/{id}/renew",
+            )
+        user_svc_id = usvc.id
+        renew_meta = {
+            "period": quote.duration,
+            "promocode_id": promo_id,
+            "config_changed": quote.config_changed,
+            "target_config": (
+                {**quote.resolved.order_config, "settings": quote.resolved.effective_settings}
+                if quote.config_changed
+                else None
+            ),
+        }
+
     effective_return_url = body.return_url
     if user_svc_id is not None:
         if effective_return_url:
@@ -305,6 +361,8 @@ async def create_purchase(
         amount_in_payment_currency=body.amount_in_payment_currency,
         return_url=effective_return_url,
     )
+    if renew_meta is not None:
+        payment.private_data = {**(payment.private_data or {}), "renew": renew_meta}
     await pay_mngr.s.commit()
     if body.target == PayTarget.SERVICE:
         await triggers.fire(

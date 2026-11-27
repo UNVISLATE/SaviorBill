@@ -29,7 +29,7 @@ from lua.bus import LuaBus
 from security.sec.box import SecBox
 from services.account import lock_account
 from services.pricing import apply_discount_with_floor, resolve_service_order
-from services.scheduler_outbox import schedule_provision_poll
+from services.scheduler_outbox import schedule_provision_poll, schedule_service_expire
 
 log = logging.getLogger("saviorbill.user_services")
 
@@ -413,6 +413,45 @@ class UserServicesMngr:
                     status.HTTP_402_PAYMENT_REQUIRED,
                     "renewal requires a new paid order",
                 )
+        await self.s.flush()
+        return usvc
+
+    async def apply_renew(
+        self,
+        usvc: UserServicesModel,
+        service: ServiceModel,
+        acc,
+        *,
+        duration: int,
+    ) -> UserServicesModel:
+        """Применить оплаченное продление к существующей услуге и перепланировать истечение."""
+        now = utc_now()
+        if (
+            usvc.status in (UsvcStatus.ACTIVE, UsvcStatus.STOPPED)
+            and usvc.expires_at is not None
+            and usvc.expires_at > now
+        ):
+            new_expires = usvc.expires_at + timedelta(seconds=duration)
+        else:
+            new_expires = now + timedelta(seconds=duration)
+            if usvc.status == UsvcStatus.EXPIRED:
+                usvc.status = UsvcStatus.ACTIVE
+
+        prev_expires = usvc.expires_at
+        usvc.expires_at = new_expires
+        usvc.duration = duration
+
+        if service.delivery == Delivery.LUA:
+            try:
+                await self.run_action(usvc, service, acc, ServiceAction.RENEW)
+            except NotImplementedError:
+                pass
+            # Если Lua-скрипт сам не сдвинул expires_at, оставляем вычисленный new_expires
+            if usvc.expires_at == prev_expires:
+                usvc.expires_at = new_expires
+
+        if usvc.status in (UsvcStatus.ACTIVE, UsvcStatus.STOPPED) and usvc.expires_at is not None:
+            await schedule_service_expire(self.s, usvc.id, usvc.expires_at)
         await self.s.flush()
         return usvc
 

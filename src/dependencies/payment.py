@@ -569,6 +569,28 @@ class PayMngr:
                         usvc, service, acc
                     )
                     await cancel_service_expire(self.s, usvc.id)
+        elif payment.target == PayTarget.RENEW and payment.user_svc_id:
+            acc = await lock_account(self.s, payment.account_id)
+            usvc = await self.s.scalar(
+                select(UserServicesModel)
+                .where(UserServicesModel.id == payment.user_svc_id)
+                .with_for_update()
+            )
+            renew_meta = (payment.private_data or {}).get("renew") or {}
+            period = int(renew_meta.get("period") or 0)
+            if usvc is not None and period > 0 and usvc.expires_at is not None:
+                usvc.expires_at = usvc.expires_at - timedelta(seconds=period)
+                service = await self.s.get(ServiceModel, usvc.service_id)
+                if usvc.expires_at <= utc_now():
+                    if service is not None and acc is not None:
+                        await UserServicesMngr(
+                            self.s, self.bus, self.box, dispatcher=self.dispatcher
+                        ).expire(usvc, service, acc)
+                    else:
+                        usvc.status = UsvcStatus.EXPIRED
+                    await cancel_service_expire(self.s, usvc.id)
+                else:
+                    await schedule_service_expire(self.s, usvc.id, usvc.expires_at)
         else:  # возврат пополнения баланса
             acc = await lock_account(self.s, payment.account_id)
             if acc is not None:
@@ -711,7 +733,7 @@ class PayMngr:
             )
             return
 
-        if payment.target == PayTarget.SERVICE:
+        if payment.target in (PayTarget.SERVICE, PayTarget.RENEW, PayTarget.UPGRADE):
             if actual_paid is not None and actual_paid < payment.amount:
                 payment.status = PayStatus.REVIEW
                 payment.private_data = {
@@ -761,6 +783,31 @@ class PayMngr:
                 elif usvc.status == UsvcStatus.FAILED:
                     await schedule_delivery_retry(self.s, usvc.id, utc_now())
                 # При PROVISIONING задача svc_provision_poll уже поставлена внутри deliver().
+        elif payment.target == PayTarget.RENEW and payment.user_svc_id:
+            usvc = await self.s.scalar(
+                select(UserServicesModel)
+                .where(UserServicesModel.id == payment.user_svc_id)
+                .with_for_update()
+            )
+            if usvc is not None:
+                service = await self.s.get(ServiceModel, usvc.service_id)
+                renew_meta = (payment.private_data or {}).get("renew") or {}
+                promo_id = renew_meta.get("promocode_id")
+                if promo_id:
+                    ok, reason = await self._redeem_promo(promo_id, payment, usvc)
+                    if not ok:
+                        payment.status = PayStatus.REVIEW
+                        payment.paid_at = None
+                        payment.private_data = {
+                            **(payment.private_data or {}),
+                            "review_reason": reason,
+                        }
+                        return
+                period = int(renew_meta.get("period") or getattr(usvc, "duration", 0) or 0)
+                if service is not None and period > 0:
+                    await UserServicesMngr(
+                        self.s, self.bus, self.box, dispatcher=self.dispatcher
+                    ).apply_renew(usvc, service, acc, duration=period)
         else:  # пополнение баланса
             if acc is not None:
                 acc.balance += credited

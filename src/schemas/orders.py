@@ -137,6 +137,20 @@ class OrderActionChallengeRequest(BaseModel):
     action: str = Field(min_length=8, max_length=64, pattern=r"^custom\.[a-z][a-z0-9_]{1,31}$")
 
 
+class OrderRenewRequest(BaseModel):
+    """Renew an existing user service from balance."""
+
+    tier_code: str | None = Field(
+        default=None, max_length=64, description="Optional new tier code (when config change on renew is allowed)"
+    )
+    components: dict[str, Any] | None = Field(
+        default=None, description="Optional new components (when config change on renew is allowed)"
+    )
+    promocode: str | None = Field(
+        default=None, max_length=64, description="Optional discount promo code"
+    )
+
+
 __all__ = [
     "OrderCreate",
     "Order",
@@ -144,4 +158,5 @@ __all__ = [
     "OrderGrant",
     "OrderActionRequest",
     "OrderActionChallengeRequest",
+    "OrderRenewRequest",
 ]

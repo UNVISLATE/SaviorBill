@@ -66,10 +66,12 @@ class ServiceAction:
 
 
 class PayTarget:
-    """Назначение платежа: пополнить баланс или оплатить конкретную услугу."""
+    """Назначение платежа: пополнить баланс или оплатить/продлить/апгрейдить услугу."""
 
     BALANCE = "balance"
     SERVICE = "service"
+    RENEW = "renew"
+    UPGRADE = "upgrade"
 
 
 class PromoKind:
