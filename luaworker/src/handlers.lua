@@ -289,9 +289,14 @@ function M.run_script(payload)
     error("run_script: handle должен вернуть таблицу { public, private }")
   end
   return {
+    ok = res.ok,
     public = res.public or {},
     private = res.private or {},
+    status = res.status,
     state = res.state,
+    poll = res.poll,
+    error = res.error,
+    retryable = res.retryable,
     expires_at = res.expires_at,
     next_run = res.next_run,
     logs = log_entries,
@@ -366,9 +371,14 @@ function M.run_script_sandbox(payload)
     error("run_script_sandbox: handle должен вернуть таблицу { public, private }")
   end
   return {
+    ok = res.ok,
     public = res.public or {},
     private = res.private or {},
+    status = res.status,
     state = res.state,
+    poll = res.poll,
+    error = res.error,
+    retryable = res.retryable,
     expires_at = res.expires_at,
     next_run = res.next_run,
     logs = log_entries,

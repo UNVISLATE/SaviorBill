@@ -102,6 +102,8 @@ class LuaService(BaseIssuer):
             version=resolved_version,
             requested_version=service.lua_script_version,
         )
+        if res.get("ok") is False:
+            raise RuntimeError(str(res.get("error") or f"lua action '{action}' returned ok=false"))
         priv_merged = {**(usvc.private_data or {}), **(res.get("private") or {})}
         usvc.public_data = {**(usvc.public_data or {}), **(res.get("public") or {})}
         # Провенанс: какая именно версия скрипта реально выполнила это
