@@ -2,6 +2,7 @@
 
 from fastapi import APIRouter
 
+from .gdpr import router as gdpr_router
 from .me import router as me_router
 from .media import router as media_router
 from .oauth import router as oauth_router
@@ -20,5 +21,6 @@ router.include_router(sessions_router)
 router.include_router(purchases_router)
 router.include_router(oauth_router)
 router.include_router(verify_router)
+router.include_router(gdpr_router)
 
 __all__ = ["router"]

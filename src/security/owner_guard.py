@@ -15,6 +15,29 @@ def is_protected_role(role: "Role | None") -> bool:
     return role is not None and bool(role.is_protected)
 
 
+def is_staff_account(target: "UserModel") -> bool:
+    """Является ли аккаунт сотрудником/администратором (имеет админские или приватные права)."""
+    role = getattr(target, "role", None)
+    if role is None:
+        return False
+    if role.is_protected or getattr(role, "admin_login_allowed", False):
+        return True
+    perms = role.perms if isinstance(role.perms, dict) else {}
+    staff_roots = {"*", "admin", "privacy", "users", "roles", "settings", "audit", "system", "oauth", "lua"}
+    return any(k in staff_roots for k in perms)
+
+
+def assert_can_reset_twofa(caller: "UserModel", target: "UserModel") -> None:
+    """Сбросить 2FA сотруднику/админу может только owner; админ — только обычным юзерам."""
+    if is_protected_role(caller.role):
+        return
+    if is_staff_account(target):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "only owner can reset 2FA for admin or staff accounts",
+        )
+
+
 def _label(role: "Role | None") -> str:
     return (role.key or role.name) if role is not None else "protected"
 

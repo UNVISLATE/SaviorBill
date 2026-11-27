@@ -30,6 +30,18 @@ export function SettingsGeneral() {
             hint: "Роли с доступом в панель не смогут выполнять никаких действий, пока не включат второй фактор.",
           },
           {
+            key: "auth.2fa.email_reset_enabled",
+            label: "Сброс 2FA по коду из письма",
+            kind: "switch",
+            hint: "Разрешить пользователям с подтверждённой почтой сбрасывать 2FA одноразовым кодом (по умолчанию выключено).",
+          },
+          {
+            key: "auth.security_mail.first_verified_only",
+            label: "Письма безопасности только на первую почту",
+            kind: "switch",
+            hint: "Отправлять коды сброса пароля и 2FA только на первую подтверждённую почту аккаунта.",
+          },
+          {
             key: "auth.lockout.max_attempts",
             label: "Попыток входа до блокировки",
             kind: "number",
@@ -48,6 +60,53 @@ export function SettingsGeneral() {
             suffix: "сек",
             placeholder: "86400",
             hint: "Запись об активной сессии (IP/устройство). Не путать со временем жизни токена.",
+          },
+        ]}
+      />
+
+      <SettingsSection
+        title="GDPR и приватность"
+        description="Включается отдельно в зависимости от юрисдикции (по умолчанию выключено)."
+        fields={[
+          {
+            key: "gdpr.enabled",
+            label: "Включить модуль GDPR",
+            kind: "switch",
+            hint: "Главный переключатель функций соответствия GDPR в личном кабинете.",
+          },
+          {
+            key: "gdpr.export.enabled",
+            label: "Выгрузка данных (Art. 15/20)",
+            kind: "switch",
+            hint: "Разрешить пользователям скачивать JSON-архив своих персональных данных.",
+          },
+          {
+            key: "gdpr.erasure.enabled",
+            label: "Удаление / анонимизация (Art. 17)",
+            kind: "switch",
+            hint: "Анонимизирует ПДн аккаунта с сохранением бухгалтерских записей по заказам и платежам.",
+          },
+          {
+            key: "gdpr.export.security_cooldown_hours",
+            label: "Кулдаун выгрузки после смены почты/пароля",
+            kind: "number",
+            suffix: "ч",
+            placeholder: "24",
+            hint: "Защита от выгрузки данных при захвате аккаунта (0 — отключить).",
+          },
+          {
+            key: "gdpr.export.allow_cooldown_bypass_with_2fa",
+            label: "Обход кулдауна по 2FA-коду",
+            kind: "switch",
+            hint: "Разрешить мгновенную выгрузку в период кулдауна при подтверждении кодом 2FA.",
+          },
+          {
+            key: "gdpr.export.rate_limit_hours",
+            label: "Интервал между выгрузками",
+            kind: "number",
+            suffix: "ч",
+            placeholder: "24",
+            hint: "Минимальное время между повторными выгрузками данных одного пользователя.",
           },
         ]}
       />

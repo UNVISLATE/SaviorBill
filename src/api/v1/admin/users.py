@@ -16,13 +16,16 @@ from dependencies.db import get_db_session
 from dependencies.auth import get_token_svc
 from dependencies.media import get_media_mngr
 from dependencies.rbac import require_perm
+from dependencies.sec import make_secbox
 from security.owner_guard import (
     assert_account_deletable,
     assert_can_modify_account,
+    assert_can_reset_twofa,
     assert_role_assignable,
 )
 from security.rbac import has_perm, reg_perm
 from dependencies.valkey import get_valkey_client
+from models.account_email_history import AccountEmailHistoryMngr
 from models.promo_codes import PromoCodesModel
 from models.promo_use import PromoUseModel
 from models.roles import Role
@@ -388,6 +391,13 @@ async def edit_user(
                 status.HTTP_409_CONFLICT,
                 "Email is already taken by another user",
             )
+        from utils.datetime_utils import utc_now
+
+        acc.email_verified_at = None
+        acc.last_security_change_at = utc_now()
+        await AccountEmailHistoryMngr(session).record_email(
+            acc.id, data["email"], source="admin_edit"
+        )
     if "balance" in data or "bonus_balance" in data:
         app_token = getattr(request.state, "app_token", None)
         if app_token is not None:
@@ -778,6 +788,69 @@ async def set_user_avatar(
         await session.commit()
 
     return await account_response(acc, session)
+
+
+@router.post(
+    "/{user_id}/2fa/reset",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Reset user 2FA (privacy.user.2fa.reset)",
+    description=(
+        "Disables 2FA for the target user and revokes all their active sessions. "
+        "Non-owner staff cannot reset 2FA for other admin/staff accounts."
+    ),
+    dependencies=[Depends(require_perm("privacy.user.2fa.reset"))],
+)
+async def admin_reset_user_twofa(
+    request: Request,
+    user_id: int,
+    session: AsyncSession = Depends(get_db_session),
+    caller: UserModel = Depends(require_perm("privacy.user.2fa.reset")),
+    tokens=Depends(get_token_svc),
+) -> None:
+    from services.twofa import TotpSvc
+
+    acc = await _get_user(session, user_id)
+    assert_can_modify_account(caller, acc)
+    assert_can_reset_twofa(caller, acc)
+    if not acc.totp_enabled:
+        raise HTTPException(status.HTTP_409_CONFLICT, "two-factor is not enabled")
+
+    TotpSvc(make_secbox(request.app.state.settings)).disable(acc)
+    await audit(
+        session,
+        action="privacy.user.2fa.reset",
+        actor_id=caller.id,
+        actor_role=caller.role.name if caller.role else None,
+        target_type="user",
+        target_id=str(acc.id),
+        ip=request.client.host if request.client else None,
+    )
+    await session.commit()
+    await tokens.revoke_all_sessions(acc.id)
+
+
+@router.get(
+    "/{user_id}/email-history",
+    summary="Get user email history (privacy.user.email_history.read)",
+    dependencies=[Depends(require_perm("privacy.user.email_history.read"))],
+)
+async def admin_get_user_email_history(
+    user_id: int,
+    session: AsyncSession = Depends(get_db_session),
+) -> list[dict]:
+    await _get_user(session, user_id)
+    rows = await AccountEmailHistoryMngr(session).list_for_account(user_id)
+    return [
+        {
+            "id": r.id,
+            "email": r.email,
+            "verified_at": r.verified_at.isoformat() if r.verified_at else None,
+            "is_initial_verified": r.is_initial_verified,
+            "source": r.source,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in rows
+    ]
 
 
 __all__ = ["router"]

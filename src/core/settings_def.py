@@ -225,6 +225,73 @@ SETTINGS: tuple[SettingDef, ...] = (
         default="true",
         desc="Разрешить самостоятельную регистрацию новых пользователей (по умолчанию включено)",
     ),
+    SettingDef(
+        "auth.2fa.email_reset_enabled",
+        None,
+        type="bool",
+        group="auth",
+        default="false",
+        desc="Разрешить сброс 2FA по одноразовому коду на подтверждённую почту "
+        "(по умолчанию выключено)",
+    ),
+    SettingDef(
+        "auth.security_mail.first_verified_only",
+        None,
+        type="bool",
+        group="auth",
+        default="false",
+        desc="Отправлять критичные письма (сброс пароля / сброс 2FA) только на "
+        "первую подтверждённую почту аккаунта",
+    ),
+    # GDPR (по умолчанию полностью выключен — включается отдельно по юрисдикции)
+    SettingDef(
+        "gdpr.enabled",
+        None,
+        type="bool",
+        group="gdpr",
+        default="false",
+        desc="Включить модуль соответствия GDPR (по умолчанию выключен)",
+    ),
+    SettingDef(
+        "gdpr.export.enabled",
+        None,
+        type="bool",
+        group="gdpr",
+        default="false",
+        desc="Разрешить пользователям запрашивать выгрузку персональных данных (GDPR Art. 15/20)",
+    ),
+    SettingDef(
+        "gdpr.erasure.enabled",
+        None,
+        type="bool",
+        group="gdpr",
+        default="false",
+        desc="Разрешить пользователям запрашивать удаление/анонимизацию аккаунта (GDPR Art. 17)",
+    ),
+    SettingDef(
+        "gdpr.export.security_cooldown_hours",
+        None,
+        type="int",
+        group="gdpr",
+        default="24",
+        desc="Кулдаун (в часах) на выгрузку данных после смены email или пароля (0 — отключить)",
+    ),
+    SettingDef(
+        "gdpr.export.allow_cooldown_bypass_with_2fa",
+        None,
+        type="bool",
+        group="gdpr",
+        default="false",
+        desc="Разрешить обход кулдауна выгрузки при подтверждении свежим 2FA-кодом",
+    ),
+    SettingDef(
+        "gdpr.export.rate_limit_hours",
+        None,
+        type="int",
+        group="gdpr",
+        default="24",
+        desc="Минимальный интервал (в часах) между повторными выгрузками данных GDPR",
+    ),
     # Lua: таймаут вызова и ретраи (мягкая, настраиваемая изоляция вызовов воркера)
     SettingDef(
         "lua.call_timeout_sec",
