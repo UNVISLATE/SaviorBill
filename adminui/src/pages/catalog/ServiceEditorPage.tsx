@@ -255,6 +255,11 @@ function buildServiceSnapshot(data: {
   isRecommended?: boolean
   allowPromotions?: boolean
   fullBonusOnly?: boolean
+  allowEarlyRenew?: boolean
+  allowRenewConfigChange?: boolean
+  allowInstantUpgrade?: boolean
+  allowAutoRenew?: boolean
+  renewPricePolicy?: string
   isArchived?: boolean
   paramsText?: string | null
   settingsText?: string | null
@@ -297,6 +302,11 @@ function buildServiceSnapshot(data: {
     isRecommended: Boolean(data.isRecommended),
     allowPromotions: data.allowPromotions !== false,
     fullBonusOnly: Boolean(data.fullBonusOnly),
+    allowEarlyRenew: Boolean(data.allowEarlyRenew),
+    allowRenewConfigChange: Boolean(data.allowRenewConfigChange),
+    allowInstantUpgrade: Boolean(data.allowInstantUpgrade),
+    allowAutoRenew: Boolean(data.allowAutoRenew),
+    renewPricePolicy: data.renewPricePolicy === "locked" ? "locked" : "current",
     isArchived: Boolean(data.isArchived),
     paramsText: normalizeJson(data.paramsText),
     settingsText: normalizeJson(data.settingsText),
@@ -612,6 +622,12 @@ export function ServiceEditorPage() {
         isRecommended: loadedIsRecommended,
         allowPromotions: loadedAllowPromotions,
         fullBonusOnly: loadedFullBonusOnly,
+        allowEarlyRenew: Boolean((service.settings as any)?.allow_early_renew),
+        allowRenewConfigChange: Boolean((service.settings as any)?.allow_renew_config_change),
+        allowInstantUpgrade: Boolean((service.settings as any)?.allow_instant_upgrade),
+        allowAutoRenew: Boolean((service.settings as any)?.allow_auto_renew),
+        renewPricePolicy:
+          (service.settings as any)?.renew_price_policy === "locked" ? "locked" : "current",
         isArchived: loadedIsArchived,
         paramsText: pText,
         settingsText: sText,
@@ -726,6 +742,11 @@ export function ServiceEditorPage() {
       isRecommended,
       allowPromotions,
       fullBonusOnly,
+      allowEarlyRenew,
+      allowRenewConfigChange,
+      allowInstantUpgrade,
+      allowAutoRenew,
+      renewPricePolicy,
       isArchived,
       paramsText,
       settingsText,
@@ -755,6 +776,11 @@ export function ServiceEditorPage() {
     isRecommended,
     allowPromotions,
     fullBonusOnly,
+    allowEarlyRenew,
+    allowRenewConfigChange,
+    allowInstantUpgrade,
+    allowAutoRenew,
+    renewPricePolicy,
     isArchived,
     paramsText,
     settingsText,
@@ -2653,7 +2679,7 @@ export function ServiceEditorPage() {
                 </div>
 
                 {/* Большая кнопка сохранения */}
-                {(isDirty || isNew || allowEarlyRenew || allowRenewConfigChange || allowInstantUpgrade || allowAutoRenew || renewPricePolicy !== "current") ? (
+                {(isDirty || isNew) ? (
                   <Button
                     onClick={handleSave}
                     disabled={saveMutation.isPending}
