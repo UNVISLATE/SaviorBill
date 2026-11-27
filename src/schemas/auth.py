@@ -61,6 +61,7 @@ class TwoFAStatus(BaseModel):
     #: Роль обязана включить 2FA (auth.2fa.required_for_admin).
     required: bool
     recovery_codes_left: int
+    email_configured: bool = False
 
 
 class TwoFASetup(BaseModel):

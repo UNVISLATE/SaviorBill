@@ -49,6 +49,7 @@ def _svc(request: Request) -> TotpSvc:
 async def twofa_status(
     acc: UserModel = Depends(get_current_acc),
     settings: SystemSettingsMngr = Depends(get_settings_mngr),
+    mail: EmailSender = Depends(get_email_sender),
 ) -> TwoFAStatus:
     required = bool(
         acc.role
@@ -59,6 +60,7 @@ async def twofa_status(
         enabled=acc.totp_enabled,
         required=required,
         recovery_codes_left=len(acc.totp_recovery or []),
+        email_configured=mail.configured,
     )
 
 

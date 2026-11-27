@@ -90,6 +90,8 @@ async def verify_step_up(
     action_key: str,
     required_verify: str,
     code: str | None,
+    *,
+    email_configured: bool = True,
 ) -> None:
     """Проверить step-up подтверждение (2fa / email / 2fa_or_email)."""
     if not required_verify or required_verify == CustomActionVerify.NONE:
@@ -101,18 +103,38 @@ async def verify_step_up(
             detail={
                 "error": "totp_not_enabled",
                 "verify_required": CustomActionVerify.TWOFA,
-                "message": "2FA must be enabled to perform this action",
+                "email_configured": email_configured,
+                "message": "Это действие требует настройки и подтверждения по 2FA",
             },
         )
-    if required_verify == CustomActionVerify.EMAIL and not acc.email:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            "account email is required to perform this action",
-        )
+    if required_verify == CustomActionVerify.EMAIL:
+        if not email_configured:
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "email transport is not configured",
+            )
+        if not acc.email:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "account email is required to perform this action",
+            )
 
     effective_mode = required_verify
-    if required_verify == CustomActionVerify.TWOFA_OR_EMAIL and not acc.totp_enabled:
-        effective_mode = CustomActionVerify.EMAIL
+    if required_verify == CustomActionVerify.TWOFA_OR_EMAIL:
+        if not email_configured:
+            if not acc.totp_enabled:
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN,
+                    detail={
+                        "error": "totp_not_enabled",
+                        "verify_required": CustomActionVerify.TWOFA,
+                        "email_configured": False,
+                        "message": "Это действие требует настройки и подтверждения по 2FA",
+                    },
+                )
+            effective_mode = CustomActionVerify.TWOFA
+        elif not acc.totp_enabled:
+            effective_mode = CustomActionVerify.EMAIL
 
     if not code or not code.strip():
         raise HTTPException(
@@ -121,6 +143,7 @@ async def verify_step_up(
                 "error": "verification_required",
                 "verify_required": effective_mode,
                 "totp_enabled": bool(acc.totp_enabled),
+                "email_configured": email_configured,
                 "challenge_ttl": _CHALLENGE_TTL_SEC,
             },
         )

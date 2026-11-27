@@ -275,6 +275,7 @@ async def user_service_action(
     usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
     vk: valkey.Valkey = Depends(get_valkey_client),
+    mail: EmailSender = Depends(get_email_sender),
     triggers: TriggerDispatcher = Depends(get_dispatcher),
 ) -> Order:
     usvc = await usvc_mngr.s.scalar(
@@ -326,6 +327,7 @@ async def user_service_action(
                 action_norm,
                 verify_mode,
                 body.verify_code,
+                email_configured=mail.configured,
             )
 
         usvc = await usvc_mngr.run_action(usvc, service, acc, action_norm)
