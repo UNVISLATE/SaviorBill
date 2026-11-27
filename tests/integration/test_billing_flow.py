@@ -289,7 +289,7 @@ async def test_scheduler_cancels_task_on_service_delete(http, new_user, seed, en
 
     del_resp = await http.post(
         f"/api/v1/user/services/{usvc_id}/action",
-        json={"action": "stop"},
+        json={"action": "delete"},
         headers=hdr,
     )
     assert del_resp.status_code == 200, del_resp.text
