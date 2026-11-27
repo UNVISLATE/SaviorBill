@@ -169,6 +169,7 @@ async def cancel_my_media_job(
             state="cancelled",
             error="Cancelled by user",
         )
+        await jobs.s.commit()
     payload = json.dumps({"action": "cancel", "token": token})
     await vk.publish("media:control", payload)
     return {"ok": True, "message": "Cancellation signal sent"}

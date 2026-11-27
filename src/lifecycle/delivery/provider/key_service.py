@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from fastapi import HTTPException, status
 from sqlalchemy import select
 
 from lifecycle.delivery.base import BaseIssuer
@@ -10,6 +11,12 @@ from utils.datetime_utils import utc_now
 
 class KeyService(BaseIssuer):
     """Берёт первый свободный ключ услуги и помечает его использованным."""
+
+    async def action(self, usvc, service, acc, action: str) -> None:  # noqa: ANN001
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "lifecycle actions are not supported for key services",
+        )
 
     async def issue(self, usvc, service, acc) -> None:  # noqa: ANN001 — ORM-объекты
         from models.service_keys import ServiceKeysModel

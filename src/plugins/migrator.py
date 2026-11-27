@@ -236,19 +236,29 @@ class PluginMigrator:
 
     async def drop_schema_data(self, slug: str) -> None:
         """Полная очистка данных плагина: DROP SCHEMA plugin_{slug} CASCADE."""
-        slug = self.sanitize_slug(slug)
-        schema_name = f"plugin_{slug}"
+        raw_slug = slug
+        sanitized_slug = self.sanitize_slug(slug)
+        schema_name = f"plugin_{sanitized_slug}"
 
         async with self.sm() as session:
             await session.execute(text(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE;'))
             await session.execute(
-                text("DELETE FROM public.plugin_migrations WHERE plugin_slug = :slug;"),
-                {"slug": slug},
+                text(
+                    "DELETE FROM public.plugin_migrations "
+                    "WHERE plugin_slug IN (:raw_slug, :sanitized_slug);"
+                ),
+                {"raw_slug": raw_slug, "sanitized_slug": sanitized_slug},
             )
             # Удаляем настройки плагина из public.system_settings
             await session.execute(
-                text("DELETE FROM public.system_settings WHERE key LIKE :prefix;"),
-                {"prefix": f"plugin.{slug}.%"},
+                text(
+                    "DELETE FROM public.system_settings "
+                    "WHERE key LIKE :raw_prefix OR key LIKE :sanitized_prefix;"
+                ),
+                {
+                    "raw_prefix": f"plugin.{raw_slug}.%",
+                    "sanitized_prefix": f"plugin.{sanitized_slug}.%",
+                },
             )
             await session.commit()
             logger.info(f"Dropped schema '{schema_name}' and associated plugin settings.")

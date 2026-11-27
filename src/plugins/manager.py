@@ -167,6 +167,15 @@ class PluginMngr:
                     await self.valkey.delete(lock_key)
                 except Exception:  # noqa: BLE001
                     pass
+        else:
+            # Другой воркер сейчас применяет миграции этого плагина — дождёмся завершения.
+            for _ in range(150):
+                try:
+                    if not await self.valkey.exists(lock_key):
+                        break
+                except Exception:  # noqa: BLE001
+                    break
+                await asyncio.sleep(0.2)
 
         # Синхронизация UI-статики в S3 (если STORAGE_BACKEND=s3)
         admin_dir = plugin_dir / "admin"
