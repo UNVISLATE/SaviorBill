@@ -162,4 +162,43 @@ async def delete_provider(
     await session.commit()
 
 
+@router.post(
+    "/{provider_id}/archive",
+    response_model=OAuthProvider,
+    dependencies=[Depends(require_perm("oauth.edit"))],
+    summary="Archive OAuth provider",
+)
+async def archive_provider(
+    provider_id: int,
+    session: AsyncSession = Depends(get_db_session),
+) -> OAuthProvider:
+    cfg = await session.get(OAuthProvidersModel, provider_id)
+    if cfg is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "provider not found")
+    cfg.enabled = False
+    cfg.extra = {**(cfg.extra or {}), "is_archived": True}
+    await session.commit()
+    await session.refresh(cfg, attribute_names=["icon"])
+    return OAuthProvider.from_model(cfg)
+
+
+@router.post(
+    "/{provider_id}/unarchive",
+    response_model=OAuthProvider,
+    dependencies=[Depends(require_perm("oauth.edit"))],
+    summary="Unarchive OAuth provider",
+)
+async def unarchive_provider(
+    provider_id: int,
+    session: AsyncSession = Depends(get_db_session),
+) -> OAuthProvider:
+    cfg = await session.get(OAuthProvidersModel, provider_id)
+    if cfg is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "provider not found")
+    cfg.extra = {**(cfg.extra or {}), "is_archived": False}
+    await session.commit()
+    await session.refresh(cfg, attribute_names=["icon"])
+    return OAuthProvider.from_model(cfg)
+
+
 __all__ = ["router"]

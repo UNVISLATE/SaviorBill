@@ -2,6 +2,8 @@ import { useEffect, useState, useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { useSearchParams } from "react-router-dom"
 import {
+  Archive,
+  ArchiveRestore,
   CreditCard,
   ExternalLink,
   KeyRound,
@@ -43,7 +45,7 @@ interface Provider {
   script_version: number | null
   icon_media_id?: number | null
   icon_url?: string | null
-  extra: Record<string, unknown>
+  extra?: Record<string, unknown>
 }
 
 
@@ -451,32 +453,72 @@ export function PaymentProvidersPage() {
     onError: (e: unknown) => toastError("Не удалось удалить провайдера", getErrorDetail(e)),
   })
 
+  const [showArchived, setShowArchived] = useState(false)
+
+  const archive = useMutation({
+    mutationFn: async (id: number) => api.post(`/v1/admin/purchases/providers/${id}/archive`),
+    onSuccess: () => {
+      toastSuccess("Провайдер перемещён в архив")
+      void qc.invalidateQueries({ queryKey: ["admin-pay-providers"] })
+    },
+    onError: (e: unknown) => toastError("Не удалось архивировать провайдера", getErrorDetail(e)),
+  })
+
+  const unarchive = useMutation({
+    mutationFn: async (id: number) => api.post(`/v1/admin/purchases/providers/${id}/unarchive`),
+    onSuccess: () => {
+      toastSuccess("Провайдер восстановлен из архива")
+      void qc.invalidateQueries({ queryKey: ["admin-pay-providers"] })
+    },
+    onError: (e: unknown) => toastError("Не удалось восстановить провайдера", getErrorDetail(e)),
+  })
+
+  const filteredProviders = useMemo(
+    () =>
+      (providers ?? []).filter((p) =>
+        showArchived ? Boolean(p.extra?.is_archived) : !p.extra?.is_archived
+      ),
+    [providers, showArchived]
+  )
+
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-baseline justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Платёжные провайдеры</h1>
           <p className="text-sm text-muted-foreground">
             Шлюзы оплаты и интеграции с внешними системами
           </p>
         </div>
-        {canCreate && (
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="mr-1.5 size-4" /> Добавить
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={showArchived ? "secondary" : "outline"}
+            onClick={() => setShowArchived((v) => !v)}
+          >
+            <Archive className="mr-1.5 size-4" />
+            {showArchived ? "Активные" : "Архив"}
           </Button>
-        )}
+          {canCreate && (
+            <Button size="sm" onClick={() => setCreating(true)}>
+              <Plus className="mr-1.5 size-4" /> Добавить
+            </Button>
+          )}
+        </div>
       </div>
 
       {isLoading && <p className="text-sm text-muted-foreground">Загрузка провайдеров…</p>}
 
-      {!isLoading && (!providers || providers.length === 0) && (
+      {!isLoading && filteredProviders.length === 0 && (
         <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-          Нет подключенных провайдеров. Создайте первого провайдера, чтобы пользователи могли пополнять баланс.
+          {showArchived
+            ? "Архив платёжных провайдеров пуст."
+            : "Нет подключенных провайдеров. Создайте первого провайдера, чтобы пользователи могли пополнять баланс."}
         </p>
       )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {providers?.map((p) => {
+        {filteredProviders.map((p) => {
           const script = paymentScripts?.find((s) => s.id === p.script_id)
           return (
             <Card
@@ -504,12 +546,16 @@ export function PaymentProvidersPage() {
                       <p className="font-mono text-xs text-muted-foreground">{p.slug}</p>
                     </div>
                   </div>
-                  <Switch
-                    checked={p.enabled}
-                    disabled={!canEdit || toggle.isPending}
-                    onCheckedChange={(v) => toggle.mutate({ id: p.id, enabled: v })}
+                  <div
                     onClick={(e) => e.stopPropagation()}
-                  />
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <Switch
+                      checked={p.enabled}
+                      disabled={!canEdit || toggle.isPending || Boolean(p.extra?.is_archived)}
+                      onCheckedChange={(v) => toggle.mutate({ id: p.id, enabled: v })}
+                    />
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="space-y-2 text-xs">
@@ -543,19 +589,37 @@ export function PaymentProvidersPage() {
                   >
                     Webhook URL <ExternalLink className="size-3" />
                   </a>
-                  {canDelete && (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="size-7 text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        if (confirm(`Удалить провайдера ${p.slug}?`)) remove.mutate(p.id)
-                      }}
-                    >
-                      <Trash2 className="size-3.5" />
-                    </Button>
-                  )}
+                  <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                    {canEdit && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 text-muted-foreground hover:text-foreground"
+                        title={p.extra?.is_archived ? "Восстановить из архива" : "В архив"}
+                        onClick={() =>
+                          p.extra?.is_archived ? unarchive.mutate(p.id) : archive.mutate(p.id)
+                        }
+                      >
+                        {p.extra?.is_archived ? (
+                          <ArchiveRestore className="size-3.5" />
+                        ) : (
+                          <Archive className="size-3.5" />
+                        )}
+                      </Button>
+                    )}
+                    {canDelete && (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 text-destructive hover:text-destructive hover:bg-destructive/10"
+                        onClick={() => {
+                          if (confirm(`Удалить провайдера ${p.slug}?`)) remove.mutate(p.id)
+                        }}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </CardContent>
             </Card>

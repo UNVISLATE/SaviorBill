@@ -1,6 +1,6 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { KeyRound, MoreHorizontal, Plus, ShieldCheck, Trash2 } from "lucide-react"
+import { Archive, ArchiveRestore, ExternalLink, KeyRound, Plus, ShieldCheck, Trash2 } from "lucide-react"
 
 import { api } from "@/api/api.ts"
 import { getErrorDetail } from "@/lib/api-error.ts"
@@ -10,7 +10,7 @@ import { Button } from "@/components/shadsnui/button"
 import { Input } from "@/components/shadsnui/input"
 import { Label } from "@/components/shadsnui/label"
 import { Switch } from "@/components/shadsnui/switch"
-import { Card, CardContent } from "@/components/shadsnui/card"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/shadsnui/card"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,12 +21,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/shadsnui/alert-dialog"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/shadsnui/dropdown-menu"
 import { MediaPickerDialog } from "@/components/media/MediaPickerDialog"
 import { TabbedDialog, type TabDefinition } from "@/components/common/TabbedDialog"
 import { KeySecretEditor } from "@/components/common/forms/KeySecretEditor"
@@ -42,6 +36,7 @@ interface Provider {
   scopes: string
   icon_media_id: number | null
   icon_url: string | null
+  extra?: Record<string, unknown>
 }
 
 interface LuaScript {
@@ -314,10 +309,12 @@ function DeleteProviderDialog({
 }
 
 export function OAuthProvidersPage() {
+  const qc = useQueryClient()
   const { can } = useAuth()
   const [creating, setCreating] = useState(false)
   const [editing, setEditing] = useState<Provider | null>(null)
   const [deleting, setDeleting] = useState<Provider | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
   const canCreate = can("oauth.create")
   const canEdit = can("oauth.edit")
   const canDelete = can("oauth.delete")
@@ -333,89 +330,166 @@ export function OAuthProvidersPage() {
     staleTime: 60_000,
   })
 
+  const toggle = useMutation({
+    mutationFn: async ({ id, enabled }: { id: number; enabled: boolean }) =>
+      api.patch(`/v1/admin/oauth/${id}`, { enabled }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["admin-oauth-providers"] })
+      toastSuccess("Статус провайдера обновлён")
+    },
+    onError: (e: unknown) => toastError("Не удалось обновить статус", getErrorDetail(e)),
+  })
+
+  const archive = useMutation({
+    mutationFn: async (id: number) => api.post(`/v1/admin/oauth/${id}/archive`),
+    onSuccess: () => {
+      toastSuccess("OAuth-провайдер перемещён в архив")
+      void qc.invalidateQueries({ queryKey: ["admin-oauth-providers"] })
+    },
+    onError: (e: unknown) => toastError("Не удалось архивировать провайдера", getErrorDetail(e)),
+  })
+
+  const unarchive = useMutation({
+    mutationFn: async (id: number) => api.post(`/v1/admin/oauth/${id}/unarchive`),
+    onSuccess: () => {
+      toastSuccess("OAuth-провайдер восстановлен из архива")
+      void qc.invalidateQueries({ queryKey: ["admin-oauth-providers"] })
+    },
+    onError: (e: unknown) => toastError("Не удалось восстановить провайдера", getErrorDetail(e)),
+  })
+
+  const filteredProviders = useMemo(
+    () =>
+      (data ?? []).filter((p) =>
+        showArchived ? Boolean(p.extra?.is_archived) : !p.extra?.is_archived
+      ),
+    [data, showArchived]
+  )
+
   return (
     <div className="space-y-4">
-      <div className="flex items-baseline justify-between">
+      <div className="flex items-baseline justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">OAuth-провайдеры</h1>
           <p className="text-sm text-muted-foreground">
             Вход через социальные сети и сторонние сервисы (Google, Telegram, GitHub…).
           </p>
         </div>
-        {canCreate && (
-          <Button size="sm" onClick={() => setCreating(true)}>
-            <Plus className="size-4" /> Добавить провайдера
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant={showArchived ? "secondary" : "outline"}
+            onClick={() => setShowArchived((v) => !v)}
+          >
+            <Archive className="mr-1.5 size-4" />
+            {showArchived ? "Активные" : "Архив"}
           </Button>
-        )}
+          {canCreate && (
+            <Button size="sm" onClick={() => setCreating(true)}>
+              <Plus className="mr-1.5 size-4" /> Добавить
+            </Button>
+          )}
+        </div>
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
+      {isLoading && <p className="text-sm text-muted-foreground">Загрузка провайдеров…</p>}
 
-      {!isLoading && (data?.length ?? 0) === 0 && (
-        <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
-            OAuth-провайдеры ещё не настроены.
-          </CardContent>
-        </Card>
+      {!isLoading && filteredProviders.length === 0 && (
+        <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
+          {showArchived
+            ? "Архив OAuth-провайдеров пуст."
+            : "OAuth-провайдеры ещё не настроены."}
+        </p>
       )}
 
-      <div className="grid gap-2">
-        {data?.map((p) => (
-          <Card key={p.id}>
-            <CardContent className="flex items-center justify-between gap-3 py-3">
-              <div className="flex items-center gap-3">
-                <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
-                  {p.icon_url ? (
-                    <img src={p.icon_url} alt="" className="size-full object-cover" />
-                  ) : (
-                    <ShieldCheck className="size-4 text-muted-foreground" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {filteredProviders.map((p) => {
+          const s = scripts?.find((x) => x.id === p.script_id)
+          return (
+            <Card
+              key={p.id}
+              className="flex flex-col justify-between transition-colors hover:border-primary/50 cursor-pointer"
+              onClick={() => canEdit && setEditing(p)}
+            >
+              <CardHeader className="space-y-1">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                    <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted/40">
+                      {p.icon_url ? (
+                        <img src={p.icon_url} alt="" className="size-full object-cover" />
+                      ) : (
+                        <ShieldCheck className="size-4 text-muted-foreground" />
+                      )}
+                    </div>
+                    <div className="space-y-0.5 min-w-0">
+                      <CardTitle className="text-base truncate">{p.title ?? p.slug}</CardTitle>
+                      <p className="font-mono text-xs text-muted-foreground">{p.slug}</p>
+                    </div>
+                  </div>
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <Switch
+                      checked={p.enabled}
+                      disabled={!canEdit || toggle.isPending || Boolean(p.extra?.is_archived)}
+                      onCheckedChange={(v) => toggle.mutate({ id: p.id, enabled: v })}
+                    />
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2 text-xs">
+                <div className="flex flex-wrap items-center gap-1">
+                  {p.scopes && (
+                    <Badge variant="outline" className="font-mono text-[10px]">
+                      {p.scopes}
+                    </Badge>
                   )}
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-medium">{p.title ?? p.slug}</span>
-                    <span className="font-mono text-xs text-muted-foreground">{p.slug}</span>
-                    <Badge variant={p.enabled ? "default" : "outline"}>
-                      {p.enabled ? "включён" : "выключен"}
-                    </Badge>
-                  </div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">
-                    Scopes: <span className="font-mono">{p.scopes}</span>
-                    {(() => {
-                      const s = scripts?.find((x) => x.id === p.script_id)
-                      return ` · Скрипт: ${s?.name || s?.slug || `#${p.script_id}`}`
-                    })()}
-                  </p>
+                <div className="text-muted-foreground">
+                  Скрипт: {s ? <span className="text-foreground">{s.name ?? s.slug}</span> : <span className="italic">#{p.script_id}</span>}
                 </div>
-              </div>
-
-              {(canEdit || canDelete) && (
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button variant="ghost" size="icon" className="size-8">
-                        <MoreHorizontal className="size-4" />
-                      </Button>
-                    }
-                  />
-                  <DropdownMenuContent align="end">
+                <div
+                  className="flex items-center justify-between pt-2 border-t"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <span className="text-[11px] text-muted-foreground inline-flex items-center gap-1 font-mono">
+                    /auth/oauth/{p.slug}/callback <ExternalLink className="size-3" />
+                  </span>
+                  <div className="flex items-center gap-1">
                     {canEdit && (
-                      <DropdownMenuItem onClick={() => setEditing(p)}>Изменить</DropdownMenuItem>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 text-muted-foreground hover:text-foreground"
+                        title={p.extra?.is_archived ? "Восстановить из архива" : "В архив"}
+                        onClick={() =>
+                          p.extra?.is_archived ? unarchive.mutate(p.id) : archive.mutate(p.id)
+                        }
+                      >
+                        {p.extra?.is_archived ? (
+                          <ArchiveRestore className="size-3.5" />
+                        ) : (
+                          <Archive className="size-3.5" />
+                        )}
+                      </Button>
                     )}
                     {canDelete && (
-                      <DropdownMenuItem
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 text-destructive hover:text-destructive hover:bg-destructive/10"
                         onClick={() => setDeleting(p)}
-                        className="text-destructive focus:text-destructive"
                       >
-                        <Trash2 className="size-4 mr-1.5" /> Удалить
-                      </DropdownMenuItem>
+                        <Trash2 className="size-3.5" />
+                      </Button>
                     )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              )}
-            </CardContent>
-          </Card>
-        ))}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
 
       <ProviderFormDialog

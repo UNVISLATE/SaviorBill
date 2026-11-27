@@ -202,6 +202,45 @@ async def delete_provider(
     await session.commit()
 
 
+@router.post(
+    "/providers/{provider_id}/archive",
+    response_model=PayProvider,
+    dependencies=[Depends(require_perm("purchases.providers.edit"))],
+    summary="Archive payment provider",
+)
+async def archive_provider(
+    provider_id: int,
+    session: AsyncSession = Depends(get_db_session),
+) -> PayProvider:
+    prov = await session.get(PaymentProvidersModel, provider_id)
+    if prov is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "provider not found")
+    prov.enabled = False
+    prov.extra = {**(prov.extra or {}), "is_archived": True}
+    await session.commit()
+    await session.refresh(prov, attribute_names=["icon"])
+    return PayProvider.from_model(prov)
+
+
+@router.post(
+    "/providers/{provider_id}/unarchive",
+    response_model=PayProvider,
+    dependencies=[Depends(require_perm("purchases.providers.edit"))],
+    summary="Unarchive payment provider",
+)
+async def unarchive_provider(
+    provider_id: int,
+    session: AsyncSession = Depends(get_db_session),
+) -> PayProvider:
+    prov = await session.get(PaymentProvidersModel, provider_id)
+    if prov is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "provider not found")
+    prov.extra = {**(prov.extra or {}), "is_archived": False}
+    await session.commit()
+    await session.refresh(prov, attribute_names=["icon"])
+    return PayProvider.from_model(prov)
+
+
 # Карточка платежа объявлена после /purchases/providers, чтобы "providers"
 # не перехватывался как {payment_id}.
 @router.get(
