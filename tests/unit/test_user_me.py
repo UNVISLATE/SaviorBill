@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from pydantic import ValidationError
@@ -236,7 +236,13 @@ class TestPatchMeEmailRolePreservation:
             role=SimpleNamespace(key=BaseRole.OWNER, name="owner", perms=["*"]),
         )
         mngr = SimpleNamespace(
-            s=SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock()),
+            s=SimpleNamespace(
+                add=MagicMock(),
+                flush=AsyncMock(),
+                scalar=AsyncMock(return_value=None),
+                commit=AsyncMock(),
+                rollback=AsyncMock(),
+            ),
             by_login=AsyncMock(return_value=None),
             by_email=AsyncMock(return_value=None),
             set_role_key=AsyncMock(),
@@ -267,7 +273,13 @@ class TestPatchMeEmailRolePreservation:
             role=SimpleNamespace(key=BaseRole.USER, name="user", perms=["user.profile.edit"]),
         )
         mngr = SimpleNamespace(
-            s=SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock()),
+            s=SimpleNamespace(
+                add=MagicMock(),
+                flush=AsyncMock(),
+                scalar=AsyncMock(return_value=None),
+                commit=AsyncMock(),
+                rollback=AsyncMock(),
+            ),
             by_login=AsyncMock(return_value=None),
             by_email=AsyncMock(return_value=None),
             set_role_key=AsyncMock(),

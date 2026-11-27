@@ -71,7 +71,7 @@ class AccountEmailHistoryMngr:
         verified_at: datetime | None = None,
         source: str = "profile",
     ) -> AccountEmailHistoryModel | None:
-        if not email or not hasattr(self.s, "add"):
+        if not email:
             return None
         norm = email.strip().lower()
         if not norm:
