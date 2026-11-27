@@ -300,15 +300,22 @@ async def test_fail_open_uses_last_rates():
 
 @pytest.mark.asyncio
 async def test_safe_flush_status_recovers_from_flush_error() -> None:
+    from unittest.mock import MagicMock
+
     session = AsyncMock()
     session.flush.side_effect = Exception("UPDATE statement on table 'fx_sources' expected to update 1 row(s); 0 were matched.")
     session.rollback = AsyncMock()
+    sp = AsyncMock()
+    sp.__aenter__ = AsyncMock(return_value=sp)
+    sp.__aexit__ = AsyncMock(return_value=False)
+    session.begin_nested = MagicMock(return_value=sp)
 
     fx = FxRates(None, None, session=session)
     src = SimpleNamespace(type="provider", id=99)
 
     await fx._safe_flush_status(src, rates={"USD": Decimal("100")})
-    session.rollback.assert_awaited_once()
+    session.begin_nested.assert_called_once()
+    session.rollback.assert_not_awaited()
 
 
 @pytest.mark.asyncio

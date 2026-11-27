@@ -258,6 +258,10 @@ def resolve_service_order(
             )
 
         tier_price = Decimal(str(matched_plan["price"]))
+        if tier_price < Decimal("0"):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "tier price cannot be negative"
+            )
         duration_seconds = matched_plan.get("duration_seconds")
         duration_days = matched_plan.get("duration_days")
         if duration_seconds is not None:
@@ -404,6 +408,10 @@ def resolve_service_order(
                     "price_delta": str(delta),
                 }
 
+        if total_price < Decimal("0"):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "configured price cannot be negative"
+            )
         validated_form = validate_order_form(pricing_config, form, service=service)
         order_config = {
             "components": resolved_components,

@@ -218,21 +218,18 @@ class FxRates:
         if not hasattr(src, "type") or self.session is None:
             return
         try:
-            if rates is not None:
-                src.last_rates = {k: str(v) for k, v in rates.items()}
-                src.last_fetched_at = utc_now()
-                src.last_error = None
-                src.last_error_at = None
-            elif error is not None:
-                src.last_error = str(error)[:1024]
-                src.last_error_at = utc_now()
-            await self.session.flush()
+            async with self.session.begin_nested():
+                if rates is not None:
+                    src.last_rates = {k: str(v) for k, v in rates.items()}
+                    src.last_fetched_at = utc_now()
+                    src.last_error = None
+                    src.last_error_at = None
+                elif error is not None:
+                    src.last_error = str(error)[:1024]
+                    src.last_error_at = utc_now()
+                await self.session.flush()
         except Exception as exc:
             log.warning("fx: could not flush status for source %s: %s", getattr(src, "id", None), exc)
-            try:
-                await self.session.rollback()
-            except Exception:
-                pass
 
     async def _rates_for_source(self, src: Any) -> dict[str, Decimal]:
         """Получить курсы от одного источника (Valkey -> Live -> Fail-Open DB)."""

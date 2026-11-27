@@ -304,10 +304,11 @@ class PayMngr:
             if priv.get("refunded"):
                 await self._apply_refund(payment, priv)
                 transitioned = True
-            return payment
-        if payment.status == PayStatus.REFUNDED:
+            else:
+                return payment
+        elif payment.status == PayStatus.REFUNDED:
             return payment  # идемпотентность
-        if payment.status == PayStatus.PAID:
+        elif payment.status == PayStatus.PAID:
             if priv.get("refunded"):
                 await self._apply_refund(payment, priv)
                 transitioned = True
@@ -344,7 +345,14 @@ class PayMngr:
         :arg payment: платёж для перепроверки.
         :return: обновлённый платёж.
         """
-        if payment.status in (PayStatus.PAID, PayStatus.FAILED, PayStatus.REFUNDED, PayStatus.REFUNDING):
+        if payment.status in (
+            PayStatus.PAID,
+            PayStatus.FAILED,
+            PayStatus.REFUNDED,
+            PayStatus.REFUNDING,
+            PayStatus.REVIEW,
+            PayStatus.CANCELLED,
+        ):
             return payment
         prov = await self._provider(payment.provider, enabled=False)
         script, filename, script_version = await self._script(prov, PayAction.CHECK)
@@ -367,7 +375,14 @@ class PayMngr:
         # ответ скрипта (сеть), его мог обработать параллельный
         # callback/recheck/refund.
         payment = await self.s.get(UserPaymentsModel, payment.id, with_for_update=True)
-        if payment.status in (PayStatus.PAID, PayStatus.FAILED, PayStatus.REFUNDED, PayStatus.REFUNDING):
+        if payment.status in (
+            PayStatus.PAID,
+            PayStatus.FAILED,
+            PayStatus.REFUNDED,
+            PayStatus.REFUNDING,
+            PayStatus.REVIEW,
+            PayStatus.CANCELLED,
+        ):
             return payment
 
         if priv.get("ok") and priv.get("paid"):
@@ -523,6 +538,7 @@ class PayMngr:
         payment.status = PayStatus.REFUNDED
 
         if payment.target == PayTarget.SERVICE and payment.user_svc_id:
+            acc = await lock_account(self.s, payment.account_id)
             usvc = await self.s.scalar(
                 select(UserServicesModel)
                 .where(UserServicesModel.id == payment.user_svc_id)
@@ -530,7 +546,6 @@ class PayMngr:
             )
             if usvc is not None:
                 service = await self.s.get(ServiceModel, usvc.service_id)
-                acc = await lock_account(self.s, payment.account_id)
                 if service is not None and acc is not None:
                     credit = (usvc.private_data or {}).get("delivery_credit") or {}
                     if credit:

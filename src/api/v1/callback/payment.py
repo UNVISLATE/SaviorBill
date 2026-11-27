@@ -108,9 +108,10 @@ async def payment_callback(
     data = await _build_request(request)
     payment = await svc.callback(provider, data)
 
-    # Валкей-дедупликация: повторный вебхук с тем же external_id — no-op-действия
-    # уже применены транзакцией; фиксируем «обработано впервые» для аудита.
-    dedup_key = f"pay:callback:{provider}:{payment.external_id or payment.id}"
+    # Валкей-дедупликация: повторный вебхук с тем же external_id и тем же
+    # статусом — no-op, но смена статуса (напр. PAID -> REFUNDED) должна
+    # проходить в аудит и триггеры.
+    dedup_key = f"pay:callback:{provider}:{payment.external_id or payment.id}:{payment.status}"
     try:
         first_time = await once(vk, dedup_key)
     except VALKEY_ERRORS as exc:
@@ -144,7 +145,17 @@ async def payment_callback(
             },
         )
 
-    await svc.s.commit()
+    try:
+        await svc.s.commit()
+    except Exception:
+        if first_time:
+            try:
+                from services.bus.idem import release_once
+
+                await release_once(vk, dedup_key)
+            except Exception:  # noqa: BLE001
+                pass
+        raise
     # Уведомляем только при реальном переходе статуса и первой обработке вебхука
     if getattr(payment, "_just_transitioned", True) and first_time:
         await _notify(svc, triggers, payment)
