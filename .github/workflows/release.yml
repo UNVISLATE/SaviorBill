@@ -88,7 +88,7 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},enable=${{ !github.event.release.prerelease }}
             type=semver,pattern={{major}},enable=${{ !github.event.release.prerelease }}
             type=raw,value=latest,enable=${{ !github.event.release.prerelease }}
-            type=raw,value=nightly,enable=${{ github.event.release.prerelease }}
+            type=raw,value=nightly
             type=raw,value=${{ github.event.release.tag_name }}
 
       - name: Build and push
