@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 import valkey.asyncio as valkey
@@ -16,7 +16,7 @@ from dependencies.payment import PayMngr
 from dependencies.sec import make_secbox
 from dependencies.triggers import build_dispatcher
 from dependencies.usersvc import UserServicesMngr
-from enums import PayStatus, UsvcStatus
+from enums import PayStatus, ServiceAction, UsvcStatus
 from lua.bus import LuaBus
 from messaging.mediabus import MediaBus
 from models.service import ServiceModel
@@ -32,6 +32,7 @@ from services.fx import FxRates
 from services.scheduler_outbox import (
     schedule_delivery_retry,
     schedule_payment_recheck,
+    schedule_provision_poll,
     schedule_service_expire,
 )
 from telemetry.task_log import TaskLog
@@ -124,7 +125,7 @@ class BillingExecutor:
             .where(UserServicesModel.id == usvc_id)
             .with_for_update(of=UserServicesModel)
         )
-        if usvc is None or usvc.status != UsvcStatus.ACTIVE:
+        if usvc is None or usvc.status not in (UsvcStatus.ACTIVE, UsvcStatus.STOPPED):
             return
         if usvc.expires_at is not None and usvc.expires_at > utc_now():
             await schedule_service_expire(session, usvc_id, usvc.expires_at)
@@ -233,6 +234,95 @@ class BillingExecutor:
                 return
 
         await self._compensate_delivery(session, usvc)
+
+    # --- асинхронный провижининг (poll) ------------------------------------
+    async def exec_svc_provision_poll(self, session: AsyncSession, usvc_id: int) -> None:
+        row = await session.get(UserServicesModel, usvc_id)
+        if row is None or row.status != UsvcStatus.PROVISIONING:
+            return
+        acc = await lock_account(session, row.account_id)
+        usvc = await session.get(UserServicesModel, usvc_id, with_for_update=True)
+        if usvc is None or usvc.status != UsvcStatus.PROVISIONING or acc is None:
+            return
+
+        priv = dict(usvc.private_data or {})
+        poll_cfg = dict(priv.get("_provisioning") or {})
+        attempts = int(poll_cfg.get("attempts", 0))
+        max_attempts = int(poll_cfg.get("max_attempts", 20))
+        interval = max(5, min(int(poll_cfg.get("interval_sec", 15)), 300))
+        backoff = str(poll_cfg.get("backoff", "fixed"))
+        poll_action = str(poll_cfg.get("action") or ServiceAction.POLL)
+
+        deadline_raw = poll_cfg.get("deadline_at")
+        deadline_exceeded = False
+        if isinstance(deadline_raw, str):
+            try:
+                dl = datetime.fromisoformat(deadline_raw)
+                if dl.tzinfo is None:
+                    dl = dl.replace(tzinfo=timezone.utc)
+                deadline_exceeded = utc_now() >= dl
+            except ValueError:
+                deadline_exceeded = False
+
+        if attempts >= max_attempts or deadline_exceeded:
+            priv.pop("_provisioning", None)
+            usvc.private_data = priv
+            usvc.status = UsvcStatus.FAILED
+            usvc.error = "provisioning timed out"
+            await self._compensate_delivery(session, usvc)
+            await self._audit_delivery(
+                session, usvc, "service.provisioning.timeout", meta={"attempts": attempts}
+            )
+            return
+
+        service = await session.get(ServiceModel, usvc.service_id)
+        if service is None:
+            return
+
+        mngr = await self._usvc_mngr(session)
+        try:
+            await mngr.run_action(usvc, service, acc, poll_action)
+        except Exception as exc:  # noqa: BLE001
+            p_after = dict(usvc.private_data or {})
+            p_after.pop("_provisioning", None)
+            usvc.private_data = p_after
+            usvc.status = UsvcStatus.FAILED
+            usvc.error = str(exc)[:512]
+            await self._compensate_delivery(session, usvc)
+            await self._audit_delivery(
+                session, usvc, "service.provisioning.failed", meta={"error": usvc.error}
+            )
+            return
+
+        if usvc.status == UsvcStatus.PROVISIONING:
+            p_after = dict(usvc.private_data or {})
+            cfg_after = dict(p_after.get("_provisioning") or poll_cfg)
+            next_attempts = attempts + 1
+            cfg_after["attempts"] = next_attempts
+            p_after["_provisioning"] = cfg_after
+            usvc.private_data = p_after
+
+            base_interval = max(5, min(int(cfg_after.get("interval_sec", interval)), 300))
+            delay = (
+                min(base_interval * (2 ** min(next_attempts, 5)), 300)
+                if backoff == "exponential"
+                else base_interval
+            )
+            await schedule_provision_poll(
+                session, usvc.id, utc_now() + timedelta(seconds=delay)
+            )
+            return
+
+        if usvc.status == UsvcStatus.ACTIVE:
+            usvc.delivered_at = utc_now()
+            usvc.error = None
+            mngr._apply_default_expiry(usvc)
+            await mngr._credit_referral(acc, service, usvc.price)
+            if usvc.expires_at is not None:
+                await schedule_service_expire(session, usvc.id, usvc.expires_at)
+            await self._audit_delivery(
+                session, usvc, "service.provisioning.completed", meta={"attempts": attempts + 1}
+            )
 
     async def _compensate_delivery(
         self, session: AsyncSession, usvc: UserServicesModel

@@ -760,6 +760,7 @@ class PayMngr:
                     await schedule_service_expire(self.s, usvc.id, expires_at)
                 elif usvc.status == UsvcStatus.FAILED:
                     await schedule_delivery_retry(self.s, usvc.id, utc_now())
+                # При PROVISIONING задача svc_provision_poll уже поставлена внутри deliver().
         else:  # пополнение баланса
             if acc is not None:
                 acc.balance += credited

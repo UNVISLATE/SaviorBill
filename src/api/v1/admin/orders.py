@@ -116,7 +116,7 @@ async def grant(
         form=body.form,
         charge=body.charge,
     )
-    if body.charge and usvc.status != UsvcStatus.ACTIVE:
+    if body.charge and usvc.status not in (UsvcStatus.ACTIVE, UsvcStatus.PROVISIONING):
         await usvc_mngr.s.rollback()
         raise HTTPException(
             status.HTTP_502_BAD_GATEWAY, f"service delivery failed: {usvc.error}"

@@ -147,6 +147,18 @@ async def create_service(
         components=body.components,
         form=body.form,
     )
+    if usvc.status == UsvcStatus.PROVISIONING:
+        if promo is not None:
+            await promo_mngr.record_use(promo, acc, usvc.id)
+        await usvc_mngr.s.commit()
+        await triggers.fire(
+            TriggerEvent.SERVICE_PROVISIONING_STARTED,
+            {
+                "order": {"id": usvc.id, "service_id": service.id, "via": "balance"},
+                "user": {"id": acc.id, "login": acc.login},
+            },
+        )
+        return Order.from_model(usvc)
     if usvc.status != UsvcStatus.ACTIVE:
         await usvc_mngr.s.rollback()
         raise HTTPException(
@@ -186,19 +198,32 @@ async def user_service_action(
     svc_mngr: ServiceMngr = Depends(get_service_mngr),
 ) -> Order:
     usvc = await usvc_mngr.s.scalar(
-        select(UserServicesModel).where(
+        select(UserServicesModel)
+        .where(
             UserServicesModel.id == service_id,
             UserServicesModel.account_id == acc.id,
         )
+        .with_for_update()
     )
     if usvc is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "service order not found")
     service = await svc_mngr.s.get(ServiceModel, usvc.service_id)
     if service is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog service not found")
+    if usvc.status == UsvcStatus.PROVISIONING:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "service is currently provisioning",
+        )
 
     action_norm = body.action.strip().lower()
-    allowed = {ServiceAction.STOP, ServiceAction.FREEZE, "start", "unfreeze", ServiceAction.DELETE}
+    allowed = {
+        ServiceAction.STOP,
+        ServiceAction.START,
+        ServiceAction.FREEZE,
+        ServiceAction.UNFREEZE,
+        ServiceAction.DELETE,
+    }
     if action_norm == ServiceAction.RENEW:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
@@ -210,9 +235,11 @@ async def user_service_action(
             f"action '{action_norm}' is not allowed",
         )
     usvc = await usvc_mngr.run_action(usvc, service, acc, action_norm)
-    if action_norm in (ServiceAction.FREEZE, ServiceAction.STOP, ServiceAction.DELETE):
+    # Развод stop и freeze: stop управляет только питанием/состоянием без отмены срока,
+    # а freeze/delete приостанавливают/завершают биллинговый таймер.
+    if action_norm in (ServiceAction.FREEZE, ServiceAction.DELETE):
         await cancel_service_expire(usvc_mngr.s, usvc.id)
-    elif action_norm in ("start", "unfreeze") and usvc.expires_at is not None:
+    elif action_norm == ServiceAction.UNFREEZE and usvc.expires_at is not None:
         await schedule_service_expire(usvc_mngr.s, usvc.id, usvc.expires_at)
     await usvc_mngr.s.commit()
     return Order.from_model(usvc)

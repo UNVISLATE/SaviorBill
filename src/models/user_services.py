@@ -29,6 +29,7 @@ from lua.bus import LuaBus
 from security.sec.box import SecBox
 from services.account import lock_account
 from services.pricing import apply_discount_with_floor, resolve_service_order
+from services.scheduler_outbox import schedule_provision_poll
 
 log = logging.getLogger("saviorbill.user_services")
 
@@ -314,16 +315,24 @@ class UserServicesMngr:
         Конкретный способ берётся из реестра нативных интеграций
         (:func:`lifecycle.delivery.get_issuer`).
         """
-        if usvc.status == UsvcStatus.ACTIVE:
+        if usvc.status in (UsvcStatus.ACTIVE, UsvcStatus.PROVISIONING):
             return usvc
         try:
             issuer = get_issuer(service.delivery, self.s, self.bus, self.box, dispatcher=self.dispatcher)
             await issuer.issue(usvc, service, acc)
-            usvc.status = UsvcStatus.ACTIVE
-            usvc.delivered_at = utc_now()
-            usvc.error = None
-            self._apply_default_expiry(usvc)
-            await self._credit_referral(acc, service, usvc.price)
+            if usvc.status == UsvcStatus.PROVISIONING:
+                poll_cfg = (usvc.private_data or {}).get("_provisioning") or {}
+                interval = int(poll_cfg.get("interval_sec") or 15)
+                usvc.error = None
+                await schedule_provision_poll(
+                    self.s, usvc.id, utc_now() + timedelta(seconds=interval)
+                )
+            else:
+                usvc.status = UsvcStatus.ACTIVE
+                usvc.delivered_at = utc_now()
+                usvc.error = None
+                self._apply_default_expiry(usvc)
+                await self._credit_referral(acc, service, usvc.price)
         except Exception as exc:  # noqa: BLE001 — любая ошибка доставки -> возврат
             usvc.status = UsvcStatus.FAILED
             usvc.error = str(exc)[:512]
@@ -381,6 +390,14 @@ class UserServicesMngr:
         :arg acc: аккаунт-владелец.
         :arg action: действие из :class:`enums.ServiceAction`.
         """
+        if usvc.status == UsvcStatus.PROVISIONING and action not in (
+            ServiceAction.POLL,
+            ServiceAction.DELETE,
+        ):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "service is currently provisioning",
+            )
         issuer = get_issuer(service.delivery, self.s, self.bus, self.box, dispatcher=self.dispatcher)
         try:
             await issuer.run_action(usvc, service, acc, action)
@@ -389,6 +406,8 @@ class UserServicesMngr:
                 usvc.status = UsvcStatus.STOPPED
             elif action == ServiceAction.FREEZE:
                 usvc.status = UsvcStatus.FROZEN
+            elif action in (ServiceAction.START, ServiceAction.UNFREEZE):
+                usvc.status = UsvcStatus.ACTIVE
             elif action == ServiceAction.RENEW:
                 raise HTTPException(
                     status.HTTP_402_PAYMENT_REQUIRED,

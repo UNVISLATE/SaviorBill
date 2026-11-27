@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
+import uuid
 
-from enums import ScriptKind
+from enums import ScriptKind, ServiceAction
 from lua.schemas import (
     LuaAuthProvider,
     LuaMeta,
@@ -65,9 +66,14 @@ def build_service_ctx(
         "form": order_form,
     }
 
+    idem_key = (
+        f"usvc:{usvc.id}:{action}"
+        if action == ServiceAction.CREATE
+        else f"usvc:{usvc.id}:{action}:{uuid.uuid4().hex[:12]}"
+    )
     ctx = {
         "action": action,
-        "idempotency_key": f"usvc:{usvc.id}:{action}",
+        "idempotency_key": idem_key,
         "lua": _lua_meta(script),
         "user": LuaUser.from_model(acc, usvc).model_dump(mode="json"),
         "service": service_data,

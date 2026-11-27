@@ -33,7 +33,12 @@ from utils.datetime_utils import utc_now
 
 # Статусы выданных услуг, которые считаются "активными" (не завершёнными) —
 # для мягкого предупреждения при деактивации услуги с такими заказами.
-_ACTIVE_USVC_STATUSES = (UsvcStatus.PENDING, UsvcStatus.ACTIVE, UsvcStatus.FROZEN)
+_ACTIVE_USVC_STATUSES = (
+    UsvcStatus.PENDING,
+    UsvcStatus.PROVISIONING,
+    UsvcStatus.ACTIVE,
+    UsvcStatus.FROZEN,
+)
 
 
 class ServiceModel(Base):

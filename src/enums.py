@@ -13,6 +13,7 @@ class UsvcStatus:
     """
 
     PENDING = "pending"  # создана, ждёт оплаты/доставки
+    PROVISIONING = "provisioning"  # асинхронное создание на внешней панели
     ACTIVE = "active"  # доставлена и действует
     FROZEN = "frozen"  # временно заморожена
     STOPPED = "stopped"  # остановлена (вручную/по действию)
@@ -53,10 +54,15 @@ class ServiceAction:
     """Действия жизненного цикла выданной услуги (передаются в lua-шаблон)."""
 
     CREATE = "create"
+    POLL = "poll"
     RENEW = "renew"
     STOP = "stop"
+    START = "start"
     DELETE = "delete"
     FREEZE = "freeze"
+    UNFREEZE = "unfreeze"
+    RECONFIGURE = "reconfigure"
+    UPGRADE = "upgrade"
 
 
 class PayTarget:
