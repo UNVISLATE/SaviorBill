@@ -59,16 +59,22 @@ async def request_email_challenge(
             "verification code was sent recently, please wait",
         )
 
+    if not mail.configured:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "email transport is not configured; enable 2FA or configure SMTP",
+        )
+
     code = f"{secrets.randbelow(1_000_000):06d}"
     payload = json.dumps({"code_hash": _hash_code(code)})
     await vk.set(_challenge_key(acc.id, usvc_id, action_key), payload, ex=_CHALLENGE_TTL_SEC)
     await vk.set(cd_key, "1", ex=_COOLDOWN_TTL_SEC)
     await vk.delete(_fail_key(acc.id, usvc_id, action_key))
 
-    await mail.send_raw(
-        to=acc.email,
-        subject=f"Код подтверждения действия: {action_key}",
-        body=(
+    await mail.mail.send(
+        acc.email,
+        f"Код подтверждения действия: {action_key}",
+        (
             f"Код подтверждения для действия {action_key} (услуга #{usvc_id}): {code}\n"
             f"Код действителен 5 минут. Если это были не вы, немедленно смените пароль."
         ),

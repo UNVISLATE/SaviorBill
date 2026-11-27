@@ -82,7 +82,12 @@ async def test_step_up_email_challenge_binding_and_one_time_use():
     sent_bodies: list[str] = []
 
     class _Mail:
-        async def send_raw(self, *, to: str, subject: str, body: str):
+        configured = True
+
+        def __init__(self) -> None:
+            self.mail = SimpleNamespace(send=self._send)
+
+        async def _send(self, to: str, subject: str, body: str):
             sent_bodies.append(body)
 
     acc = SimpleNamespace(id=11, email="u@example.com", totp_enabled=False, totp_secret=None)
