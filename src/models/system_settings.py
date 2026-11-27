@@ -59,7 +59,7 @@ class SystemSettingsModel(Base):
     # — та группировка статическая (для каталога/админки), эта — для
     # индексированной выборки реально сохранённых строк по namespace.
     prefix: Mapped[str] = mapped_column(
-        String(64), Computed("split_part(key, '.', 1)"), nullable=False
+        String(64), Computed("split_part(key, '.', 1)"), index=True, nullable=False
     )
     value: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_secret: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)

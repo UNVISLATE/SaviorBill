@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import func, Boolean, DateTime, ForeignKey, Integer, Text, select
+from sqlalchemy import Index, func, text, Boolean, DateTime, ForeignKey, Integer, Text, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,6 +17,14 @@ class ServiceKeysModel(Base):
     """Цифровые ключи для выдачи, если услуга - цифровой ключ"""
 
     __tablename__ = "digi_keys"
+    __table_args__ = (
+        Index(
+            "ix_digi_keys_service_unused",
+            "service_id",
+            "id",
+            postgresql_where=text("is_used IS FALSE"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     created_at: Mapped[datetime] = mapped_column(
