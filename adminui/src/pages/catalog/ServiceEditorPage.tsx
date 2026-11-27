@@ -2731,77 +2731,85 @@ export function ServiceEditorPage() {
               </CardContent>
             </Card>
 
-            <Card className="bg-card/95 shadow-xs border-border/80 backdrop-blur-xs">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm font-semibold">Продление и апгрейд</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="divide-y divide-border/60 rounded-xl border border-border/70 bg-muted/15 overflow-hidden">
-                  <div className="flex items-center justify-between px-3 py-2.5 hover:bg-muted/20 transition-colors">
-                    <div className="flex items-center gap-1.5">
-                      <Label className="text-xs font-semibold cursor-pointer">
-                        Продление услуги
-                      </Label>
-                      <InfoTip content="Разрешает клиенту продлевать уже активную услугу заранее (а не покупать новую)." />
+            {delivery === "lua" && (
+              <Card className="bg-card/95 shadow-xs border-border/80 backdrop-blur-xs">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm font-semibold">Продление и апгрейд</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="divide-y divide-border/60 rounded-xl border border-border/70 bg-muted/15 overflow-hidden">
+                    <div className="flex items-center justify-between px-3 py-2.5 hover:bg-muted/20 transition-colors">
+                      <div className="flex items-center gap-1.5">
+                        <Label className="text-xs font-semibold cursor-pointer">
+                          Продление услуги
+                        </Label>
+                        <InfoTip content="Разрешает клиенту продлевать уже активную услугу заранее (а не покупать новую)." />
+                      </div>
+                      <Switch checked={allowEarlyRenew} onCheckedChange={setAllowEarlyRenew} />
                     </div>
-                    <Switch checked={allowEarlyRenew} onCheckedChange={setAllowEarlyRenew} />
-                  </div>
 
-                  {allowEarlyRenew && (
-                    <>
-                      <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/30 transition-colors">
-                        <div className="flex items-center gap-1.5">
-                          <Label className="text-xs font-medium cursor-pointer">
-                            Смена тарифа при продлении
-                          </Label>
-                          <InfoTip content="При продлении можно выбрать другой тариф/ресурсы — они применятся со следующего периода." />
+                    {allowEarlyRenew && (
+                      <>
+                        {(priceType === "tiered" || priceType === "configurable") && (
+                          <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/30 transition-colors">
+                            <div className="flex items-center gap-1.5">
+                              <Label className="text-xs font-medium cursor-pointer">
+                                Смена тарифа при продлении
+                              </Label>
+                              <InfoTip content="При продлении можно выбрать другой тариф/ресурсы — они применятся со следующего периода." />
+                            </div>
+                            <Switch checked={allowRenewConfigChange} onCheckedChange={setAllowRenewConfigChange} />
+                          </div>
+                        )}
+                        <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/30 transition-colors">
+                          <div className="flex items-center gap-1.5">
+                            <Label className="text-xs font-medium cursor-pointer">
+                              Автопродление с баланса
+                            </Label>
+                            <InfoTip content="Клиент сможет включить автосписание с баланса перед окончанием срока услуги." />
+                          </div>
+                          <Switch checked={allowAutoRenew} onCheckedChange={setAllowAutoRenew} />
                         </div>
-                        <Switch checked={allowRenewConfigChange} onCheckedChange={setAllowRenewConfigChange} />
-                      </div>
-                      <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/30 transition-colors">
-                        <div className="flex items-center gap-1.5">
-                          <Label className="text-xs font-medium cursor-pointer">
-                            Автопродление с баланса
-                          </Label>
-                          <InfoTip content="Клиент сможет включить автосписание с баланса перед окончанием срока услуги." />
+                        <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-muted/20 hover:bg-muted/30 transition-colors">
+                          <div className="flex items-center gap-1.5">
+                            <Label className="text-xs font-medium">Цена продления</Label>
+                            <InfoTip content="Текущая — по актуальной цене каталога; Как при покупке — цена фиксируется при заказе." />
+                          </div>
+                          <Select
+                            value={renewPricePolicy}
+                            onValueChange={(val) =>
+                              setRenewPricePolicy(val === "locked" ? "locked" : "current")
+                            }
+                          >
+                            <SelectTrigger className="h-7 w-[145px] text-xs">
+                              <span>
+                                {renewPricePolicy === "locked" ? "Как при покупке" : "Текущая"}
+                              </span>
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="current">Текущая</SelectItem>
+                              <SelectItem value="locked">Как при покупке</SelectItem>
+                            </SelectContent>
+                          </Select>
                         </div>
-                        <Switch checked={allowAutoRenew} onCheckedChange={setAllowAutoRenew} />
-                      </div>
-                      <div className="flex items-center justify-between gap-2 px-3 py-2.5 bg-muted/20 hover:bg-muted/30 transition-colors">
-                        <div className="flex items-center gap-1.5">
-                          <Label className="text-xs font-medium">Цена продления</Label>
-                          <InfoTip content="Текущая — по актуальной цене каталога; Как при покупке — цена фиксируется при заказе." />
-                        </div>
-                        <Select
-                          value={renewPricePolicy}
-                          onValueChange={(val) =>
-                            setRenewPricePolicy(val === "locked" ? "locked" : "current")
-                          }
-                        >
-                          <SelectTrigger className="h-7 w-[145px] text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="current">Текущая</SelectItem>
-                            <SelectItem value="locked">Как при покупке</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </>
-                  )}
+                      </>
+                    )}
 
-                  <div className="flex items-center justify-between px-3 py-2.5 hover:bg-muted/20 transition-colors">
-                    <div className="flex items-center gap-1.5">
-                      <Label className="text-xs font-semibold cursor-pointer">
-                        Мгновенный апгрейд
-                      </Label>
-                      <InfoTip content="Разрешает повысить тариф/ресурсы прямо сейчас с доплатой только за остаток срока (proration)." />
-                    </div>
-                    <Switch checked={allowInstantUpgrade} onCheckedChange={setAllowInstantUpgrade} />
+                    {(priceType === "tiered" || priceType === "configurable") && (
+                      <div className="flex items-center justify-between px-3 py-2.5 hover:bg-muted/20 transition-colors">
+                        <div className="flex items-center gap-1.5">
+                          <Label className="text-xs font-semibold cursor-pointer">
+                            Мгновенный апгрейд
+                          </Label>
+                          <InfoTip content="Разрешает повысить тариф/ресурсы прямо сейчас с доплатой только за остаток срока (proration)." />
+                        </div>
+                        <Switch checked={allowInstantUpgrade} onCheckedChange={setAllowInstantUpgrade} />
+                      </div>
+                    )}
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
 
             {/* Мета-информация */}
             {!isNew && service && (
