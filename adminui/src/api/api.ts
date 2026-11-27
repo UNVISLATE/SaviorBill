@@ -22,14 +22,25 @@ export const api = axios.create({
 // Однополётный refresh — параллельные 401 не должны насоздать N параллельных
 // /auth/refresh (backend ротирует refresh_token, второй вызов инвалидировал бы
 // токен, который первый вызов ещё не успел сохранить).
-let refreshPromise: Promise<boolean> | null = null
+type RefreshResult = "ok" | "unauthorized" | "unavailable"
 
-async function refreshAccessToken(): Promise<boolean> {
+let refreshPromise: Promise<RefreshResult> | null = null
+
+async function refreshAccessToken(): Promise<RefreshResult> {
   if (!refreshPromise) {
     refreshPromise = axios
       .post("/api/v1/auth/refresh", null, { withCredentials: true })
-      .then(() => true)
-      .catch(() => false)
+      .then(() => "ok" as const)
+      .catch((err: AxiosError) => {
+        if (
+          err.response?.status === 503 ||
+          err.code === "ERR_NETWORK" ||
+          err.code === "ECONNABORTED"
+        ) {
+          return "unavailable" as const
+        }
+        return "unauthorized" as const
+      })
       .finally(() => {
         refreshPromise = null
       })
@@ -50,8 +61,12 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && cfg && !cfg._retried && !isAuthRoute) {
       cfg._retried = true
       const refreshed = await refreshAccessToken()
-      if (refreshed) {
+      if (refreshed === "ok") {
         return api(cfg)
+      }
+      if (refreshed === "unavailable") {
+        window.dispatchEvent(new CustomEvent(BACKEND_UNAVAILABLE_EVENT, { detail: error }))
+        return Promise.reject(error)
       }
       if (!window.location.pathname.startsWith("/login")) {
         window.dispatchEvent(new Event(AUTH_LOGOUT_EVENT))
