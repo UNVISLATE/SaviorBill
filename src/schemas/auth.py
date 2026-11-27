@@ -83,17 +83,20 @@ class TwoFAEnabled(BaseModel):
 
 
 class TwoFADisable(BaseModel):
-    """Disable two-factor."""
+    """Disable two-factor (requires TOTP or recovery code)."""
 
-    password: str | None = Field(
-        default=None, max_length=128, description="Current password"
-    )
-    code: str | None = Field(
-        default=None,
+    code: str = Field(
+        ...,
+        min_length=4,
         max_length=32,
-        description="Authenticator or recovery code; used when the account has "
-        "no password",
+        description="Authenticator or recovery code",
     )
+
+
+class TwoFAEmailResetConfirm(BaseModel):
+    """Confirm 2FA reset via emailed one-time code."""
+
+    code: str = Field(..., min_length=4, max_length=32)
 
 
 class Refresh(BaseModel):

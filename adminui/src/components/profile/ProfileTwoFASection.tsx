@@ -45,7 +45,6 @@ export function ProfileTwoFASection() {
   const [confirmCode, setConfirmCode] = useState("")
   const [recoveryCodes, setRecoveryCodes] = useState<string[] | null>(null)
   const [disableOpen, setDisableOpen] = useState(false)
-  const [disablePassword, setDisablePassword] = useState("")
   const [disableCode, setDisableCode] = useState("")
 
   const { data: status, isLoading } = useQuery({
@@ -94,17 +93,15 @@ export function ProfileTwoFASection() {
   const disable = useMutation({
     mutationFn: async () =>
       api.post("/v1/user/me/2fa/disable", {
-        password: disablePassword || undefined,
-        code: disableCode || undefined,
+        code: (disableCode || "").trim(),
       }),
     onSuccess: () => {
       toastSuccess("Двухфакторная аутентификация отключена")
       setDisableOpen(false)
-      setDisablePassword("")
       setDisableCode("")
       void qc.invalidateQueries({ queryKey: ["twofa-status"] })
     },
-    onError: () => toastError("Не удалось отключить 2FA", "проверьте пароль/код"),
+    onError: () => toastError("Не удалось отключить 2FA", "проверьте код 2FA или резервный код"),
   })
 
   if (isLoading) {
@@ -175,26 +172,18 @@ export function ProfileTwoFASection() {
               аккаунта нет пароля).
             </p>
             <Field>
-              <FieldLabel htmlFor="disable-pass">Текущий пароль</FieldLabel>
-              <Input
-                id="disable-pass"
-                type="password"
-                value={disablePassword}
-                onChange={(e) => setDisablePassword(e.target.value)}
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="disable-code">…или код 2FA/восстановления</FieldLabel>
+              <FieldLabel htmlFor="disable-code">Код 2FA или резервный код</FieldLabel>
               <Input
                 id="disable-code"
                 value={disableCode}
                 onChange={(e) => setDisableCode(e.target.value)}
+                placeholder="000000 или резервный код"
               />
             </Field>
             <div className="flex gap-2">
               <Button
                 variant="destructive"
-                disabled={disable.isPending || (!disablePassword && !disableCode)}
+                disabled={disable.isPending || !disableCode.trim()}
                 onClick={() => disable.mutate()}
               >
                 {disable.isPending && <Loader2 className="size-4 animate-spin" />}
