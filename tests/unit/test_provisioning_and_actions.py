@@ -50,8 +50,10 @@ def test_idempotency_key_unique_for_repeatable_actions():
         bonus_balance=Decimal("0"),
         is_verified=True,
         is_active=True,
+        role_id=None,
         role=None,
         created_at=utc_now(),
+        last_login=None,
     )
     service = SimpleNamespace(
         id=2,
@@ -69,13 +71,18 @@ def test_idempotency_key_unique_for_repeatable_actions():
     )
     usvc = SimpleNamespace(
         id=10,
+        service_id=2,
+        payment_id=None,
         price=Decimal("100"),
+        discount=Decimal("0"),
         order_config={},
         public_data={},
         private_data={},
         custom_public={},
         custom_private={},
         expires_at=None,
+        delivered_at=None,
+        error=None,
         status=UsvcStatus.ACTIVE,
     )
     ctx_create_1 = build_service_ctx(ServiceAction.CREATE, acc, usvc, service)
