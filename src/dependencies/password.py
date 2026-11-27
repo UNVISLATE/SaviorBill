@@ -102,7 +102,20 @@ class ResetSvc:
         if acc is None or not acc.email:
             return
 
-        norm = self._norm(acc.email)
+        target_email = acc.email
+        raw_first_only = await self.settings.get(
+            "auth.security_mail.first_verified_only", "false"
+        )
+        first_only = str(raw_first_only).strip().lower() in ("1", "true", "yes")
+        if first_only:
+            from models.account_email_history import AccountEmailHistoryMngr
+
+            first = await AccountEmailHistoryMngr(self.s).first_verified_email(acc.id)
+            if not first:
+                return
+            target_email = first
+
+        norm = self._norm(target_email)
         secret = (
             generate_base_token()
             if method == METHOD_TOKEN
@@ -122,12 +135,12 @@ class ResetSvc:
             "ttl_minutes": max(1, ttl // 60),
         }
         sent = await self.sender.send_template(
-            EmailEvent.PASSWORD_RESET, acc.email, ctx
+            EmailEvent.PASSWORD_RESET, target_email, ctx
         )
         if not sent:
             label = "token" if method == METHOD_TOKEN else "code"
             await self.sender.mail.send(
-                acc.email,
+                target_email,
                 "Password reset",
                 f"Your password reset {label}: {secret}",
             )
@@ -178,7 +191,10 @@ class ResetSvc:
 
         await self.vk.delete(_RESET_FAIL + norm)
         await self.vk.delete(_RESET_TOKEN_IDX + code)
+        from utils.datetime_utils import utc_now
+
         acc.pass_hash = hash_pass(new_pass)
+        acc.last_security_change_at = utc_now()
         await self.s.flush()
         return acc
 

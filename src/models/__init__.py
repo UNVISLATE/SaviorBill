@@ -6,6 +6,7 @@ class Base(DeclarativeBase): ...
 
 from .roles import Role
 from .user import UserModel, UserMngr
+from .account_email_history import AccountEmailHistoryModel, AccountEmailHistoryMngr
 from .oauth_providers import OAuthProvidersModel, OAuthProvidersMngr
 from .user_oauth import UserOauthModel, UserOauthMngr
 from .system_scripts import SystemScriptsModel, SystemScriptsMngr

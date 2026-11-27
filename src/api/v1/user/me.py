@@ -14,6 +14,7 @@ from dependencies.rbac import require_perm
 from dependencies.settings import SystemSettingsMngr, get_settings_mngr
 from dependencies.valkey import get_valkey_client
 from enums import BaseRole
+from models.account_email_history import AccountEmailHistoryMngr
 from models.system_media import SystemMediaMngr
 from models.user import UserModel
 from models.user_oauth import UserOauthMngr
@@ -25,6 +26,7 @@ from sqlalchemy.orm import joinedload
 from security.sec.pwd import hash_pass, verify_pass
 from services.account import account_response, release_old_avatar
 from services.auth import TokenSvc
+from utils.datetime_utils import utc_now
 
 router = APIRouter()
 
@@ -122,6 +124,15 @@ async def patch_me(
         conns = await oauth_mngr.list_for_account(acc.id)
         confirmed = _email_confirmed_by_oauth(new_email, [c.email for c in conns])
         acc.email = new_email
+        now = utc_now()
+        acc.email_verified_at = now if confirmed else None
+        acc.last_security_change_at = now
+        await AccountEmailHistoryMngr(mngr.s).record_email(
+            acc.id,
+            new_email,
+            verified_at=acc.email_verified_at,
+            source="profile_change",
+        )
         is_admin_or_owner = bool(
             acc.role
             and (
@@ -171,6 +182,7 @@ async def change_password(
                 status.HTTP_401_UNAUTHORIZED, "invalid current password"
             )
     acc.pass_hash = hash_pass(body.new_password)
+    acc.last_security_change_at = utc_now()
     await mngr.s.commit()
     # Смена пароля обрывает чужие сессии, но сохраняет текущую активной
     current_sid = getattr(getattr(request, "state", None), "auth_session_id", None)

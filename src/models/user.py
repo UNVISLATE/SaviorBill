@@ -68,6 +68,12 @@ class UserModel(Base):
     email: Mapped[str | None] = mapped_column(
         String(255), unique=True, index=True, nullable=True
     )
+    email_verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_security_change_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     pass_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     # Второй фактор (TOTP, см. services/twofa.py). Секрет — зашифрован SecBox,
