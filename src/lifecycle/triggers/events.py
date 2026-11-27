@@ -19,6 +19,8 @@ class TriggerEvent:
     SERVICE_CUSTOM_ACTION = "service.custom_action"  # выполнено кастомное действие услуги
     SERVICE_CONFIG_SCHEDULED = "service.config.scheduled"  # запланирована смена конфигурации на следующий период
     SERVICE_CONFIG_APPLIED = "service.config.applied"  # применена новая конфигурация услуги
+    SERVICE_AUTO_RENEW_SUCCESS = "service.auto_renew.success"  # успешное автопродление с баланса
+    SERVICE_AUTO_RENEW_FAILED = "service.auto_renew.failed"  # не удалось автопродлить (недостаточно средств)
     SERVICE_KEYS_LOW = "service.keys.low"  # остаток ключей опустился ниже порога
     SERVICE_KEYS_EMPTY = "service.keys.empty"  # цифровые ключи для услуги закончились
     KEY_STOCK_LOW = "key.stock.low"  # остаток ключей в пуле ниже порогового N
@@ -42,6 +44,8 @@ ALL_EVENTS = [
     TriggerEvent.SERVICE_CUSTOM_ACTION,
     TriggerEvent.SERVICE_CONFIG_SCHEDULED,
     TriggerEvent.SERVICE_CONFIG_APPLIED,
+    TriggerEvent.SERVICE_AUTO_RENEW_SUCCESS,
+    TriggerEvent.SERVICE_AUTO_RENEW_FAILED,
     TriggerEvent.SERVICE_KEYS_LOW,
     TriggerEvent.SERVICE_KEYS_EMPTY,
     TriggerEvent.KEY_STOCK_LOW,

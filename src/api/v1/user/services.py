@@ -37,6 +37,7 @@ from schemas.orders import (
     Order,
     OrderActionRequest,
     OrderActionChallengeRequest,
+    OrderAutoRenewRequest,
     OrderRenewRequest,
     OrderUpgradeRequest,
 )
@@ -46,6 +47,7 @@ from services.audit import audit
 from services.lifecycle_pricing import assert_renew_allowed, resolve_renew_quote, resolve_upgrade_quote
 from services.pricing import apply_discount_with_floor, assert_promotions_allowed, resolve_service_order
 from services.scheduler_outbox import (
+    cancel_auto_renew,
     cancel_service_expire,
     schedule_provision_poll,
     schedule_service_expire,
@@ -372,8 +374,10 @@ async def user_service_action(
     # а freeze/delete приостанавливают/завершают биллинговый таймер.
     if action_norm in (ServiceAction.FREEZE, ServiceAction.DELETE):
         await cancel_service_expire(usvc_mngr.s, usvc.id)
+        await cancel_auto_renew(usvc_mngr.s, usvc.id)
     elif action_norm == ServiceAction.UNFREEZE and usvc.expires_at is not None:
         await schedule_service_expire(usvc_mngr.s, usvc.id, usvc.expires_at)
+        await usvc_mngr.schedule_auto_renew_if_enabled(usvc, service)
     await usvc_mngr.s.commit()
     return Order.from_model(usvc)
 
@@ -561,6 +565,60 @@ async def upgrade_user_service(
         target_id=str(usvc.id),
         meta={"service_id": service.id, "delta_price": str(charge_amt), "new_price": str(quote.new_price)},
     )
+    await usvc_mngr.s.commit()
+    return Order.from_model(usvc)
+
+
+@router.patch(
+    "/services/{service_id}/auto-renew",
+    response_model=Order,
+    summary="Enable or disable auto-renewal from balance",
+    dependencies=[
+        Depends(require_perm("user.services.create")),
+        Depends(rate_limit("services.autorenew", LimitKind.SENSITIVE, require_auth=True)),
+    ],
+)
+async def toggle_user_service_auto_renew(
+    service_id: int,
+    body: OrderAutoRenewRequest,
+    acc: UserModel = Depends(get_current_acc),
+    usvc_mngr: UserServicesMngr = Depends(get_usersvc_mngr),
+    svc_mngr: ServiceMngr = Depends(get_service_mngr),
+) -> Order:
+    usvc = await usvc_mngr.s.scalar(
+        select(UserServicesModel)
+        .where(
+            UserServicesModel.id == service_id,
+            UserServicesModel.account_id == acc.id,
+        )
+        .with_for_update()
+    )
+    if usvc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "service order not found")
+    service = await svc_mngr.s.get(ServiceModel, usvc.service_id)
+    if service is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "catalog service not found")
+
+    if body.enabled:
+        settings = dict(service.settings or {})
+        if not settings.get("allow_auto_renew", False):
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "auto-renewal is not enabled for this service",
+            )
+        if usvc.status not in (UsvcStatus.ACTIVE, UsvcStatus.STOPPED, UsvcStatus.FROZEN):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"auto-renewal cannot be enabled in status '{usvc.status}'",
+            )
+        usvc.auto_renew = True
+        usvc.auto_renew_attempts = 0
+        usvc.auto_renew_last_error = None
+        await usvc_mngr.schedule_auto_renew_if_enabled(usvc, service)
+    else:
+        usvc.auto_renew = False
+        await cancel_auto_renew(usvc_mngr.s, usvc.id)
+
     await usvc_mngr.s.commit()
     return Order.from_model(usvc)
 

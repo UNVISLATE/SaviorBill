@@ -172,6 +172,21 @@ async def cancel_apply_config(session: AsyncSession, usvc_id: int) -> None:
     await ScheduledTasksMngr(session).cancel(f"cfg:{usvc_id}")
 
 
+async def schedule_auto_renew(
+    session: AsyncSession, usvc_id: int, run_at: datetime
+) -> None:
+    await ScheduledTasksMngr(session).upsert(
+        dedup_key=f"autorenew:{usvc_id}",
+        task_kind="svc_auto_renew",
+        ref_id=usvc_id,
+        run_at=run_at,
+    )
+
+
+async def cancel_auto_renew(session: AsyncSession, usvc_id: int) -> None:
+    await ScheduledTasksMngr(session).cancel(f"autorenew:{usvc_id}")
+
+
 async def schedule_payment_recheck(
     session: AsyncSession, pay_id: int, run_at: datetime
 ) -> None:

@@ -175,6 +175,12 @@ class OrderUpgradeRequest(BaseModel):
     promocode: str | None = Field(default=None, max_length=64)
 
 
+class OrderAutoRenewRequest(BaseModel):
+    """Toggle auto-renewal from balance for a user service."""
+
+    enabled: bool
+
+
 __all__ = [
     "OrderCreate",
     "Order",
@@ -184,4 +190,5 @@ __all__ = [
     "OrderActionChallengeRequest",
     "OrderRenewRequest",
     "OrderUpgradeRequest",
+    "OrderAutoRenewRequest",
 ]

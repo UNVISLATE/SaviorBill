@@ -212,6 +212,9 @@ class BillingTaskConsumer:
         if task_kind == "svc_apply_config" and ref_id is not None:
             await self.executor.exec_svc_apply_config(session, ref_id)
             return []
+        if task_kind == "svc_auto_renew" and ref_id is not None:
+            await self.executor.exec_svc_auto_renew(session, ref_id)
+            return []
         if task_kind == "pay_recheck" and ref_id is not None:
             await self.executor.exec_pay_recheck(session, ref_id)
             return []

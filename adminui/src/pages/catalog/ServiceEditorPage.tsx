@@ -384,6 +384,11 @@ export function ServiceEditorPage() {
   const [isRecommended, setIsRecommended] = useState(false)
   const [allowPromotions, setAllowPromotions] = useState(true)
   const [fullBonusOnly, setFullBonusOnly] = useState(false)
+  const [allowEarlyRenew, setAllowEarlyRenew] = useState(false)
+  const [allowRenewConfigChange, setAllowRenewConfigChange] = useState(false)
+  const [allowInstantUpgrade, setAllowInstantUpgrade] = useState(false)
+  const [allowAutoRenew, setAllowAutoRenew] = useState(false)
+  const [renewPricePolicy, setRenewPricePolicy] = useState<"current" | "locked">("current")
   const [isArchived, setIsArchived] = useState(false)
   const [paramsText, setParamsText] = useState("{}")
   const [settingsText, setSettingsText] = useState("{}")
@@ -573,6 +578,13 @@ export function ServiceEditorPage() {
       setIsRecommended(loadedIsRecommended)
       setAllowPromotions(loadedAllowPromotions)
       setFullBonusOnly(loadedFullBonusOnly)
+      setAllowEarlyRenew(Boolean((service.settings as any)?.allow_early_renew))
+      setAllowRenewConfigChange(Boolean((service.settings as any)?.allow_renew_config_change))
+      setAllowInstantUpgrade(Boolean((service.settings as any)?.allow_instant_upgrade))
+      setAllowAutoRenew(Boolean((service.settings as any)?.allow_auto_renew))
+      setRenewPricePolicy(
+        (service.settings as any)?.renew_price_policy === "locked" ? "locked" : "current"
+      )
       setIsArchived(loadedIsArchived)
       setTierPlans(loadedTiers)
       setCompList(loadedComps)
@@ -895,6 +907,11 @@ export function ServiceEditorPage() {
       settings.is_recommended = isRecommended
       settings.allow_promotions = allowPromotions
       settings.full_bonus_only = fullBonusOnly
+      settings.allow_early_renew = allowEarlyRenew
+      settings.allow_renew_config_change = allowRenewConfigChange
+      settings.allow_instant_upgrade = allowInstantUpgrade
+      settings.allow_auto_renew = allowAutoRenew
+      settings.renew_price_policy = renewPricePolicy
       settings.is_archived = isArchived
 
       let pricingConfig: Record<string, unknown> = {}
@@ -2633,10 +2650,61 @@ export function ServiceEditorPage() {
                       <Switch checked={fullBonusOnly} onCheckedChange={setFullBonusOnly} />
                     </div>
                   )}
+
+                  {/* Жизненный цикл и продление */}
+                  <div className="flex items-center justify-between px-3 py-2.5 hover:bg-muted/20 transition-colors">
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-xs font-semibold cursor-pointer">
+                        Преждевременное продление
+                      </Label>
+                      <InfoTip content="Разрешает продлевать существующую услугу (с баланса или через оплату) до истечения срока." />
+                    </div>
+                    <Switch checked={allowEarlyRenew} onCheckedChange={setAllowEarlyRenew} />
+                  </div>
+
+                  {allowEarlyRenew && (
+                    <>
+                      <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/30 transition-colors">
+                        <Label className="text-xs font-medium cursor-pointer">
+                          Смена тарифа при продлении
+                        </Label>
+                        <Switch checked={allowRenewConfigChange} onCheckedChange={setAllowRenewConfigChange} />
+                      </div>
+                      <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/30 transition-colors">
+                        <Label className="text-xs font-medium cursor-pointer">
+                          Автопродление с баланса
+                        </Label>
+                        <Switch checked={allowAutoRenew} onCheckedChange={setAllowAutoRenew} />
+                      </div>
+                      <div className="flex items-center justify-between px-3 py-2.5 bg-muted/20 hover:bg-muted/30 transition-colors">
+                        <Label className="text-xs font-medium">Политика цены</Label>
+                        <select
+                          className="h-7 rounded border bg-background px-2 text-xs"
+                          value={renewPricePolicy}
+                          onChange={(e) =>
+                            setRenewPricePolicy(e.target.value === "locked" ? "locked" : "current")
+                          }
+                        >
+                          <option value="current">Текущая</option>
+                          <option value="locked">Зафиксированная</option>
+                        </select>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="flex items-center justify-between px-3 py-2.5 hover:bg-muted/20 transition-colors">
+                    <div className="flex items-center gap-1.5">
+                      <Label className="text-xs font-semibold cursor-pointer">
+                        Мгновенный апгрейд
+                      </Label>
+                      <InfoTip content="Разрешает повысить тариф/ресурсы сразу с доплатой за остаток периода (proration)." />
+                    </div>
+                    <Switch checked={allowInstantUpgrade} onCheckedChange={setAllowInstantUpgrade} />
+                  </div>
                 </div>
 
                 {/* Большая кнопка сохранения */}
-                {(isDirty || isNew) ? (
+                {(isDirty || isNew || allowEarlyRenew || allowRenewConfigChange || allowInstantUpgrade || allowAutoRenew || renewPricePolicy !== "current") ? (
                   <Button
                     onClick={handleSave}
                     disabled={saveMutation.isPending}

@@ -31,7 +31,9 @@ from security.sec.box import SecBox
 from services.account import lock_account
 from services.pricing import apply_discount_with_floor, resolve_service_order
 from services.scheduler_outbox import (
+    cancel_auto_renew,
     schedule_apply_config,
+    schedule_auto_renew,
     schedule_provision_poll,
     schedule_service_expire,
 )
@@ -501,8 +503,31 @@ class UserServicesMngr:
 
         if usvc.status in (UsvcStatus.ACTIVE, UsvcStatus.STOPPED) and usvc.expires_at is not None:
             await schedule_service_expire(self.s, usvc.id, usvc.expires_at)
+            await self.schedule_auto_renew_if_enabled(usvc, service)
         await self.s.flush()
         return usvc
+
+    async def schedule_auto_renew_if_enabled(
+        self,
+        usvc: UserServicesModel,
+        service: ServiceModel,
+    ) -> None:
+        """Запланировать автопродление в scheduled_tasks, если оно включено и допустимо."""
+        settings = dict(getattr(service, "settings", None) or {})
+        if (
+            not getattr(usvc, "auto_renew", False)
+            or not settings.get("allow_auto_renew", False)
+            or usvc.status != UsvcStatus.ACTIVE
+            or usvc.expires_at is None
+        ):
+            return
+        now = utc_now()
+        if usvc.expires_at <= now:
+            return
+        lead_sec = int(settings.get("auto_renew_lead_sec") or 86400)
+        lead_sec = max(60, min(lead_sec, 86400 * 14))
+        run_at = max(now + timedelta(seconds=60), usvc.expires_at - timedelta(seconds=lead_sec))
+        await schedule_auto_renew(self.s, usvc.id, run_at)
 
     async def apply_upgrade(
         self,

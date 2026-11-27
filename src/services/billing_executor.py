@@ -30,6 +30,7 @@ from services.account import lock_account
 from services.audit import audit
 from services.fx import FxRates
 from services.scheduler_outbox import (
+    schedule_auto_renew,
     schedule_delivery_retry,
     schedule_payment_recheck,
     schedule_provision_poll,
@@ -371,6 +372,113 @@ class BillingExecutor:
                 TriggerEvent.SERVICE_CONFIG_APPLIED,
                 {
                     "order": {"id": usvc.id, "service_id": service.id},
+                    "user": {"id": acc.id, "login": acc.login},
+                },
+            )
+
+    # --- автопродление с баланса ------------------------------------------
+    async def exec_svc_auto_renew(self, session: AsyncSession, usvc_id: int) -> None:
+        from fastapi import HTTPException
+        from services.lifecycle_pricing import assert_renew_allowed, resolve_renew_quote
+
+        row = await session.get(UserServicesModel, usvc_id)
+        if row is None or not getattr(row, "auto_renew", False):
+            return
+        acc = await lock_account(session, row.account_id)
+        usvc = await session.get(UserServicesModel, usvc_id, with_for_update=True)
+        if usvc is None or acc is None or not getattr(usvc, "auto_renew", False):
+            return
+        if usvc.status != UsvcStatus.ACTIVE:
+            return
+
+        service = await session.get(ServiceModel, usvc.service_id)
+        if service is None:
+            return
+        settings = dict(getattr(service, "settings", None) or {})
+        if not settings.get("allow_auto_renew", False):
+            return
+
+        # Если есть запланированный конфиг, учитываем его параметры в продлении
+        tier_code = None
+        components = None
+        if isinstance(usvc.pending_order_config, dict):
+            t = usvc.pending_order_config.get("tier")
+            if isinstance(t, dict):
+                tier_code = t.get("code")
+            c = usvc.pending_order_config.get("components")
+            if isinstance(c, dict):
+                components = {
+                    k: (v.get("value") if isinstance(v, dict) and "value" in v else v)
+                    for k, v in c.items()
+                }
+
+        try:
+            quote = resolve_renew_quote(usvc, service, tier_code=tier_code, components=components)
+            assert_renew_allowed(usvc, service, duration_sec=quote.duration)
+        except HTTPException as exc:
+            usvc.auto_renew_last_error = str(exc.detail)[:256]
+            return
+
+        allow_bonus = bool(settings.get("allow_promotions", True))
+        full_bonus_only = bool(settings.get("full_bonus_only", False))
+
+        mngr = await self._usvc_mngr(session)
+        try:
+            UserServicesMngr._charge(
+                acc,
+                quote.price,
+                allow_bonus=allow_bonus,
+                full_bonus_only=full_bonus_only,
+            )
+        except HTTPException:
+            usvc.auto_renew_last_error = "insufficient_balance"
+            usvc.auto_renew_attempts = int(getattr(usvc, "auto_renew_attempts", 0) or 0) + 1
+            now = utc_now()
+            if (
+                usvc.auto_renew_attempts == 1
+                and usvc.expires_at is not None
+                and (usvc.expires_at - now).total_seconds() > 3600 + 120
+            ):
+                await schedule_auto_renew(
+                    session, usvc.id, usvc.expires_at - timedelta(hours=1)
+                )
+            await self._audit_delivery(
+                session,
+                usvc,
+                "service.auto_renew.failed",
+                meta={"reason": "insufficient_balance", "price": str(quote.price)},
+            )
+            if mngr.dispatcher is not None:
+                from lifecycle.triggers import TriggerEvent
+
+                await mngr.dispatcher.fire(
+                    TriggerEvent.SERVICE_AUTO_RENEW_FAILED,
+                    {
+                        "order": {"id": usvc.id, "service_id": service.id},
+                        "reason": "insufficient_balance",
+                        "price": str(quote.price),
+                        "user": {"id": acc.id, "login": acc.login},
+                    },
+                )
+            return
+
+        await mngr.apply_renew(usvc, service, acc, duration=quote.duration)
+        usvc.auto_renew_attempts = 0
+        usvc.auto_renew_last_error = None
+        await self._audit_delivery(
+            session,
+            usvc,
+            "service.auto_renew.success",
+            meta={"price": str(quote.price), "duration": quote.duration},
+        )
+        if mngr.dispatcher is not None:
+            from lifecycle.triggers import TriggerEvent
+
+            await mngr.dispatcher.fire(
+                TriggerEvent.SERVICE_AUTO_RENEW_SUCCESS,
+                {
+                    "order": {"id": usvc.id, "service_id": service.id},
+                    "price": str(quote.price),
                     "user": {"id": acc.id, "login": acc.login},
                 },
             )
