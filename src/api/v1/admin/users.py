@@ -627,15 +627,16 @@ async def user_oauth(
 @router.delete(
     "/{user_id}/oauth/{provider}",
     status_code=status.HTTP_204_NO_CONTENT,
-    dependencies=[Depends(require_perm("admin.user.edit"))],
     summary="Unlink user OAuth provider (admin)",
 )
 async def admin_unlink_oauth(
     user_id: int,
     provider: str,
     session: AsyncSession = Depends(get_db_session),
+    caller: UserModel = Depends(require_perm("admin.user.edit")),
 ) -> None:
-    await _get_user(session, user_id)
+    acc = await _get_user(session, user_id)
+    assert_can_modify_account(caller, acc)
     conn = await session.scalar(
         select(UserOauthModel).where(
             UserOauthModel.account_id == user_id,

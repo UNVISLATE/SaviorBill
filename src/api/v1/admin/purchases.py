@@ -119,6 +119,11 @@ async def create_provider(
         raise HTTPException(status.HTTP_409_CONFLICT, "provider slug already exists")
     if body.icon_media_id is not None:
         await _require_media(media, body.icon_media_id)
+    if body.script_id is not None:
+        from models.system_scripts import SystemScriptsModel
+
+        if await session.get(SystemScriptsModel, body.script_id) is None:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "lua script not found")
     prov = PaymentProvidersModel(
         slug=body.slug,
         title=body.title,

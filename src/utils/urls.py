@@ -24,10 +24,10 @@ def is_safe_return_url(url: str, allowed_origins: list[str]) -> bool:
         return False
     parts = urlsplit(url)
     if not parts.scheme and not parts.netloc:
-        # Относительный путь. "//host/..." парсится как netloc без scheme —
-        # это protocol-relative URL (браузер уйдёт на произвольный хост),
-        # должен начинаться строго с одного "/".
-        return url.startswith("/") and not url.startswith("//")
+        # Относительный путь. "//host/..." и "/\host/..." парсятся браузером
+        # как protocol-relative URL — должен начинаться строго с одного "/".
+        path_only = url.split("?", 1)[0].split("#", 1)[0]
+        return url.startswith("/") and not url.startswith("//") and "\\" not in path_only
     origin = f"{parts.scheme}://{parts.netloc}"
     return origin in allowed_origins
 

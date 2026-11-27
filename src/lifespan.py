@@ -137,6 +137,12 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
+        if getattr(app.state, "plugin_mngr", None) is not None:
+            for slug in list(app.state.plugin_mngr.active_plugins.keys()):
+                try:
+                    await app.state.plugin_mngr.unload_plugin(slug)
+                except Exception:  # noqa: BLE001
+                    pass
         await app.state.stats_broadcaster.stop()
         await app.state.self_metrics.stop()
         if app.state.lua_metrics is not None:
