@@ -285,7 +285,23 @@ async def _run(
             pass
         stderr_task.cancel()
         progress_task.cancel()
+        try:
+            await proc.wait()
+        except Exception:
+            pass
         raise ConvertError(f"FFmpeg execution timed out (limit: {int(timeout)}s)")
+    except BaseException:
+        try:
+            proc.kill()
+        except ProcessLookupError:
+            pass
+        stderr_task.cancel()
+        progress_task.cancel()
+        try:
+            await proc.wait()
+        except Exception:
+            pass
+        raise
     finally:
         if token and token in _active_procs:
             _active_procs[token].discard(proc)
@@ -581,7 +597,7 @@ async def convert_video(
             ext = "webm"
             mime = "video/webm"
         main = Variant("main", f"{token}.{ext}", mime)
-        shutil.copyfile(src, os.path.join(out_dir, main.key))
+        await asyncio.to_thread(shutil.copyfile, src, os.path.join(out_dir, main.key))
         if on_stage:
             await on_stage("thumb")
         thumb = await make_thumb(cfg, src, out_dir, token, timeout=eff_timeout, on_output=on_output)
@@ -687,7 +703,7 @@ async def convert(
 
     if kind == "svg":
         dst = os.path.join(out_dir, f"{token}.svg")
-        shutil.copyfile(src, dst)
+        await asyncio.to_thread(shutil.copyfile, src, dst)
         return "image", [Variant("main", f"{token}.svg", "image/svg+xml")]
 
     if is_gif(header):
@@ -715,7 +731,7 @@ async def convert(
 
         # Default: keep original animated GIF!
         dst = os.path.join(out_dir, f"{token}.gif")
-        shutil.copyfile(src, dst)
+        await asyncio.to_thread(shutil.copyfile, src, dst)
         main = Variant("main", f"{token}.gif", "image/gif")
         thumb = await make_thumb(cfg, src, out_dir, token, timeout=timeout, on_output=on_output)
         return "image", [main, thumb]

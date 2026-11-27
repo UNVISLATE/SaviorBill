@@ -14,12 +14,13 @@ import (
 )
 
 type Runner struct {
-	cfg        config.Config
-	store      *pg.Store
-	bus        *valkey.Bus
-	heap       *heap.TimerHeap
-	dispatched atomic.Int64
-	ready      atomic.Bool
+	cfg               config.Config
+	store             *pg.Store
+	bus               *valkey.Bus
+	heap              *heap.TimerHeap
+	dispatched        atomic.Int64
+	ready             atomic.Bool
+	backpressureUntil time.Time
 }
 
 func NewRunner(cfg config.Config, store *pg.Store, bus *valkey.Bus) *Runner {
@@ -82,6 +83,9 @@ func (r *Runner) Run(ctx context.Context) error {
 		wait := time.Until(next.RunAt)
 		if wait < 0 {
 			wait = 0
+		}
+		if bpWait := time.Until(r.backpressureUntil); bpWait > wait {
+			wait = bpWait
 		}
 		timer.Reset(wait)
 	}
@@ -183,6 +187,7 @@ func (r *Runner) dispatchDue(ctx context.Context) {
 	backlog, err := r.bus.PendingBacklog(ctx)
 	if err == nil && backlog >= r.cfg.MaxPending {
 		log.Printf("backpressure active: stream backlog=%d >= %d", backlog, r.cfg.MaxPending)
+		r.backpressureUntil = time.Now().Add(1 * time.Second)
 		return
 	}
 

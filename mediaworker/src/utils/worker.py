@@ -189,7 +189,9 @@ class Worker:
         доваривается видео.
         """
         await self._ensure_group()
-        asyncio.create_task(self._control_listener(), name="media-control-listener")
+        control_task = asyncio.create_task(
+            self._control_listener(), name="media-control-listener"
+        )
         running: set[asyncio.Task] = set()
         max_in_flight = max(
             1,
@@ -197,51 +199,55 @@ class Worker:
             + self.cfg.task_concurrency_video
             + self.cfg.task_concurrency,
         )
-        while True:
-            if len(running) >= max_in_flight:
-                done, running = await asyncio.wait(
-                    running, timeout=1.0, return_when=asyncio.FIRST_COMPLETED
-                )
-                for t in done:
-                    exc = t.exception()
-                    if exc is not None:
-                        print(f"[mediaworker] task crashed: {exc!r}", flush=True)
-                continue
+        try:
+            while True:
+                if len(running) >= max_in_flight:
+                    done, running = await asyncio.wait(
+                        running, timeout=1.0, return_when=asyncio.FIRST_COMPLETED
+                    )
+                    for t in done:
+                        exc = t.exception()
+                        if exc is not None:
+                            print(f"[mediaworker] task crashed: {exc!r}", flush=True)
+                    continue
 
-            free_slots = (
-                self._sem_image._value + self._sem_video._value + self._sem_other._value
-            )
-            count = min(max(1, free_slots), max(1, max_in_flight - len(running)))
-            try:
-                resp = await self.vk.xreadgroup(
-                    self.cfg.group,
-                    self.consumer,
-                    {self.cfg.task_stream: ">"},
-                    count=count,
-                    block=5000,
+                free_slots = (
+                    self._sem_image._value + self._sem_video._value + self._sem_other._value
                 )
-            except (valkey.TimeoutError, asyncio.TimeoutError):
-                # Блокирующее чтение истекло без сообщений (гонка block-таймаута
-                # сервера и read-таймаута клиента) — штатная пауза, не ошибка.
-                resp = None
-            except Exception as exc:  # noqa: BLE001
-                print(f"[mediaworker] read error: {exc}", flush=True)
-                if "NOGROUP" in str(exc):
-                    await self._ensure_group()
-                await asyncio.sleep(2)
-                resp = None
-            if resp:
-                for _stream, entries in resp:
-                    for msg_id, data in entries:
-                        running.add(asyncio.create_task(self._process_one(msg_id, data)))
-            if running:
-                # Не блокируем цикл — только подчищаем уже завершённые задачи
-                # (чтобы не расти бесконечно и не терять исключения молча).
-                done, running = await asyncio.wait(running, timeout=0)
-                for t in done:
-                    exc = t.exception()
-                    if exc is not None:
-                        print(f"[mediaworker] task crashed: {exc!r}", flush=True)
+                count = min(max(1, free_slots), max(1, max_in_flight - len(running)))
+                try:
+                    resp = await self.vk.xreadgroup(
+                        self.cfg.group,
+                        self.consumer,
+                        {self.cfg.task_stream: ">"},
+                        count=count,
+                        block=5000,
+                    )
+                except (valkey.TimeoutError, asyncio.TimeoutError):
+                    # Блокирующее чтение истекло без сообщений (гонка block-таймаута
+                    # сервера и read-таймаута клиента) — штатная пауза, не ошибка.
+                    resp = None
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[mediaworker] read error: {exc}", flush=True)
+                    if "NOGROUP" in str(exc):
+                        await self._ensure_group()
+                    await asyncio.sleep(2)
+                    resp = None
+                if resp:
+                    for _stream, entries in resp:
+                        for msg_id, data in entries:
+                            running.add(asyncio.create_task(self._process_one(msg_id, data)))
+                if running:
+                    # Не блокируем цикл — только подчищаем уже завершённые задачи
+                    # (чтобы не расти бесконечно и не терять исключения молча).
+                    done, running = await asyncio.wait(running, timeout=0)
+                    for t in done:
+                        exc = t.exception()
+                        if exc is not None:
+                            print(f"[mediaworker] task crashed: {exc!r}", flush=True)
+        finally:
+            control_task.cancel()
+            await asyncio.gather(control_task, return_exceptions=True)
 
     def _pick_semaphore(self, op: str, token: str) -> asyncio.Semaphore:
         """Выбрать пул конкурентности для задачи (см. ``__init__``).
@@ -428,11 +434,11 @@ class Worker:
             if delivery_count > self.cfg.task_max_attempts:
                 rows = await self.vk.xrange(self.cfg.task_stream, msg_id, msg_id)
                 data = dict(rows[0][1]) if rows else {}
-                await self.vk.xack(self.cfg.task_stream, self.cfg.group, msg_id)
                 if data:
                     await self._to_dlq(
                         data, attempts=delivery_count, reason="max attempts exceeded (reclaim)"
                     )
+                await self.vk.xack(self.cfg.task_stream, self.cfg.group, msg_id)
                 continue
             claimed = await self.vk.xclaim(
                 self.cfg.task_stream,
